@@ -6,6 +6,7 @@ func All() map[int64]migration.Migrate {
 	return map[int64]migration.Migrate{
 		202610220001: {UP: identitySchema},
 		202610230001: {UP: accessSchema},
+		202610240001: {UP: catalogSchema},
 	}
 }
 
@@ -95,6 +96,52 @@ func accessSchema(d migration.Datasource) error {
 			ADD COLUMN expires_at TIMESTAMPTZ,
 			ADD CHECK (kind <> 'api' OR (role IS NOT NULL AND expires_at IS NOT NULL))`,
 		`ALTER TABLE users ADD COLUMN last_sign_in_at TIMESTAMPTZ`,
+	})
+}
+
+// catalogSchema keeps documents as JSON, not JSONB, because JSONB reorders
+// keys and a blueprint's properties keep the order they were written in.
+func catalogSchema(d migration.Datasource) error {
+	return execAll(d, []string{
+		`CREATE TABLE definitions (
+			kind TEXT NOT NULL,
+			identifier TEXT NOT NULL,
+			document JSON NOT NULL,
+			PRIMARY KEY (kind, identifier)
+		)`,
+		`CREATE TABLE definition_revisions (
+			number INTEGER PRIMARY KEY CHECK (number > 0),
+			author_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+			author_label TEXT NOT NULL,
+			message TEXT NOT NULL DEFAULT '',
+			rollback_of INTEGER,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			snapshot JSON NOT NULL,
+			changes JSON NOT NULL,
+			impact JSONB NOT NULL DEFAULT '{}'
+		)`,
+		`CREATE TABLE entities (
+			blueprint TEXT NOT NULL,
+			identifier TEXT NOT NULL,
+			title TEXT NOT NULL,
+			properties JSONB NOT NULL DEFAULT '{}',
+			integration TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (blueprint, identifier)
+		)`,
+		`CREATE INDEX entities_integration ON entities (integration)`,
+		`CREATE TABLE entity_relations (
+			source_blueprint TEXT NOT NULL,
+			source_identifier TEXT NOT NULL,
+			relation TEXT NOT NULL,
+			target_blueprint TEXT NOT NULL,
+			target_identifier TEXT NOT NULL,
+			PRIMARY KEY (source_blueprint, source_identifier, relation, target_blueprint, target_identifier),
+			FOREIGN KEY (source_blueprint, source_identifier) REFERENCES entities (blueprint, identifier) ON DELETE CASCADE,
+			FOREIGN KEY (target_blueprint, target_identifier) REFERENCES entities (blueprint, identifier) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX entity_relations_target ON entity_relations (target_blueprint, target_identifier)`,
 	})
 }
 
