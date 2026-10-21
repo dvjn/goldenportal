@@ -74,11 +74,12 @@ function RootLayout() {
 
 function RootError({ error }: ErrorComponentProps) {
   const router = useRouter();
+  const message = error instanceof Error ? error.message : String(error);
 
   return (
     <section className="flex min-h-screen flex-col items-center justify-center gap-4 text-center">
       <h1 className="text-2xl font-semibold">Something went wrong</h1>
-      <p className="text-muted-foreground">{error.message}</p>
+      <p className="text-muted-foreground">{message}</p>
       <Button variant="outline" onClick={() => router.invalidate()}>
         Try again
       </Button>
