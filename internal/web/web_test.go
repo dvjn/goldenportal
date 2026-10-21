@@ -83,6 +83,12 @@ func TestSPA(t *testing.T) {
 			wantStatus: http.StatusTeapot,
 		},
 		{
+			name:       "scim path passes through",
+			method:     http.MethodGet,
+			path:       "/scim/v2/Users",
+			wantStatus: http.StatusTeapot,
+		},
+		{
 			name:          "head serves index without body",
 			method:        http.MethodHead,
 			path:          "/settings",
