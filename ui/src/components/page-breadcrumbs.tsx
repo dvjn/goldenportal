@@ -17,14 +17,19 @@ declare module "@tanstack/react-router" {
 
 type Crumb = { path: string; label: string };
 
+// A route whose crumb names what it shows, such as an entity's title,
+// returns the crumb from its loader.
+type CrumbLoaderData = { breadcrumb?: string } | undefined;
+
 const home: Crumb = { path: "/", label: "Home" };
 
 export function PageBreadcrumbs() {
   const crumbs = useMatches({
     select: (matches) =>
-      matches.flatMap(({ pathname, staticData }) =>
-        staticData.breadcrumb ? [{ path: pathname, label: staticData.breadcrumb }] : [],
-      ),
+      matches.flatMap(({ pathname, staticData, loaderData }) => {
+        const label = (loaderData as CrumbLoaderData)?.breadcrumb ?? staticData.breadcrumb;
+        return label ? [{ path: pathname, label }] : [];
+      }),
   });
   const trail = [home, ...crumbs];
 

@@ -3,7 +3,7 @@ import type { Grant, Subjects, UserCheck } from "@/features/access";
 import type { Me, Permission } from "@/features/auth";
 import type { Scim, Settings } from "@/features/settings";
 
-type Handler = (request: Request) => Response | Promise<Response>;
+export type Handler = (request: Request) => Response | Promise<Response>;
 
 const allPermissions: Permission[] = [
   "settings.read",
@@ -25,6 +25,20 @@ export const alice: Me = {
   ],
   role: "admin",
   permissions: allPermissions,
+  bootstrap: false,
+};
+
+export const bob: Me = {
+  user: { id: "u-2", email: "bob@example.test", name: "Bob Baker" },
+  groups: [{ id: "g-3", name: "payments-team" }],
+  role: "maintainer",
+  permissions: [
+    "catalog.read",
+    "catalog.write",
+    "catalog.model",
+    "integrations.sync",
+    "integrations.tokens",
+  ],
   bootstrap: false,
 };
 
@@ -57,6 +71,7 @@ export const scim: Scim = {
 export const signedIn: Record<string, Handler> = {
   "GET /api/v1/config": () => Response.json({ data: { name: "Acme" } }),
   "GET /api/v1/auth/me": () => Response.json({ data: alice }),
+  "GET /api/v1/catalog/blueprints": () => Response.json({ data: { blueprints: [] } }),
 };
 
 export const signedInAs = (me: Me): Record<string, Handler> => ({

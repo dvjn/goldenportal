@@ -30,8 +30,16 @@ function renderAt(path: string) {
     path: "$service",
     staticData: { breadcrumb: "Service" },
   });
+  const entityRoute = createRoute({
+    getParentRoute: () => serviceRoute,
+    path: "$entity",
+    loader: ({ params }) => ({ breadcrumb: `Entity ${params.entity}` }),
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([homeRoute, catalogRoute.addChildren([serviceRoute])]),
+    routeTree: rootRoute.addChildren([
+      homeRoute,
+      catalogRoute.addChildren([serviceRoute.addChildren([entityRoute])]),
+    ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
 
@@ -52,5 +60,15 @@ describe("PageBreadcrumbs", () => {
     expect(await screen.findByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Catalog" })).toHaveAttribute("href", "/catalog");
     expect(screen.getByText("Service")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("takes a crumb from the loader data", async () => {
+    renderAt("/catalog/payments/ledger");
+
+    expect(await screen.findByText("Entity ledger")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Service" })).toHaveAttribute(
+      "href",
+      "/catalog/payments",
+    );
   });
 });

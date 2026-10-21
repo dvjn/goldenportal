@@ -13,11 +13,15 @@ import { Route as AuthenticatedRouteImport } from "./routes/_authenticated";
 import { Route as NotProvisionedRouteImport } from "./routes/not-provisioned";
 import { Route as AuthenticatedIndexRouteImport } from "./routes/_authenticated/index";
 import { Route as AuthenticatedSettingsRouteImport } from "./routes/_authenticated/settings";
+import { Route as AuthenticatedCatalogBlueprintRouteImport } from "./routes/_authenticated/catalog/$blueprint";
 import { Route as AuthenticatedSettingsIndexRouteImport } from "./routes/_authenticated/settings/index";
 import { Route as AuthenticatedSettingsAccessRouteImport } from "./routes/_authenticated/settings/access";
 import { Route as AuthenticatedSettingsApiTokensRouteImport } from "./routes/_authenticated/settings/api-tokens";
 import { Route as AuthenticatedSettingsAuditRouteImport } from "./routes/_authenticated/settings/audit";
 import { Route as AuthenticatedSettingsGeneralRouteImport } from "./routes/_authenticated/settings/general";
+import { Route as AuthenticatedCatalogBlueprintIndexRouteImport } from "./routes/_authenticated/catalog/$blueprint/index";
+import { Route as AuthenticatedCatalogBlueprintIdentifierRouteImport } from "./routes/_authenticated/catalog/$blueprint/$identifier";
+import { Route as AuthenticatedCatalogBlueprintIdentifierIndexRouteImport } from "./routes/_authenticated/catalog/$blueprint/$identifier/index";
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: "/_authenticated",
@@ -38,6 +42,12 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: "/settings",
   getParentRoute: () => AuthenticatedRoute,
 } as any);
+const AuthenticatedCatalogBlueprintRoute =
+  AuthenticatedCatalogBlueprintRouteImport.update({
+    id: "/catalog/$blueprint",
+    path: "/catalog/$blueprint",
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
 const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
     id: "/",
@@ -68,16 +78,38 @@ const AuthenticatedSettingsGeneralRoute =
     path: "/general",
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any);
+const AuthenticatedCatalogBlueprintIndexRoute =
+  AuthenticatedCatalogBlueprintIndexRouteImport.update({
+    id: "/",
+    path: "/",
+    getParentRoute: () => AuthenticatedCatalogBlueprintRoute,
+  } as any);
+const AuthenticatedCatalogBlueprintIdentifierRoute =
+  AuthenticatedCatalogBlueprintIdentifierRouteImport.update({
+    id: "/$identifier",
+    path: "/$identifier",
+    getParentRoute: () => AuthenticatedCatalogBlueprintRoute,
+  } as any);
+const AuthenticatedCatalogBlueprintIdentifierIndexRoute =
+  AuthenticatedCatalogBlueprintIdentifierIndexRouteImport.update({
+    id: "/",
+    path: "/",
+    getParentRoute: () => AuthenticatedCatalogBlueprintIdentifierRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof AuthenticatedIndexRoute;
   "/not-provisioned": typeof NotProvisionedRoute;
   "/settings": typeof AuthenticatedSettingsRouteWithChildren;
+  "/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintRouteWithChildren;
   "/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings/": typeof AuthenticatedSettingsIndexRoute;
+  "/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
+  "/catalog/$blueprint/": typeof AuthenticatedCatalogBlueprintIndexRoute;
+  "/catalog/$blueprint/$identifier/": typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
 }
 export interface FileRoutesByTo {
   "/not-provisioned": typeof NotProvisionedRoute;
@@ -87,6 +119,8 @@ export interface FileRoutesByTo {
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings": typeof AuthenticatedSettingsIndexRoute;
+  "/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintIndexRoute;
+  "/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -94,11 +128,15 @@ export interface FileRoutesById {
   "/not-provisioned": typeof NotProvisionedRoute;
   "/_authenticated/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/_authenticated/": typeof AuthenticatedIndexRoute;
+  "/_authenticated/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintRouteWithChildren;
   "/_authenticated/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/_authenticated/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/_authenticated/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
+  "/_authenticated/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
+  "/_authenticated/catalog/$blueprint/": typeof AuthenticatedCatalogBlueprintIndexRoute;
+  "/_authenticated/catalog/$blueprint/$identifier/": typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -106,11 +144,15 @@ export interface FileRouteTypes {
     | "/"
     | "/not-provisioned"
     | "/settings"
+    | "/catalog/$blueprint"
     | "/settings/access"
     | "/settings/api-tokens"
     | "/settings/audit"
     | "/settings/general"
-    | "/settings/";
+    | "/settings/"
+    | "/catalog/$blueprint/$identifier"
+    | "/catalog/$blueprint/"
+    | "/catalog/$blueprint/$identifier/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/not-provisioned"
@@ -119,18 +161,24 @@ export interface FileRouteTypes {
     | "/settings/api-tokens"
     | "/settings/audit"
     | "/settings/general"
-    | "/settings";
+    | "/settings"
+    | "/catalog/$blueprint"
+    | "/catalog/$blueprint/$identifier";
   id:
     | "__root__"
     | "/_authenticated"
     | "/not-provisioned"
     | "/_authenticated/settings"
     | "/_authenticated/"
+    | "/_authenticated/catalog/$blueprint"
     | "/_authenticated/settings/access"
     | "/_authenticated/settings/api-tokens"
     | "/_authenticated/settings/audit"
     | "/_authenticated/settings/general"
-    | "/_authenticated/settings/";
+    | "/_authenticated/settings/"
+    | "/_authenticated/catalog/$blueprint/$identifier"
+    | "/_authenticated/catalog/$blueprint/"
+    | "/_authenticated/catalog/$blueprint/$identifier/";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -168,6 +216,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    "/_authenticated/catalog/$blueprint": {
+      id: "/_authenticated/catalog/$blueprint";
+      path: "/catalog/$blueprint";
+      fullPath: "/catalog/$blueprint";
+      preLoaderRoute: typeof AuthenticatedCatalogBlueprintRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
     "/_authenticated/settings/": {
       id: "/_authenticated/settings/";
       path: "/";
@@ -203,6 +258,27 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedSettingsGeneralRouteImport;
       parentRoute: typeof AuthenticatedSettingsRoute;
     };
+    "/_authenticated/catalog/$blueprint/": {
+      id: "/_authenticated/catalog/$blueprint/";
+      path: "/";
+      fullPath: "/catalog/$blueprint/";
+      preLoaderRoute: typeof AuthenticatedCatalogBlueprintIndexRouteImport;
+      parentRoute: typeof AuthenticatedCatalogBlueprintRoute;
+    };
+    "/_authenticated/catalog/$blueprint/$identifier": {
+      id: "/_authenticated/catalog/$blueprint/$identifier";
+      path: "/$identifier";
+      fullPath: "/catalog/$blueprint/$identifier";
+      preLoaderRoute: typeof AuthenticatedCatalogBlueprintIdentifierRouteImport;
+      parentRoute: typeof AuthenticatedCatalogBlueprintRoute;
+    };
+    "/_authenticated/catalog/$blueprint/$identifier/": {
+      id: "/_authenticated/catalog/$blueprint/$identifier/";
+      path: "/";
+      fullPath: "/catalog/$blueprint/$identifier/";
+      preLoaderRoute: typeof AuthenticatedCatalogBlueprintIdentifierIndexRouteImport;
+      parentRoute: typeof AuthenticatedCatalogBlueprintIdentifierRoute;
+    };
   }
 }
 
@@ -227,14 +303,50 @@ const AuthenticatedSettingsRouteWithChildren =
     AuthenticatedSettingsRouteChildren,
   );
 
+interface AuthenticatedCatalogBlueprintIdentifierRouteChildren {
+  AuthenticatedCatalogBlueprintIdentifierIndexRoute: typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
+}
+
+const AuthenticatedCatalogBlueprintIdentifierRouteChildren: AuthenticatedCatalogBlueprintIdentifierRouteChildren =
+  {
+    AuthenticatedCatalogBlueprintIdentifierIndexRoute:
+      AuthenticatedCatalogBlueprintIdentifierIndexRoute,
+  };
+
+const AuthenticatedCatalogBlueprintIdentifierRouteWithChildren =
+  AuthenticatedCatalogBlueprintIdentifierRoute._addFileChildren(
+    AuthenticatedCatalogBlueprintIdentifierRouteChildren,
+  );
+
+interface AuthenticatedCatalogBlueprintRouteChildren {
+  AuthenticatedCatalogBlueprintIdentifierRoute: typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
+  AuthenticatedCatalogBlueprintIndexRoute: typeof AuthenticatedCatalogBlueprintIndexRoute;
+}
+
+const AuthenticatedCatalogBlueprintRouteChildren: AuthenticatedCatalogBlueprintRouteChildren =
+  {
+    AuthenticatedCatalogBlueprintIdentifierRoute:
+      AuthenticatedCatalogBlueprintIdentifierRouteWithChildren,
+    AuthenticatedCatalogBlueprintIndexRoute:
+      AuthenticatedCatalogBlueprintIndexRoute,
+  };
+
+const AuthenticatedCatalogBlueprintRouteWithChildren =
+  AuthenticatedCatalogBlueprintRoute._addFileChildren(
+    AuthenticatedCatalogBlueprintRouteChildren,
+  );
+
 interface AuthenticatedRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren;
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute;
+  AuthenticatedCatalogBlueprintRoute: typeof AuthenticatedCatalogBlueprintRouteWithChildren;
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedCatalogBlueprintRoute:
+    AuthenticatedCatalogBlueprintRouteWithChildren,
 };
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

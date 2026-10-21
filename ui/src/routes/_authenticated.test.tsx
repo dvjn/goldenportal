@@ -26,7 +26,9 @@ describe("authenticated layout", () => {
 
     expect(await screen.findByRole("link", { name: "Acme" })).toHaveAttribute("href", "/");
     expect(
-      within(screen.getByRole("banner")).getByRole("button", { name: /Open the user menu/ }),
+      within(screen.getAllByRole("banner")[0] as HTMLElement).getByRole("button", {
+        name: /Open the user menu/,
+      }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "breadcrumb" })).not.toBeInTheDocument();
     expect(navigateAway).not.toHaveBeenCalled();
