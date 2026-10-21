@@ -24,10 +24,10 @@ func (r *recordingSQL) Exec(query string, _ ...any) (sql.Result, error) {
 	return nil, nil
 }
 
-func TestAllRegistersTheIdentitySchema(t *testing.T) {
+func TestAllRegistersEverySchemaInOrder(t *testing.T) {
 	all := All()
-	if len(all) != 1 || all[202610220001].UP == nil {
-		t.Fatalf("All() = %v, want the identity schema at 202610220001", all)
+	if len(all) != 2 || all[202610220001].UP == nil || all[202610230001].UP == nil {
+		t.Fatalf("All() = %v, want the identity schema at 202610220001 and the access schema at 202610230001", all)
 	}
 }
 
@@ -47,6 +47,29 @@ func TestIdentitySchemaCreatesEveryTable(t *testing.T) {
 		"CREATE TABLE sessions",
 		"id_token TEXT NOT NULL",
 		"CREATE TABLE api_tokens",
+	} {
+		if !mentions(db.statements, fragment) {
+			t.Errorf("no statement mentions %q", fragment)
+		}
+	}
+}
+
+func TestAccessSchemaCreatesGrantsAuditAndTokenRoles(t *testing.T) {
+	db := &recordingSQL{}
+	if err := accessSchema(migration.Datasource{SQL: db}); err != nil {
+		t.Fatalf("accessSchema() error = %v", err)
+	}
+
+	for _, fragment := range []string{
+		"CREATE TABLE role_grants",
+		"user_id UUID REFERENCES users(id) ON DELETE CASCADE",
+		"group_id UUID REFERENCES groups(id) ON DELETE CASCADE",
+		"UNIQUE (subject_type, subject_id)",
+		"CHECK (role IN ('maintainer', 'admin'))",
+		"CREATE TABLE audit_log",
+		"details JSONB",
+		"ADD COLUMN expires_at TIMESTAMPTZ",
+		"ADD COLUMN last_sign_in_at TIMESTAMPTZ",
 	} {
 		if !mentions(db.statements, fragment) {
 			t.Errorf("no statement mentions %q", fragment)
