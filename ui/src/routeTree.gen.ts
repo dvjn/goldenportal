@@ -14,6 +14,7 @@ import { Route as NotProvisionedRouteImport } from "./routes/not-provisioned";
 import { Route as AuthenticatedIndexRouteImport } from "./routes/_authenticated/index";
 import { Route as AuthenticatedSettingsRouteImport } from "./routes/_authenticated/settings";
 import { Route as AuthenticatedSettingsIndexRouteImport } from "./routes/_authenticated/settings/index";
+import { Route as AuthenticatedSettingsAccessRouteImport } from "./routes/_authenticated/settings/access";
 import { Route as AuthenticatedSettingsGeneralRouteImport } from "./routes/_authenticated/settings/general";
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -41,6 +42,12 @@ const AuthenticatedSettingsIndexRoute =
     path: "/",
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any);
+const AuthenticatedSettingsAccessRoute =
+  AuthenticatedSettingsAccessRouteImport.update({
+    id: "/access",
+    path: "/access",
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any);
 const AuthenticatedSettingsGeneralRoute =
   AuthenticatedSettingsGeneralRouteImport.update({
     id: "/general",
@@ -52,12 +59,14 @@ export interface FileRoutesByFullPath {
   "/": typeof AuthenticatedIndexRoute;
   "/not-provisioned": typeof NotProvisionedRoute;
   "/settings": typeof AuthenticatedSettingsRouteWithChildren;
+  "/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings/": typeof AuthenticatedSettingsIndexRoute;
 }
 export interface FileRoutesByTo {
   "/not-provisioned": typeof NotProvisionedRoute;
   "/": typeof AuthenticatedIndexRoute;
+  "/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings": typeof AuthenticatedSettingsIndexRoute;
 }
@@ -67,21 +76,33 @@ export interface FileRoutesById {
   "/not-provisioned": typeof NotProvisionedRoute;
   "/_authenticated/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/_authenticated/": typeof AuthenticatedIndexRoute;
+  "/_authenticated/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
-    "/" | "/not-provisioned" | "/settings" | "/settings/general" | "/settings/";
+    | "/"
+    | "/not-provisioned"
+    | "/settings"
+    | "/settings/access"
+    | "/settings/general"
+    | "/settings/";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/not-provisioned" | "/" | "/settings/general" | "/settings";
+  to:
+    | "/not-provisioned"
+    | "/"
+    | "/settings/access"
+    | "/settings/general"
+    | "/settings";
   id:
     | "__root__"
     | "/_authenticated"
     | "/not-provisioned"
     | "/_authenticated/settings"
     | "/_authenticated/"
+    | "/_authenticated/settings/access"
     | "/_authenticated/settings/general"
     | "/_authenticated/settings/";
   fileRoutesById: FileRoutesById;
@@ -128,6 +149,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport;
       parentRoute: typeof AuthenticatedSettingsRoute;
     };
+    "/_authenticated/settings/access": {
+      id: "/_authenticated/settings/access";
+      path: "/access";
+      fullPath: "/settings/access";
+      preLoaderRoute: typeof AuthenticatedSettingsAccessRouteImport;
+      parentRoute: typeof AuthenticatedSettingsRoute;
+    };
     "/_authenticated/settings/general": {
       id: "/_authenticated/settings/general";
       path: "/general";
@@ -139,11 +167,13 @@ declare module "@tanstack/react-router" {
 }
 
 interface AuthenticatedSettingsRouteChildren {
+  AuthenticatedSettingsAccessRoute: typeof AuthenticatedSettingsAccessRoute;
   AuthenticatedSettingsGeneralRoute: typeof AuthenticatedSettingsGeneralRoute;
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute;
 }
 
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
+  AuthenticatedSettingsAccessRoute: AuthenticatedSettingsAccessRoute,
   AuthenticatedSettingsGeneralRoute: AuthenticatedSettingsGeneralRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
 };

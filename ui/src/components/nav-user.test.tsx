@@ -63,6 +63,10 @@ describe("NavUser", () => {
       "href",
       "/settings/general",
     );
+    expect(screen.getByRole("menuitem", { name: "Access" })).toHaveAttribute(
+      "href",
+      "/settings/access",
+    );
   });
 
   it("shows no administration links to a member", async () => {

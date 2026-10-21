@@ -1,4 +1,5 @@
 import { vi } from "vite-plus/test";
+import type { Grant, Subjects, UserCheck } from "@/features/access";
 import type { Me, Permission } from "@/features/auth";
 import type { Scim, Settings } from "@/features/settings";
 
@@ -63,10 +64,60 @@ export const signedInAs = (me: Me): Record<string, Handler> => ({
   "GET /api/v1/auth/me": () => Response.json({ data: me }),
 });
 
+export const grants: Grant[] = [
+  {
+    id: "r-1",
+    subject: { type: "group", id: "g-2", name: "platform-team", member_count: 1 },
+    role: "admin",
+    granted_by: "alice@example.test",
+    created_at: "2026-10-20T09:00:00Z",
+    updated_at: "2026-10-20T09:00:00Z",
+    last_admin: true,
+  },
+  {
+    id: "r-2",
+    subject: { type: "group", id: "g-3", name: "payments-team", member_count: 1 },
+    role: "maintainer",
+    granted_by: "alice@example.test",
+    created_at: "2026-10-21T09:00:00Z",
+    updated_at: "2026-10-21T09:00:00Z",
+    last_admin: false,
+  },
+];
+
+export const subjects: Subjects = {
+  groups: [
+    { id: "g-1", name: "all-engineers", active: true },
+    { id: "g-4", name: "contractors", active: true },
+    { id: "g-3", name: "payments-team", active: true, role: "maintainer" },
+    { id: "g-2", name: "platform-team", active: true, role: "admin" },
+  ],
+  users: [
+    { id: "u-1", name: "Alice Archer", email: "alice@example.test", active: true },
+    { id: "u-2", name: "Bob Baker", email: "bob@example.test", active: true },
+    { id: "u-5", name: "Dan Dormant", email: "dan@example.test", active: false },
+  ],
+};
+
+export const bobCheck: UserCheck = {
+  user: { id: "u-2", name: "Bob Baker", email: "bob@example.test", active: true },
+  role: "maintainer",
+  bootstrap: false,
+  carried_by: [{ type: "group", id: "g-3", name: "payments-team", role: "maintainer" }],
+  groups: [
+    { id: "g-1", name: "all-engineers" },
+    { id: "g-3", name: "payments-team" },
+  ],
+  last_sign_in_at: "2026-10-22T06:00:00Z",
+};
+
 export const adminApi: Record<string, Handler> = {
   ...signedIn,
   "GET /api/v1/settings": () => Response.json({ data: settings }),
   "GET /api/v1/scim": () => Response.json({ data: scim }),
+  "GET /api/v1/access/grants": () => Response.json({ data: { grants } }),
+  "GET /api/v1/access/subjects": () => Response.json({ data: subjects }),
+  "GET /api/v1/access/users/u-2": () => Response.json({ data: bobCheck }),
 };
 
 export function stubApi(handlers: Record<string, Handler>) {

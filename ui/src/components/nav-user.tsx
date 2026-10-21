@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { LogOut, Settings, SunMoon } from "lucide-react";
+import { LogOut, Settings, ShieldCheck, SunMoon } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,14 @@ export function NavUser() {
                   System settings
                 </Link>
               </DropdownMenuItem>
+              {can("access.read") && (
+                <DropdownMenuItem asChild>
+                  <Link to="/settings/access">
+                    <ShieldCheck />
+                    Access
+                  </Link>
+                </DropdownMenuItem>
+              )}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
           </>
