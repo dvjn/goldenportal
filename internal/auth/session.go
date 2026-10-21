@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"gofr.dev/pkg/gofr/container"
@@ -18,10 +20,12 @@ import (
 
 var ErrNoSession = errors.New("no session")
 
-// Principal is the signed-in user behind a request and the role they hold.
+// Principal is who is behind a request and the role they hold: a signed-in
+// user with a session, or an API token, whose name stands in User.Name.
 type Principal struct {
 	User      directory.User
 	SessionID string
+	APIToken  apitoken.Token
 	Access    access.Resolution
 }
 
@@ -30,7 +34,7 @@ func (p Principal) Can(permission access.Permission) bool {
 }
 
 func (p Principal) Actor() audit.Actor {
-	return audit.Actor{UserID: p.User.ID, Label: p.User.Email}
+	return audit.Actor{UserID: p.User.ID, Label: cmp.Or(p.User.Email, p.APIToken.Name)}
 }
 
 type Sessions struct {

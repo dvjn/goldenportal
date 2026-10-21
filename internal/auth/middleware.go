@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	gofrHTTP "gofr.dev/pkg/gofr/http"
@@ -28,18 +29,42 @@ type accessResolver interface {
 	Resolve(ctx context.Context, user directory.User) (access.Resolution, error)
 }
 
-// Authenticator finds the principal behind a request and resolves its role.
+type tokenFinder interface {
+	Find(ctx context.Context, kind, secret string) (apitoken.Token, error)
+}
+
+// Authenticator finds the principal behind a request and resolves its role:
+// an API token when the request has a bearer token, otherwise the user of the
+// session cookie.
 type Authenticator struct {
 	sessions sessionFinder
+	tokens   tokenFinder
 	resolver accessResolver
 	cookie   string
 }
 
-func NewAuthenticator(sessions sessionFinder, resolver accessResolver, cookies Cookies) *Authenticator {
-	return &Authenticator{sessions: sessions, resolver: resolver, cookie: cookies.Session}
+func NewAuthenticator(sessions sessionFinder, tokens tokenFinder, resolver accessResolver, cookies Cookies) *Authenticator {
+	return &Authenticator{sessions: sessions, tokens: tokens, resolver: resolver, cookie: cookies.Session}
 }
 
 func (a *Authenticator) Authenticate(r *http.Request) (Principal, error) {
+	if secret, ok := bearerToken(r); ok {
+		return a.apiToken(r.Context(), secret)
+	}
+
+	return a.session(r)
+}
+
+func (a *Authenticator) apiToken(ctx context.Context, secret string) (Principal, error) {
+	token, err := a.tokens.Find(ctx, apitoken.KindAPI, secret)
+	if errors.Is(err, apitoken.ErrNotFound) {
+		return Principal{}, ErrNoSession
+	}
+
+	return Principal{User: directory.User{Name: token.Name}, APIToken: token, Access: access.Resolution{Role: token.Role}}, err
+}
+
+func (a *Authenticator) session(r *http.Request) (Principal, error) {
 	cookie, err := r.Cookie(a.cookie)
 	if err != nil {
 		return Principal{}, ErrNoSession

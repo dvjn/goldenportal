@@ -1,7 +1,10 @@
 package auth
 
 import (
+	"context"
+
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/directory"
 	"gofr.dev/pkg/gofr"
 )
 
@@ -26,7 +29,7 @@ type meGroup struct {
 
 func (s *Service) me(ctx *gofr.Context) (any, error) {
 	principal, _ := PrincipalFrom(ctx)
-	groups, err := s.directory.GroupsOfUser(ctx, principal.User.ID)
+	groups, err := s.groupsOf(ctx, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -43,4 +46,13 @@ func (s *Service) me(ctx *gofr.Context) (any, error) {
 	}
 
 	return response, nil
+}
+
+// groupsOf returns no groups for an API token, which is no user.
+func (s *Service) groupsOf(ctx context.Context, principal Principal) ([]directory.Group, error) {
+	if principal.User.ID == "" {
+		return nil, nil
+	}
+
+	return s.directory.GroupsOfUser(ctx, principal.User.ID)
 }

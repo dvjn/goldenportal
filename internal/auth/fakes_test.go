@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
@@ -128,6 +129,22 @@ func (m *memoryAudit) actions() []audit.Action {
 	return actions
 }
 
+// memoryTokens holds the API tokens by secret.
+type memoryTokens map[string]apitoken.Token
+
+func (m memoryTokens) Find(_ context.Context, kind, secret string) (apitoken.Token, error) {
+	token, ok := m[secret]
+	if !ok || token.Kind != kind {
+		return apitoken.Token{}, apitoken.ErrNotFound
+	}
+
+	return token, nil
+}
+
+var testTokens = memoryTokens{
+	"gpt_ci": {ID: "t-1", Kind: apitoken.KindAPI, Name: "ci", Role: access.Maintainer},
+}
+
 // memoryGrants holds each user's grants by user ID.
 type memoryGrants map[string][]access.Grant
 
@@ -139,7 +156,7 @@ func newTestRouter(sessions sessionFinder, grants memoryGrants, register func(*h
 	router := httpxtest.NewRouter(&container.Container{Logger: logging.NewMockLogger(logging.ERROR)})
 	routes := httpx.NewRoutes(router)
 	register(routes)
-	authenticator := NewAuthenticator(sessions, access.NewResolver(grants, testBootstrapAdmins), testCookies)
+	authenticator := NewAuthenticator(sessions, testTokens, access.NewResolver(grants, testBootstrapAdmins), testCookies)
 	router.Use(httpx.ExposeRaw, CrossOriginProtection(), Middleware(routes, authenticator))
 
 	return router

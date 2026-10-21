@@ -52,7 +52,7 @@ func register(app *gofr.App) error {
 		web.SPA(web.Dist()),
 		httpx.ExposeRaw,
 		auth.CrossOriginProtection(),
-		auth.Middleware(routes, auth.NewAuthenticator(sessions, resolver, authConfig.Cookies)),
+		auth.Middleware(routes, auth.NewAuthenticator(sessions, tokens, resolver, authConfig.Cookies)),
 		scim.NewServer(directoryStore, sessions, tokens, app.Logger()).Middleware(),
 	)
 
