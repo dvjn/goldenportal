@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { ModeToggle } from "@/components/mode-toggle";
+import { NavUser } from "@/components/nav-user";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { loginUrl, meQueryOptions } from "@/features/auth";
 import { useConfig } from "@/features/config";
@@ -29,7 +29,7 @@ function AuthenticatedLayout() {
         <Link to="/" className="min-w-0 truncate font-semibold">
           {portalName}
         </Link>
-        <ModeToggle />
+        <NavUser />
       </header>
       <main className="flex flex-1 flex-col gap-4 p-4">
         <PageBreadcrumbs />

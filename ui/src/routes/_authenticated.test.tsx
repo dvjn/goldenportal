@@ -1,5 +1,4 @@
 import { screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { navigateAway } from "@/lib/navigation";
 import { signedIn, stubApi } from "@/test/api";
@@ -27,7 +26,7 @@ describe("authenticated layout", () => {
 
     expect(await screen.findByRole("link", { name: "Acme" })).toHaveAttribute("href", "/");
     expect(
-      within(screen.getByRole("banner")).getByRole("button", { name: "Toggle theme" }),
+      within(screen.getByRole("banner")).getByRole("button", { name: /Open the user menu/ }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "breadcrumb" })).not.toBeInTheDocument();
     expect(navigateAway).not.toHaveBeenCalled();
@@ -57,19 +56,5 @@ describe("authenticated layout", () => {
 
     expect(await screen.findByText("could not check the session")).toBeInTheDocument();
     expect(navigateAway).not.toHaveBeenCalled();
-  });
-
-  it("starts in dark mode and stores the chosen theme", async () => {
-    const user = userEvent.setup();
-    renderRoute("/");
-
-    expect(document.documentElement).toHaveClass("dark");
-
-    await user.click(await screen.findByRole("button", { name: "Toggle theme" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Light" }));
-
-    expect(document.documentElement).toHaveClass("light");
-    expect(document.documentElement).not.toHaveClass("dark");
-    expect(localStorage.getItem("goldport-ui-theme")).toBe("light");
   });
 });
