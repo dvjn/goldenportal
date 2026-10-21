@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 )
@@ -21,15 +22,20 @@ type sessionStore interface {
 	Delete(ctx context.Context, id string) (string, error)
 }
 
+type auditLog interface {
+	Record(ctx context.Context, entry audit.Entry) error
+}
+
 type Service struct {
 	config    Config
 	provider  *Provider
 	sessions  sessionStore
 	directory userDirectory
+	audit     auditLog
 }
 
-func NewService(config Config, provider *Provider, sessions sessionStore, directory userDirectory) *Service {
-	return &Service{config: config, provider: provider, sessions: sessions, directory: directory}
+func NewService(config Config, provider *Provider, sessions sessionStore, directory userDirectory, log auditLog) *Service {
+	return &Service{config: config, provider: provider, sessions: sessions, directory: directory, audit: log}
 }
 
 func (s *Service) Register(routes *httpx.Routes) {

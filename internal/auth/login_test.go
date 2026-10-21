@@ -7,11 +7,13 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 )
 
@@ -21,6 +23,7 @@ type portal struct {
 	provider *fakeProvider
 	users    *memoryDirectory
 	sessions *memorySessions
+	audit    *memoryAudit
 }
 
 func newPortal(t *testing.T, identity fakeIdentity, users *memoryDirectory) *portal {
@@ -44,7 +47,8 @@ func newPortal(t *testing.T, identity fakeIdentity, users *memoryDirectory) *por
 		t.Fatalf("NewProvider() error = %v", err)
 	}
 	sessions := newMemorySessions(users)
-	server.Config.Handler = newTestRouter(sessions, nil, NewService(config, oidcProvider, sessions, users).Register)
+	log := &memoryAudit{}
+	server.Config.Handler = newTestRouter(sessions, nil, NewService(config, oidcProvider, sessions, users, log).Register)
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -53,7 +57,7 @@ func newPortal(t *testing.T, identity fakeIdentity, users *memoryDirectory) *por
 	client := server.Client()
 	client.Jar = jar
 
-	return &portal{server: server, client: client, provider: provider, users: users, sessions: sessions}
+	return &portal{server: server, client: client, provider: provider, users: users, sessions: sessions, audit: log}
 }
 
 func (p *portal) get(t *testing.T, path string) *http.Response {
@@ -102,6 +106,10 @@ func TestLoginSignsAProvisionedUserInAndReturnsThem(t *testing.T) {
 	}
 	if body.Data.User.Email != "alice@example.test" || len(body.Data.Groups) != 2 {
 		t.Fatalf("me = %+v", body.Data)
+	}
+	signedIn := portal.audit.entries
+	if len(signedIn) != 1 || signedIn[0].Action != audit.SignedIn || signedIn[0].Actor != (audit.Actor{UserID: "u-1", Label: "alice@example.test"}) {
+		t.Fatalf("audit = %+v, want one sign-in by alice", signedIn)
 	}
 }
 
@@ -172,6 +180,10 @@ func TestLoginSendsUnprovisionedUsersToTheNotProvisionedPage(t *testing.T) {
 			if len(portal.sessions.userByToken) != 0 {
 				t.Fatalf("sessions = %v, want none", portal.sessions.userByToken)
 			}
+			refused := portal.audit.entries
+			if len(refused) != 1 || refused[0].Action != audit.SignInRefused || refused[0].Actor.Label != tc.identity.Email {
+				t.Fatalf("audit = %+v, want one refused sign-in by %s", refused, tc.identity.Email)
+			}
 		})
 	}
 }
@@ -219,6 +231,9 @@ func TestLogoutDeletesTheSessionAndPointsAtTheProviderLogout(t *testing.T) {
 	}
 	if len(portal.sessions.userByToken) != 0 || len(portal.cookieNames()) != 0 {
 		t.Fatalf("sessions = %v, cookies = %v, want both empty", portal.sessions.userByToken, portal.cookieNames())
+	}
+	if actions := portal.audit.actions(); !slices.Equal(actions, []audit.Action{audit.SignedIn, audit.SignedOut}) {
+		t.Fatalf("audit = %v, want a sign-in and a sign-out", actions)
 	}
 }
 

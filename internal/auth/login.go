@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"gofr.dev/pkg/gofr"
@@ -68,6 +70,15 @@ func (s *Service) callback(ctx *gofr.Context) (any, error) {
 	user, matchedBy, err := s.findUser(ctx, who)
 	if errors.Is(err, errNotProvisioned) {
 		ctx.Infof("login refused: user not provisioned sub=%s email=%s matched_by=%s", who.Subject, who.Email, matchedBy)
+		refused := audit.Entry{
+			Actor:   audit.Actor{Label: cmp.Or(who.Email, who.Subject)},
+			Action:  audit.SignInRefused,
+			Details: map[string]any{"reason": "not provisioned", "subject": who.Subject, "matched_by": matchedBy},
+		}
+		if err := s.audit.Record(ctx, refused); err != nil {
+			return nil, err
+		}
+
 		return response.Redirect{URL: "/not-provisioned"}, nil
 	}
 	if err != nil {
@@ -79,6 +90,14 @@ func (s *Service) callback(ctx *gofr.Context) (any, error) {
 
 	token, err := s.sessions.Create(ctx, user.ID, who.IDToken)
 	if err != nil {
+		return nil, err
+	}
+	signedIn := audit.Entry{
+		Actor:   Principal{User: user}.Actor(),
+		Action:  audit.SignedIn,
+		Details: map[string]any{"matched_by": matchedBy},
+	}
+	if err := s.audit.Record(ctx, signedIn); err != nil {
 		return nil, err
 	}
 	http.SetCookie(httpx.RawWriter(ctx), newCookie(s.config.Cookies.Session, token, s.config.SessionMaxAge))
@@ -94,6 +113,9 @@ func (s *Service) logout(ctx *gofr.Context) (any, error) {
 	principal, _ := PrincipalFrom(ctx)
 	idToken, err := s.sessions.Delete(ctx, principal.SessionID)
 	if err != nil && !errors.Is(err, ErrNoSession) {
+		return nil, err
+	}
+	if err := s.audit.Record(ctx, audit.Entry{Actor: principal.Actor(), Action: audit.SignedOut}); err != nil {
 		return nil, err
 	}
 	http.SetCookie(httpx.RawWriter(ctx), expiredCookie(s.config.Cookies.Session))

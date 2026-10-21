@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/httpx/httpxtest"
@@ -107,6 +108,24 @@ func (m *memorySessions) Delete(_ context.Context, id string) (string, error) {
 	delete(m.idTokenByToken, id)
 
 	return idToken, nil
+}
+
+type memoryAudit struct {
+	entries []audit.Entry
+}
+
+func (m *memoryAudit) Record(_ context.Context, entry audit.Entry) error {
+	m.entries = append(m.entries, entry)
+	return nil
+}
+
+func (m *memoryAudit) actions() []audit.Action {
+	actions := []audit.Action{}
+	for _, entry := range m.entries {
+		actions = append(actions, entry.Action)
+	}
+
+	return actions
 }
 
 // memoryGrants holds each user's grants by user ID.

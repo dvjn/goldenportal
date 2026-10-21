@@ -5,6 +5,7 @@ import (
 
 	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/apitoken"
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
@@ -42,6 +43,7 @@ func register(app *gofr.App) error {
 	sessions := auth.NewSessions(app.GetSQL(), authConfig)
 	tokens := apitoken.NewStore(app.GetSQL())
 	resolver := access.NewResolver(access.NewGrants(app.GetSQL()), authConfig.BootstrapAdmins)
+	auditLog := audit.NewLog(app.GetSQL())
 
 	app.OnStart(apitoken.SeedSCIMToken(tokens, scimToken))
 
@@ -57,7 +59,7 @@ func register(app *gofr.App) error {
 	routes.GET("/api/v1/config", httpx.Public(), configHandler(Config{
 		Name: app.Config.GetOrDefault("GOLDPORT_NAME", "GoldPort"),
 	}))
-	auth.NewService(authConfig, provider, sessions, directoryStore).Register(routes)
+	auth.NewService(authConfig, provider, sessions, directoryStore, auditLog).Register(routes)
 
 	return nil
 }

@@ -93,7 +93,7 @@ func TestMeReturnsTheUserAndTheirGroups(t *testing.T) {
 	users := aliceDirectory()
 	sessions := newMemorySessions(users)
 	sessions.userByToken["live"] = "u-1"
-	service := NewService(Config{Cookies: testCookies}, nil, sessions, users)
+	service := NewService(Config{Cookies: testCookies}, nil, sessions, users, &memoryAudit{})
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	request.AddCookie(&http.Cookie{Name: testCookies.Session, Value: "live"})
 	recorder := httptest.NewRecorder()

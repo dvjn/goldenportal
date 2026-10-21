@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"gofr.dev/pkg/gofr/container"
 )
@@ -26,6 +27,10 @@ type Principal struct {
 
 func (p Principal) Can(permission access.Permission) bool {
 	return p.Access.Role.Can(permission)
+}
+
+func (p Principal) Actor() audit.Actor {
+	return audit.Actor{UserID: p.User.ID, Label: p.User.Email}
 }
 
 type Sessions struct {
