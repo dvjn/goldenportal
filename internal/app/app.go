@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/admin"
 	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
+	"github.com/dvjn/goldport/internal/catalog"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/scim"
@@ -71,6 +73,8 @@ func register(app *gofr.App) error {
 		SessionIdleTimeout: authConfig.SessionIdleTimeout,
 		BootstrapAdmins:    authConfig.BootstrapAdmins,
 	}, grants, directoryStore, tokens, sessions, auditLog).Register(routes)
+	catalogStore := catalog.NewStore(app.GetSQL())
+	catalog.NewService(catalogStore, auditLog, time.Now).Register(routes)
 
 	return nil
 }

@@ -17,8 +17,14 @@ type Impact struct {
 	DroppedLinks    []FieldImpact `json:"dropped_links"`
 }
 
-func (i Impact) Empty() bool {
-	return len(i.DeletedEntities) == 0 && len(i.ClearedValues) == 0 && len(i.DroppedLinks) == 0
+// MarshalJSON writes an effect without entities as an empty list.
+func (i Impact) MarshalJSON() ([]byte, error) {
+	type plain Impact
+	return json.Marshal(plain{
+		DeletedEntities: nonNil(i.DeletedEntities),
+		ClearedValues:   nonNil(i.ClearedValues),
+		DroppedLinks:    nonNil(i.DroppedLinks),
+	})
 }
 
 // EntityGroup is the entities deleted because their blueprint or their
@@ -84,7 +90,7 @@ type measured struct {
 }
 
 func measure(q querier, effects definition.Effects) (measured, error) {
-	result := measured{impact: Impact{DeletedEntities: []EntityGroup{}, ClearedValues: []FieldImpact{}, DroppedLinks: []FieldImpact{}}, invalid: map[definition.Field][]string{}}
+	result := measured{invalid: map[definition.Field][]string{}}
 	for _, blueprint := range effects.RemovedBlueprints {
 		count, examples, err := names(q, queryBlueprintEntities, blueprint, impactExamples)
 		if err != nil {

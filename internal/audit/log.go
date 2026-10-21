@@ -1,4 +1,5 @@
-// Package audit keeps the log of who signed in and who changed access.
+// Package audit keeps the log of who signed in, who changed access, and who
+// changed the catalog's definitions and entities.
 package audit
 
 import (
@@ -23,6 +24,9 @@ const (
 	SCIMTokenRotated Action = "scim_token.rotated"
 	APITokenCreated  Action = "api_token.created"
 	APITokenRevoked  Action = "api_token.revoked"
+
+	DefinitionsApplied    Action = "definitions.applied"
+	DefinitionsRolledBack Action = "definitions.rolled_back"
 )
 
 // Actor is who did it. UserID is empty for API tokens and for people who
