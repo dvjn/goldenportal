@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { navigateAway } from "@/lib/navigation";
-import { signedIn, stubApi } from "@/test/api";
+import { cara, signedIn, signedInAs, stubApi } from "@/test/api";
 import { renderRoute } from "@/test/render";
 import { initials } from "./nav-user";
 
@@ -28,11 +28,11 @@ afterEach(() => {
   vi.mocked(navigateAway).mockClear();
 });
 
-async function openUserMenu() {
+async function openUserMenu(initialsShown = "AA") {
   const user = userEvent.setup();
   renderRoute("/");
   const trigger = await screen.findByRole("button", { name: /Open the user menu/ });
-  expect(await within(trigger).findByText("AA")).toBeInTheDocument();
+  expect(await within(trigger).findByText(initialsShown)).toBeInTheDocument();
   await user.click(trigger);
 
   return user;
@@ -53,6 +53,25 @@ describe("NavUser", () => {
 
     const label = await screen.findByText("alice@example.test");
     expect(label.parentElement).toHaveTextContent("Alice Archer");
+  });
+
+  it("gives an admin the administration links", async () => {
+    await openUserMenu();
+
+    expect(await screen.findByText("Administration")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "System settings" })).toHaveAttribute(
+      "href",
+      "/settings/general",
+    );
+  });
+
+  it("shows no administration links to a member", async () => {
+    stubApi(signedInAs(cara));
+    await openUserMenu("CC");
+
+    expect(await screen.findByRole("menuitem", { name: "Sign out" })).toBeInTheDocument();
+    expect(screen.queryByText("Administration")).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "System settings" })).not.toBeInTheDocument();
   });
 
   it("follows the system theme until a theme is chosen, then stores it", async () => {

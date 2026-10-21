@@ -1,10 +1,12 @@
-import { LogOut, SunMoon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { LogOut, Settings, SunMoon } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -15,7 +17,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useLogout, useMe } from "@/features/auth";
+import { useCan, useLogout, useMe } from "@/features/auth";
 
 type Theme = ReturnType<typeof useTheme>["theme"];
 
@@ -37,6 +39,7 @@ export function NavUser() {
   const { user } = useMe();
   const { theme, setTheme } = useTheme();
   const logout = useLogout();
+  const can = useCan();
   const avatar = (
     <Avatar>
       <AvatarFallback>{initials(user.name, user.email)}</AvatarFallback>
@@ -81,6 +84,20 @@ export function NavUser() {
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
+        {can("settings.read") && (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Administration</DropdownMenuLabel>
+              <DropdownMenuItem asChild>
+                <Link to="/settings/general">
+                  <Settings />
+                  System settings
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem disabled={logout.isPending} onSelect={() => logout.mutate()}>
           <LogOut />
           Sign out

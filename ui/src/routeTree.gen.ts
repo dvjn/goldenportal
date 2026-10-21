@@ -12,6 +12,9 @@ import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AuthenticatedRouteImport } from "./routes/_authenticated";
 import { Route as NotProvisionedRouteImport } from "./routes/not-provisioned";
 import { Route as AuthenticatedIndexRouteImport } from "./routes/_authenticated/index";
+import { Route as AuthenticatedSettingsRouteImport } from "./routes/_authenticated/settings";
+import { Route as AuthenticatedSettingsIndexRouteImport } from "./routes/_authenticated/settings/index";
+import { Route as AuthenticatedSettingsGeneralRouteImport } from "./routes/_authenticated/settings/general";
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: "/_authenticated",
@@ -27,27 +30,60 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: "/",
   getParentRoute: () => AuthenticatedRoute,
 } as any);
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: "/settings",
+  path: "/settings",
+  getParentRoute: () => AuthenticatedRoute,
+} as any);
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: "/",
+    path: "/",
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any);
+const AuthenticatedSettingsGeneralRoute =
+  AuthenticatedSettingsGeneralRouteImport.update({
+    id: "/general",
+    path: "/general",
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof AuthenticatedIndexRoute;
   "/not-provisioned": typeof NotProvisionedRoute;
+  "/settings": typeof AuthenticatedSettingsRouteWithChildren;
+  "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/settings/": typeof AuthenticatedSettingsIndexRoute;
 }
 export interface FileRoutesByTo {
   "/not-provisioned": typeof NotProvisionedRoute;
   "/": typeof AuthenticatedIndexRoute;
+  "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/settings": typeof AuthenticatedSettingsIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/_authenticated": typeof AuthenticatedRouteWithChildren;
   "/not-provisioned": typeof NotProvisionedRoute;
+  "/_authenticated/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/_authenticated/": typeof AuthenticatedIndexRoute;
+  "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/not-provisioned";
+  fullPaths:
+    "/" | "/not-provisioned" | "/settings" | "/settings/general" | "/settings/";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/not-provisioned" | "/";
-  id: "__root__" | "/_authenticated" | "/not-provisioned" | "/_authenticated/";
+  to: "/not-provisioned" | "/" | "/settings/general" | "/settings";
+  id:
+    | "__root__"
+    | "/_authenticated"
+    | "/not-provisioned"
+    | "/_authenticated/settings"
+    | "/_authenticated/"
+    | "/_authenticated/settings/general"
+    | "/_authenticated/settings/";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -78,14 +114,52 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    "/_authenticated/settings": {
+      id: "/_authenticated/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
+    "/_authenticated/settings/": {
+      id: "/_authenticated/settings/";
+      path: "/";
+      fullPath: "/settings/";
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport;
+      parentRoute: typeof AuthenticatedSettingsRoute;
+    };
+    "/_authenticated/settings/general": {
+      id: "/_authenticated/settings/general";
+      path: "/general";
+      fullPath: "/settings/general";
+      preLoaderRoute: typeof AuthenticatedSettingsGeneralRouteImport;
+      parentRoute: typeof AuthenticatedSettingsRoute;
+    };
   }
 }
 
+interface AuthenticatedSettingsRouteChildren {
+  AuthenticatedSettingsGeneralRoute: typeof AuthenticatedSettingsGeneralRoute;
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute;
+}
+
+const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
+  AuthenticatedSettingsGeneralRoute: AuthenticatedSettingsGeneralRoute,
+  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+};
+
+const AuthenticatedSettingsRouteWithChildren =
+  AuthenticatedSettingsRoute._addFileChildren(
+    AuthenticatedSettingsRouteChildren,
+  );
+
 interface AuthenticatedRouteChildren {
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren;
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute;
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 };
 

@@ -1,8 +1,24 @@
 import { type ApiDataResponse, api } from "@/lib/api";
 
+export type Role = "member" | "maintainer" | "admin";
+
+export type Permission =
+  | "settings.read"
+  | "access.read"
+  | "access.write"
+  | "audit.read"
+  | "catalog.read"
+  | "catalog.write"
+  | "catalog.model"
+  | "integrations.sync"
+  | "integrations.tokens";
+
 export type Me = {
   user: { id: string; email: string; name: string };
   groups: { id: string; name: string }[];
+  role: Role;
+  permissions: Permission[];
+  bootstrap: boolean;
 };
 
 export type Logout = {
