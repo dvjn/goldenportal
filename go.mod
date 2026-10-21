@@ -1,6 +1,6 @@
 module github.com/dvjn/goldport
 
-go 1.26.0
+go 1.27.3
 
 require gofr.dev v1.56.6
 
