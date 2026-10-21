@@ -1,3 +1,4 @@
+import { HTTPError } from "ky";
 import { type ApiDataResponse, api } from "@/lib/api";
 
 export type PropertyType = "string" | "number" | "boolean" | "array" | "object";
@@ -166,4 +167,13 @@ export async function updateEntity(blueprint: string, entity: EntityInput): Prom
 
 export async function deleteEntity(blueprint: string, identifier: string) {
   await api.delete(entityPath(blueprint, identifier));
+}
+
+type FieldsErrorBody = { error?: { fields?: Record<string, string> } };
+
+// fieldErrors returns the problems the API found with each field of an entity,
+// by identifier, title, properties.<key> or relations.<key>.
+export function fieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof HTTPError)) return {};
+  return (error.data as FieldsErrorBody | undefined)?.error?.fields ?? {};
 }

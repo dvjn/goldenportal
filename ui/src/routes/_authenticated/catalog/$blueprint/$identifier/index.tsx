@@ -1,11 +1,27 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useCan } from "@/features/auth";
 import {
   BlueprintIcon,
+  type Entity,
   type EntityName,
   IntegrationBadge,
   PropertyValue,
   useBlueprint,
+  useDeleteEntity,
   useEntity,
 } from "@/features/catalog";
 import { formatDateTime, formatRelative } from "@/lib/time";
@@ -33,6 +49,7 @@ function EntityPage() {
             <IntegrationBadge integration={entity.integration} />
           </p>
         </div>
+        <EntityActions entity={entity} />
       </header>
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -106,5 +123,80 @@ function EntityLinks({ entities }: { entities: EntityName[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function EntityActions({ entity }: { entity: Entity }) {
+  const can = useCan();
+
+  if (!can("catalog.write")) return null;
+  if (!entity.integration.manual) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex gap-2">
+            <Button variant="outline" disabled>
+              Edit
+            </Button>
+            <Button variant="outline" disabled>
+              Delete
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>Managed by the {entity.integration.title} integration</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <div className="flex gap-2">
+      <Button variant="outline" asChild>
+        <Link
+          to="/catalog/$blueprint/$identifier/edit"
+          params={{ blueprint: entity.blueprint, identifier: entity.identifier }}
+        >
+          Edit
+        </Link>
+      </Button>
+      <DeleteEntity entity={entity} />
+    </div>
+  );
+}
+
+function DeleteEntity({ entity }: { entity: Entity }) {
+  const remove = useDeleteEntity(entity.blueprint);
+  const navigate = useNavigate();
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline">Delete</Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {entity.title}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The entity and its links to and from other entities go away. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {remove.isError && <p className="text-destructive text-sm">{remove.error.message}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={remove.isPending}
+            onClick={(event) => {
+              event.preventDefault();
+              remove.mutate(entity.identifier, {
+                onSuccess: () =>
+                  navigate({ to: "/catalog/$blueprint", params: { blueprint: entity.blueprint } }),
+              });
+            }}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

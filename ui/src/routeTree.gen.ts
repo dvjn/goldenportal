@@ -21,7 +21,9 @@ import { Route as AuthenticatedSettingsAuditRouteImport } from "./routes/_authen
 import { Route as AuthenticatedSettingsGeneralRouteImport } from "./routes/_authenticated/settings/general";
 import { Route as AuthenticatedCatalogBlueprintIndexRouteImport } from "./routes/_authenticated/catalog/$blueprint/index";
 import { Route as AuthenticatedCatalogBlueprintIdentifierRouteImport } from "./routes/_authenticated/catalog/$blueprint/$identifier";
+import { Route as AuthenticatedCatalogBlueprintNewRouteImport } from "./routes/_authenticated/catalog/$blueprint/new";
 import { Route as AuthenticatedCatalogBlueprintIdentifierIndexRouteImport } from "./routes/_authenticated/catalog/$blueprint/$identifier/index";
+import { Route as AuthenticatedCatalogBlueprintIdentifierEditRouteImport } from "./routes/_authenticated/catalog/$blueprint/$identifier/edit";
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: "/_authenticated",
@@ -90,10 +92,22 @@ const AuthenticatedCatalogBlueprintIdentifierRoute =
     path: "/$identifier",
     getParentRoute: () => AuthenticatedCatalogBlueprintRoute,
   } as any);
+const AuthenticatedCatalogBlueprintNewRoute =
+  AuthenticatedCatalogBlueprintNewRouteImport.update({
+    id: "/new",
+    path: "/new",
+    getParentRoute: () => AuthenticatedCatalogBlueprintRoute,
+  } as any);
 const AuthenticatedCatalogBlueprintIdentifierIndexRoute =
   AuthenticatedCatalogBlueprintIdentifierIndexRouteImport.update({
     id: "/",
     path: "/",
+    getParentRoute: () => AuthenticatedCatalogBlueprintIdentifierRoute,
+  } as any);
+const AuthenticatedCatalogBlueprintIdentifierEditRoute =
+  AuthenticatedCatalogBlueprintIdentifierEditRouteImport.update({
+    id: "/edit",
+    path: "/edit",
     getParentRoute: () => AuthenticatedCatalogBlueprintIdentifierRoute,
   } as any);
 
@@ -108,7 +122,9 @@ export interface FileRoutesByFullPath {
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings/": typeof AuthenticatedSettingsIndexRoute;
   "/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
+  "/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
   "/catalog/$blueprint/": typeof AuthenticatedCatalogBlueprintIndexRoute;
+  "/catalog/$blueprint/$identifier/edit": typeof AuthenticatedCatalogBlueprintIdentifierEditRoute;
   "/catalog/$blueprint/$identifier/": typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
 }
 export interface FileRoutesByTo {
@@ -119,7 +135,9 @@ export interface FileRoutesByTo {
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings": typeof AuthenticatedSettingsIndexRoute;
+  "/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
   "/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintIndexRoute;
+  "/catalog/$blueprint/$identifier/edit": typeof AuthenticatedCatalogBlueprintIdentifierEditRoute;
   "/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
 }
 export interface FileRoutesById {
@@ -135,7 +153,9 @@ export interface FileRoutesById {
   "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
   "/_authenticated/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
+  "/_authenticated/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
   "/_authenticated/catalog/$blueprint/": typeof AuthenticatedCatalogBlueprintIndexRoute;
+  "/_authenticated/catalog/$blueprint/$identifier/edit": typeof AuthenticatedCatalogBlueprintIdentifierEditRoute;
   "/_authenticated/catalog/$blueprint/$identifier/": typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
 }
 export interface FileRouteTypes {
@@ -151,7 +171,9 @@ export interface FileRouteTypes {
     | "/settings/general"
     | "/settings/"
     | "/catalog/$blueprint/$identifier"
+    | "/catalog/$blueprint/new"
     | "/catalog/$blueprint/"
+    | "/catalog/$blueprint/$identifier/edit"
     | "/catalog/$blueprint/$identifier/";
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -162,7 +184,9 @@ export interface FileRouteTypes {
     | "/settings/audit"
     | "/settings/general"
     | "/settings"
+    | "/catalog/$blueprint/new"
     | "/catalog/$blueprint"
+    | "/catalog/$blueprint/$identifier/edit"
     | "/catalog/$blueprint/$identifier";
   id:
     | "__root__"
@@ -177,7 +201,9 @@ export interface FileRouteTypes {
     | "/_authenticated/settings/general"
     | "/_authenticated/settings/"
     | "/_authenticated/catalog/$blueprint/$identifier"
+    | "/_authenticated/catalog/$blueprint/new"
     | "/_authenticated/catalog/$blueprint/"
+    | "/_authenticated/catalog/$blueprint/$identifier/edit"
     | "/_authenticated/catalog/$blueprint/$identifier/";
   fileRoutesById: FileRoutesById;
 }
@@ -272,11 +298,25 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedCatalogBlueprintIdentifierRouteImport;
       parentRoute: typeof AuthenticatedCatalogBlueprintRoute;
     };
+    "/_authenticated/catalog/$blueprint/new": {
+      id: "/_authenticated/catalog/$blueprint/new";
+      path: "/new";
+      fullPath: "/catalog/$blueprint/new";
+      preLoaderRoute: typeof AuthenticatedCatalogBlueprintNewRouteImport;
+      parentRoute: typeof AuthenticatedCatalogBlueprintRoute;
+    };
     "/_authenticated/catalog/$blueprint/$identifier/": {
       id: "/_authenticated/catalog/$blueprint/$identifier/";
       path: "/";
       fullPath: "/catalog/$blueprint/$identifier/";
       preLoaderRoute: typeof AuthenticatedCatalogBlueprintIdentifierIndexRouteImport;
+      parentRoute: typeof AuthenticatedCatalogBlueprintIdentifierRoute;
+    };
+    "/_authenticated/catalog/$blueprint/$identifier/edit": {
+      id: "/_authenticated/catalog/$blueprint/$identifier/edit";
+      path: "/edit";
+      fullPath: "/catalog/$blueprint/$identifier/edit";
+      preLoaderRoute: typeof AuthenticatedCatalogBlueprintIdentifierEditRouteImport;
       parentRoute: typeof AuthenticatedCatalogBlueprintIdentifierRoute;
     };
   }
@@ -304,11 +344,14 @@ const AuthenticatedSettingsRouteWithChildren =
   );
 
 interface AuthenticatedCatalogBlueprintIdentifierRouteChildren {
+  AuthenticatedCatalogBlueprintIdentifierEditRoute: typeof AuthenticatedCatalogBlueprintIdentifierEditRoute;
   AuthenticatedCatalogBlueprintIdentifierIndexRoute: typeof AuthenticatedCatalogBlueprintIdentifierIndexRoute;
 }
 
 const AuthenticatedCatalogBlueprintIdentifierRouteChildren: AuthenticatedCatalogBlueprintIdentifierRouteChildren =
   {
+    AuthenticatedCatalogBlueprintIdentifierEditRoute:
+      AuthenticatedCatalogBlueprintIdentifierEditRoute,
     AuthenticatedCatalogBlueprintIdentifierIndexRoute:
       AuthenticatedCatalogBlueprintIdentifierIndexRoute,
   };
@@ -320,6 +363,7 @@ const AuthenticatedCatalogBlueprintIdentifierRouteWithChildren =
 
 interface AuthenticatedCatalogBlueprintRouteChildren {
   AuthenticatedCatalogBlueprintIdentifierRoute: typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
+  AuthenticatedCatalogBlueprintNewRoute: typeof AuthenticatedCatalogBlueprintNewRoute;
   AuthenticatedCatalogBlueprintIndexRoute: typeof AuthenticatedCatalogBlueprintIndexRoute;
 }
 
@@ -327,6 +371,8 @@ const AuthenticatedCatalogBlueprintRouteChildren: AuthenticatedCatalogBlueprintR
   {
     AuthenticatedCatalogBlueprintIdentifierRoute:
       AuthenticatedCatalogBlueprintIdentifierRouteWithChildren,
+    AuthenticatedCatalogBlueprintNewRoute:
+      AuthenticatedCatalogBlueprintNewRoute,
     AuthenticatedCatalogBlueprintIndexRoute:
       AuthenticatedCatalogBlueprintIndexRoute,
   };

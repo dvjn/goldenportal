@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { signedIn, stubApi } from "@/test/api";
+import { cara, signedIn, signedInAs, stubApi } from "@/test/api";
 import { catalogApi } from "@/test/catalog";
 import { renderRoute } from "@/test/render";
 
@@ -50,5 +50,20 @@ describe("entity list", () => {
       expect(entityRequests(fetchMock).at(-1)?.searchParams.get("q")).toBe("pay"),
     );
     expect(entityRequests(fetchMock).at(-1)?.searchParams.get("offset")).toBe("0");
+  });
+
+  it("offers New entity only to those who can write the catalog", async () => {
+    stubApi({ ...signedIn, ...catalogApi });
+    const { unmount } = renderRoute("/catalog/service");
+    expect(await screen.findByRole("link", { name: "New entity" })).toHaveAttribute(
+      "href",
+      "/catalog/service/new",
+    );
+    unmount();
+
+    stubApi({ ...signedInAs(cara), ...catalogApi });
+    renderRoute("/catalog/service");
+    await screen.findByRole("link", { name: "Ledger" });
+    expect(screen.queryByRole("link", { name: "New entity" })).not.toBeInTheDocument();
   });
 });

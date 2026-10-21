@@ -1,11 +1,15 @@
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import {
   catalogKeys,
+  createEntity,
+  deleteEntity,
+  type EntityInput,
   type EntitySearch,
   getBlueprint,
   getBlueprints,
   getEntities,
   getEntity,
+  updateEntity,
 } from "./api";
 
 export const blueprintsQueryOptions = queryOptions({
@@ -45,4 +49,21 @@ export function useEntities(blueprint: string, search: EntitySearch) {
 
 export function useEntity(blueprint: string, identifier: string) {
   return useSuspenseQuery(entityQueryOptions(blueprint, identifier)).data;
+}
+
+export function useSaveEntity(blueprint: string, existing: boolean) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (entity: EntityInput) =>
+      existing ? updateEntity(blueprint, entity) : createEntity(blueprint, entity),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: catalogKeys.all }),
+  });
+}
+
+export function useDeleteEntity(blueprint: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (identifier: string) => deleteEntity(blueprint, identifier),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: catalogKeys.all }),
+  });
 }

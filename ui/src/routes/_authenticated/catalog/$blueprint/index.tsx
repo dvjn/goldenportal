@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useCan } from "@/features/auth";
 import {
   BlueprintIcon,
   type EntityPage,
@@ -61,6 +62,7 @@ function EntitiesPage() {
   const params = Route.useParams();
   const search = entitySearch(Route.useSearch());
   const blueprint = useBlueprint(params.blueprint);
+  const can = useCan();
   const page = useEntities(params.blueprint, search);
   const columns = blueprint.columns.flatMap((key) =>
     blueprint.properties.filter((property) => property.key === key),
@@ -80,6 +82,13 @@ function EntitiesPage() {
             <p className="text-muted-foreground text-sm">{blueprint.description}</p>
           )}
         </div>
+        {can("catalog.write") && (
+          <Button asChild>
+            <Link to="/catalog/$blueprint/new" params={params}>
+              New entity
+            </Link>
+          </Button>
+        )}
       </header>
       <div className="flex flex-col gap-2 sm:flex-row">
         <SearchInput />
