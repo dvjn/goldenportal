@@ -1,0 +1,6 @@
+.env
+mise.local.toml
+.local/
+*.out
+coverage.txt
+/goldport
