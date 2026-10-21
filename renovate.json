@@ -1,0 +1,93 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests",
+    ":disableRateLimiting"
+  ],
+  "dependencyDashboard": true,
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "packageRules": [
+    {
+      "groupName": "github actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ]
+    },
+    {
+      "groupName": "go toolchain",
+      "matchDepNames": [
+        "go"
+      ]
+    },
+    {
+      "groupName": "go tools",
+      "matchDepNames": [
+        "go:github.com/air-verse/air",
+        "go:mvdan.cc/gofumpt"
+      ]
+    },
+    {
+      "groupName": "node toolchain",
+      "matchDepNames": [
+        "node",
+        "pnpm",
+        "npm:pnpm"
+      ]
+    },
+    {
+      "groupName": "vite-plus",
+      "matchPackageNames": [
+        "vite-plus",
+        "@voidzero-dev/vite-plus-core",
+        "@voidzero-dev/vite-plus-test",
+        "@vitest/coverage-v8"
+      ]
+    },
+    {
+      "groupName": "react",
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom"
+      ]
+    },
+    {
+      "groupName": "tanstack",
+      "matchPackageNames": [
+        "@tanstack/**"
+      ]
+    },
+    {
+      "groupName": "tailwind",
+      "matchPackageNames": [
+        "tailwindcss",
+        "@tailwindcss/**",
+        "tailwind-merge",
+        "tw-animate-css"
+      ]
+    },
+    {
+      "groupName": "testing library",
+      "matchPackageNames": [
+        "@testing-library/**",
+        "jsdom"
+      ]
+    },
+    {
+      "groupName": "fontsource",
+      "matchPackageNames": [
+        "@fontsource-variable/**"
+      ]
+    }
+  ]
+}
