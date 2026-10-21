@@ -4,6 +4,10 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
+const apiProxy = {
+  target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",
+};
+
 export default defineConfig({
   plugins: [
     tanstackRouter({
@@ -29,9 +33,8 @@ export default defineConfig({
     port: 47273,
     strictPort: true,
     proxy: {
-      "/api": {
-        target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",
-      },
+      "/api": apiProxy,
+      "/scim": apiProxy,
     },
   },
   test: {

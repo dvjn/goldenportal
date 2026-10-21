@@ -40,7 +40,7 @@ depends = ["dist"]
 run = "podman build --platform linux/amd64,linux/arm64 --manifest goldport:local ."
 
 [tasks."ui:dev"]
-description = "Run the Vite dev server on port 47273, proxying /api to the API"
+description = "Run the Vite dev server on port 47273, proxying /api and /scim to the API"
 dir = "ui"
 run = "pnpm install --frozen-lockfile && pnpm dev"
 
