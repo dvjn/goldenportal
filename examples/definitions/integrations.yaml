@@ -1,0 +1,45 @@
+kind: Integration
+identifier: ci
+title: CI
+description: Acme's pipelines push the services they deploy
+connector: push
+mappings:
+  - kind: service
+    blueprint: service
+    identifier: .name
+    title: .display_name // .name
+    properties:
+      language: .language
+      tier: .tier | tostring
+      lifecycle: '"production"'
+    relations:
+      owner: .team
+      repositories: '[.repository]'
+---
+kind: Integration
+identifier: gitlab
+title: GitLab
+description: Repositories from Acme's GitLab group
+connector: gitlab
+interval: 1h
+config:
+  url: https://gitlab.example.test
+  group: acme
+secrets:
+  token:
+    secretRef: GITLAB_TOKEN
+mappings:
+  - kind: project
+    blueprint: repository
+    identifier: .path_with_namespace | gsub("/"; ".")
+    title: .name
+    properties:
+      url: .web_url
+      defaultBranch: .default_branch
+      visibility: .visibility
+      archived: .archived
+      stars: .star_count
+      lastActivity: .last_activity_at
+      topics: .topics
+    relations:
+      owner: .namespace.path

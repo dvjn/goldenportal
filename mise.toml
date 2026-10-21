@@ -110,7 +110,7 @@ description = "Format Go source files"
 run = "gofumpt -w cmd internal migrations"
 
 [tasks.lint]
-description = "Check Go formatting, run go vet, and run the UI checks"
+description = "Check Go formatting, run go vet, validate the example definitions, and run the UI checks"
 depends = ["ui:check"]
 run = '''
 set -eu
@@ -121,6 +121,7 @@ if [ -n "$unformatted" ]; then
   exit 1
 fi
 go vet ./...
+go run ./cmd/goldport validate -f examples/definitions
 '''
 
 [tasks.test]

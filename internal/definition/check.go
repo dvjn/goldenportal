@@ -23,11 +23,10 @@ type Problem struct {
 	segments []string
 }
 
+// String names the document and the field, leaving out the line, which
+// only means something next to the source's name.
 func (p Problem) String() string {
 	var where []string
-	if p.Line > 0 {
-		where = append(where, fmt.Sprintf("line %d:%d", p.Line, p.Column))
-	}
 	if p.Kind != "" {
 		where = append(where, Ref{Kind: p.Kind, Identifier: p.Identifier}.String())
 	}

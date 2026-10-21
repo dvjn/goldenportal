@@ -1,0 +1,130 @@
+kind: Blueprint
+identifier: team
+title: Team
+description: A group of people at Acme who own software
+icon: users
+properties:
+  email:
+    title: Email
+    type: string
+    format: email
+  chat:
+    title: Chat channel
+    type: string
+    format: url
+  focus:
+    title: Focus
+    type: string
+    enum:
+      - product
+      - platform
+      - security
+relations:
+  parent:
+    title: Parent team
+    target: team
+    inverseTitle: Sub-teams
+display:
+  columns:
+    - focus
+    - email
+---
+kind: Blueprint
+identifier: service
+title: Service
+description: A deployable service that Acme runs
+icon: server
+properties:
+  language:
+    title: Language
+    type: string
+    enum:
+      - go
+      - typescript
+      - python
+  tier:
+    title: Tier
+    description: How critical the service is, 1 being the most critical
+    type: string
+    enum:
+      - "1"
+      - "2"
+      - "3"
+  lifecycle:
+    title: Lifecycle
+    type: string
+    enum:
+      - experimental
+      - production
+      - deprecated
+  onCall:
+    title: On call
+    type: string
+    format: email
+  launched:
+    title: Launched
+    type: string
+    format: date
+  public:
+    title: Public
+    description: Whether customers reach the service from the internet
+    type: boolean
+relations:
+  owner:
+    title: Owner
+    target: team
+    inverseTitle: Services
+  repositories:
+    title: Repositories
+    target: repository
+    many: true
+    inverseTitle: Services
+  dependsOn:
+    title: Depends on
+    target: service
+    many: true
+    inverseTitle: Used by
+display:
+  columns:
+    - tier
+    - lifecycle
+    - language
+---
+kind: Blueprint
+identifier: repository
+title: Repository
+description: A Git repository on Acme's GitLab
+icon: git-branch
+properties:
+  url:
+    title: URL
+    type: string
+    format: url
+  defaultBranch:
+    title: Default branch
+    type: string
+  visibility:
+    title: Visibility
+    type: string
+    enum:
+      - private
+      - internal
+      - public
+  archived:
+    title: Archived
+    type: boolean
+  stars:
+    title: Stars
+    type: number
+  lastActivity:
+    title: Last activity
+    type: string
+    format: date-time
+  topics:
+    title: Topics
+    type: array
+relations:
+  owner:
+    title: Owner
+    target: team
+    inverseTitle: Repositories
