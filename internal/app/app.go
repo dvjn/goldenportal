@@ -1,16 +1,13 @@
 package app
 
 import (
-	"context"
-
 	"github.com/dvjn/goldport/internal/web"
 	"github.com/dvjn/goldport/migrations"
 	"gofr.dev/pkg/gofr"
 )
 
-func New(_ context.Context) (*Server, error) {
+func New() *gofr.App {
 	app := gofr.New()
-	server := &Server{App: app}
 	app.Migrate(migrations.All())
 
 	app.UseMiddleware(web.SPA(web.Dist()))
@@ -18,5 +15,5 @@ func New(_ context.Context) (*Server, error) {
 		Name: app.Config.GetOrDefault("GOLDPORT_NAME", "GoldPort"),
 	}))
 
-	return server, nil
+	return app
 }
