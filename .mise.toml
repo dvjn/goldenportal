@@ -11,6 +11,7 @@ depends = ["api:dev", "ui:dev"]
 
 [tasks."api:dev"]
 description = "Run the API with hot reload"
+depends = ["deps:up"]
 env = { _.file = "configs/.dev.env" }
 run = "air --build.cmd 'go build -o .local/tmp/goldport ./cmd/goldport' --build.bin .local/tmp/goldport -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,.local' --misc.clean_on_exit true"
 
@@ -34,16 +35,47 @@ description = "Run Biome checks, lint, and UI tests"
 dir = "ui"
 run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
 
+[tasks."deps:up"]
+description = "Start local Postgres"
+env = { _.file = "configs/.dev.env" }
+run = '''
+set -eu
+mkdir -p .local/postgres
+docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d postgres
+
+attempts=0
+until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgres pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; do
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 60 ]; then
+    echo "PostgreSQL did not become healthy within 60 seconds" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+echo "PostgreSQL ready"
+'''
+
+[tasks."deps:down"]
+description = "Stop local Postgres"
+env = { _.file = "configs/.dev.env" }
+run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml down"
+
+[tasks."deps:logs"]
+description = "Follow local dependency logs"
+env = { _.file = "configs/.dev.env" }
+run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml logs -f"
+
 [tasks.fmt]
 description = "Format Go source files"
-run = "gofumpt -w ."
+run = "gofumpt -w cmd internal migrations"
 
 [tasks.lint]
 description = "Check Go formatting, run go vet, and run the UI checks"
 depends = ["ui:check"]
 run = '''
 set -eu
-unformatted="$(gofumpt -l .)"
+unformatted="$(gofumpt -l cmd internal migrations)"
 if [ -n "$unformatted" ]; then
   echo "gofumpt would change:" >&2
   echo "$unformatted" >&2

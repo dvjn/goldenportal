@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18.4-bookworm}
+    container_name: ${POSTGRES_CONTAINER:-goldport-postgres}
+    user: root
+    environment:
+      POSTGRES_USER: ${DB_USER:-goldport}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-goldport-local-dev-password}
+      POSTGRES_DB: ${DB_NAME:-goldport}
+    ports:
+      - "${DB_PORT:-47433}:5432"
+    volumes:
+      - ./.local/postgres:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 3s
+      retries: 20
