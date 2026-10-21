@@ -69,12 +69,23 @@ describe("NavUser", () => {
     );
   });
 
+  it("gives a modeler the definitions link", async () => {
+    await openUserMenu();
+
+    expect(await within(screen.getByRole("menu")).findByText("Catalog")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Definitions" })).toHaveAttribute(
+      "href",
+      "/definitions",
+    );
+  });
+
   it("shows no administration links to a member", async () => {
     stubApi(signedInAs(cara));
     await openUserMenu("CC");
 
     expect(await screen.findByRole("menuitem", { name: "Sign out" })).toBeInTheDocument();
     expect(screen.queryByText("Administration")).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Definitions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "System settings" })).not.toBeInTheDocument();
   });
 

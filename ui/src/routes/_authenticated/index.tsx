@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCan } from "@/features/auth";
 import { BlueprintIcon, blueprintsQueryOptions, useBlueprints } from "@/features/catalog";
 
 export const Route = createFileRoute("/_authenticated/")({
@@ -9,6 +10,7 @@ export const Route = createFileRoute("/_authenticated/")({
 
 function IndexPage() {
   const blueprints = useBlueprints();
+  const can = useCan();
 
   return (
     <>
@@ -19,7 +21,18 @@ function IndexPage() {
         </p>
       </header>
       {blueprints.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No blueprints are defined yet.</p>
+        <p className="text-muted-foreground text-sm">
+          No blueprints are defined yet.
+          {can("catalog.model") && (
+            <>
+              {" "}
+              <Link to="/definitions" className="underline">
+                Define the first one
+              </Link>
+              .
+            </>
+          )}
+        </p>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {blueprints.map((blueprint) => (

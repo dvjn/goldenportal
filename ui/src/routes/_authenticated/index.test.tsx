@@ -29,6 +29,10 @@ describe("Home", () => {
     stubApi(signedIn);
     renderRoute("/");
 
-    expect(await screen.findByText("No blueprints are defined yet.")).toBeInTheDocument();
+    expect(await screen.findByText(/No blueprints are defined yet/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Define the first one" })).toHaveAttribute(
+      "href",
+      "/definitions",
+    );
   });
 });

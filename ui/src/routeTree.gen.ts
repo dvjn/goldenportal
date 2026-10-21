@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AuthenticatedRouteImport } from "./routes/_authenticated";
 import { Route as NotProvisionedRouteImport } from "./routes/not-provisioned";
 import { Route as AuthenticatedIndexRouteImport } from "./routes/_authenticated/index";
+import { Route as AuthenticatedDefinitionsRouteImport } from "./routes/_authenticated/definitions";
 import { Route as AuthenticatedSettingsRouteImport } from "./routes/_authenticated/settings";
 import { Route as AuthenticatedCatalogBlueprintRouteImport } from "./routes/_authenticated/catalog/$blueprint";
+import { Route as AuthenticatedDefinitionsIndexRouteImport } from "./routes/_authenticated/definitions/index";
 import { Route as AuthenticatedSettingsIndexRouteImport } from "./routes/_authenticated/settings/index";
 import { Route as AuthenticatedSettingsAccessRouteImport } from "./routes/_authenticated/settings/access";
 import { Route as AuthenticatedSettingsApiTokensRouteImport } from "./routes/_authenticated/settings/api-tokens";
@@ -39,6 +41,12 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: "/",
   getParentRoute: () => AuthenticatedRoute,
 } as any);
+const AuthenticatedDefinitionsRoute =
+  AuthenticatedDefinitionsRouteImport.update({
+    id: "/definitions",
+    path: "/definitions",
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: "/settings",
   path: "/settings",
@@ -49,6 +57,12 @@ const AuthenticatedCatalogBlueprintRoute =
     id: "/catalog/$blueprint",
     path: "/catalog/$blueprint",
     getParentRoute: () => AuthenticatedRoute,
+  } as any);
+const AuthenticatedDefinitionsIndexRoute =
+  AuthenticatedDefinitionsIndexRouteImport.update({
+    id: "/",
+    path: "/",
+    getParentRoute: () => AuthenticatedDefinitionsRoute,
   } as any);
 const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
@@ -114,12 +128,14 @@ const AuthenticatedCatalogBlueprintIdentifierEditRoute =
 export interface FileRoutesByFullPath {
   "/": typeof AuthenticatedIndexRoute;
   "/not-provisioned": typeof NotProvisionedRoute;
+  "/definitions": typeof AuthenticatedDefinitionsRouteWithChildren;
   "/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintRouteWithChildren;
   "/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/definitions/": typeof AuthenticatedDefinitionsIndexRoute;
   "/settings/": typeof AuthenticatedSettingsIndexRoute;
   "/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
   "/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
@@ -134,6 +150,7 @@ export interface FileRoutesByTo {
   "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/definitions": typeof AuthenticatedDefinitionsIndexRoute;
   "/settings": typeof AuthenticatedSettingsIndexRoute;
   "/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
   "/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintIndexRoute;
@@ -144,6 +161,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/_authenticated": typeof AuthenticatedRouteWithChildren;
   "/not-provisioned": typeof NotProvisionedRoute;
+  "/_authenticated/definitions": typeof AuthenticatedDefinitionsRouteWithChildren;
   "/_authenticated/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/_authenticated/": typeof AuthenticatedIndexRoute;
   "/_authenticated/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintRouteWithChildren;
@@ -151,6 +169,7 @@ export interface FileRoutesById {
   "/_authenticated/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/_authenticated/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/_authenticated/definitions/": typeof AuthenticatedDefinitionsIndexRoute;
   "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
   "/_authenticated/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
   "/_authenticated/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
@@ -163,12 +182,14 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/not-provisioned"
+    | "/definitions"
     | "/settings"
     | "/catalog/$blueprint"
     | "/settings/access"
     | "/settings/api-tokens"
     | "/settings/audit"
     | "/settings/general"
+    | "/definitions/"
     | "/settings/"
     | "/catalog/$blueprint/$identifier"
     | "/catalog/$blueprint/new"
@@ -183,6 +204,7 @@ export interface FileRouteTypes {
     | "/settings/api-tokens"
     | "/settings/audit"
     | "/settings/general"
+    | "/definitions"
     | "/settings"
     | "/catalog/$blueprint/new"
     | "/catalog/$blueprint"
@@ -192,6 +214,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/_authenticated"
     | "/not-provisioned"
+    | "/_authenticated/definitions"
     | "/_authenticated/settings"
     | "/_authenticated/"
     | "/_authenticated/catalog/$blueprint"
@@ -199,6 +222,7 @@ export interface FileRouteTypes {
     | "/_authenticated/settings/api-tokens"
     | "/_authenticated/settings/audit"
     | "/_authenticated/settings/general"
+    | "/_authenticated/definitions/"
     | "/_authenticated/settings/"
     | "/_authenticated/catalog/$blueprint/$identifier"
     | "/_authenticated/catalog/$blueprint/new"
@@ -235,6 +259,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    "/_authenticated/definitions": {
+      id: "/_authenticated/definitions";
+      path: "/definitions";
+      fullPath: "/definitions";
+      preLoaderRoute: typeof AuthenticatedDefinitionsRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
     "/_authenticated/settings": {
       id: "/_authenticated/settings";
       path: "/settings";
@@ -248,6 +279,13 @@ declare module "@tanstack/react-router" {
       fullPath: "/catalog/$blueprint";
       preLoaderRoute: typeof AuthenticatedCatalogBlueprintRouteImport;
       parentRoute: typeof AuthenticatedRoute;
+    };
+    "/_authenticated/definitions/": {
+      id: "/_authenticated/definitions/";
+      path: "/";
+      fullPath: "/definitions/";
+      preLoaderRoute: typeof AuthenticatedDefinitionsIndexRouteImport;
+      parentRoute: typeof AuthenticatedDefinitionsRoute;
     };
     "/_authenticated/settings/": {
       id: "/_authenticated/settings/";
@@ -322,6 +360,20 @@ declare module "@tanstack/react-router" {
   }
 }
 
+interface AuthenticatedDefinitionsRouteChildren {
+  AuthenticatedDefinitionsIndexRoute: typeof AuthenticatedDefinitionsIndexRoute;
+}
+
+const AuthenticatedDefinitionsRouteChildren: AuthenticatedDefinitionsRouteChildren =
+  {
+    AuthenticatedDefinitionsIndexRoute: AuthenticatedDefinitionsIndexRoute,
+  };
+
+const AuthenticatedDefinitionsRouteWithChildren =
+  AuthenticatedDefinitionsRoute._addFileChildren(
+    AuthenticatedDefinitionsRouteChildren,
+  );
+
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAccessRoute: typeof AuthenticatedSettingsAccessRoute;
   AuthenticatedSettingsApiTokensRoute: typeof AuthenticatedSettingsApiTokensRoute;
@@ -383,12 +435,14 @@ const AuthenticatedCatalogBlueprintRouteWithChildren =
   );
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedDefinitionsRoute: typeof AuthenticatedDefinitionsRouteWithChildren;
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren;
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute;
   AuthenticatedCatalogBlueprintRoute: typeof AuthenticatedCatalogBlueprintRouteWithChildren;
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedDefinitionsRoute: AuthenticatedDefinitionsRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedCatalogBlueprintRoute:
