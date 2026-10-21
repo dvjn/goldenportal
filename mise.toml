@@ -106,3 +106,6 @@ go vet ./...
 [tasks.test]
 description = "Run Go tests"
 run = "go test ./..."
+
+[settings]
+task.output = "interleave"
