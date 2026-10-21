@@ -20,6 +20,23 @@ description = "Build the UI, then the goldport binary that embeds it"
 depends = ["ui:build"]
 run = "go build ./cmd/goldport"
 
+[tasks.dist]
+description = "Build the UI, then cross-compile the release binaries into dist/<arch>/goldport"
+depends = ["ui:build"]
+env = { CGO_ENABLED = "0", GOOS = "linux" }
+run = '''
+set -eu
+rm -rf dist
+for arch in amd64 arm64; do
+  GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/$arch/goldport" ./cmd/goldport
+done
+'''
+
+[tasks.image]
+description = "Build the container image for both architectures"
+depends = ["dist"]
+run = "podman build --platform linux/amd64,linux/arm64 --manifest goldport:local ."
+
 [tasks."ui:dev"]
 description = "Run the Vite dev server on port 47273, proxying /api to the API"
 dir = "ui"

@@ -4,6 +4,7 @@ mise.local.toml
 *.out
 coverage.txt
 /goldport
+/dist
 ui/node_modules
 ui/coverage
 ui/dist-ssr
