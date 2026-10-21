@@ -3,18 +3,28 @@ package auth
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"gofr.dev/pkg/gofr/config"
 )
 
 type Config struct {
+	PublicURL          string
+	IssuerURL          string
+	ClientID           string
+	ClientSecret       string
 	SessionMaxAge      time.Duration
 	SessionIdleTimeout time.Duration
 	Cookies            Cookies
 }
 
+// LoadConfig reads the auth settings. A missing client secret makes the
+// portal a public client, which PKCE protects.
 func LoadConfig(source config.Config) (Config, error) {
+	if err := requireSettings(source, "GOLDPORT_PUBLIC_URL", "GOLDPORT_OIDC_ISSUER_URL", "GOLDPORT_OIDC_CLIENT_ID"); err != nil {
+		return Config{}, err
+	}
 	maxAge, err := duration(source, "GOLDPORT_SESSION_MAX_AGE", "12h")
 	if err != nil {
 		return Config{}, err
@@ -25,10 +35,28 @@ func LoadConfig(source config.Config) (Config, error) {
 	}
 
 	return Config{
+		PublicURL:          strings.TrimSuffix(source.Get("GOLDPORT_PUBLIC_URL"), "/"),
+		IssuerURL:          source.Get("GOLDPORT_OIDC_ISSUER_URL"),
+		ClientID:           source.Get("GOLDPORT_OIDC_CLIENT_ID"),
+		ClientSecret:       source.Get("GOLDPORT_OIDC_CLIENT_SECRET"),
 		SessionMaxAge:      maxAge,
 		SessionIdleTimeout: idleTimeout,
 		Cookies:            CookieNames(source.GetOrDefault("APP_NAME", "goldport")),
 	}, nil
+}
+
+func requireSettings(source config.Config, keys ...string) error {
+	var missing []string
+	for _, key := range keys {
+		if source.Get(key) == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("set the required settings: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
 }
 
 func duration(source config.Config, key, fallback string) (time.Duration, error) {

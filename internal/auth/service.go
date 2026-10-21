@@ -1,0 +1,40 @@
+package auth
+
+import (
+	"context"
+
+	"github.com/dvjn/goldport/internal/directory"
+	"github.com/dvjn/goldport/internal/httpx"
+)
+
+type userDirectory interface {
+	UserByOIDCSubject(ctx context.Context, subject string) (directory.User, error)
+	UserByExternalID(ctx context.Context, externalID string) (directory.User, error)
+	ActiveUserByEmail(ctx context.Context, email string) (directory.User, error)
+	SetOIDCSubject(ctx context.Context, userID, subject string) error
+	GroupsOfUser(ctx context.Context, userID string) ([]directory.Group, error)
+}
+
+type sessionStore interface {
+	Create(ctx context.Context, userID, idToken string) (string, error)
+	Delete(ctx context.Context, id string) (string, error)
+}
+
+type Service struct {
+	config    Config
+	provider  *Provider
+	sessions  sessionStore
+	directory userDirectory
+}
+
+func NewService(config Config, provider *Provider, sessions sessionStore, directory userDirectory) *Service {
+	return &Service{config: config, provider: provider, sessions: sessions, directory: directory}
+}
+
+func (s *Service) Register(routes *httpx.Routes) {
+	routes.GET("/api/v1/auth/login", httpx.Public(), s.login)
+	routes.GET("/api/v1/auth/callback", httpx.Public(), s.callback)
+	routes.GET("/api/v1/auth/signout", httpx.Public(), s.signout)
+	routes.POST("/api/v1/auth/logout", httpx.Authenticated(), s.logout)
+	routes.GET("/api/v1/auth/me", httpx.Authenticated(), s.me)
+}

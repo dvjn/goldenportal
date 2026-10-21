@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,42 +11,22 @@ import (
 
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
-	"github.com/dvjn/goldport/internal/httpx/httpxtest"
 	"gofr.dev/pkg/gofr"
-	"gofr.dev/pkg/gofr/container"
-	"gofr.dev/pkg/gofr/logging"
 )
 
-var testCookies = CookieNames("GoldPort Test")
-
-type fakeSessions struct {
-	byToken map[string]Principal
-	err     error
-}
-
-func (f *fakeSessions) Lookup(_ context.Context, token string) (Principal, error) {
-	if f.err != nil {
-		return Principal{}, f.err
+func aliceDirectory() *memoryDirectory {
+	return &memoryDirectory{
+		users: []directory.User{{
+			ID: "u-1", ExternalID: "sub-alice", UserName: "alice", Email: "alice@example.test", Name: "Alice", Active: true,
+		}},
+		groups: map[string][]directory.Group{"u-1": {
+			{ID: "g-1", DisplayName: "all-engineers"},
+			{ID: "g-2", DisplayName: "platform-team"},
+		}},
 	}
-	principal, ok := f.byToken[token]
-	if !ok {
-		return Principal{}, ErrNoSession
-	}
-
-	return principal, nil
-}
-
-func newTestRouter(sessions sessionFinder, register func(*httpx.Routes)) *httpxtest.Router {
-	router := httpxtest.NewRouter(&container.Container{Logger: logging.NewMockLogger(logging.ERROR)})
-	routes := httpx.NewRoutes(router)
-	register(routes)
-	router.Use(httpx.ExposeRaw, Middleware(routes, sessions, testCookies))
-
-	return router
 }
 
 func TestMiddlewareFailsClosed(t *testing.T) {
-	alice := Principal{User: directory.User{ID: "u-1", Email: "alice@example.test"}, SessionID: "s-1"}
 	whoAmI := func(ctx *gofr.Context) (any, error) {
 		principal, _ := PrincipalFrom(ctx)
 		return principal.User.ID, nil
@@ -75,7 +54,9 @@ func TestMiddlewareFailsClosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sessions := &fakeSessions{byToken: map[string]Principal{"live": alice}, err: tc.failure}
+			sessions := newMemorySessions(aliceDirectory())
+			sessions.userByToken["live"] = "u-1"
+			sessions.err = tc.failure
 			request := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			if tc.cookie != "" {
 				request.AddCookie(&http.Cookie{Name: testCookies.Session, Value: tc.cookie})
@@ -94,23 +75,16 @@ func TestMiddlewareFailsClosed(t *testing.T) {
 	}
 }
 
-type fakeGroups map[string][]directory.Group
-
-func (f fakeGroups) GroupsOfUser(_ context.Context, userID string) ([]directory.Group, error) {
-	return f[userID], nil
-}
-
 func TestMeReturnsTheUserAndTheirGroups(t *testing.T) {
-	alice := Principal{User: directory.User{ID: "u-1", Email: "alice@example.test", Name: "Alice"}, SessionID: "s-1"}
-	service := NewService(Config{Cookies: testCookies}, fakeGroups{"u-1": {
-		{ID: "g-1", DisplayName: "all-engineers"},
-		{ID: "g-2", DisplayName: "platform-team"},
-	}})
+	users := aliceDirectory()
+	sessions := newMemorySessions(users)
+	sessions.userByToken["live"] = "u-1"
+	service := NewService(Config{Cookies: testCookies}, nil, sessions, users)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	request.AddCookie(&http.Cookie{Name: testCookies.Session, Value: "live"})
 	recorder := httptest.NewRecorder()
 
-	newTestRouter(&fakeSessions{byToken: map[string]Principal{"live": alice}}, service.Register).ServeHTTP(recorder, request)
+	newTestRouter(sessions, service.Register).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())

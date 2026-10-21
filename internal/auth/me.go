@@ -1,29 +1,6 @@
 package auth
 
-import (
-	"context"
-
-	"github.com/dvjn/goldport/internal/directory"
-	"github.com/dvjn/goldport/internal/httpx"
-	"gofr.dev/pkg/gofr"
-)
-
-type userDirectory interface {
-	GroupsOfUser(ctx context.Context, userID string) ([]directory.Group, error)
-}
-
-type Service struct {
-	config    Config
-	directory userDirectory
-}
-
-func NewService(config Config, directory userDirectory) *Service {
-	return &Service{config: config, directory: directory}
-}
-
-func (s *Service) Register(routes *httpx.Routes) {
-	routes.GET("/api/v1/auth/me", httpx.Authenticated(), s.me)
-}
+import "gofr.dev/pkg/gofr"
 
 type meResponse struct {
 	User   meUser    `json:"user"`
