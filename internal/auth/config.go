@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvjn/goldport/internal/access"
 	"gofr.dev/pkg/gofr/config"
 )
 
@@ -17,6 +18,7 @@ type Config struct {
 	SessionMaxAge      time.Duration
 	SessionIdleTimeout time.Duration
 	Cookies            Cookies
+	BootstrapAdmins    access.BootstrapAdmins
 }
 
 // LoadConfig reads the auth settings. A missing client secret makes the
@@ -42,6 +44,7 @@ func LoadConfig(source config.Config) (Config, error) {
 		SessionMaxAge:      maxAge,
 		SessionIdleTimeout: idleTimeout,
 		Cookies:            CookieNames(source.GetOrDefault("APP_NAME", "goldport")),
+		BootstrapAdmins:    access.ParseBootstrapAdmins(source.Get("GOLDPORT_BOOTSTRAP_ADMINS")),
 	}, nil
 }
 

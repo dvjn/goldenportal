@@ -162,3 +162,26 @@ func TestGroupsOfUserScansEveryGroup(t *testing.T) {
 		t.Fatalf("GroupsOfUser() = %+v", groups)
 	}
 }
+
+func TestRecordSignInBindsTheSubject(t *testing.T) {
+	store, db := newStore(t)
+	db.ExpectExec(queryRecordSignIn).WithArgs("u-1", "sub-1").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := store.RecordSignIn(context.Background(), "u-1", "sub-1"); err != nil {
+		t.Fatalf("RecordSignIn() error = %v", err)
+	}
+}
+
+func TestCreateUnprovisionedUserCreatesOnlyAnUnknownEmail(t *testing.T) {
+	store, db := newStore(t)
+	db.ExpectQuery(queryCreateUnprovisionedUser).WithArgs("alice@example.test", "Alice").WillReturnRows(aliceRow())
+	db.ExpectQuery(queryCreateUnprovisionedUser).WithArgs("alice@example.test", "Alice").
+		WillReturnRows(sqlmock.NewRows(userColumnNames()))
+
+	if user, err := store.CreateUnprovisionedUser(context.Background(), "alice@example.test", "Alice"); err != nil || user.ID != "u-1" {
+		t.Fatalf("CreateUnprovisionedUser() = %+v, %v", user, err)
+	}
+	if _, err := store.CreateUnprovisionedUser(context.Background(), "alice@example.test", "Alice"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CreateUnprovisionedUser() error = %v, want ErrNotFound for a known email", err)
+	}
+}

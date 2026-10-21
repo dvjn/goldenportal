@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/directory"
@@ -40,6 +41,7 @@ func register(app *gofr.App) error {
 	directoryStore := directory.NewStore(app.GetSQL())
 	sessions := auth.NewSessions(app.GetSQL(), authConfig)
 	tokens := apitoken.NewStore(app.GetSQL())
+	resolver := access.NewResolver(access.NewGrants(app.GetSQL()), authConfig.BootstrapAdmins)
 
 	app.OnStart(apitoken.SeedSCIMToken(tokens, scimToken))
 
@@ -48,7 +50,7 @@ func register(app *gofr.App) error {
 		web.SPA(web.Dist()),
 		httpx.ExposeRaw,
 		auth.CrossOriginProtection(),
-		auth.Middleware(routes, sessions, authConfig.Cookies),
+		auth.Middleware(routes, auth.NewAuthenticator(sessions, resolver, authConfig.Cookies)),
 		scim.NewServer(directoryStore, sessions, tokens, app.Logger()).Middleware(),
 	)
 

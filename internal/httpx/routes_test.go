@@ -57,7 +57,7 @@ func TestRoutesRegistersEveryMethodAndRemembersItsAccess(t *testing.T) {
 	routes.POST("/api/v1/items", Authenticated(), noopHandler)
 	routes.PUT("/api/v1/items/{id}", Authenticated(), noopHandler)
 	routes.PATCH("/api/v1/items/{id}", Authenticated(), noopHandler)
-	routes.DELETE("/api/v1/items/{id}", Authenticated(), noopHandler)
+	routes.DELETE("/api/v1/items/{id}", Requires("items.write"), noopHandler)
 
 	want := []string{
 		"GET /api/v1/items",
@@ -75,18 +75,22 @@ func TestRoutesRegistersEveryMethodAndRemembersItsAccess(t *testing.T) {
 		template        string
 		declared        bool
 		requiresSession bool
+		permission      Permission
 	}{
-		{http.MethodGet, "/api/v1/items", true, false},
-		{http.MethodPost, "/api/v1/items", true, true},
-		{http.MethodDelete, "/api/v1/items/{id}", true, true},
-		{http.MethodDelete, "/api/v1/items", false, false},
-		{http.MethodGet, "/", false, false},
+		{http.MethodGet, "/api/v1/items", true, false, ""},
+		{http.MethodPost, "/api/v1/items", true, true, ""},
+		{http.MethodDelete, "/api/v1/items/{id}", true, true, "items.write"},
+		{http.MethodDelete, "/api/v1/items", false, false, ""},
+		{http.MethodGet, "/", false, false, ""},
 	}
 	for _, tc := range cases {
 		access, ok := routes.Lookup(tc.method, tc.template)
-		if ok != tc.declared || access.RequiresSession() != tc.requiresSession {
-			t.Errorf("Lookup(%s %s) = (session %t, %t), want (session %t, %t)",
-				tc.method, tc.template, access.RequiresSession(), ok, tc.requiresSession, tc.declared)
+		permission, requiresPermission := access.Permission()
+		if ok != tc.declared || access.RequiresSession() != tc.requiresSession ||
+			permission != tc.permission || requiresPermission != (tc.permission != "") {
+			t.Errorf("Lookup(%s %s) = (session %t, permission %q, %t), want (session %t, permission %q, %t)",
+				tc.method, tc.template, access.RequiresSession(), permission, ok,
+				tc.requiresSession, tc.permission, tc.declared)
 		}
 	}
 }

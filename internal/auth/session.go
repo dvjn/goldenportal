@@ -10,16 +10,22 @@ import (
 	"errors"
 	"time"
 
+	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/directory"
 	"gofr.dev/pkg/gofr/container"
 )
 
 var ErrNoSession = errors.New("no session")
 
-// Principal is the signed-in user behind a request.
+// Principal is the signed-in user behind a request and the role they hold.
 type Principal struct {
 	User      directory.User
 	SessionID string
+	Access    access.Resolution
+}
+
+func (p Principal) Can(permission access.Permission) bool {
+	return p.Access.Role.Can(permission)
 }
 
 type Sessions struct {

@@ -11,7 +11,8 @@ type userDirectory interface {
 	UserByOIDCSubject(ctx context.Context, subject string) (directory.User, error)
 	UserByExternalID(ctx context.Context, externalID string) (directory.User, error)
 	ActiveUserByEmail(ctx context.Context, email string) (directory.User, error)
-	SetOIDCSubject(ctx context.Context, userID, subject string) error
+	CreateUnprovisionedUser(ctx context.Context, email, name string) (directory.User, error)
+	RecordSignIn(ctx context.Context, userID, subject string) error
 	GroupsOfUser(ctx context.Context, userID string) ([]directory.Group, error)
 }
 

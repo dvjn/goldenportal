@@ -75,8 +75,14 @@ const (
 	queryUserByOIDCSubject = `SELECT ` + userColumns + ` FROM users WHERE oidc_subject = $1`
 	queryUserByExternalID  = `SELECT ` + userColumns + ` FROM users WHERE external_id = $1`
 	queryActiveUserByEmail = `SELECT ` + userColumns + ` FROM users WHERE active AND email <> '' AND lower(email) = lower($1)`
-	querySetOIDCSubject    = `UPDATE users SET oidc_subject = $2, updated_at = NOW() WHERE id = $1`
-	queryCountUsers        = `SELECT COUNT(*) FROM users
+	queryRecordSignIn      = `UPDATE users
+		SET oidc_subject = $2, last_sign_in_at = NOW(),
+			updated_at = CASE WHEN oidc_subject IS DISTINCT FROM $2 THEN NOW() ELSE updated_at END
+		WHERE id = $1`
+	queryCreateUnprovisionedUser = `INSERT INTO users (user_name, email, name)
+		SELECT $1, $1, $2 WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($1))
+		RETURNING ` + userColumns
+	queryCountUsers = `SELECT COUNT(*) FROM users
 		WHERE ($1 = '' OR user_name = $1) AND ($2 = '' OR external_id = $2)`
 	queryListUsers = `SELECT ` + userColumns + ` FROM users
 		WHERE ($1 = '' OR user_name = $1) AND ($2 = '' OR external_id = $2)
@@ -151,8 +157,16 @@ func (s *Store) ActiveUserByEmail(ctx context.Context, email string) (User, erro
 	return s.user(ctx, queryActiveUserByEmail, email)
 }
 
-func (s *Store) SetOIDCSubject(ctx context.Context, userID, subject string) error {
-	return s.exec(ctx, querySetOIDCSubject, userID, subject)
+// RecordSignIn binds the user to the OIDC subject and records the time.
+func (s *Store) RecordSignIn(ctx context.Context, userID, subject string) error {
+	return s.exec(ctx, queryRecordSignIn, userID, subject)
+}
+
+// CreateUnprovisionedUser creates an active user without an external ID, for
+// SCIM to adopt by email later. It returns ErrNotFound when any user, active
+// or not, already has the email.
+func (s *Store) CreateUnprovisionedUser(ctx context.Context, email, name string) (User, error) {
+	return s.user(ctx, queryCreateUnprovisionedUser, email, name)
 }
 
 func (s *Store) ListUsers(ctx context.Context, filter UserFilter, page Page) ([]User, int, error) {

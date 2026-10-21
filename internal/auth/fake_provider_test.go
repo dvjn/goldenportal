@@ -21,6 +21,7 @@ const fakeProviderKeyID = "test-key"
 type fakeIdentity struct {
 	Subject string
 	Email   string
+	Name    string
 }
 
 type pendingCode struct {
@@ -122,6 +123,7 @@ func (p *fakeProvider) signIDToken(nonce string) string {
 		"aud":   p.clientID,
 		"sub":   p.identity.Subject,
 		"email": p.identity.Email,
+		"name":  p.identity.Name,
 		"nonce": nonce,
 		"iat":   time.Now().Unix(),
 		"exp":   time.Now().Add(time.Hour).Unix(),

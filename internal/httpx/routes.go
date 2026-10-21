@@ -13,14 +13,21 @@ type Permission string
 // Access is the rule a route declares for who may call it. A route that does
 // not declare one is refused.
 type Access struct {
-	session bool
+	session    bool
+	permission Permission
 }
 
 func Public() Access { return Access{} }
 
 func Authenticated() Access { return Access{session: true} }
 
+// Requires lets in a signed-in principal that holds the permission.
+func Requires(permission Permission) Access { return Access{session: true, permission: permission} }
+
 func (a Access) RequiresSession() bool { return a.session }
+
+// Permission returns the permission the route requires, if it requires one.
+func (a Access) Permission() (Permission, bool) { return a.permission, a.permission != "" }
 
 type registrar interface {
 	GET(pattern string, handler gofr.Handler)

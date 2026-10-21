@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/directory"
 )
 
@@ -36,13 +37,14 @@ func newPortal(t *testing.T, identity fakeIdentity, users *memoryDirectory) *por
 		SessionMaxAge:      time.Hour,
 		SessionIdleTimeout: time.Hour,
 		Cookies:            testCookies,
+		BootstrapAdmins:    testBootstrapAdmins,
 	}
 	oidcProvider, err := NewProvider(context.Background(), config)
 	if err != nil {
 		t.Fatalf("NewProvider() error = %v", err)
 	}
 	sessions := newMemorySessions(users)
-	server.Config.Handler = newTestRouter(sessions, NewService(config, oidcProvider, sessions, users).Register)
+	server.Config.Handler = newTestRouter(sessions, nil, NewService(config, oidcProvider, sessions, users).Register)
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -117,15 +119,43 @@ func TestLoginMatchesAUserWithoutAnExternalIDByEmail(t *testing.T) {
 	}
 }
 
+func TestLoginCreatesABootstrapAdminThatSCIMHasNotProvisioned(t *testing.T) {
+	users := aliceDirectory()
+	portal := newPortal(t, fakeIdentity{Subject: "sub-boot", Email: "Boot@example.test", Name: "Boot Strap"}, users)
+
+	landed := portal.get(t, "/api/v1/auth/login")
+
+	if landed.Request.URL.Path != "/" {
+		t.Fatalf("landed on %s, want /", landed.Request.URL)
+	}
+	created := users.users[len(users.users)-1]
+	if created.Email != "Boot@example.test" || created.Name != "Boot Strap" || created.ExternalID != "" || created.OIDCSubject != "sub-boot" {
+		t.Fatalf("created user = %+v", created)
+	}
+
+	me := portal.get(t, "/api/v1/auth/me")
+	var body struct {
+		Data meResponse `json:"data"`
+	}
+	if err := json.NewDecoder(me.Body).Decode(&body); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if body.Data.Role != access.Admin || !body.Data.Bootstrap {
+		t.Fatalf("me = %+v, want the bootstrap Admin", body.Data)
+	}
+}
+
 func TestLoginSendsUnprovisionedUsersToTheNotProvisionedPage(t *testing.T) {
 	inactive := aliceDirectory()
 	inactive.users[0].Active = false
+	inactiveBootstrap := &memoryDirectory{users: []directory.User{{ID: "u-9", UserName: "boot", Email: "boot@example.test"}}}
 	cases := map[string]struct {
 		identity fakeIdentity
 		users    *memoryDirectory
 	}{
-		"unknown subject and email": {fakeIdentity{Subject: "sub-mallory", Email: "mallory@example.test"}, aliceDirectory()},
-		"deactivated user":          {fakeIdentity{Subject: "sub-alice", Email: "alice@example.test"}, inactive},
+		"unknown subject and email":   {fakeIdentity{Subject: "sub-mallory", Email: "mallory@example.test"}, aliceDirectory()},
+		"deactivated user":            {fakeIdentity{Subject: "sub-alice", Email: "alice@example.test"}, inactive},
+		"deactivated bootstrap admin": {fakeIdentity{Subject: "sub-new", Email: "boot@example.test"}, inactiveBootstrap},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

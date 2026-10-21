@@ -73,10 +73,8 @@ func (s *Service) callback(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if user.OIDCSubject != who.Subject {
-		if err := s.directory.SetOIDCSubject(ctx, user.ID, who.Subject); err != nil {
-			return nil, err
-		}
+	if err := s.directory.RecordSignIn(ctx, user.ID, who.Subject); err != nil {
+		return nil, err
 	}
 
 	token, err := s.sessions.Create(ctx, user.ID, who.IDToken)
@@ -132,7 +130,8 @@ func (s *Service) readLoginAttempt(ctx *gofr.Context) (loginAttempt, error) {
 // findUser matches the signed-in identity to a provisioned, active user: by
 // the subject seen at an earlier sign-in, then by the SCIM external ID, which
 // Authentik sets to the same value as the subject, then by a unique active
-// email for users created before SCIM ran.
+// email for users created before SCIM ran. A bootstrap admin that SCIM has
+// not provisioned yet gets a user row, which SCIM adopts later.
 func (s *Service) findUser(ctx context.Context, who identity) (directory.User, string, error) {
 	matchers := []struct {
 		name string
@@ -142,6 +141,9 @@ func (s *Service) findUser(ctx context.Context, who identity) (directory.User, s
 		{"oidc_subject", s.directory.UserByOIDCSubject, who.Subject},
 		{"external_id", s.directory.UserByExternalID, who.Subject},
 		{"email", s.directory.ActiveUserByEmail, who.Email},
+		{"bootstrap_admin", func(ctx context.Context, email string) (directory.User, error) {
+			return s.createBootstrapAdmin(ctx, email, who.Name)
+		}, who.Email},
 	}
 	for _, matcher := range matchers {
 		user, err := matcher.find(ctx, matcher.key)
@@ -156,6 +158,16 @@ func (s *Service) findUser(ctx context.Context, who identity) (directory.User, s
 	}
 
 	return directory.User{}, "none", errNotProvisioned
+}
+
+// createBootstrapAdmin never creates a second row for an email that a user
+// already has, so a deactivated bootstrap admin stays out.
+func (s *Service) createBootstrapAdmin(ctx context.Context, email, name string) (directory.User, error) {
+	if !s.config.BootstrapAdmins.Contains(email) {
+		return directory.User{}, directory.ErrNotFound
+	}
+
+	return s.directory.CreateUnprovisionedUser(ctx, email, name)
 }
 
 // safeReturnTo keeps the post-login redirect on this origin. Browsers read

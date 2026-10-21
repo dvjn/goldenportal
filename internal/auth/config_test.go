@@ -41,6 +41,9 @@ func TestLoadConfigAppliesDefaults(t *testing.T) {
 	if config.Cookies.Session != "__Host-goldport_session" {
 		t.Fatalf("session cookie = %q", config.Cookies.Session)
 	}
+	if len(config.BootstrapAdmins) != 0 {
+		t.Fatalf("bootstrap admins = %v, want none", config.BootstrapAdmins)
+	}
 }
 
 func TestLoadConfigReadsOverrides(t *testing.T) {
@@ -50,6 +53,7 @@ func TestLoadConfigReadsOverrides(t *testing.T) {
 		"GOLDPORT_SESSION_MAX_AGE":      "10h",
 		"GOLDPORT_SESSION_IDLE_TIMEOUT": "45m",
 		"APP_NAME":                      "goldport-dev",
+		"GOLDPORT_BOOTSTRAP_ADMINS":     "Alice@example.test",
 	})
 
 	config, err := LoadConfig(source)
@@ -64,6 +68,9 @@ func TestLoadConfigReadsOverrides(t *testing.T) {
 	}
 	if config.Cookies.Login != "__Host-goldport_dev_login" {
 		t.Fatalf("login cookie = %q", config.Cookies.Login)
+	}
+	if !config.BootstrapAdmins.Contains("alice@example.test") {
+		t.Fatalf("bootstrap admins = %v, want alice", config.BootstrapAdmins)
 	}
 }
 

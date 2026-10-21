@@ -21,6 +21,7 @@ type Provider struct {
 type identity struct {
 	Subject string
 	Email   string
+	Name    string
 	IDToken string
 }
 
@@ -116,10 +117,11 @@ func (p *Provider) Exchange(ctx context.Context, attempt loginAttempt, code stri
 
 	var claims struct {
 		Email string `json:"email"`
+		Name  string `json:"name"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		return identity{}, fmt.Errorf("read the ID token claims: %w", err)
 	}
 
-	return identity{Subject: idToken.Subject, Email: claims.Email, IDToken: rawIDToken}, nil
+	return identity{Subject: idToken.Subject, Email: claims.Email, Name: claims.Name, IDToken: rawIDToken}, nil
 }

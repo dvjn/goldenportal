@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"strings"
 
+	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/httpx/httpxtest"
@@ -12,7 +13,10 @@ import (
 	"gofr.dev/pkg/gofr/logging"
 )
 
-var testCookies = CookieNames("GoldPort Test")
+var (
+	testCookies         = CookieNames("GoldPort Test")
+	testBootstrapAdmins = access.BootstrapAdmins{"boot@example.test"}
+)
 
 type memoryDirectory struct {
 	users  []directory.User
@@ -41,7 +45,7 @@ func (d *memoryDirectory) ActiveUserByEmail(_ context.Context, email string) (di
 	return d.find(func(u directory.User) bool { return u.Active && u.Email != "" && strings.EqualFold(u.Email, email) })
 }
 
-func (d *memoryDirectory) SetOIDCSubject(_ context.Context, userID, subject string) error {
+func (d *memoryDirectory) RecordSignIn(_ context.Context, userID, subject string) error {
 	for i := range d.users {
 		if d.users[i].ID == userID {
 			d.users[i].OIDCSubject = subject
@@ -49,6 +53,16 @@ func (d *memoryDirectory) SetOIDCSubject(_ context.Context, userID, subject stri
 	}
 
 	return nil
+}
+
+func (d *memoryDirectory) CreateUnprovisionedUser(_ context.Context, email, name string) (directory.User, error) {
+	if _, err := d.find(func(u directory.User) bool { return strings.EqualFold(u.Email, email) }); err == nil {
+		return directory.User{}, directory.ErrNotFound
+	}
+	user := directory.User{ID: "u-" + email, UserName: email, Email: email, Name: name, Active: true}
+	d.users = append(d.users, user)
+
+	return user, nil
 }
 
 func (d *memoryDirectory) GroupsOfUser(_ context.Context, userID string) ([]directory.Group, error) {
@@ -95,11 +109,19 @@ func (m *memorySessions) Delete(_ context.Context, id string) (string, error) {
 	return idToken, nil
 }
 
-func newTestRouter(sessions sessionFinder, register func(*httpx.Routes)) *httpxtest.Router {
+// memoryGrants holds each user's grants by user ID.
+type memoryGrants map[string][]access.Grant
+
+func (m memoryGrants) ForUser(_ context.Context, userID string) ([]access.Grant, error) {
+	return m[userID], nil
+}
+
+func newTestRouter(sessions sessionFinder, grants memoryGrants, register func(*httpx.Routes)) *httpxtest.Router {
 	router := httpxtest.NewRouter(&container.Container{Logger: logging.NewMockLogger(logging.ERROR)})
 	routes := httpx.NewRoutes(router)
 	register(routes)
-	router.Use(httpx.ExposeRaw, CrossOriginProtection(), Middleware(routes, sessions, testCookies))
+	authenticator := NewAuthenticator(sessions, access.NewResolver(grants, testBootstrapAdmins), testCookies)
+	router.Use(httpx.ExposeRaw, CrossOriginProtection(), Middleware(routes, authenticator))
 
 	return router
 }
