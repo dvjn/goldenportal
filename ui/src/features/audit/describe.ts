@@ -20,6 +20,18 @@ function matchedBy(details: Details) {
   return `Matched by ${matchLabels[String(details.matched_by)] ?? String(details.matched_by)}`;
 }
 
+function blueprint(details: Details) {
+  return `Blueprint ${details.blueprint}`;
+}
+
+function revisionChanges(details: Details) {
+  const parts = [`${details.added} added, ${details.changed} changed, ${details.removed} removed`];
+  const deleted = Number(details.deleted_entities);
+  if (deleted > 0) parts.push(deleted === 1 ? "1 entity deleted" : `${deleted} entities deleted`);
+  if (details.message) parts.push(`"${details.message}"`);
+  return parts.join(", ");
+}
+
 const describers: Record<string, (details: Details) => string> = {
   "auth.signed_in": matchedBy,
   "auth.sign_in_refused": (details) =>
@@ -31,6 +43,17 @@ const describers: Record<string, (details: Details) => string> = {
   "grant.removed": (details) => `Removed ${role(details.previous_role)}`,
   "api_token.created": (details) =>
     `${role(details.role)} token, expires ${formatDateTime(String(details.expires_at))}`,
+  "definitions.applied": revisionChanges,
+  "definitions.rolled_back": (details) =>
+    `Back to revision ${details.rollback_of}, ${revisionChanges(details)}`,
+  "entity.created": blueprint,
+  "entity.updated": (details) => {
+    const changed = (details.changed as string[] | undefined) ?? [];
+    return changed.length > 0
+      ? `${blueprint(details)}, changed ${changed.join(", ")}`
+      : blueprint(details);
+  },
+  "entity.deleted": blueprint,
 };
 
 export function describeDetails(entry: AuditEntry) {

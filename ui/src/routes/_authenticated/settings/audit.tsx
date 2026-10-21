@@ -42,6 +42,11 @@ const actionLabels: Record<string, string> = {
   "scim_token.rotated": "Rotated the SCIM token",
   "api_token.created": "Created an API token",
   "api_token.revoked": "Revoked an API token",
+  "definitions.applied": "Applied definitions",
+  "definitions.rolled_back": "Rolled back definitions",
+  "entity.created": "Created an entity",
+  "entity.updated": "Edited an entity",
+  "entity.deleted": "Deleted an entity",
 };
 
 const targetLabels: Record<string, string> = {
@@ -49,6 +54,8 @@ const targetLabels: Record<string, string> = {
   group: "Group",
   api_token: "API token",
   scim_token: "SCIM token",
+  definitions_revision: "Definitions",
+  entity: "Entity",
 };
 
 function AuditPage() {
@@ -62,7 +69,7 @@ function AuditPage() {
       <header className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">Audit log</h1>
         <p className="text-muted-foreground text-sm">
-          Sign-ins and every change to access, newest first.
+          Sign-ins and every change to access, definitions and manual entities, newest first.
         </p>
       </header>
       <Table>
