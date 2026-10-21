@@ -13,6 +13,10 @@ const adoptEnvelopeMessage: BeforeErrorHook = ({ error }) => {
   return error;
 };
 
+export function isUnauthorized(error: unknown) {
+  return error instanceof HTTPError && error.response.status === 401;
+}
+
 export function createApi(prefix: string) {
   return ky.create({
     prefix,

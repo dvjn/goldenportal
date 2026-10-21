@@ -7,18 +7,7 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { AppSidebar } from "@/components/app-sidebar";
-import { ModeToggle } from "@/components/mode-toggle";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { configQueryOptions, useConfig } from "@/features/config";
 
 type RouterContext = {
@@ -39,37 +28,7 @@ function RootLayout() {
     document.title = portalName;
   }, [portalName]);
 
-  return (
-    <TooltipProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <header className="flex h-12 shrink-0 items-center gap-2">
-            <div className="flex items-center gap-2 px-4">
-              <SidebarTrigger className="-ml-1 md:hidden" />
-              <Separator
-                orientation="vertical"
-                className="mr-2 data-vertical:h-4 data-vertical:self-auto md:hidden"
-              />
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <BreadcrumbPage>Home</BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
-            <div className="ml-auto px-4">
-              <ModeToggle />
-            </div>
-          </header>
-          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-            <Outlet />
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </TooltipProvider>
-  );
+  return <Outlet />;
 }
 
 function RootError({ error }: ErrorComponentProps) {

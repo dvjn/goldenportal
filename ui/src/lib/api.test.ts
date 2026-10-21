@@ -1,6 +1,6 @@
 import { HTTPError } from "ky";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { createApi } from "./api";
+import { createApi, isUnauthorized } from "./api";
 
 const api = createApi("http://localhost/api/v1");
 
@@ -42,5 +42,18 @@ describe("api", () => {
     stubFetch(new Response("bad gateway", { status: 502 }));
 
     await expect(api.get("config").json()).rejects.toThrow(/502/);
+  });
+});
+
+describe("isUnauthorized", () => {
+  it("is true only for a 401 response", async () => {
+    stubFetch(Response.json({ error: { message: "authentication required" } }, { status: 401 }));
+    const unauthorized = await api.get("auth/me").catch((caught: unknown) => caught);
+    stubFetch(Response.json({ error: { message: "failed" } }, { status: 500 }));
+    const failed = await api.get("auth/me").catch((caught: unknown) => caught);
+
+    expect(isUnauthorized(unauthorized)).toBe(true);
+    expect(isUnauthorized(failed)).toBe(false);
+    expect(isUnauthorized(new Error("offline"))).toBe(false);
   });
 });
