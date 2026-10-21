@@ -8,6 +8,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/invopop/jsonschema v0.14.0
 	github.com/itchyny/gojq v0.12.19
+	github.com/lib/pq v1.12.3
 	github.com/pb33f/ordered-map/v2 v2.3.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	gofr.dev v1.62.0
@@ -53,7 +54,6 @@ require (
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
-	github.com/lib/pq v1.12.3 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
