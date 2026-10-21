@@ -21,6 +21,10 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
+  build: {
+    outDir: "../internal/web/dist",
+    emptyOutDir: true,
+  },
   server: {
     port: 47273,
     strictPort: true,
