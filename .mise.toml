@@ -1,23 +1,41 @@
 [tools]
 go = "1.26.0"
+node = "24.15.0"
+"npm:pnpm" = "11.1.3"
 "go:github.com/air-verse/air" = "1.63.0"
 "go:mvdan.cc/gofumpt" = "0.10.0"
 
 [tasks.dev]
 description = "Run the development servers"
-depends = ["api:dev"]
+depends = ["api:dev", "ui:dev"]
 
 [tasks."api:dev"]
 description = "Run the API with hot reload"
 env = { _.file = "configs/.dev.env" }
 run = "air --build.cmd 'go build -o .local/tmp/goldport ./cmd/goldport' --build.bin .local/tmp/goldport -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,.local' --misc.clean_on_exit true"
 
+[tasks."ui:dev"]
+description = "Run the Vite dev server on port 47273, proxying /api to the API"
+dir = "ui"
+run = "pnpm install --frozen-lockfile && pnpm dev"
+
+[tasks."ui:build"]
+description = "Build the UI into ui/dist"
+dir = "ui"
+run = "pnpm install --frozen-lockfile && pnpm build"
+
+[tasks."ui:check"]
+description = "Run Biome checks, lint, and UI tests"
+dir = "ui"
+run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
+
 [tasks.fmt]
 description = "Format Go source files"
 run = "gofumpt -w ."
 
 [tasks.lint]
-description = "Check Go formatting and run go vet"
+description = "Check Go formatting, run go vet, and run the UI checks"
+depends = ["ui:check"]
 run = '''
 set -eu
 unformatted="$(gofumpt -l .)"

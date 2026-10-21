@@ -4,3 +4,9 @@ mise.local.toml
 *.out
 coverage.txt
 /goldport
+ui/node_modules
+ui/coverage
+ui/dist
+ui/dist-ssr
+ui/.tanstack
+*.tsbuildinfo
