@@ -18,3 +18,54 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  authentik-server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server:2026.8.4}
+    container_name: ${AUTHENTIK_SERVER_CONTAINER:-goldport-authentik-server}
+    command: server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &authentik_environment
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      GOLDPORT_PUBLIC_URL: ${GOLDPORT_PUBLIC_URL}
+      GOLDPORT_OIDC_CLIENT_ID: ${GOLDPORT_OIDC_CLIENT_ID}
+      GOLDPORT_OIDC_CLIENT_SECRET: ${GOLDPORT_OIDC_CLIENT_SECRET}
+      GOLDPORT_SCIM_URL: http://host.docker.internal:${HTTP_PORT:-47200}/scim/v2
+      GOLDPORT_SCIM_TOKEN: ${GOLDPORT_SCIM_TOKEN}
+      DEV_USER_PASSWORD: ${DEV_USER_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${AUTHENTIK_PORT:-47290}:9000"
+    volumes:
+      - ./configs/authentik/blueprints:/blueprints/custom:ro
+    healthcheck:
+      test:
+        - CMD
+        - ak
+        - healthcheck
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  authentik-worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server:2026.8.4}
+    container_name: ${AUTHENTIK_WORKER_CONTAINER:-goldport-authentik-worker}
+    command: worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *authentik_environment
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./configs/authentik/blueprints:/blueprints/custom:ro

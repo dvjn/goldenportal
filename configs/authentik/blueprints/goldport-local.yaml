@@ -1,0 +1,196 @@
+version: 1
+metadata:
+  name: goldport-local
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  # Apply the blueprints that the !Find entries below depend on first, as a
+  # fresh install may reach this blueprint before them.
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Provider authorization flow (implicit consent)
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Invalidation flow
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: System - OAuth2 Provider - Scopes
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: System - SCIM Provider - Mappings
+      required: true
+
+  - model: authentik_core.group
+    id: platform-team
+    identifiers:
+      name: platform-team
+  - model: authentik_core.group
+    id: all-engineers
+    identifiers:
+      name: all-engineers
+  - model: authentik_core.group
+    id: payments-team
+    identifiers:
+      name: payments-team
+  - model: authentik_core.group
+    id: contractors
+    identifiers:
+      name: contractors
+
+  # Users are only created, so changes made in the admin UI, such as
+  # deactivating a user, survive the next blueprint run.
+  - model: authentik_core.user
+    state: created
+    identifiers:
+      username: alice
+    attrs:
+      name: Alice Archer
+      email: alice@example.test
+      password: !Env DEV_USER_PASSWORD
+      groups:
+        - !KeyOf platform-team
+        - !KeyOf all-engineers
+  - model: authentik_core.user
+    state: created
+    identifiers:
+      username: bob
+    attrs:
+      name: Bob Baker
+      email: bob@example.test
+      password: !Env DEV_USER_PASSWORD
+      groups:
+        - !KeyOf payments-team
+        - !KeyOf all-engineers
+  - model: authentik_core.user
+    state: created
+    identifiers:
+      username: cara
+    attrs:
+      name: Cara Cole
+      email: cara@example.test
+      password: !Env DEV_USER_PASSWORD
+      groups:
+        - !KeyOf contractors
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: goldport-local-provider
+    identifiers:
+      name: goldport-local
+    attrs:
+      client_type: confidential
+      client_id: !Env GOLDPORT_OIDC_CLIENT_ID
+      client_secret: !Env GOLDPORT_OIDC_CLIENT_SECRET
+      grant_types:
+        - authorization_code
+      authorization_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-provider-authorization-implicit-consent
+      # Signing out of GoldPort ends the Authentik session too, so the next
+      # visit asks for a password instead of signing the same user in again.
+      invalidation_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-invalidation-flow
+      signing_key: !Find
+        - authentik_crypto.certificatekeypair
+        - - name
+          - authentik Self-signed Certificate
+      sub_mode: hashed_user_id
+      issuer_mode: per_provider
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format
+            - "%s/api/v1/auth/callback"
+            - !Env GOLDPORT_PUBLIC_URL
+        - matching_mode: strict
+          redirect_uri_type: logout
+          url: !Env GOLDPORT_PUBLIC_URL
+      property_mappings:
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - managed
+            - goauthentik.io/providers/oauth2/scope-openid
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - managed
+            - goauthentik.io/providers/oauth2/scope-email
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - managed
+            - goauthentik.io/providers/oauth2/scope-profile
+
+  - model: authentik_providers_scim.scimprovider
+    id: goldport-scim
+    identifiers:
+      name: goldport-scim
+    attrs:
+      url: !Env GOLDPORT_SCIM_URL
+      token: !Env GOLDPORT_SCIM_TOKEN
+      exclude_users_service_account: true
+      # Authentik caches a fallback configuration without PATCH or filters
+      # when it syncs before the API runs. In development that happens often.
+      service_provider_config_cache_timeout: minutes=0
+      property_mappings:
+        - !Find
+          - authentik_providers_scim.scimmapping
+          - - managed
+            - goauthentik.io/providers/scim/user
+      property_mappings_group:
+        - !Find
+          - authentik_providers_scim.scimmapping
+          - - managed
+            - goauthentik.io/providers/scim/group
+      group_filters:
+        - !KeyOf platform-team
+        - !KeyOf all-engineers
+        - !KeyOf payments-team
+        - !KeyOf contractors
+
+  # The issuer path is the application slug, so it matches
+  # GOLDPORT_OIDC_ISSUER_URL.
+  - model: authentik_core.application
+    id: goldport-application
+    identifiers:
+      slug: goldport-local
+    attrs:
+      name: GoldPort
+      provider: !KeyOf goldport-local-provider
+      backchannel_providers:
+        - !KeyOf goldport-scim
+      meta_launch_url: !Env GOLDPORT_PUBLIC_URL
+      policy_engine_mode: any
+
+  # Only members of these groups may use the application, which also keeps
+  # akadmin out of the SCIM sync.
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf goldport-application
+      group: !KeyOf platform-team
+    attrs:
+      order: 0
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf goldport-application
+      group: !KeyOf all-engineers
+    attrs:
+      order: 1
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf goldport-application
+      group: !KeyOf payments-team
+    attrs:
+      order: 2
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf goldport-application
+      group: !KeyOf contractors
+    attrs:
+      order: 3

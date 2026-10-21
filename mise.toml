@@ -55,15 +55,19 @@ dir = "ui"
 run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
 
 [tasks."deps:up"]
-description = "Start local Postgres"
+description = "Start local Postgres and Authentik"
 env = { _.file = "configs/.dev.env" }
 run = '''
 set -eu
+compose() {
+  docker compose --env-file configs/.dev.env -f deps.dev.yaml "$@"
+}
+
 mkdir -p .local/postgres
-docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d postgres
+compose up -d postgres
 
 attempts=0
-until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgres pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; do
+until compose exec -T postgres pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; do
   attempts=$((attempts + 1))
   if [ "$attempts" -ge 60 ]; then
     echo "PostgreSQL did not become healthy within 60 seconds" >&2
@@ -71,12 +75,28 @@ until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgr
   fi
   sleep 1
 done
-
 echo "PostgreSQL ready"
+
+compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" \
+  -v user="$AUTHENTIK_DB_USER" -v password="$AUTHENTIK_DB_PASSWORD" -v database="$AUTHENTIK_DB_NAME" \
+  < configs/postgres/authentik.sql
+compose up -d authentik-server authentik-worker
+
+attempts=0
+until curl -fsS "${GOLDPORT_OIDC_ISSUER_URL}.well-known/openid-configuration" >/dev/null 2>&1; do
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 180 ]; then
+    echo "Authentik did not serve the goldport-local application within 180 seconds" >&2
+    exit 1
+  fi
+  sleep 1
+done
+echo "Authentik ready: http://localhost:$AUTHENTIK_PORT (akadmin / $AUTHENTIK_BOOTSTRAP_PASSWORD)"
+echo "Portal users: alice, bob and cara @example.test / $DEV_USER_PASSWORD"
 '''
 
 [tasks."deps:down"]
-description = "Stop local Postgres"
+description = "Stop local Postgres and Authentik"
 env = { _.file = "configs/.dev.env" }
 run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml down"
 
