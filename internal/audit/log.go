@@ -27,6 +27,9 @@ const (
 
 	DefinitionsApplied    Action = "definitions.applied"
 	DefinitionsRolledBack Action = "definitions.rolled_back"
+	EntityCreated         Action = "entity.created"
+	EntityUpdated         Action = "entity.updated"
+	EntityDeleted         Action = "entity.deleted"
 )
 
 // Actor is who did it. UserID is empty for API tokens and for people who

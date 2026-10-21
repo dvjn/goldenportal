@@ -74,7 +74,7 @@ func register(app *gofr.App) error {
 		BootstrapAdmins:    authConfig.BootstrapAdmins,
 	}, grants, directoryStore, tokens, sessions, auditLog).Register(routes)
 	catalogStore := catalog.NewStore(app.GetSQL())
-	catalog.NewService(catalogStore, auditLog, time.Now).Register(routes)
+	catalog.NewService(catalogStore, catalogStore, auditLog, time.Now).Register(routes)
 
 	return nil
 }

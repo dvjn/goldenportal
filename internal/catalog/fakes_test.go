@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -128,19 +129,160 @@ func (m *memoryDefinitions) Revision(_ context.Context, number int) (Revision, e
 	return m.revisions[number-1], nil
 }
 
+// memoryEntities keeps entities by blueprint and identifier, with their
+// links to targets' identifiers only.
+type memoryEntities struct {
+	byName map[EntityName]Entity
+}
+
+func key(blueprint, identifier string) EntityName {
+	return EntityName{Blueprint: blueprint, Identifier: identifier}
+}
+
+func (m *memoryEntities) Entities(_ context.Context, filter EntityFilter, page Page) ([]Entity, int, error) {
+	var matches []Entity
+	for _, entity := range m.byName {
+		search := strings.ToLower(filter.Search)
+		if entity.Blueprint == filter.Blueprint &&
+			(strings.Contains(strings.ToLower(entity.Title), search) || strings.Contains(entity.Identifier, search)) &&
+			(filter.Integration == "" || entity.Integration == filter.Integration) {
+			matches = append(matches, entity)
+		}
+	}
+	slices.SortFunc(matches, func(a, b Entity) int { return strings.Compare(a.Title, b.Title) })
+
+	return matches[min(page.Offset, len(matches)):min(page.Offset+page.Limit, len(matches))], len(matches), nil
+}
+
+func (m *memoryEntities) Entity(_ context.Context, blueprint, identifier string) (Entity, error) {
+	entity, ok := m.byName[key(blueprint, identifier)]
+	if !ok {
+		return Entity{}, ErrNotFound
+	}
+	for index, link := range entity.Links {
+		entity.Links[index].Target.Title = m.byName[key(link.Target.Blueprint, link.Target.Identifier)].Title
+	}
+
+	return entity, nil
+}
+
+func (m *memoryEntities) Incoming(_ context.Context, target EntityName) ([]Link, error) {
+	var links []Link
+	for _, entity := range m.byName {
+		for _, link := range entity.Links {
+			if link.Target.Blueprint == target.Blueprint && link.Target.Identifier == target.Identifier {
+				links = append(links, Link{Relation: link.Relation, Source: entity.Name(), Target: target})
+			}
+		}
+	}
+
+	return links, nil
+}
+
+func (m *memoryEntities) BlueprintCounts(context.Context) (map[string]int, error) {
+	counts := map[string]int{}
+	for name := range m.byName {
+		counts[name.Blueprint]++
+	}
+
+	return counts, nil
+}
+
+func (m *memoryEntities) IntegrationCounts(_ context.Context, blueprint string) ([]IntegrationCount, error) {
+	counts := map[string]int{}
+	for _, entity := range m.byName {
+		if entity.Blueprint == blueprint {
+			counts[entity.Integration]++
+		}
+	}
+	var result []IntegrationCount
+	for _, integration := range slices.Sorted(maps.Keys(counts)) {
+		result = append(result, IntegrationCount{Integration: integration, Count: counts[integration]})
+	}
+
+	return result, nil
+}
+
+func (m *memoryEntities) Missing(_ context.Context, blueprint string, identifiers []string) ([]string, error) {
+	var missing []string
+	for _, identifier := range identifiers {
+		if _, ok := m.byName[key(blueprint, identifier)]; !ok {
+			missing = append(missing, identifier)
+		}
+	}
+
+	return missing, nil
+}
+
+func (m *memoryEntities) Reaches(_ context.Context, blueprint, relation, start, goal string) (bool, error) {
+	for seen := map[string]bool{}; !seen[start]; {
+		if start == goal {
+			return true, nil
+		}
+		seen[start] = true
+		next := ""
+		for _, link := range m.byName[key(blueprint, start)].Links {
+			if link.Relation == relation {
+				next = link.Target.Identifier
+			}
+		}
+		if next == "" {
+			return false, nil
+		}
+		start = next
+	}
+
+	return false, nil
+}
+
+func (m *memoryEntities) CreateEntity(_ context.Context, entity Entity) (Entity, error) {
+	if _, ok := m.byName[key(entity.Blueprint, entity.Identifier)]; ok {
+		return Entity{}, ErrExists
+	}
+	entity.CreatedAt, entity.UpdatedAt = at, at
+	m.byName[key(entity.Blueprint, entity.Identifier)] = entity
+
+	return entity, nil
+}
+
+func (m *memoryEntities) UpdateEntity(_ context.Context, entity Entity) (Entity, error) {
+	previous, ok := m.byName[key(entity.Blueprint, entity.Identifier)]
+	if !ok {
+		return Entity{}, ErrNotFound
+	}
+	entity.CreatedAt, entity.UpdatedAt = previous.CreatedAt, at.Add(time.Hour)
+	m.byName[key(entity.Blueprint, entity.Identifier)] = entity
+
+	return entity, nil
+}
+
+func (m *memoryEntities) DeleteEntity(_ context.Context, blueprint, identifier string) error {
+	if _, ok := m.byName[key(blueprint, identifier)]; !ok {
+		return ErrNotFound
+	}
+	delete(m.byName, key(blueprint, identifier))
+
+	return nil
+}
+
+func (m *memoryEntities) put(entity Entity) {
+	m.byName[key(entity.Blueprint, entity.Identifier)] = entity
+}
+
 type harness struct {
 	t           *testing.T
 	definitions *memoryDefinitions
+	entities    *memoryEntities
 	audit       *memoryAudit
 	now         time.Time
 	router      *httpxtest.Router
 }
 
 func newHarness(t *testing.T) *harness {
-	h := &harness{t: t, definitions: &memoryDefinitions{}, audit: &memoryAudit{}, now: at}
+	h := &harness{t: t, definitions: &memoryDefinitions{}, entities: &memoryEntities{byName: map[EntityName]Entity{}}, audit: &memoryAudit{}, now: at}
 	h.router = httpxtest.NewRouter(&container.Container{Logger: logging.NewMockLogger(logging.ERROR)})
 	routes := httpx.NewRoutes(h.router)
-	NewService(h.definitions, h.audit, func() time.Time { return h.now }).Register(routes)
+	NewService(h.definitions, h.entities, h.audit, func() time.Time { return h.now }).Register(routes)
 	authenticator := auth.NewAuthenticator(memorySessions{}, memoryTokens{}, fixedRoles{}, testCookies)
 	h.router.Use(httpx.ExposeRaw, auth.CrossOriginProtection(), auth.Middleware(routes, authenticator))
 
