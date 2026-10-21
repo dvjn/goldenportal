@@ -172,6 +172,19 @@ func TestRecordSignInBindsTheSubject(t *testing.T) {
 	}
 }
 
+func TestLastSignInIsZeroBeforeTheFirstSignIn(t *testing.T) {
+	store, db := newStore(t)
+	db.ExpectQuery(queryLastSignIn).WithArgs("u-1").WillReturnRows(sqlmock.NewRows([]string{"last_sign_in_at"}).AddRow(nil))
+	db.ExpectQuery(queryLastSignIn).WithArgs("u-1").WillReturnRows(sqlmock.NewRows([]string{"last_sign_in_at"}).AddRow(createdAt))
+
+	if at, err := store.LastSignIn(context.Background(), "u-1"); err != nil || !at.IsZero() {
+		t.Fatalf("LastSignIn() = %v, %v, want the zero time", at, err)
+	}
+	if at, err := store.LastSignIn(context.Background(), "u-1"); err != nil || !at.Equal(createdAt) {
+		t.Fatalf("LastSignIn() = %v, %v, want %v", at, err, createdAt)
+	}
+}
+
 func TestCreateUnprovisionedUserCreatesOnlyAnUnknownEmail(t *testing.T) {
 	store, db := newStore(t)
 	db.ExpectQuery(queryCreateUnprovisionedUser).WithArgs("alice@example.test", "Alice").WillReturnRows(aliceRow())

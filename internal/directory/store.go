@@ -79,6 +79,7 @@ const (
 		SET oidc_subject = $2, last_sign_in_at = NOW(),
 			updated_at = CASE WHEN oidc_subject IS DISTINCT FROM $2 THEN NOW() ELSE updated_at END
 		WHERE id = $1`
+	queryLastSignIn              = `SELECT last_sign_in_at FROM users WHERE id = $1`
 	queryCreateUnprovisionedUser = `INSERT INTO users (user_name, email, name)
 		SELECT $1, $1, $2 WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($1))
 		RETURNING ` + userColumns
@@ -160,6 +161,14 @@ func (s *Store) ActiveUserByEmail(ctx context.Context, email string) (User, erro
 // RecordSignIn binds the user to the OIDC subject and records the time.
 func (s *Store) RecordSignIn(ctx context.Context, userID, subject string) error {
 	return s.exec(ctx, queryRecordSignIn, userID, subject)
+}
+
+// LastSignIn returns when the user last signed in, or the zero time.
+func (s *Store) LastSignIn(ctx context.Context, userID string) (time.Time, error) {
+	var at sql.NullTime
+	err := s.db.QueryRowContext(ctx, queryLastSignIn, userID).Scan(&at)
+
+	return at.Time, classify(err)
 }
 
 // CreateUnprovisionedUser creates an active user without an external ID, for

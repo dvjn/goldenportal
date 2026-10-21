@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/admin"
 	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
@@ -42,8 +43,10 @@ func register(app *gofr.App) error {
 	directoryStore := directory.NewStore(app.GetSQL())
 	sessions := auth.NewSessions(app.GetSQL(), authConfig)
 	tokens := apitoken.NewStore(app.GetSQL())
-	resolver := access.NewResolver(access.NewGrants(app.GetSQL()), authConfig.BootstrapAdmins)
+	grants := access.NewGrants(app.GetSQL())
+	resolver := access.NewResolver(grants, authConfig.BootstrapAdmins)
 	auditLog := audit.NewLog(app.GetSQL())
+	portalName := app.Config.GetOrDefault("GOLDPORT_NAME", "GoldPort")
 
 	app.OnStart(apitoken.SeedSCIMToken(tokens, scimToken))
 
@@ -56,10 +59,18 @@ func register(app *gofr.App) error {
 		scim.NewServer(directoryStore, sessions, tokens, app.Logger()).Middleware(),
 	)
 
-	routes.GET("/api/v1/config", httpx.Public(), configHandler(Config{
-		Name: app.Config.GetOrDefault("GOLDPORT_NAME", "GoldPort"),
-	}))
+	routes.GET("/api/v1/config", httpx.Public(), configHandler(Config{Name: portalName}))
 	auth.NewService(authConfig, provider, sessions, directoryStore, auditLog).Register(routes)
+	admin.NewService(admin.Settings{
+		Name:               portalName,
+		PublicURL:          authConfig.PublicURL,
+		IssuerURL:          authConfig.IssuerURL,
+		ClientID:           authConfig.ClientID,
+		ClientSecretSet:    authConfig.ClientSecret != "",
+		SessionMaxAge:      authConfig.SessionMaxAge,
+		SessionIdleTimeout: authConfig.SessionIdleTimeout,
+		BootstrapAdmins:    authConfig.BootstrapAdmins,
+	}, grants, directoryStore, tokens, sessions, auditLog).Register(routes)
 
 	return nil
 }
