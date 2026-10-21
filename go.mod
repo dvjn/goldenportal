@@ -5,8 +5,14 @@ go 1.27.3
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/goccy/go-yaml v1.19.2
+	github.com/invopop/jsonschema v0.14.0
+	github.com/itchyny/gojq v0.12.19
+	github.com/pb33f/ordered-map/v2 v2.3.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	gofr.dev v1.62.0
 	golang.org/x/oauth2 v0.37.0
+	golang.org/x/text v0.43.0
 )
 
 require (
@@ -20,7 +26,9 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/XSAM/otelsql v0.44.0 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
+	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgraph-io/dgo/v210 v210.0.0-20230328113526-b66f8ae53a2d // indirect
@@ -42,6 +50,7 @@ require (
 	github.com/graphql-go/graphql v0.8.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
+	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/lib/pq v1.12.3 // indirect
@@ -86,12 +95,12 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/api v0.299.0 // indirect
 	google.golang.org/genproto v0.0.0-20260723164925-7274b71286bd // indirect
