@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_authenticated/settings")({
 });
 
 type Section = {
-  to: "/settings/general" | "/settings/access";
+  to: "/settings/general" | "/settings/access" | "/settings/api-tokens" | "/settings/audit";
   label: string;
   permission: Permission;
 };
@@ -34,6 +34,8 @@ type Section = {
 const sections: Section[] = [
   { to: "/settings/general", label: "General", permission: "settings.read" },
   { to: "/settings/access", label: "Access", permission: "access.read" },
+  { to: "/settings/api-tokens", label: "API tokens", permission: "access.read" },
+  { to: "/settings/audit", label: "Audit log", permission: "audit.read" },
 ];
 
 function SettingsLayout() {

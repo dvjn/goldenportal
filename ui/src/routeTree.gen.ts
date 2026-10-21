@@ -15,6 +15,8 @@ import { Route as AuthenticatedIndexRouteImport } from "./routes/_authenticated/
 import { Route as AuthenticatedSettingsRouteImport } from "./routes/_authenticated/settings";
 import { Route as AuthenticatedSettingsIndexRouteImport } from "./routes/_authenticated/settings/index";
 import { Route as AuthenticatedSettingsAccessRouteImport } from "./routes/_authenticated/settings/access";
+import { Route as AuthenticatedSettingsApiTokensRouteImport } from "./routes/_authenticated/settings/api-tokens";
+import { Route as AuthenticatedSettingsAuditRouteImport } from "./routes/_authenticated/settings/audit";
 import { Route as AuthenticatedSettingsGeneralRouteImport } from "./routes/_authenticated/settings/general";
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -48,6 +50,18 @@ const AuthenticatedSettingsAccessRoute =
     path: "/access",
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any);
+const AuthenticatedSettingsApiTokensRoute =
+  AuthenticatedSettingsApiTokensRouteImport.update({
+    id: "/api-tokens",
+    path: "/api-tokens",
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any);
+const AuthenticatedSettingsAuditRoute =
+  AuthenticatedSettingsAuditRouteImport.update({
+    id: "/audit",
+    path: "/audit",
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any);
 const AuthenticatedSettingsGeneralRoute =
   AuthenticatedSettingsGeneralRouteImport.update({
     id: "/general",
@@ -60,6 +74,8 @@ export interface FileRoutesByFullPath {
   "/not-provisioned": typeof NotProvisionedRoute;
   "/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/settings/access": typeof AuthenticatedSettingsAccessRoute;
+  "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
+  "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings/": typeof AuthenticatedSettingsIndexRoute;
 }
@@ -67,6 +83,8 @@ export interface FileRoutesByTo {
   "/not-provisioned": typeof NotProvisionedRoute;
   "/": typeof AuthenticatedIndexRoute;
   "/settings/access": typeof AuthenticatedSettingsAccessRoute;
+  "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
+  "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/settings": typeof AuthenticatedSettingsIndexRoute;
 }
@@ -77,6 +95,8 @@ export interface FileRoutesById {
   "/_authenticated/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/_authenticated/": typeof AuthenticatedIndexRoute;
   "/_authenticated/settings/access": typeof AuthenticatedSettingsAccessRoute;
+  "/_authenticated/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
+  "/_authenticated/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
 }
@@ -87,6 +107,8 @@ export interface FileRouteTypes {
     | "/not-provisioned"
     | "/settings"
     | "/settings/access"
+    | "/settings/api-tokens"
+    | "/settings/audit"
     | "/settings/general"
     | "/settings/";
   fileRoutesByTo: FileRoutesByTo;
@@ -94,6 +116,8 @@ export interface FileRouteTypes {
     | "/not-provisioned"
     | "/"
     | "/settings/access"
+    | "/settings/api-tokens"
+    | "/settings/audit"
     | "/settings/general"
     | "/settings";
   id:
@@ -103,6 +127,8 @@ export interface FileRouteTypes {
     | "/_authenticated/settings"
     | "/_authenticated/"
     | "/_authenticated/settings/access"
+    | "/_authenticated/settings/api-tokens"
+    | "/_authenticated/settings/audit"
     | "/_authenticated/settings/general"
     | "/_authenticated/settings/";
   fileRoutesById: FileRoutesById;
@@ -156,6 +182,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedSettingsAccessRouteImport;
       parentRoute: typeof AuthenticatedSettingsRoute;
     };
+    "/_authenticated/settings/api-tokens": {
+      id: "/_authenticated/settings/api-tokens";
+      path: "/api-tokens";
+      fullPath: "/settings/api-tokens";
+      preLoaderRoute: typeof AuthenticatedSettingsApiTokensRouteImport;
+      parentRoute: typeof AuthenticatedSettingsRoute;
+    };
+    "/_authenticated/settings/audit": {
+      id: "/_authenticated/settings/audit";
+      path: "/audit";
+      fullPath: "/settings/audit";
+      preLoaderRoute: typeof AuthenticatedSettingsAuditRouteImport;
+      parentRoute: typeof AuthenticatedSettingsRoute;
+    };
     "/_authenticated/settings/general": {
       id: "/_authenticated/settings/general";
       path: "/general";
@@ -168,12 +208,16 @@ declare module "@tanstack/react-router" {
 
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAccessRoute: typeof AuthenticatedSettingsAccessRoute;
+  AuthenticatedSettingsApiTokensRoute: typeof AuthenticatedSettingsApiTokensRoute;
+  AuthenticatedSettingsAuditRoute: typeof AuthenticatedSettingsAuditRoute;
   AuthenticatedSettingsGeneralRoute: typeof AuthenticatedSettingsGeneralRoute;
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute;
 }
 
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsAccessRoute: AuthenticatedSettingsAccessRoute,
+  AuthenticatedSettingsApiTokensRoute: AuthenticatedSettingsApiTokensRoute,
+  AuthenticatedSettingsAuditRoute: AuthenticatedSettingsAuditRoute,
   AuthenticatedSettingsGeneralRoute: AuthenticatedSettingsGeneralRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
 };
