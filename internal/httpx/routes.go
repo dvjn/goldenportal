@@ -6,6 +6,10 @@ import (
 	"gofr.dev/pkg/gofr"
 )
 
+// Permission names an action as resource.action. The access package declares
+// every permission.
+type Permission string
+
 // Access is the rule a route declares for who may call it. A route that does
 // not declare one is refused.
 type Access struct {
