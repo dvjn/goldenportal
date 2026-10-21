@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { ChevronDown, Download, Plus, Upload } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ChevronDown, Download, FileClock, Plus, Upload } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -166,11 +166,24 @@ function DefinitionsPage() {
             <Download />
             Export
           </Button>
+          <Button variant="outline" asChild>
+            <Link to="/definitions/history">
+              <FileClock />
+              History
+            </Link>
+          </Button>
         </div>
       </header>
       {applied !== undefined && (
         <Alert>
           <AlertTitle>Applied revision {applied}.</AlertTitle>
+          <AlertAction>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/definitions/history/$revision" params={{ revision: applied }}>
+                View revision {applied}
+              </Link>
+            </Button>
+          </AlertAction>
         </Alert>
       )}
       {drafts.length > 0 && (

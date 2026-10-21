@@ -10,6 +10,7 @@ export {
   type Problem,
   problemsOf,
   type Revision,
+  revisionPageSize,
 } from "./api";
 export {
   create,
@@ -25,13 +26,19 @@ export {
 } from "./drafts";
 export { LazyYamlEditor } from "./lazy-yaml-editor";
 export { PlanDialog } from "./plan-dialog";
-export { ChangeList, ImpactList, summaryText } from "./plan-view";
+export { appliedText, ChangeList, ImpactList, summaryText } from "./plan-view";
 export { ProblemList } from "./problem-list";
 export {
   definitionsQueryOptions,
+  diffQueryOptions,
+  revisionQueryOptions,
+  revisionsQueryOptions,
   schemaQueryOptions,
   useApplyPlan,
   useDefinitions,
   usePlanDefinitions,
+  usePlanRollback,
+  useRevision,
+  useRevisions,
 } from "./queries";
 export { UploadDialog } from "./upload-dialog";

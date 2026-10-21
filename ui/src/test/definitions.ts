@@ -1,4 +1,4 @@
-import type { Definitions, Plan } from "@/features/definitions";
+import type { Definitions, Plan, Revision } from "@/features/definitions";
 import type { Handler } from "./api";
 
 export const teamYAML = `kind: Blueprint
@@ -71,4 +71,38 @@ export const plan: Plan = {
 export const definitionsApi: Record<string, Handler> = {
   "GET /api/v1/definitions": () => Response.json({ data: definitions }),
   "GET /api/v1/definitions/schema": () => Response.json({ data: { type: "object" } }),
+};
+
+export const revisions: Revision[] = [
+  {
+    number: 2,
+    author: "bob@example.test",
+    message: "",
+    rollback_of: 1,
+    created_at: "2026-10-22T08:00:00Z",
+    summary: { added: 1, changed: 0, removed: 0 },
+    changes: [{ kind: "Integration", identifier: "ci", title: "CI", action: "add" }],
+    impact: { deleted_entities: [], cleared_values: [], dropped_links: [] },
+  },
+  {
+    number: 1,
+    author: "alice@example.test",
+    message: "add the catalog",
+    created_at: "2026-10-21T08:00:00Z",
+    summary: { added: 2, changed: 0, removed: 0 },
+    changes: [
+      { kind: "Blueprint", identifier: "service", title: "Service", action: "add" },
+      { kind: "Blueprint", identifier: "team", title: "Team", action: "add" },
+    ],
+    impact: { deleted_entities: [], cleared_values: [], dropped_links: [] },
+  },
+];
+
+export const historyApi: Record<string, Handler> = {
+  ...definitionsApi,
+  "GET /api/v1/definitions": () => Response.json({ data: { ...definitions, revision: 2 } }),
+  "GET /api/v1/definitions/revisions": () =>
+    Response.json({ data: { revisions, offset: 0, limit: 50, total: 2 } }),
+  "GET /api/v1/definitions/revisions/1": () => Response.json({ data: revisions[1] }),
+  "GET /api/v1/definitions/revisions/2": () => Response.json({ data: revisions[0] }),
 };

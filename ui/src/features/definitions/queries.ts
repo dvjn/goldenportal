@@ -1,6 +1,16 @@
 import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { catalogKeys } from "@/features/catalog";
-import { applyPlan, definitionKeys, getDefinitions, getSchema, planDefinitions } from "./api";
+import {
+  applyPlan,
+  definitionKeys,
+  getDefinitions,
+  getDiff,
+  getRevision,
+  getRevisions,
+  getSchema,
+  planDefinitions,
+  planRollback,
+} from "./api";
 
 export const definitionsQueryOptions = queryOptions({
   queryKey: definitionKeys.current,
@@ -12,6 +22,36 @@ export const schemaQueryOptions = queryOptions({
   queryFn: getSchema,
   staleTime: Number.POSITIVE_INFINITY,
 });
+
+export const revisionsQueryOptions = (page: number) =>
+  queryOptions({
+    queryKey: definitionKeys.revisions(page),
+    queryFn: () => getRevisions(page),
+  });
+
+export const revisionQueryOptions = (number: number) =>
+  queryOptions({
+    queryKey: definitionKeys.revision(number),
+    queryFn: () => getRevision(number),
+  });
+
+export const diffQueryOptions = (from: number, to: number) =>
+  queryOptions({
+    queryKey: definitionKeys.diff(from, to),
+    queryFn: () => getDiff(from, to),
+  });
+
+export function useRevisions(page: number) {
+  return useSuspenseQuery(revisionsQueryOptions(page)).data;
+}
+
+export function useRevision(number: number) {
+  return useSuspenseQuery(revisionQueryOptions(number)).data;
+}
+
+export function usePlanRollback() {
+  return useMutation({ mutationFn: planRollback });
+}
 
 export function useDefinitions() {
   return useSuspenseQuery(definitionsQueryOptions).data;

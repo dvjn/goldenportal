@@ -11,6 +11,10 @@ export function summaryText(summary: Summary) {
   return `${summary.added} to add, ${summary.changed} to change, ${summary.removed} to remove`;
 }
 
+export function appliedText(summary: Summary) {
+  return `${summary.added} added, ${summary.changed} changed, ${summary.removed} removed`;
+}
+
 function display(value: unknown) {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
