@@ -1,10 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { configKeys, getConfig } from "./api";
 
+export const configQueryOptions = queryOptions({
+  queryKey: configKeys.current,
+  queryFn: getConfig,
+  staleTime: Infinity,
+});
+
 export function useConfig() {
-  return useQuery({
-    queryKey: configKeys.current,
-    queryFn: getConfig,
-    staleTime: Infinity,
-  });
+  return useSuspenseQuery(configQueryOptions).data;
 }
