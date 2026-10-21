@@ -9,6 +9,7 @@ ui/node_modules
 ui/coverage
 ui/dist-ssr
 ui/.tanstack
+ui/.vitest
 *.tsbuildinfo
 internal/web/dist/*
 !internal/web/dist/.gitkeep
