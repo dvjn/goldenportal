@@ -5,4 +5,5 @@ export {
   auditPageSize,
   getAuditPage,
 } from "./api";
+export { describeDetails } from "./describe";
 export { auditPageQueryOptions, useAuditPage } from "./queries";

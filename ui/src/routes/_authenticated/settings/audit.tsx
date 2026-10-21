@@ -8,7 +8,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { type AuditEntry, auditPageQueryOptions, useAuditPage } from "@/features/audit";
+import {
+  type AuditEntry,
+  auditPageQueryOptions,
+  describeDetails,
+  useAuditPage,
+} from "@/features/audit";
 import { requirePermission } from "@/features/auth";
 import { formatDateTime, formatRelative } from "@/lib/time";
 
@@ -79,8 +84,8 @@ function AuditPage() {
               <TableCell>
                 <Target entry={entry} />
               </TableCell>
-              <TableCell className="text-muted-foreground font-mono text-xs whitespace-normal">
-                {details(entry)}
+              <TableCell className="text-muted-foreground whitespace-normal">
+                {describeDetails(entry)}
               </TableCell>
             </TableRow>
           ))}
@@ -108,22 +113,15 @@ function AuditPage() {
 
 function Target({ entry }: { entry: AuditEntry }) {
   if (!entry.target.kind) return null;
+  const name = entry.target.name || entry.target.id;
+  const kind = targetLabels[entry.target.kind] ?? entry.target.kind;
 
   return (
     <div className="flex flex-col">
-      <span>{entry.target.name || entry.target.id}</span>
-      <span className="text-muted-foreground text-xs">
-        {targetLabels[entry.target.kind] ?? entry.target.kind}
-      </span>
+      <span>{name}</span>
+      {kind !== name && <span className="text-muted-foreground text-xs">{kind}</span>}
     </div>
   );
-}
-
-function details(entry: AuditEntry) {
-  return Object.entries(entry.details)
-    .filter(([, value]) => value !== "")
-    .map(([key, value]) => `${key}: ${String(value)}`)
-    .join(", ");
 }
 
 function PageLink({ page, disabled, label }: { page: number; disabled: boolean; label: string }) {

@@ -40,7 +40,7 @@ describe("audit log page", () => {
     expect(await screen.findByText("Granted a role")).toBeInTheDocument();
     expect(screen.getByText("platform-team")).toBeInTheDocument();
     expect(screen.getByText("Group")).toBeInTheDocument();
-    expect(screen.getByText("role: admin")).toBeInTheDocument();
+    expect(screen.getByText("Granted Admin")).toBeInTheDocument();
     expect(screen.getByText("51 to 51 of 51")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Previous" })).toHaveAttribute(
       "href",
