@@ -16,23 +16,35 @@ import (
 )
 
 const (
-	KindSCIM = "scim"
-	KindAPI  = "api"
+	KindSCIM   = "scim"
+	KindAPI    = "api"
+	KindIngest = "ingest"
 )
 
-// Prefix starts every token the portal generates, so a leaked token is easy
-// to recognise.
-const Prefix = "gpt_"
+// Prefix starts every token the portal generates, and IngestPrefix every
+// ingest token, so a leaked token is easy to recognise.
+const (
+	Prefix       = "gpt_"
+	IngestPrefix = "gpi_"
+)
+
+var prefixes = map[string]string{
+	KindSCIM:   Prefix,
+	KindAPI:    Prefix,
+	KindIngest: IngestPrefix,
+}
 
 var ErrNotFound = errors.New("token not found")
 
 // Token is a stored token. The zero time stands for an unset ExpiresAt or
-// LastUsedAt.
+// LastUsedAt. Integration names the one integration an ingest token writes
+// to.
 type Token struct {
 	ID             string
 	Kind           string
 	Name           string
 	Role           access.Role
+	Integration    string
 	CreatedBy      string
 	CreatedByEmail string
 	CreatedAt      time.Time
@@ -41,11 +53,12 @@ type Token struct {
 }
 
 type NewToken struct {
-	Kind      string
-	Name      string
-	Role      access.Role
-	CreatedBy string
-	ExpiresAt time.Time
+	Kind        string
+	Name        string
+	Role        access.Role
+	Integration string
+	CreatedBy   string
+	ExpiresAt   time.Time
 }
 
 type Store struct {
@@ -56,8 +69,8 @@ func NewStore(db container.DB) *Store {
 	return &Store{db: db}
 }
 
-const tokenColumns = `t.id, t.kind, t.name, COALESCE(t.role, ''), COALESCE(t.created_by::text, ''), COALESCE(u.email, ''),
-	t.created_at, t.expires_at, t.last_used_at`
+const tokenColumns = `t.id, t.kind, t.name, COALESCE(t.role, ''), COALESCE(t.integration, ''),
+	COALESCE(t.created_by::text, ''), COALESCE(u.email, ''), t.created_at, t.expires_at, t.last_used_at`
 
 const (
 	queryFindToken = `WITH used AS (
@@ -69,16 +82,16 @@ const (
 	querySeedToken = `INSERT INTO api_tokens (kind, name, token_hash)
 		SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM api_tokens WHERE kind = $1)`
 	queryCreateToken = `WITH created AS (
-			INSERT INTO api_tokens (kind, name, token_hash, role, created_by, expires_at)
-			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, '')::uuid, $6)
+			INSERT INTO api_tokens (kind, name, token_hash, role, created_by, expires_at, integration)
+			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, '')::uuid, $6, NULLIF($7, ''))
 			RETURNING *
 		)
 		SELECT ` + tokenColumns + ` FROM created t LEFT JOIN users u ON u.id = t.created_by`
 	queryListTokens = `SELECT ` + tokenColumns + ` FROM api_tokens t LEFT JOIN users u ON u.id = t.created_by
-		WHERE t.kind = $1 AND t.revoked_at IS NULL ORDER BY t.created_at DESC`
+		WHERE t.kind = $1 AND COALESCE(t.integration, '') = $2 AND t.revoked_at IS NULL ORDER BY t.created_at DESC`
 	queryRevokeToken = `WITH revoked AS (
 			UPDATE api_tokens SET revoked_at = NOW()
-			WHERE kind = $1 AND id::text = $2 AND revoked_at IS NULL
+			WHERE kind = $1 AND id::text = $2 AND COALESCE(integration, '') = $3 AND revoked_at IS NULL
 			RETURNING *
 		)
 		SELECT ` + tokenColumns + ` FROM revoked t LEFT JOIN users u ON u.id = t.created_by`
@@ -143,7 +156,17 @@ func (s *Store) Rotate(ctx context.Context, token NewToken) (Token, string, erro
 
 // List returns the tokens of the kind that are not revoked, newest first.
 func (s *Store) List(ctx context.Context, kind string) ([]Token, error) {
-	rows, err := s.db.QueryContext(ctx, queryListTokens, kind)
+	return s.list(ctx, kind, "")
+}
+
+// ListIngest returns the integration's ingest tokens that are not revoked,
+// newest first.
+func (s *Store) ListIngest(ctx context.Context, integration string) ([]Token, error) {
+	return s.list(ctx, KindIngest, integration)
+}
+
+func (s *Store) list(ctx context.Context, kind, integration string) ([]Token, error) {
+	rows, err := s.db.QueryContext(ctx, queryListTokens, kind, integration)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +185,13 @@ func (s *Store) List(ctx context.Context, kind string) ([]Token, error) {
 }
 
 func (s *Store) Revoke(ctx context.Context, kind, id string) (Token, error) {
-	return scanToken(s.db.QueryRowContext(ctx, queryRevokeToken, kind, id))
+	return scanToken(s.db.QueryRowContext(ctx, queryRevokeToken, kind, id, ""))
+}
+
+// RevokeIngest revokes the ingest token only when it belongs to the
+// integration.
+func (s *Store) RevokeIngest(ctx context.Context, integration, id string) (Token, error) {
+	return scanToken(s.db.QueryRowContext(ctx, queryRevokeToken, KindIngest, id, integration))
 }
 
 // LastUsed returns when any token of the kind was last used, or the zero
@@ -179,10 +208,10 @@ type rowQuerier interface {
 }
 
 func create(ctx context.Context, db rowQuerier, token NewToken) (Token, string, error) {
-	secret := Prefix + rand.Text()
+	secret := prefixes[token.Kind] + rand.Text()
 	expiresAt := sql.NullTime{Time: token.ExpiresAt, Valid: !token.ExpiresAt.IsZero()}
 	created, err := scanToken(db.QueryRowContext(ctx, queryCreateToken,
-		token.Kind, token.Name, hash(secret), token.Role, token.CreatedBy, expiresAt))
+		token.Kind, token.Name, hash(secret), token.Role, token.CreatedBy, expiresAt, token.Integration))
 
 	return created, secret, err
 }
@@ -196,8 +225,8 @@ func scanToken(row scanner) (Token, error) {
 		token                 Token
 		expiresAt, lastUsedAt sql.NullTime
 	)
-	err := row.Scan(&token.ID, &token.Kind, &token.Name, &token.Role, &token.CreatedBy, &token.CreatedByEmail,
-		&token.CreatedAt, &expiresAt, &lastUsedAt)
+	err := row.Scan(&token.ID, &token.Kind, &token.Name, &token.Role, &token.Integration, &token.CreatedBy,
+		&token.CreatedByEmail, &token.CreatedAt, &expiresAt, &lastUsedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Token{}, ErrNotFound
 	}

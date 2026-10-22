@@ -14,8 +14,13 @@ type Permission string
 // not declare one is refused.
 type Access struct {
 	session    bool
+	ingest     bool
 	permission Permission
 }
+
+// IntegrationParam is the path parameter that names the integration an
+// ingest route writes to.
+const IntegrationParam = "integration"
 
 func Public() Access { return Access{} }
 
@@ -24,7 +29,14 @@ func Authenticated() Access { return Access{session: true} }
 // Requires lets in a signed-in principal that holds the permission.
 func Requires(permission Permission) Access { return Access{session: true, permission: permission} }
 
+// Ingest lets in only an ingest token, and only for the integration the
+// route's IntegrationParam names. No session and no API token is an ingest
+// identity.
+func Ingest() Access { return Access{session: true, ingest: true} }
+
 func (a Access) RequiresSession() bool { return a.session }
+
+func (a Access) Ingest() bool { return a.ingest }
 
 // Permission returns the permission the route requires, if it requires one.
 func (a Access) Permission() (Permission, bool) { return a.permission, a.permission != "" }

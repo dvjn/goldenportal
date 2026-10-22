@@ -143,6 +143,7 @@ func (m memoryTokens) Find(_ context.Context, kind, secret string) (apitoken.Tok
 
 var testTokens = memoryTokens{
 	"gpt_ci": {ID: "t-1", Kind: apitoken.KindAPI, Name: "ci", Role: access.Maintainer},
+	"gpi_ci": {ID: "t-2", Kind: apitoken.KindIngest, Name: "pipelines", Integration: "ci"},
 }
 
 // memoryGrants holds each user's grants by user ID.

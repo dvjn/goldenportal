@@ -38,6 +38,7 @@ func TestMiddlewareFailsClosed(t *testing.T) {
 		routes.GET("/api/v1/private", httpx.Authenticated(), whoAmI)
 		routes.GET("/api/v1/grants", httpx.Requires(access.AccessWrite), whoAmI)
 		routes.GET("/api/v1/catalog", httpx.Requires(access.CatalogWrite), whoAmI)
+		routes.GET("/api/v1/ingest/{integration}", httpx.Ingest(), whoAmI)
 	}
 	admin := memoryGrants{"u-1": {{ID: "r-1", Subject: access.Subject{Type: access.SubjectGroup, ID: "g-2"}, Role: access.Admin}}}
 	const (
@@ -67,6 +68,14 @@ func TestMiddlewareFailsClosed(t *testing.T) {
 		{"api token without the permission", "/api/v1/grants", "", "gpt_ci", nil, nil, http.StatusForbidden, forbidden},
 		{"unknown api token beside a live session", "/api/v1/private", "live", "gpt_forged", nil, nil, http.StatusUnauthorized, required},
 		{"undeclared api route", "/api/v1/missing", "live", "", nil, nil, http.StatusUnauthorized, required},
+		{"ingest token for its integration", "/api/v1/ingest/ci", "", "gpi_ci", nil, nil, http.StatusOK, `{"data":"pipelines"}`},
+		{
+			"ingest token for another integration", "/api/v1/ingest/gitlab", "", "gpi_ci", nil, nil,
+			http.StatusForbidden, `{"error":{"message":"this token ingests into the ci integration only"}}`,
+		},
+		{"api token on an ingest route", "/api/v1/ingest/ci", "", "gpt_ci", nil, nil, http.StatusUnauthorized, required},
+		{"session on an ingest route", "/api/v1/ingest/ci", "live", "", admin, nil, http.StatusUnauthorized, required},
+		{"ingest token on an api route", "/api/v1/private", "", "gpi_ci", nil, nil, http.StatusUnauthorized, required},
 		{
 			"session store failure", "/api/v1/private", "live", "", nil, errors.New("database down"),
 			http.StatusInternalServerError, `{"error":{"message":"could not check the session"}}`,

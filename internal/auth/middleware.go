@@ -34,8 +34,8 @@ type tokenFinder interface {
 }
 
 // Authenticator finds the principal behind a request and resolves its role:
-// an API token when the request has a bearer token, otherwise the user of the
-// session cookie.
+// an ingest token on an ingest route, an API token when the request has a
+// bearer token, otherwise the user of the session cookie.
 type Authenticator struct {
 	sessions sessionFinder
 	tokens   tokenFinder
@@ -47,16 +47,22 @@ func NewAuthenticator(sessions sessionFinder, tokens tokenFinder, resolver acces
 	return &Authenticator{sessions: sessions, tokens: tokens, resolver: resolver, cookie: cookies.Session}
 }
 
-func (a *Authenticator) Authenticate(r *http.Request) (Principal, error) {
-	if secret, ok := bearerToken(r); ok {
-		return a.apiToken(r.Context(), secret)
+func (a *Authenticator) Authenticate(r *http.Request, declared httpx.Access) (Principal, error) {
+	secret, bearer := bearerToken(r)
+	switch {
+	case declared.Ingest() && bearer:
+		return a.token(r.Context(), apitoken.KindIngest, secret)
+	case declared.Ingest():
+		return Principal{}, ErrNoSession
+	case bearer:
+		return a.token(r.Context(), apitoken.KindAPI, secret)
 	}
 
 	return a.session(r)
 }
 
-func (a *Authenticator) apiToken(ctx context.Context, secret string) (Principal, error) {
-	token, err := a.tokens.Find(ctx, apitoken.KindAPI, secret)
+func (a *Authenticator) token(ctx context.Context, kind, secret string) (Principal, error) {
+	token, err := a.tokens.Find(ctx, kind, secret)
 	if errors.Is(err, apitoken.ErrNotFound) {
 		return Principal{}, ErrNoSession
 	}
@@ -79,8 +85,9 @@ func (a *Authenticator) session(r *http.Request) (Principal, error) {
 }
 
 // Middleware refuses every /api/ request whose route has no declared access,
-// every request to an authenticated route without a live session, and every
-// request without the permission its route requires.
+// every request to an authenticated route without a live session, every
+// request without the permission its route requires, and every ingest
+// request for another integration than its token's.
 func Middleware(routes *httpx.Routes, authenticator *Authenticator) gofrHTTP.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +106,7 @@ func Middleware(routes *httpx.Routes, authenticator *Authenticator) gofrHTTP.Mid
 				return
 			}
 
-			principal, err := authenticator.Authenticate(r)
+			principal, err := authenticator.Authenticate(r, declared)
 			switch {
 			case errors.Is(err, ErrNoSession):
 				httpx.WriteError(w, http.StatusUnauthorized, "authentication required")
@@ -111,6 +118,10 @@ func Middleware(routes *httpx.Routes, authenticator *Authenticator) gofrHTTP.Mid
 			if permission, required := declared.Permission(); required && !principal.Can(permission) {
 				httpx.WriteError(w, http.StatusForbidden,
 					fmt.Sprintf("this needs the %s permission, ask an admin if you need access", permission))
+				return
+			}
+			if scope := principal.APIToken.Integration; declared.Ingest() && scope != gofrHTTP.NewRequest(r).PathParam(httpx.IntegrationParam) {
+				httpx.WriteError(w, http.StatusForbidden, fmt.Sprintf("this token ingests into the %s integration only", scope))
 				return
 			}
 

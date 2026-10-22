@@ -103,6 +103,34 @@ func TestApplyReplacesTheDefinitionsAndRecordsTheRevision(t *testing.T) {
 	}
 }
 
+func TestApplyRemovesAnIntegrationsEntitiesTokensAndRuns(t *testing.T) {
+	store, db := newStore(t)
+	ci := "kind: Integration\nidentifier: ci\ntitle: CI\nconnector: push\n"
+	from := setOf(t, teamYAML, ci)
+	to := setOf(t, teamYAML)
+	changes, _ := definition.Diff(from, to)
+	plan := Plan{Base: 1, Desired: to, Changes: changes, Effects: definition.EffectsOf(from, to)}
+
+	db.ExpectBegin()
+	db.ExpectExec(queryLockRevisions).WillReturnResult(sqlmock.NewResult(0, 0))
+	db.ExpectQuery(queryRevisionNumber).WillReturnRows(sqlmock.NewRows([]string{"number"}).AddRow(1))
+	db.ExpectExec(queryClearDefs).WillReturnResult(sqlmock.NewResult(0, 2))
+	db.ExpectExec(queryInsertDef).WithArgs(definition.KindBlueprint, "team", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+	db.ExpectQuery(queryIntegrationEntities).WithArgs("ci", "[]", impactExamples).WillReturnRows(nameRows())
+	db.ExpectExec(queryDeleteIntegrationEntities).WithArgs("ci").WillReturnResult(sqlmock.NewResult(0, 0))
+	db.ExpectExec(queryRevokeIngestTokens).WithArgs("ci").WillReturnResult(sqlmock.NewResult(0, 1))
+	db.ExpectExec(queryDeleteSyncRuns).WithArgs("ci").WillReturnResult(sqlmock.NewResult(0, 3))
+	db.ExpectQuery(queryInsertRevision).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(at))
+	db.ExpectCommit()
+
+	if _, err := store.Apply(context.Background(), plan, audit.Actor{Label: "alice@example.test"}, ""); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if err := db.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestApplyRefusesAPlanMadeOnAnotherRevision(t *testing.T) {
 	store, db := newStore(t)
 	db.ExpectBegin()

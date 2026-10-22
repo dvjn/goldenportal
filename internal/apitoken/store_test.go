@@ -25,7 +25,7 @@ var createdAt = time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
 
 func tokenRows() *sqlmock.Rows {
 	return sqlmock.NewRows([]string{
-		"id", "kind", "name", "role", "created_by", "created_by_email", "created_at", "expires_at", "last_used_at",
+		"id", "kind", "name", "role", "integration", "created_by", "created_by_email", "created_at", "expires_at", "last_used_at",
 	})
 }
 
@@ -38,7 +38,7 @@ func ciToken() Token {
 
 func addToken(rows *sqlmock.Rows, token Token) *sqlmock.Rows {
 	lastUsed := sql.NullTime{Time: token.LastUsedAt, Valid: !token.LastUsedAt.IsZero()}
-	return rows.AddRow(token.ID, token.Kind, token.Name, token.Role, token.CreatedBy, token.CreatedByEmail,
+	return rows.AddRow(token.ID, token.Kind, token.Name, token.Role, token.Integration, token.CreatedBy, token.CreatedByEmail,
 		token.CreatedAt, token.ExpiresAt, lastUsed)
 }
 
@@ -73,7 +73,7 @@ func TestCreateStoresOnlyTheHashOfAPrefixedSecret(t *testing.T) {
 	store, db := newStore(t)
 	want := ciToken()
 	db.ExpectQuery(queryCreateToken).
-		WithArgs(KindAPI, "ci", sqlmock.AnyArg(), access.Maintainer, "u-1", sql.NullTime{Time: want.ExpiresAt, Valid: true}).
+		WithArgs(KindAPI, "ci", sqlmock.AnyArg(), access.Maintainer, "u-1", sql.NullTime{Time: want.ExpiresAt, Valid: true}, "").
 		WillReturnRows(addToken(tokenRows(), want))
 
 	token, secret, err := store.Create(context.Background(), NewToken{
@@ -92,7 +92,7 @@ func TestRotateCreatesATokenAndRevokesTheOthers(t *testing.T) {
 	rotated := Token{ID: "t-2", Kind: KindSCIM, Name: "Rotated", CreatedBy: "u-1", CreatedAt: createdAt}
 	db.ExpectBegin()
 	db.ExpectQuery(queryCreateToken).
-		WithArgs(KindSCIM, "Rotated", sqlmock.AnyArg(), access.NoRole, "u-1", sql.NullTime{}).
+		WithArgs(KindSCIM, "Rotated", sqlmock.AnyArg(), access.NoRole, "u-1", sql.NullTime{}, "").
 		WillReturnRows(addToken(tokenRows(), rotated))
 	db.ExpectExec(queryRevokeOthers).WithArgs(KindSCIM, "t-2").WillReturnResult(sqlmock.NewResult(0, 1))
 	db.ExpectCommit()
@@ -105,9 +105,9 @@ func TestRotateCreatesATokenAndRevokesTheOthers(t *testing.T) {
 
 func TestListAndRevoke(t *testing.T) {
 	store, db := newStore(t)
-	db.ExpectQuery(queryListTokens).WithArgs(KindAPI).WillReturnRows(addToken(tokenRows(), ciToken()))
-	db.ExpectQuery(queryRevokeToken).WithArgs(KindAPI, "t-1").WillReturnRows(addToken(tokenRows(), ciToken()))
-	db.ExpectQuery(queryRevokeToken).WithArgs(KindAPI, "t-1").WillReturnRows(tokenRows())
+	db.ExpectQuery(queryListTokens).WithArgs(KindAPI, "").WillReturnRows(addToken(tokenRows(), ciToken()))
+	db.ExpectQuery(queryRevokeToken).WithArgs(KindAPI, "t-1", "").WillReturnRows(addToken(tokenRows(), ciToken()))
+	db.ExpectQuery(queryRevokeToken).WithArgs(KindAPI, "t-1", "").WillReturnRows(tokenRows())
 
 	if tokens, err := store.List(context.Background(), KindAPI); err != nil || len(tokens) != 1 || tokens[0] != ciToken() {
 		t.Fatalf("List() = %+v, %v", tokens, err)
@@ -117,6 +117,36 @@ func TestListAndRevoke(t *testing.T) {
 	}
 	if _, err := store.Revoke(context.Background(), KindAPI, "t-1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second Revoke() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestIngestTokensBelongToOneIntegration(t *testing.T) {
+	store, db := newStore(t)
+	ingest := Token{
+		ID: "t-3", Kind: KindIngest, Name: "pipelines", Integration: "ci", CreatedBy: "u-2",
+		CreatedAt: createdAt, ExpiresAt: createdAt.AddDate(0, 1, 0),
+	}
+	db.ExpectQuery(queryCreateToken).
+		WithArgs(KindIngest, "pipelines", sqlmock.AnyArg(), access.NoRole, "u-2", sql.NullTime{Time: ingest.ExpiresAt, Valid: true}, "ci").
+		WillReturnRows(addToken(tokenRows(), ingest))
+	db.ExpectQuery(queryListTokens).WithArgs(KindIngest, "ci").WillReturnRows(addToken(tokenRows(), ingest))
+	db.ExpectQuery(queryRevokeToken).WithArgs(KindIngest, "t-3", "gitlab").WillReturnRows(tokenRows())
+	db.ExpectQuery(queryRevokeToken).WithArgs(KindIngest, "t-3", "ci").WillReturnRows(addToken(tokenRows(), ingest))
+
+	token, secret, err := store.Create(context.Background(), NewToken{
+		Kind: KindIngest, Name: "pipelines", Integration: "ci", CreatedBy: "u-2", ExpiresAt: ingest.ExpiresAt,
+	})
+	if err != nil || token != ingest || !strings.HasPrefix(secret, IngestPrefix) {
+		t.Fatalf("Create() = %+v, %q, %v, want the ci token with the %s prefix", token, secret, err, IngestPrefix)
+	}
+	if tokens, err := store.ListIngest(context.Background(), "ci"); err != nil || len(tokens) != 1 || tokens[0] != ingest {
+		t.Fatalf("ListIngest() = %+v, %v", tokens, err)
+	}
+	if _, err := store.RevokeIngest(context.Background(), "gitlab", "t-3"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RevokeIngest(gitlab) error = %v, want ErrNotFound", err)
+	}
+	if token, err := store.RevokeIngest(context.Background(), "ci", "t-3"); err != nil || token.ID != "t-3" {
+		t.Fatalf("RevokeIngest(ci) = %+v, %v", token, err)
 	}
 }
 

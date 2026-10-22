@@ -71,7 +71,10 @@ const (
 
 	queryDeleteBlueprintEntities   = `DELETE FROM entities WHERE blueprint = $1`
 	queryDeleteIntegrationEntities = `DELETE FROM entities WHERE integration = $1`
-	queryClearProperty             = `UPDATE entities SET properties = properties - $2::text, updated_at = NOW()
+	queryRevokeIngestTokens        = `UPDATE api_tokens SET revoked_at = NOW()
+		WHERE kind = 'ingest' AND integration = $1 AND revoked_at IS NULL`
+	queryDeleteSyncRuns = `DELETE FROM sync_runs WHERE integration = $1`
+	queryClearProperty  = `UPDATE entities SET properties = properties - $2::text, updated_at = NOW()
 		WHERE blueprint = $1 AND properties -> $2 IS NOT NULL`
 	queryClearValues = `UPDATE entities SET properties = properties - $2::text, updated_at = NOW()
 		WHERE blueprint = $1 AND identifier IN (SELECT jsonb_array_elements_text($3::jsonb))`
@@ -230,7 +233,9 @@ func applyEffects(ctx context.Context, q querier, effects definition.Effects, me
 		statements = append(statements, statement{queryDeleteBlueprintEntities, []any{blueprint}})
 	}
 	for _, integration := range effects.RemovedIntegrations {
-		statements = append(statements, statement{queryDeleteIntegrationEntities, []any{integration}})
+		for _, query := range []string{queryDeleteIntegrationEntities, queryRevokeIngestTokens, queryDeleteSyncRuns} {
+			statements = append(statements, statement{query, []any{integration}})
+		}
 	}
 	for _, field := range effects.RemovedProperties {
 		statements = append(statements, statement{queryClearProperty, []any{field.Blueprint, field.Name}})
