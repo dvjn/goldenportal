@@ -105,6 +105,74 @@ func TestCheckFindsWhatTheSchemaCannotSee(t *testing.T) {
 	}
 }
 
+func TestCheckGivesEachMappingAKindItsConnectorReceives(t *testing.T) {
+	const push = "kind: Integration\nidentifier: ci\ntitle: CI\nconnector: push\nmappings:\n"
+	cases := []struct {
+		name     string
+		mappings string
+		path     string
+		message  string
+	}{
+		{
+			name:     "kind a pull connector does not read",
+			mappings: "kind: Integration\nidentifier: gitlab\ntitle: GitLab\nconnector: gitlab\nmappings:\n  - kind: issue\n    blueprint: team\n    identifier: .id\n",
+			path:     "mappings[0].kind",
+			message:  `the gitlab connector reads group, project, pipeline, not "issue"`,
+		},
+		{
+			name:     "pull mapping without an identifier",
+			mappings: "kind: Integration\nidentifier: sonar\ntitle: Sonar\nconnector: sonarqube\nmappings:\n  - kind: project\n    blueprint: team\n",
+			path:     "mappings[0]",
+			message:  "a pull connector reads records that are not entities yet",
+		},
+		{
+			name:     "push mapping with a title but no identifier",
+			mappings: push + "  - kind: team\n    blueprint: team\n    title: .name\n",
+			path:     "mappings[0]",
+			message:  "leave out every expression to receive entities as they are",
+		},
+		{
+			name:     "push kind mapped twice",
+			mappings: push + "  - kind: team\n    blueprint: team\n  - kind: team\n    blueprint: service\n",
+			path:     "mappings[1].kind",
+			message:  `another mapping already receives kind "team"`,
+		},
+		{
+			name:     "push blueprint written from two kinds",
+			mappings: push + "  - kind: team\n    blueprint: team\n  - kind: group\n    blueprint: team\n",
+			path:     "mappings[1].blueprint",
+			message:  `another mapping already writes blueprint "team"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			problems := problemsOf(t, source(teamYAML, "kind: Blueprint\nidentifier: service\ntitle: Service\n", tc.mappings))
+
+			if !slices.ContainsFunc(problems, func(problem Problem) bool {
+				return problem.Path == tc.path && strings.Contains(problem.Message, tc.message)
+			}) {
+				t.Fatalf("problems = %+v, want %q at path %q", problems, tc.message, tc.path)
+			}
+		})
+	}
+}
+
+func TestCheckAcceptsAPushMappingWithoutExpressions(t *testing.T) {
+	ci := "kind: Integration\nidentifier: ci\ntitle: CI\nconnector: push\nmappings:\n  - kind: team\n    blueprint: team\n"
+	set := NewSet(mustParse(t, source(teamYAML, ci)).Documents...)
+
+	if problems := set.Check(); len(problems) > 0 {
+		t.Fatalf("problems = %v, want none", problems)
+	}
+	integration, _ := set.Integration("ci")
+	if mapping, ok := integration.Mapping("team"); !ok || !mapping.Canonical() {
+		t.Fatalf("Mapping(team) = %+v, %t, want the canonical team mapping", mapping, ok)
+	}
+	if _, ok := integration.Mapping("service"); ok {
+		t.Fatal("Mapping(service) found a mapping, want none")
+	}
+}
+
 func TestCheckAllowsRelationCycles(t *testing.T) {
 	team := strings.Replace(teamYAML, "properties:", "relations:\n  parent:\n    title: Parent team\n    target: team\n  lead:\n    title: Lead service\n    target: service\nproperties:", 1)
 

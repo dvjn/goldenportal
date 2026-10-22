@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/invopop/jsonschema"
@@ -45,11 +47,12 @@ type Secret struct {
 }
 
 // Mapping turns one kind of resource the connector reads into entities of
-// a blueprint. Every value is a jq expression over the resource.
+// a blueprint. Every value is a jq expression over the resource. A push
+// mapping without expressions takes records that are already entities.
 type Mapping struct {
 	Kind       string      `json:"kind" jsonschema:"minLength=1" jsonschema_description:"The kind of resource the connector reads, such as project."`
 	Blueprint  string      `json:"blueprint"`
-	Identifier string      `json:"identifier" jsonschema_description:"A jq expression for the entity identifier."`
+	Identifier string      `json:"identifier,omitempty" jsonschema_description:"A jq expression for the entity identifier. Leave out every expression in a push integration to receive entities as they are."`
 	Title      string      `json:"title,omitempty" jsonschema_description:"A jq expression for the entity title."`
 	Properties Map[string] `json:"properties,omitzero" jsonschema_description:"A jq expression per property of the blueprint."`
 	Relations  Map[string] `json:"relations,omitzero" jsonschema_description:"A jq expression per relation of the blueprint, giving target identifiers."`
@@ -65,7 +68,33 @@ func (Secret) JSONSchemaExtend(schema *jsonschema.Schema) {
 	secretRef.Pattern = envPattern.String()
 }
 
+// connectorKinds are the kinds of resource each pull connector reads.
+var connectorKinds = map[Connector][]string{
+	ConnectorGitLab:    {"group", "project", "pipeline"},
+	ConnectorSonarQube: {"project"},
+}
+
 func (i *Integration) Pull() bool { return i.Connector != ConnectorPush }
+
+// Kinds returns the kinds of resource the connector reads, or nil for a push
+// integration, which receives any kind its mappings name.
+func (c Connector) Kinds() []string { return slices.Clone(connectorKinds[c]) }
+
+// Mapping returns the mapping a push integration receives the kind through.
+func (i *Integration) Mapping(kind string) (Mapping, bool) {
+	index := slices.IndexFunc(i.Mappings, func(mapping Mapping) bool { return mapping.Kind == kind })
+	if index < 0 {
+		return Mapping{}, false
+	}
+
+	return i.Mappings[index], true
+}
+
+// Canonical reports whether the mapping takes records that are already
+// entities.
+func (m Mapping) Canonical() bool {
+	return m.Identifier == "" && m.Title == "" && m.Properties.IsZero() && m.Relations.IsZero()
+}
 
 func (i *Integration) check(c *checker) {
 	if i.Identifier == Manual {
@@ -73,8 +102,30 @@ func (i *Integration) check(c *checker) {
 	}
 	i.checkInterval(c)
 	i.checkConfig(c)
+	i.checkKinds(c)
 	for index, mapping := range i.Mappings {
 		mapping.check(c, i, path("mappings", index))
+	}
+}
+
+// checkKinds keeps every kind a pull connector reads, and gives each kind and
+// each blueprint of a push integration one mapping, so a snapshot of a kind
+// replaces exactly the entities of its blueprint.
+func (i *Integration) checkKinds(c *checker) {
+	kinds, blueprints := map[string]bool{}, map[string]bool{}
+	for index, mapping := range i.Mappings {
+		at := path("mappings", index)
+		switch {
+		case i.Pull() && !slices.Contains(connectorKinds[i.Connector], mapping.Kind):
+			c.report(i, append(at, "kind"), "the %s connector reads %s, not %q",
+				i.Connector, strings.Join(connectorKinds[i.Connector], ", "), mapping.Kind)
+		case i.Pull():
+		case kinds[mapping.Kind]:
+			c.report(i, append(at, "kind"), "another mapping already receives kind %q, a push integration maps each kind once", mapping.Kind)
+		case blueprints[mapping.Blueprint]:
+			c.report(i, append(at, "blueprint"), "another mapping already writes blueprint %q, a push integration writes each blueprint from one kind", mapping.Blueprint)
+		}
+		kinds[mapping.Kind], blueprints[mapping.Blueprint] = true, true
 	}
 }
 
@@ -114,7 +165,14 @@ func (m Mapping) check(c *checker, integration *Integration, at []string) {
 		c.report(integration, append(at, "blueprint"), "no blueprint has the identifier %q", m.Blueprint)
 		blueprint = &Blueprint{}
 	}
-	checkJQ(c, integration, append(at, "identifier"), m.Identifier)
+	switch {
+	case m.Identifier != "":
+		checkJQ(c, integration, append(at, "identifier"), m.Identifier)
+	case integration.Pull():
+		c.report(integration, at, "give a jq expression for the identifier, a pull connector reads records that are not entities yet")
+	case !m.Canonical():
+		c.report(integration, at, "give a jq expression for the identifier, or leave out every expression to receive entities as they are")
+	}
 	if m.Title != "" {
 		checkJQ(c, integration, append(at, "title"), m.Title)
 	}
