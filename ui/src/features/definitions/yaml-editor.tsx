@@ -51,10 +51,7 @@ function useSchema(schema: object) {
 }
 
 function useDark() {
-  const { theme } = useTheme();
-  return (
-    theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches)
-  );
+  return useTheme().resolvedTheme === "dark";
 }
 
 export default function YamlEditor({

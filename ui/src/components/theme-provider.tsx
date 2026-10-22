@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 
 type Theme = "dark" | "light" | "system";
+
+type ResolvedTheme = Exclude<Theme, "system">;
 
 type ThemeProviderProps = {
   children: React.ReactNode;
@@ -10,15 +12,29 @@ type ThemeProviderProps = {
 
 type ThemeProviderState = {
   theme: Theme;
+  resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
 };
 
 const initialState: ThemeProviderState = {
   theme: "system",
+  resolvedTheme: "light",
   setTheme: () => null,
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+
+const darkScheme = "(prefers-color-scheme: dark)";
+
+function subscribeToSystemTheme(onChange: () => void) {
+  const query = window.matchMedia(darkScheme);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function systemTheme(): ResolvedTheme {
+  return window.matchMedia(darkScheme).matches ? "dark" : "light";
+}
 
 export function ThemeProvider({
   children,
@@ -29,26 +45,18 @@ export function ThemeProvider({
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
   );
+  const system = useSyncExternalStore(subscribeToSystemTheme, systemTheme);
+  const resolvedTheme = theme === "system" ? system : theme;
 
   useEffect(() => {
     const root = window.document.documentElement;
-
     root.classList.remove("light", "dark");
-
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-
-      root.classList.add(systemTheme);
-      return;
-    }
-
-    root.classList.add(theme);
-  }, [theme]);
+    root.classList.add(resolvedTheme);
+  }, [resolvedTheme]);
 
   const value = {
     theme,
+    resolvedTheme,
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme);
       setTheme(theme);
