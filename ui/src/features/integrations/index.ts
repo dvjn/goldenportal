@@ -8,6 +8,7 @@ export {
   type Run,
   type RunStatus,
 } from "./api";
+export { IngestTokens } from "./ingest-tokens";
 export {
   ingestTokensQueryOptions,
   integrationQueryOptions,

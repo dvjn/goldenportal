@@ -6,7 +6,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { meQueryOptions, useCan } from "@/features/auth";
 import {
   connectorLabels,
+  IngestTokens,
   type IntegrationDetail,
+  ingestTokensQueryOptions,
   integrationQueryOptions,
   RunHistory,
   runsQueryOptions,
@@ -18,19 +20,27 @@ import { formatDateTime, formatRelative } from "@/lib/time";
 
 export const Route = createFileRoute("/_authenticated/integrations/$integration")({
   loader: async ({ context: { queryClient }, params }) => {
-    const [integration] = await Promise.all([
+    const [integration, , me] = await Promise.all([
       queryClient.ensureQueryData(integrationQueryOptions(params.integration)),
       queryClient.ensureQueryData(runsQueryOptions(params.integration)),
       queryClient.ensureQueryData(meQueryOptions),
     ]);
+    if (takesTokens(integration) && me.permissions.includes("integrations.tokens")) {
+      await queryClient.ensureQueryData(ingestTokensQueryOptions(params.integration));
+    }
     return { breadcrumb: integration.title };
   },
   component: IntegrationPage,
 });
 
+function takesTokens(integration: IntegrationDetail) {
+  return integration.connector === "push";
+}
+
 function IntegrationPage() {
   const params = Route.useParams();
   const integration = useIntegration(params.integration);
+  const can = useCan();
 
   return (
     <>
@@ -52,6 +62,9 @@ function IntegrationPage() {
         <DefinitionCard integration={integration} />
         <EntitiesCard integration={integration} />
       </div>
+      {takesTokens(integration) && can("integrations.tokens") && (
+        <IngestTokens integration={integration} />
+      )}
       {!integration.manual && <Runs identifier={integration.identifier} />}
     </>
   );

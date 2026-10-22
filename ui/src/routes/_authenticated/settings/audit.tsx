@@ -47,6 +47,9 @@ const actionLabels: Record<string, string> = {
   "entity.created": "Created an entity",
   "entity.updated": "Edited an entity",
   "entity.deleted": "Deleted an entity",
+  "integration.synced": "Synced an integration",
+  "ingest_token.created": "Created an ingest token",
+  "ingest_token.revoked": "Revoked an ingest token",
 };
 
 const targetLabels: Record<string, string> = {
@@ -56,6 +59,8 @@ const targetLabels: Record<string, string> = {
   scim_token: "SCIM token",
   definitions_revision: "Definitions",
   entity: "Entity",
+  integration: "Integration",
+  ingest_token: "Ingest token",
 };
 
 function AuditPage() {
@@ -69,7 +74,8 @@ function AuditPage() {
       <header className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">Audit log</h1>
         <p className="text-muted-foreground text-sm">
-          Sign-ins and every change to access, definitions and manual entities, newest first.
+          Sign-ins, every change to access, definitions and manual entities, and every sync or
+          ingest token someone started or changed, newest first.
         </p>
       </header>
       <Table>

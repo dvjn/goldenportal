@@ -1,4 +1,9 @@
-import type { IntegrationDetail, IntegrationSummary, Run } from "@/features/integrations";
+import type {
+  IngestToken,
+  IntegrationDetail,
+  IntegrationSummary,
+  Run,
+} from "@/features/integrations";
 import type { Handler } from "./api";
 
 export const snapshotRun: Run = {
@@ -84,11 +89,21 @@ export const gitlab: IntegrationDetail = {
   secrets: [{ name: "token", variable: "GITLAB_TOKEN" }],
 };
 
+export const pipelinesToken: IngestToken = {
+  id: "t-1",
+  name: "pipelines",
+  created_by: "bob@example.test",
+  created_at: "2026-10-20T09:00:00Z",
+  expires_at: "2099-01-20T09:00:00Z",
+  last_used_at: "2026-10-21T09:00:00Z",
+};
+
 export const integrationsApi: Record<string, Handler> = {
   "GET /api/v1/integrations": () => Response.json({ data: { integrations: [manual, ci, gitlab] } }),
   "GET /api/v1/integrations/ci": () => Response.json({ data: ci }),
   "GET /api/v1/integrations/ci/runs": () =>
     Response.json({ data: { runs: [snapshotRun, upsertRun] } }),
+  "GET /api/v1/integrations/ci/tokens": () => Response.json({ data: { tokens: [pipelinesToken] } }),
   "GET /api/v1/integrations/gitlab": () => Response.json({ data: gitlab }),
   "GET /api/v1/integrations/gitlab/runs": () => Response.json({ data: { runs: [failedSync] } }),
 };

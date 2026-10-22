@@ -54,6 +54,10 @@ const describers: Record<string, (details: Details) => string> = {
       : blueprint(details);
   },
   "entity.deleted": blueprint,
+  "integration.synced": (details) => `Run ${details.run}`,
+  "ingest_token.created": (details) =>
+    `For ${details.integration}, expires ${formatDateTime(String(details.expires_at))}`,
+  "ingest_token.revoked": (details) => `For ${details.integration}`,
 };
 
 export function describeDetails(entry: AuditEntry) {

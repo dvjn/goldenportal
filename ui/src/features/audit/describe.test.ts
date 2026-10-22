@@ -69,4 +69,14 @@ describe("describeDetails", () => {
       "Blueprint service",
     );
   });
+
+  it("names the run of a sync and the integration of an ingest token", () => {
+    expect(describeDetails(entry("integration.synced", { run: 12 }))).toBe("Run 12");
+    expect(describeDetails(entry("ingest_token.revoked", { integration: "ci" }))).toBe("For ci");
+    expect(
+      describeDetails(
+        entry("ingest_token.created", { integration: "ci", expires_at: "2026-11-24T09:00:00Z" }),
+      ),
+    ).toMatch(/^For ci, expires Nov 24, 2026/);
+  });
 });
