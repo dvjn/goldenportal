@@ -18,11 +18,28 @@ const (
 	ConnectorPush      Connector = "push"
 	ConnectorGitLab    Connector = "gitlab"
 	ConnectorSonarQube Connector = "sonarqube"
+	// ConnectorManual is the connector of the built-in manual integration
+	// only; no document names it.
+	ConnectorManual Connector = "manual"
 )
 
 // Manual is the built-in integration that owns the entities people create
 // in the portal. No document defines it.
 const Manual = "manual"
+
+// ManualIntegration describes the built-in manual integration as if a
+// document defined it.
+func ManualIntegration() *Integration {
+	return &Integration{
+		Header: Header{
+			Kind:        KindIntegration,
+			Identifier:  Manual,
+			Title:       "Manual",
+			Description: "Entities people create and edit in the portal",
+		},
+		Connector: ConnectorManual,
+	}
+}
 
 const minInterval = time.Minute
 
@@ -74,7 +91,12 @@ var connectorKinds = map[Connector][]string{
 	ConnectorSonarQube: {"project"},
 }
 
-func (i *Integration) Pull() bool { return i.Connector != ConnectorPush }
+// Pull reports whether a connector reads the integration's source, as
+// opposed to the source pushing to it or people creating its entities.
+func (i *Integration) Pull() bool {
+	_, pull := connectorKinds[i.Connector]
+	return pull
+}
 
 // Kinds returns the kinds of resource the connector reads, or nil for a push
 // integration, which receives any kind its mappings name.

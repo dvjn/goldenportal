@@ -3,9 +3,11 @@ package integration
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/catalog"
 	"github.com/dvjn/goldport/internal/definition"
@@ -30,28 +32,74 @@ type runStore interface {
 	LastPull(ctx context.Context, integration string) (time.Time, error)
 }
 
+type entityCounter interface {
+	OwnedCounts(ctx context.Context) ([]catalog.OwnedCount, error)
+}
+
+type tokenStore interface {
+	Create(ctx context.Context, token apitoken.NewToken) (apitoken.Token, string, error)
+	ListIngest(ctx context.Context, integration string) ([]apitoken.Token, error)
+	RevokeIngest(ctx context.Context, integration, id string) (apitoken.Token, error)
+}
+
 type auditLog interface {
 	Record(ctx context.Context, entry audit.Entry) error
+}
+
+// ServiceConfig is what the integrations API needs. PublicURL is where
+// pushes reach the portal.
+type ServiceConfig struct {
+	Definitions definitionReader
+	Entities    entityWriter
+	Counts      entityCounter
+	Runs        runStore
+	Syncer      *Syncer
+	Scheduler   *Scheduler
+	Tokens      tokenStore
+	Audit       auditLog
+	PublicURL   string
+	Now         func() time.Time
 }
 
 type Service struct {
 	definitions definitionReader
 	entities    entityWriter
+	counts      entityCounter
 	runs        runStore
 	syncer      *Syncer
+	scheduler   *Scheduler
+	tokens      tokenStore
 	audit       auditLog
+	publicURL   string
 	now         func() time.Time
 }
 
-func NewService(definitions definitionReader, entities entityWriter, runs runStore, syncer *Syncer, log auditLog, now func() time.Time) *Service {
-	return &Service{definitions: definitions, entities: entities, runs: runs, syncer: syncer, audit: log, now: now}
+func NewService(config ServiceConfig) *Service {
+	return &Service{
+		definitions: config.Definitions,
+		entities:    config.Entities,
+		counts:      config.Counts,
+		runs:        config.Runs,
+		syncer:      config.Syncer,
+		scheduler:   config.Scheduler,
+		tokens:      config.Tokens,
+		audit:       config.Audit,
+		publicURL:   strings.TrimRight(config.PublicURL, "/"),
+		now:         config.Now,
+	}
 }
 
 func (s *Service) Register(routes *httpx.Routes) {
 	routes.POST("/api/v1/ingest/{integration}/{kind}", httpx.Ingest(), s.ingest)
 	routes.DELETE("/api/v1/ingest/{integration}/{kind}/{identifier}", httpx.Ingest(), s.ingestDelete)
 
+	routes.GET("/api/v1/integrations", httpx.Requires(access.CatalogRead), s.listIntegrations)
+	routes.GET("/api/v1/integrations/{integration}", httpx.Requires(access.CatalogRead), s.getIntegration)
+	routes.GET("/api/v1/integrations/{integration}/runs", httpx.Requires(access.CatalogRead), s.listRuns)
 	routes.POST("/api/v1/integrations/{integration}/sync", httpx.Requires(access.IntegrationsSync), s.syncNow)
+	routes.GET("/api/v1/integrations/{integration}/tokens", httpx.Requires(access.IntegrationsTokens), s.listTokens)
+	routes.POST("/api/v1/integrations/{integration}/tokens", httpx.Requires(access.IntegrationsTokens), s.createToken)
+	routes.DELETE("/api/v1/integrations/{integration}/tokens/{id}", httpx.Requires(access.IntegrationsTokens), s.revokeToken)
 }
 
 // detailedError is an API error whose body carries more than its message.

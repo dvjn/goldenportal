@@ -10,8 +10,6 @@ import (
 	"gofr.dev/pkg/gofr"
 )
 
-const manualTitle = "Manual"
-
 type propertyView struct {
 	Key         string                  `json:"key"`
 	Title       string                  `json:"title"`
@@ -145,7 +143,7 @@ type integrationView struct {
 // and no document defines it.
 func integrationOf(set definition.Set, identifier string) integrationView {
 	if identifier == definition.Manual {
-		return integrationView{Identifier: identifier, Title: manualTitle, Manual: true}
+		return integrationView{Identifier: identifier, Title: definition.ManualIntegration().Title, Manual: true}
 	}
 	integration, ok := set.Integration(identifier)
 	if !ok {

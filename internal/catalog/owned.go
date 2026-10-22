@@ -403,6 +403,35 @@ func (b sqlBatch) Delete(ctx context.Context, integration, blueprint string, ide
 	return int(deleted), err
 }
 
+// OwnedCount is how many entities of a blueprint an integration owns.
+type OwnedCount struct {
+	Integration string
+	Blueprint   string
+	Count       int
+}
+
+const queryOwnedCounts = `SELECT integration, blueprint, COUNT(*) FROM entities
+	GROUP BY integration, blueprint ORDER BY integration, blueprint`
+
+func (s *Store) OwnedCounts(ctx context.Context) ([]OwnedCount, error) {
+	rows, err := s.db.QueryContext(ctx, queryOwnedCounts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := []OwnedCount{}
+	for rows.Next() {
+		var count OwnedCount
+		if err := rows.Scan(&count.Integration, &count.Blueprint, &count.Count); err != nil {
+			return nil, err
+		}
+		counts = append(counts, count)
+	}
+
+	return counts, rows.Err()
+}
+
 // ValidIdentifier reports whether an entity can have the identifier.
 func ValidIdentifier(identifier string) bool {
 	return entityIdentifierPattern.MatchString(identifier)

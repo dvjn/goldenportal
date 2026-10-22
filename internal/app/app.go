@@ -92,7 +92,18 @@ func register(app *gofr.App) error {
 		go scheduler.Run(context.Background())
 		return nil
 	})
-	integration.NewService(catalogStore, catalogStore, runs, syncer, auditLog, time.Now).Register(routes)
+	integration.NewService(integration.ServiceConfig{
+		Definitions: catalogStore,
+		Entities:    catalogStore,
+		Counts:      catalogStore,
+		Runs:        runs,
+		Syncer:      syncer,
+		Scheduler:   scheduler,
+		Tokens:      tokens,
+		Audit:       auditLog,
+		PublicURL:   authConfig.PublicURL,
+		Now:         time.Now,
+	}).Register(routes)
 
 	return nil
 }

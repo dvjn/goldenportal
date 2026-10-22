@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -74,6 +75,39 @@ func (m memoryTokens) Find(_ context.Context, kind, secret string) (apitoken.Tok
 	}
 
 	return token, nil
+}
+
+func (m memoryTokens) Create(_ context.Context, token apitoken.NewToken) (apitoken.Token, string, error) {
+	created := apitoken.Token{
+		ID: fmt.Sprintf("t-%d", len(m)+1), Kind: token.Kind, Name: token.Name, Integration: token.Integration,
+		CreatedBy: token.CreatedBy, CreatedByEmail: "bob@example.test", CreatedAt: at, ExpiresAt: token.ExpiresAt,
+	}
+	secret := apitoken.IngestPrefix + created.ID
+	m[secret] = created
+
+	return created, secret, nil
+}
+
+func (m memoryTokens) ListIngest(_ context.Context, integration string) ([]apitoken.Token, error) {
+	var tokens []apitoken.Token
+	for _, secret := range slices.Sorted(maps.Keys(m)) {
+		if token := m[secret]; token.Kind == apitoken.KindIngest && token.Integration == integration {
+			tokens = append(tokens, token)
+		}
+	}
+
+	return tokens, nil
+}
+
+func (m memoryTokens) RevokeIngest(_ context.Context, integration, id string) (apitoken.Token, error) {
+	for secret, token := range m {
+		if token.Kind == apitoken.KindIngest && token.Integration == integration && token.ID == id {
+			delete(m, secret)
+			return token, nil
+		}
+	}
+
+	return apitoken.Token{}, apitoken.ErrNotFound
 }
 
 type memoryDefinitions struct {
@@ -275,8 +309,16 @@ type harness struct {
 	gitlab      *fakeConnector
 	locker      *memoryLocker
 	env         map[string]string
+	counts      fixedCounts
 	syncer      *Syncer
+	scheduler   *Scheduler
 	router      *httpxtest.Router
+}
+
+type fixedCounts []catalog.OwnedCount
+
+func (f *fixedCounts) OwnedCounts(context.Context) ([]catalog.OwnedCount, error) {
+	return *f, nil
 }
 
 func newHarness(t *testing.T) *harness {
@@ -304,9 +346,22 @@ func newHarness(t *testing.T) *harness {
 		Now:        func() time.Time { return at },
 		Logger:     &silentLogger{},
 	})
+	h.scheduler = NewScheduler(h.definitions, h.runs, h.syncer, func() time.Time { return at }, &silentLogger{})
+	h.scheduler.jitter = func() time.Duration { return 30 * time.Second }
 	h.router = httpxtest.NewRouter(&container.Container{Logger: logging.NewMockLogger(logging.FATAL)})
 	routes := httpx.NewRoutes(h.router)
-	NewService(h.definitions, h.writer, h.runs, h.syncer, h.audit, func() time.Time { return at }).Register(routes)
+	NewService(ServiceConfig{
+		Definitions: h.definitions,
+		Entities:    h.writer,
+		Counts:      &h.counts,
+		Runs:        h.runs,
+		Syncer:      h.syncer,
+		Scheduler:   h.scheduler,
+		Tokens:      h.tokens,
+		Audit:       h.audit,
+		PublicURL:   "https://portal.example.test/",
+		Now:         func() time.Time { return at },
+	}).Register(routes)
 	authenticator := auth.NewAuthenticator(memorySessions{}, h.tokens, fixedRoles{}, testCookies)
 	h.router.Use(httpx.ExposeRaw, auth.CrossOriginProtection(), auth.Middleware(routes, authenticator))
 

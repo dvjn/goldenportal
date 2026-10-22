@@ -289,6 +289,19 @@ func TestStoreWriteOwnedRunsInOneTransaction(t *testing.T) {
 	}
 }
 
+func TestStoreOwnedCountsCountsByIntegrationAndBlueprint(t *testing.T) {
+	store, db := newStore(t)
+	db.ExpectQuery(queryOwnedCounts).WillReturnRows(sqlmock.NewRows([]string{"integration", "blueprint", "count"}).
+		AddRow("ci", "service", 3).AddRow("manual", "team", 2))
+
+	counts, err := store.OwnedCounts(context.Background())
+
+	want := []OwnedCount{{Integration: "ci", Blueprint: "service", Count: 3}, {Integration: "manual", Blueprint: "team", Count: 2}}
+	if err != nil || !reflect.DeepEqual(counts, want) {
+		t.Fatalf("OwnedCounts() = %+v, %v, want %+v", counts, err, want)
+	}
+}
+
 func TestStoreUpsertReportsAnEntityAnotherIntegrationOwns(t *testing.T) {
 	store, db := newStore(t)
 	db.ExpectQuery(queryUpsertOwned).WillReturnRows(sqlmock.NewRows([]string{"identifier"}))
