@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Blocks, LogOut, Settings, ShieldCheck, SunMoon } from "lucide-react";
+import { Blocks, Cable, LogOut, Settings, ShieldCheck, SunMoon } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -84,16 +84,26 @@ export function NavUser() {
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
-        {can("catalog.model") && (
+        {(can("catalog.model") || can("integrations.sync")) && (
           <>
             <DropdownMenuGroup>
               <DropdownMenuLabel>Catalog</DropdownMenuLabel>
-              <DropdownMenuItem asChild>
-                <Link to="/definitions">
-                  <Blocks />
-                  Definitions
-                </Link>
-              </DropdownMenuItem>
+              {can("catalog.model") && (
+                <DropdownMenuItem asChild>
+                  <Link to="/definitions">
+                    <Blocks />
+                    Definitions
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {can("integrations.sync") && (
+                <DropdownMenuItem asChild>
+                  <Link to="/integrations">
+                    <Cable />
+                    Integrations
+                  </Link>
+                </DropdownMenuItem>
+              )}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
           </>

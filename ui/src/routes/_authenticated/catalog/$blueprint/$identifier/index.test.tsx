@@ -31,6 +31,7 @@ describe("entity page", () => {
       "/catalog/service",
     );
     expect(screen.getAllByText("Ledger")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "CI" })).toHaveAttribute("href", "/integrations/ci");
   });
 
   it("shows a member no edit actions", async () => {

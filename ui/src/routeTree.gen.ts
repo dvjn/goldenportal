@@ -13,10 +13,13 @@ import { Route as AuthenticatedRouteImport } from "./routes/_authenticated";
 import { Route as NotProvisionedRouteImport } from "./routes/not-provisioned";
 import { Route as AuthenticatedIndexRouteImport } from "./routes/_authenticated/index";
 import { Route as AuthenticatedDefinitionsRouteImport } from "./routes/_authenticated/definitions";
+import { Route as AuthenticatedIntegrationsRouteImport } from "./routes/_authenticated/integrations";
 import { Route as AuthenticatedSettingsRouteImport } from "./routes/_authenticated/settings";
 import { Route as AuthenticatedCatalogBlueprintRouteImport } from "./routes/_authenticated/catalog/$blueprint";
 import { Route as AuthenticatedDefinitionsIndexRouteImport } from "./routes/_authenticated/definitions/index";
 import { Route as AuthenticatedDefinitionsHistoryRouteImport } from "./routes/_authenticated/definitions/history";
+import { Route as AuthenticatedIntegrationsIndexRouteImport } from "./routes/_authenticated/integrations/index";
+import { Route as AuthenticatedIntegrationsIntegrationRouteImport } from "./routes/_authenticated/integrations/$integration";
 import { Route as AuthenticatedSettingsIndexRouteImport } from "./routes/_authenticated/settings/index";
 import { Route as AuthenticatedSettingsAccessRouteImport } from "./routes/_authenticated/settings/access";
 import { Route as AuthenticatedSettingsApiTokensRouteImport } from "./routes/_authenticated/settings/api-tokens";
@@ -50,6 +53,12 @@ const AuthenticatedDefinitionsRoute =
     path: "/definitions",
     getParentRoute: () => AuthenticatedRoute,
   } as any);
+const AuthenticatedIntegrationsRoute =
+  AuthenticatedIntegrationsRouteImport.update({
+    id: "/integrations",
+    path: "/integrations",
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: "/settings",
   path: "/settings",
@@ -72,6 +81,18 @@ const AuthenticatedDefinitionsHistoryRoute =
     id: "/history",
     path: "/history",
     getParentRoute: () => AuthenticatedDefinitionsRoute,
+  } as any);
+const AuthenticatedIntegrationsIndexRoute =
+  AuthenticatedIntegrationsIndexRouteImport.update({
+    id: "/",
+    path: "/",
+    getParentRoute: () => AuthenticatedIntegrationsRoute,
+  } as any);
+const AuthenticatedIntegrationsIntegrationRoute =
+  AuthenticatedIntegrationsIntegrationRouteImport.update({
+    id: "/$integration",
+    path: "/$integration",
+    getParentRoute: () => AuthenticatedIntegrationsRoute,
   } as any);
 const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
@@ -150,14 +171,17 @@ export interface FileRoutesByFullPath {
   "/": typeof AuthenticatedIndexRoute;
   "/not-provisioned": typeof NotProvisionedRoute;
   "/definitions": typeof AuthenticatedDefinitionsRouteWithChildren;
+  "/integrations": typeof AuthenticatedIntegrationsRouteWithChildren;
   "/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintRouteWithChildren;
   "/definitions/history": typeof AuthenticatedDefinitionsHistoryRouteWithChildren;
+  "/integrations/$integration": typeof AuthenticatedIntegrationsIntegrationRoute;
   "/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/definitions/": typeof AuthenticatedDefinitionsIndexRoute;
+  "/integrations/": typeof AuthenticatedIntegrationsIndexRoute;
   "/settings/": typeof AuthenticatedSettingsIndexRoute;
   "/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
   "/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
@@ -170,11 +194,13 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/not-provisioned": typeof NotProvisionedRoute;
   "/": typeof AuthenticatedIndexRoute;
+  "/integrations/$integration": typeof AuthenticatedIntegrationsIntegrationRoute;
   "/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/definitions": typeof AuthenticatedDefinitionsIndexRoute;
+  "/integrations": typeof AuthenticatedIntegrationsIndexRoute;
   "/settings": typeof AuthenticatedSettingsIndexRoute;
   "/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
   "/definitions/history/$revision": typeof AuthenticatedDefinitionsHistoryRevisionRoute;
@@ -188,15 +214,18 @@ export interface FileRoutesById {
   "/_authenticated": typeof AuthenticatedRouteWithChildren;
   "/not-provisioned": typeof NotProvisionedRoute;
   "/_authenticated/definitions": typeof AuthenticatedDefinitionsRouteWithChildren;
+  "/_authenticated/integrations": typeof AuthenticatedIntegrationsRouteWithChildren;
   "/_authenticated/settings": typeof AuthenticatedSettingsRouteWithChildren;
   "/_authenticated/": typeof AuthenticatedIndexRoute;
   "/_authenticated/catalog/$blueprint": typeof AuthenticatedCatalogBlueprintRouteWithChildren;
   "/_authenticated/definitions/history": typeof AuthenticatedDefinitionsHistoryRouteWithChildren;
+  "/_authenticated/integrations/$integration": typeof AuthenticatedIntegrationsIntegrationRoute;
   "/_authenticated/settings/access": typeof AuthenticatedSettingsAccessRoute;
   "/_authenticated/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/_authenticated/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
   "/_authenticated/definitions/": typeof AuthenticatedDefinitionsIndexRoute;
+  "/_authenticated/integrations/": typeof AuthenticatedIntegrationsIndexRoute;
   "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
   "/_authenticated/catalog/$blueprint/$identifier": typeof AuthenticatedCatalogBlueprintIdentifierRouteWithChildren;
   "/_authenticated/catalog/$blueprint/new": typeof AuthenticatedCatalogBlueprintNewRoute;
@@ -212,14 +241,17 @@ export interface FileRouteTypes {
     | "/"
     | "/not-provisioned"
     | "/definitions"
+    | "/integrations"
     | "/settings"
     | "/catalog/$blueprint"
     | "/definitions/history"
+    | "/integrations/$integration"
     | "/settings/access"
     | "/settings/api-tokens"
     | "/settings/audit"
     | "/settings/general"
     | "/definitions/"
+    | "/integrations/"
     | "/settings/"
     | "/catalog/$blueprint/$identifier"
     | "/catalog/$blueprint/new"
@@ -232,11 +264,13 @@ export interface FileRouteTypes {
   to:
     | "/not-provisioned"
     | "/"
+    | "/integrations/$integration"
     | "/settings/access"
     | "/settings/api-tokens"
     | "/settings/audit"
     | "/settings/general"
     | "/definitions"
+    | "/integrations"
     | "/settings"
     | "/catalog/$blueprint/new"
     | "/definitions/history/$revision"
@@ -249,15 +283,18 @@ export interface FileRouteTypes {
     | "/_authenticated"
     | "/not-provisioned"
     | "/_authenticated/definitions"
+    | "/_authenticated/integrations"
     | "/_authenticated/settings"
     | "/_authenticated/"
     | "/_authenticated/catalog/$blueprint"
     | "/_authenticated/definitions/history"
+    | "/_authenticated/integrations/$integration"
     | "/_authenticated/settings/access"
     | "/_authenticated/settings/api-tokens"
     | "/_authenticated/settings/audit"
     | "/_authenticated/settings/general"
     | "/_authenticated/definitions/"
+    | "/_authenticated/integrations/"
     | "/_authenticated/settings/"
     | "/_authenticated/catalog/$blueprint/$identifier"
     | "/_authenticated/catalog/$blueprint/new"
@@ -303,6 +340,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthenticatedDefinitionsRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    "/_authenticated/integrations": {
+      id: "/_authenticated/integrations";
+      path: "/integrations";
+      fullPath: "/integrations";
+      preLoaderRoute: typeof AuthenticatedIntegrationsRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
     "/_authenticated/settings": {
       id: "/_authenticated/settings";
       path: "/settings";
@@ -330,6 +374,20 @@ declare module "@tanstack/react-router" {
       fullPath: "/definitions/history";
       preLoaderRoute: typeof AuthenticatedDefinitionsHistoryRouteImport;
       parentRoute: typeof AuthenticatedDefinitionsRoute;
+    };
+    "/_authenticated/integrations/": {
+      id: "/_authenticated/integrations/";
+      path: "/";
+      fullPath: "/integrations/";
+      preLoaderRoute: typeof AuthenticatedIntegrationsIndexRouteImport;
+      parentRoute: typeof AuthenticatedIntegrationsRoute;
+    };
+    "/_authenticated/integrations/$integration": {
+      id: "/_authenticated/integrations/$integration";
+      path: "/$integration";
+      fullPath: "/integrations/$integration";
+      preLoaderRoute: typeof AuthenticatedIntegrationsIntegrationRouteImport;
+      parentRoute: typeof AuthenticatedIntegrationsRoute;
     };
     "/_authenticated/settings/": {
       id: "/_authenticated/settings/";
@@ -453,6 +511,23 @@ const AuthenticatedDefinitionsRouteWithChildren =
     AuthenticatedDefinitionsRouteChildren,
   );
 
+interface AuthenticatedIntegrationsRouteChildren {
+  AuthenticatedIntegrationsIntegrationRoute: typeof AuthenticatedIntegrationsIntegrationRoute;
+  AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute;
+}
+
+const AuthenticatedIntegrationsRouteChildren: AuthenticatedIntegrationsRouteChildren =
+  {
+    AuthenticatedIntegrationsIntegrationRoute:
+      AuthenticatedIntegrationsIntegrationRoute,
+    AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
+  };
+
+const AuthenticatedIntegrationsRouteWithChildren =
+  AuthenticatedIntegrationsRoute._addFileChildren(
+    AuthenticatedIntegrationsRouteChildren,
+  );
+
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAccessRoute: typeof AuthenticatedSettingsAccessRoute;
   AuthenticatedSettingsApiTokensRoute: typeof AuthenticatedSettingsApiTokensRoute;
@@ -515,6 +590,7 @@ const AuthenticatedCatalogBlueprintRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedDefinitionsRoute: typeof AuthenticatedDefinitionsRouteWithChildren;
+  AuthenticatedIntegrationsRoute: typeof AuthenticatedIntegrationsRouteWithChildren;
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren;
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute;
   AuthenticatedCatalogBlueprintRoute: typeof AuthenticatedCatalogBlueprintRouteWithChildren;
@@ -522,6 +598,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDefinitionsRoute: AuthenticatedDefinitionsRouteWithChildren,
+  AuthenticatedIntegrationsRoute: AuthenticatedIntegrationsRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedCatalogBlueprintRoute:

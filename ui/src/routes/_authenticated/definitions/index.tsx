@@ -38,7 +38,12 @@ import {
   usePlanDefinitions,
 } from "@/features/definitions";
 
+type DefinitionsSearch = { document?: string };
+
 export const Route = createFileRoute("/_authenticated/definitions/")({
+  validateSearch: (search: Record<string, unknown>): DefinitionsSearch => ({
+    document: typeof search.document === "string" ? search.document : undefined,
+  }),
   loader: ({ context }) =>
     Promise.all([
       context.queryClient.ensureQueryData(definitionsQueryOptions),
@@ -112,7 +117,8 @@ function DefinitionsPage() {
   const schema = useSuspenseQuery(schemaQueryOptions).data;
   const drafts = useDrafts();
   const list = items(definitions.documents, drafts);
-  const [selectedKey, setSelectedKey] = useState(list[0]?.key);
+  const requested = Route.useSearch().document;
+  const [selectedKey, setSelectedKey] = useState(requested ?? list[0]?.key);
   const selected = list.find((item) => item.key === selectedKey) ?? list[0];
   const [planned, setPlanned] = useState<Planned>();
   const [uploading, setUploading] = useState(false);

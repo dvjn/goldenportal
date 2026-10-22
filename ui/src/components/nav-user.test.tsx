@@ -69,13 +69,17 @@ describe("NavUser", () => {
     );
   });
 
-  it("gives a modeler the definitions link", async () => {
+  it("gives a modeler the definitions and integrations links", async () => {
     await openUserMenu();
 
     expect(await within(screen.getByRole("menu")).findByText("Catalog")).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Definitions" })).toHaveAttribute(
       "href",
       "/definitions",
+    );
+    expect(screen.getByRole("menuitem", { name: "Integrations" })).toHaveAttribute(
+      "href",
+      "/integrations",
     );
   });
 
@@ -86,6 +90,7 @@ describe("NavUser", () => {
     expect(await screen.findByRole("menuitem", { name: "Sign out" })).toBeInTheDocument();
     expect(screen.queryByText("Administration")).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Definitions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Integrations" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "System settings" })).not.toBeInTheDocument();
   });
 
