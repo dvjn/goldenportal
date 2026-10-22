@@ -26,8 +26,9 @@ func (r *recordingSQL) Exec(query string, _ ...any) (sql.Result, error) {
 
 func TestAllRegistersEverySchemaInOrder(t *testing.T) {
 	all := All()
-	if len(all) != 3 || all[202610220001].UP == nil || all[202610230001].UP == nil || all[202610240001].UP == nil {
-		t.Fatalf("All() = %v, want the identity, access and catalog schemas", all)
+	if len(all) != 4 || all[202610220001].UP == nil || all[202610230001].UP == nil || all[202610240001].UP == nil ||
+		all[202610250001].UP == nil {
+		t.Fatalf("All() = %v, want the identity, access, catalog and integrations schemas", all)
 	}
 }
 
@@ -92,6 +93,27 @@ func TestCatalogSchemaCreatesDefinitionsRevisionsAndEntities(t *testing.T) {
 		"PRIMARY KEY (blueprint, identifier)",
 		"CREATE TABLE entity_relations",
 		"REFERENCES entities (blueprint, identifier) ON DELETE CASCADE",
+	} {
+		if !mentions(db.statements, fragment) {
+			t.Errorf("no statement mentions %q", fragment)
+		}
+	}
+}
+
+func TestIntegrationsSchemaCreatesSyncRunsAndScopesIngestTokens(t *testing.T) {
+	db := &recordingSQL{}
+	if err := integrationsSchema(migration.Datasource{SQL: db}); err != nil {
+		t.Fatalf("integrationsSchema() error = %v", err)
+	}
+
+	for _, fragment := range []string{
+		"CREATE TABLE sync_runs",
+		"CHECK (trigger IN ('schedule', 'manual', 'push'))",
+		"CHECK (status IN ('running', 'succeeded', 'partial', 'failed'))",
+		"warnings JSONB",
+		"ON sync_runs (integration, started_at DESC, id DESC)",
+		"ADD COLUMN integration TEXT",
+		"kind <> 'ingest' OR (integration IS NOT NULL AND expires_at IS NOT NULL)",
 	} {
 		if !mentions(db.statements, fragment) {
 			t.Errorf("no statement mentions %q", fragment)

@@ -7,6 +7,7 @@ func All() map[int64]migration.Migrate {
 		202610220001: {UP: identitySchema},
 		202610230001: {UP: accessSchema},
 		202610240001: {UP: catalogSchema},
+		202610250001: {UP: integrationsSchema},
 	}
 }
 
@@ -142,6 +143,33 @@ func catalogSchema(d migration.Datasource) error {
 			FOREIGN KEY (target_blueprint, target_identifier) REFERENCES entities (blueprint, identifier) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX entity_relations_target ON entity_relations (target_blueprint, target_identifier)`,
+	})
+}
+
+func integrationsSchema(d migration.Datasource) error {
+	return execAll(d, []string{
+		`CREATE TABLE sync_runs (
+			id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+			integration TEXT NOT NULL,
+			trigger TEXT NOT NULL CHECK (trigger IN ('schedule', 'manual', 'push')),
+			actor_label TEXT NOT NULL,
+			kind TEXT NOT NULL DEFAULT '',
+			mode TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'partial', 'failed')),
+			started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			finished_at TIMESTAMPTZ,
+			fetched INTEGER NOT NULL DEFAULT 0,
+			upserted INTEGER NOT NULL DEFAULT 0,
+			deleted INTEGER NOT NULL DEFAULT 0,
+			skipped INTEGER NOT NULL DEFAULT 0,
+			warnings JSONB NOT NULL DEFAULT '[]',
+			error TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX sync_runs_integration ON sync_runs (integration, started_at DESC, id DESC)`,
+		`ALTER TABLE api_tokens
+			ADD COLUMN integration TEXT,
+			ADD CHECK (kind <> 'ingest' OR (integration IS NOT NULL AND expires_at IS NOT NULL))`,
+		`CREATE INDEX api_tokens_integration ON api_tokens (integration) WHERE integration IS NOT NULL`,
 	})
 }
 
