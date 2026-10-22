@@ -1,5 +1,6 @@
-// Package audit keeps the log of who signed in, who changed access, and who
-// changed the catalog's definitions and entities.
+// Package audit keeps the log of who signed in, who changed access, who
+// changed the catalog's definitions and entities, and who synced or gave
+// tokens to integrations.
 package audit
 
 import (
@@ -30,6 +31,10 @@ const (
 	EntityCreated         Action = "entity.created"
 	EntityUpdated         Action = "entity.updated"
 	EntityDeleted         Action = "entity.deleted"
+
+	IntegrationSynced  Action = "integration.synced"
+	IngestTokenCreated Action = "ingest_token.created"
+	IngestTokenRevoked Action = "ingest_token.revoked"
 )
 
 // Actor is who did it. UserID is empty for API tokens and for people who

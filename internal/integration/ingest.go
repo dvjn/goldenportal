@@ -174,7 +174,7 @@ func (s *Service) receive(ctx context.Context, set definition.Set, integration *
 		}
 	}
 
-	return s.write(ctx, catalog.OwnedWrite{
+	return applyWrite(ctx, s.entities, catalog.OwnedWrite{
 		Integration: integration.Identifier,
 		Groups:      []catalog.OwnedGroup{{Blueprint: mapper.Blueprint(), Entities: entities}},
 		Sweep:       request.Mode == modeSnapshot,
@@ -190,9 +190,9 @@ func problemsMessage(count int) string {
 	return fmt.Sprintf("the records have %d problems, fix them and push again, nothing was written", count)
 }
 
-// write writes the entities and adds what the write did to the run.
-func (s *Service) write(ctx context.Context, write catalog.OwnedWrite, run *Run, guardWarning func(catalog.GuardedSweep) string) error {
-	result, err := s.entities.WriteOwned(ctx, write)
+// applyWrite writes the entities and adds what the write did to the run.
+func applyWrite(ctx context.Context, entities entityWriter, write catalog.OwnedWrite, run *Run, guardWarning func(catalog.GuardedSweep) string) error {
+	result, err := entities.WriteOwned(ctx, write)
 	var conflict catalog.ConflictError
 	if errors.As(err, &conflict) {
 		return detailedError{

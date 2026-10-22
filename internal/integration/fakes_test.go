@@ -3,17 +3,21 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/apitoken"
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/catalog"
+	"github.com/dvjn/goldport/internal/connector"
 	"github.com/dvjn/goldport/internal/definition"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
@@ -110,11 +114,16 @@ func (r *recordingWriter) DeleteOwned(_ context.Context, integration, blueprint,
 	return r.owned[name], nil
 }
 
+// memoryRuns guards its runs, since a sync records its end from its own
+// goroutine.
 type memoryRuns struct {
+	mu   sync.Mutex
 	runs []Run
 }
 
 func (m *memoryRuns) Start(_ context.Context, run Run) (Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	run.ID = int64(len(m.runs) + 1)
 	run.Status = StatusRunning
 	m.runs = append(m.runs, run)
@@ -123,18 +132,42 @@ func (m *memoryRuns) Start(_ context.Context, run Run) (Run, error) {
 }
 
 func (m *memoryRuns) Finish(_ context.Context, run Run) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.runs[run.ID-1] = run
+
 	return nil
 }
 
 func (m *memoryRuns) Record(_ context.Context, run Run) (Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	run.ID = int64(len(m.runs) + 1)
 	m.runs = append(m.runs, run)
 
 	return run, nil
 }
 
+// finished waits for the run to end and returns it.
+func (m *memoryRuns) finished(t *testing.T, id int64) Run {
+	t.Helper()
+	for range 200 {
+		m.mu.Lock()
+		run := m.runs[id-1]
+		m.mu.Unlock()
+		if run.Status != StatusRunning {
+			return run
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("run %d is still running", id)
+
+	return Run{}
+}
+
 func (m *memoryRuns) List(_ context.Context, integration string, limit int) ([]Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var runs []Run
 	for _, run := range slices.Backward(m.runs) {
 		if run.Integration == integration && len(runs) < limit {
@@ -146,6 +179,8 @@ func (m *memoryRuns) List(_ context.Context, integration string, limit int) ([]R
 }
 
 func (m *memoryRuns) Latest(context.Context) (map[string]Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	latest := map[string]Run{}
 	for _, run := range m.runs {
 		latest[run.Integration] = run
@@ -155,6 +190,8 @@ func (m *memoryRuns) Latest(context.Context) (map[string]Run, error) {
 }
 
 func (m *memoryRuns) LastPull(_ context.Context, integration string) (time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var last time.Time
 	for _, run := range m.runs {
 		if run.Integration == integration && run.Trigger != TriggerPush {
@@ -165,12 +202,80 @@ func (m *memoryRuns) LastPull(_ context.Context, integration string) (time.Time,
 	return last, nil
 }
 
+type memoryAudit struct {
+	entries []audit.Entry
+}
+
+func (m *memoryAudit) Record(_ context.Context, entry audit.Entry) error {
+	m.entries = append(m.entries, entry)
+	return nil
+}
+
+// fakeConnector answers every fetch with records or err, and counts the
+// fetches. Release, when set, holds each fetch until it is closed.
+type fakeConnector struct {
+	records  connector.Records
+	err      error
+	requests []connector.Request
+	release  chan struct{}
+}
+
+func (f *fakeConnector) Kinds() []string { return definition.ConnectorGitLab.Kinds() }
+
+func (f *fakeConnector) Fetch(_ context.Context, request connector.Request) (connector.Records, error) {
+	f.requests = append(f.requests, request)
+	if f.release != nil {
+		<-f.release
+	}
+
+	return f.records, f.err
+}
+
+// memoryLocker holds the integrations that another instance has locked.
+type memoryLocker struct {
+	mu        sync.Mutex
+	elsewhere map[string]bool
+	held      map[string]bool
+}
+
+func newMemoryLocker() *memoryLocker {
+	return &memoryLocker{elsewhere: map[string]bool{}, held: map[string]bool{}}
+}
+
+func (m *memoryLocker) TryLock(_ context.Context, integration string) (func(), bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.elsewhere[integration] || m.held[integration] {
+		return nil, false, nil
+	}
+	m.held[integration] = true
+
+	return func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		delete(m.held, integration)
+	}, true, nil
+}
+
+type silentLogger struct {
+	errors []string
+}
+
+func (l *silentLogger) Errorf(format string, args ...any) {
+	l.errors = append(l.errors, fmt.Sprintf(format, args...))
+}
+
 type harness struct {
 	t           *testing.T
 	definitions *memoryDefinitions
 	writer      *recordingWriter
 	runs        *memoryRuns
 	tokens      memoryTokens
+	audit       *memoryAudit
+	gitlab      *fakeConnector
+	locker      *memoryLocker
+	env         map[string]string
+	syncer      *Syncer
 	router      *httpxtest.Router
 }
 
@@ -185,10 +290,23 @@ func newHarness(t *testing.T) *harness {
 			"gpi_gitlab": {ID: "t-2", Kind: apitoken.KindIngest, Name: "stale", Integration: "gitlab"},
 			"gpt_ci":     {ID: "t-3", Kind: apitoken.KindAPI, Name: "ci", Role: access.Maintainer},
 		},
+		audit:  &memoryAudit{},
+		gitlab: &fakeConnector{records: connector.Records{}},
+		locker: newMemoryLocker(),
+		env:    map[string]string{"GITLAB_TOKEN": "glpat-test"},
 	}
+	h.syncer = NewSyncer(SyncerConfig{
+		Entities:   h.writer,
+		Runs:       h.runs,
+		Connectors: map[definition.Connector]connector.Connector{definition.ConnectorGitLab: h.gitlab},
+		Locker:     h.locker,
+		Getenv:     func(name string) string { return h.env[name] },
+		Now:        func() time.Time { return at },
+		Logger:     &silentLogger{},
+	})
 	h.router = httpxtest.NewRouter(&container.Container{Logger: logging.NewMockLogger(logging.FATAL)})
 	routes := httpx.NewRoutes(h.router)
-	NewService(h.definitions, h.writer, h.runs, func() time.Time { return at }).Register(routes)
+	NewService(h.definitions, h.writer, h.runs, h.syncer, h.audit, func() time.Time { return at }).Register(routes)
 	authenticator := auth.NewAuthenticator(memorySessions{}, h.tokens, fixedRoles{}, testCookies)
 	h.router.Use(httpx.ExposeRaw, auth.CrossOriginProtection(), auth.Middleware(routes, authenticator))
 

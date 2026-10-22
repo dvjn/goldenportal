@@ -10,6 +10,7 @@ import (
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/catalog"
+	"github.com/dvjn/goldport/internal/connector"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/integration"
@@ -76,7 +77,22 @@ func register(app *gofr.App) error {
 	}, grants, directoryStore, tokens, sessions, auditLog).Register(routes)
 	catalogStore := catalog.NewStore(app.GetSQL())
 	catalog.NewService(catalogStore, catalogStore, auditLog, time.Now).Register(routes)
-	integration.NewService(catalogStore, catalogStore, integration.NewRuns(app.GetSQL()), time.Now).Register(routes)
+	runs := integration.NewRuns(app.GetSQL())
+	syncer := integration.NewSyncer(integration.SyncerConfig{
+		Entities:   catalogStore,
+		Runs:       runs,
+		Connectors: integration.Connectors(connector.DefaultHTTPClient()),
+		Locker:     integration.NewPostgresLocker(app.GetSQL()),
+		Getenv:     app.Config.Get,
+		Now:        time.Now,
+		Logger:     app.Logger(),
+	})
+	scheduler := integration.NewScheduler(catalogStore, runs, syncer, time.Now, app.Logger())
+	app.OnStart(func(*gofr.Context) error {
+		go scheduler.Run(context.Background())
+		return nil
+	})
+	integration.NewService(catalogStore, catalogStore, runs, syncer, auditLog, time.Now).Register(routes)
 
 	return nil
 }

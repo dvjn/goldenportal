@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dvjn/goldport/internal/access"
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/catalog"
 	"github.com/dvjn/goldport/internal/definition"
 	"github.com/dvjn/goldport/internal/httpx"
@@ -28,20 +30,28 @@ type runStore interface {
 	LastPull(ctx context.Context, integration string) (time.Time, error)
 }
 
+type auditLog interface {
+	Record(ctx context.Context, entry audit.Entry) error
+}
+
 type Service struct {
 	definitions definitionReader
 	entities    entityWriter
 	runs        runStore
+	syncer      *Syncer
+	audit       auditLog
 	now         func() time.Time
 }
 
-func NewService(definitions definitionReader, entities entityWriter, runs runStore, now func() time.Time) *Service {
-	return &Service{definitions: definitions, entities: entities, runs: runs, now: now}
+func NewService(definitions definitionReader, entities entityWriter, runs runStore, syncer *Syncer, log auditLog, now func() time.Time) *Service {
+	return &Service{definitions: definitions, entities: entities, runs: runs, syncer: syncer, audit: log, now: now}
 }
 
 func (s *Service) Register(routes *httpx.Routes) {
 	routes.POST("/api/v1/ingest/{integration}/{kind}", httpx.Ingest(), s.ingest)
 	routes.DELETE("/api/v1/ingest/{integration}/{kind}/{identifier}", httpx.Ingest(), s.ingestDelete)
+
+	routes.POST("/api/v1/integrations/{integration}/sync", httpx.Requires(access.IntegrationsSync), s.syncNow)
 }
 
 // detailedError is an API error whose body carries more than its message.
