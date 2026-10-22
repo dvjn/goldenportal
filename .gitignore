@@ -1,4 +1,5 @@
 .env
+configs/.local.env
 mise.local.toml
 .local/
 *.out

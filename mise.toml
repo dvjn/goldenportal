@@ -14,7 +14,7 @@ depends = ["api:dev", "ui:dev"]
 [tasks."api:dev"]
 description = "Run the API with hot reload"
 depends = ["deps:up"]
-env = { _.file = "configs/.dev.env" }
+env = { _.file = ["configs/.dev.env", "configs/.local.env"] }
 run = "air --build.cmd 'go build -o .local/tmp/goldport ./cmd/goldport' --build.bin .local/tmp/goldport -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,.local' --misc.clean_on_exit true"
 
 [tasks.build]
