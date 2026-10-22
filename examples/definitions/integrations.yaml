@@ -10,7 +10,7 @@ mappings:
     title: .display_name // .name
     properties:
       language: .language
-      tier: .tier | tostring
+      tier: .tier | values | tostring
       lifecycle: '"production"'
     relations:
       owner: .team
