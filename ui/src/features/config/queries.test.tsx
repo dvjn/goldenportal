@@ -34,7 +34,7 @@ describe("configQueryOptions", () => {
     stubFetch(() => Response.json({ error: { message: "config unavailable" } }, { status: 500 }));
 
     await expect(createTestQueryClient().fetchQuery(configQueryOptions)).rejects.toThrow(
-      "config unavailable",
+      "Config unavailable",
     );
   });
 });

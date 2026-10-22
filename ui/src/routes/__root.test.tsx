@@ -46,7 +46,7 @@ describe("root route", () => {
     });
     renderRoute("/");
 
-    expect(await screen.findByText("config unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Config unavailable")).toBeInTheDocument();
 
     stubApi(signedIn);
     await user.click(screen.getByRole("button", { name: "Try again" }));

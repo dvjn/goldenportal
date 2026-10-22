@@ -56,7 +56,7 @@ describe("authenticated layout", () => {
     });
     renderRoute("/");
 
-    expect(await screen.findByText("could not check the session")).toBeInTheDocument();
+    expect(await screen.findByText("Could not check the session")).toBeInTheDocument();
     expect(navigateAway).not.toHaveBeenCalled();
   });
 });

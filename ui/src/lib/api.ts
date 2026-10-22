@@ -4,11 +4,17 @@ export type ApiDataResponse<T> = { data: T };
 
 type ApiErrorBody = { error?: { message?: string } };
 
+// sentenceCase starts an API message with a capital letter, as the UI shows
+// every message that stands on its own.
+export function sentenceCase(message: string) {
+  return message.charAt(0).toUpperCase() + message.slice(1);
+}
+
 const adoptEnvelopeMessage: BeforeErrorHook = ({ error }) => {
   if (error instanceof HTTPError) {
     const body = error.data as ApiErrorBody | string | undefined;
     const message = typeof body === "object" ? body.error?.message : undefined;
-    if (message) error.message = message;
+    if (message) error.message = sentenceCase(message);
   }
   return error;
 };

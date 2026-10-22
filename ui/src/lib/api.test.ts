@@ -34,7 +34,7 @@ describe("api", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(HTTPError);
-    expect((error as HTTPError).message).toBe("route not registered");
+    expect((error as HTTPError).message).toBe("Route not registered");
     expect((error as HTTPError).response.status).toBe(404);
   });
 

@@ -69,10 +69,10 @@ describe("new entity page", () => {
     await user.click(screen.getByRole("button", { name: "Create entity" }));
 
     expect(
-      await screen.findByText("use letters, digits, dots, hyphens and underscores"),
+      await screen.findByText("Use letters, digits, dots, hyphens and underscores"),
     ).toBeInTheDocument();
     expect(screen.getByText("'gitlab' is not valid uri")).toBeInTheDocument();
-    expect(screen.getByText("no Team has the identifier billing")).toBeInTheDocument();
+    expect(screen.getByText("No Team has the identifier billing")).toBeInTheDocument();
     expect(screen.getByLabelText("Identifier")).toHaveAttribute("aria-invalid", "true");
   });
 

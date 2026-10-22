@@ -131,7 +131,7 @@ describe("definitions editor", () => {
     await user.click(screen.getByRole("button", { name: "Plan" }));
 
     expect(
-      await screen.findByText("the definitions have 2 problems, fix them and plan again"),
+      await screen.findByText("The definitions have 2 problems, fix them and plan again"),
     ).toBeInTheDocument();
     expect(
       within(screen.getByRole("list", { name: "Editor markers" })).getByText(

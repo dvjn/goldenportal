@@ -1,5 +1,5 @@
 import { HTTPError } from "ky";
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, sentenceCase } from "@/lib/api";
 
 export type PropertyType = "string" | "number" | "boolean" | "array" | "object";
 
@@ -175,5 +175,8 @@ type FieldsErrorBody = { error?: { fields?: Record<string, string> } };
 // by identifier, title, properties.<key> or relations.<key>.
 export function fieldErrors(error: unknown): Record<string, string> {
   if (!(error instanceof HTTPError)) return {};
-  return (error.data as FieldsErrorBody | undefined)?.error?.fields ?? {};
+  const fields = (error.data as FieldsErrorBody | undefined)?.error?.fields ?? {};
+  return Object.fromEntries(
+    Object.entries(fields).map(([field, message]) => [field, sentenceCase(message)]),
+  );
 }
