@@ -55,27 +55,27 @@ func NewRoutes(app registrar) *Routes {
 
 func (r *Routes) GET(pattern string, access Access, handler gofr.Handler) {
 	r.declare(http.MethodGet, pattern, access)
-	r.app.GET(pattern, handler)
+	r.app.GET(pattern, hideUnexpected(handler))
 }
 
 func (r *Routes) POST(pattern string, access Access, handler gofr.Handler) {
 	r.declare(http.MethodPost, pattern, access)
-	r.app.POST(pattern, handler)
+	r.app.POST(pattern, hideUnexpected(handler))
 }
 
 func (r *Routes) PUT(pattern string, access Access, handler gofr.Handler) {
 	r.declare(http.MethodPut, pattern, access)
-	r.app.PUT(pattern, handler)
+	r.app.PUT(pattern, hideUnexpected(handler))
 }
 
 func (r *Routes) PATCH(pattern string, access Access, handler gofr.Handler) {
 	r.declare(http.MethodPatch, pattern, access)
-	r.app.PATCH(pattern, handler)
+	r.app.PATCH(pattern, hideUnexpected(handler))
 }
 
 func (r *Routes) DELETE(pattern string, access Access, handler gofr.Handler) {
 	r.declare(http.MethodDelete, pattern, access)
-	r.app.DELETE(pattern, handler)
+	r.app.DELETE(pattern, hideUnexpected(handler))
 }
 
 // Lookup returns the Access declared for a method and a matched route
