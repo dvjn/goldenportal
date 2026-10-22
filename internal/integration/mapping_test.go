@@ -60,6 +60,23 @@ mappings:
   - kind: team
     blueprint: team
 `
+	gitlabYAML = `kind: Integration
+identifier: gitlab
+title: GitLab
+connector: gitlab
+interval: 1h
+config:
+  url: https://gitlab.example.test
+  group: acme
+secrets:
+  token:
+    secretRef: GITLAB_TOKEN
+mappings:
+  - kind: group
+    blueprint: team
+    identifier: .path
+    title: .name
+`
 )
 
 func testSet(t *testing.T, documents ...string) definition.Set {
@@ -77,7 +94,7 @@ func testSet(t *testing.T, documents ...string) definition.Set {
 }
 
 func acmeSet(t *testing.T) definition.Set {
-	return testSet(t, teamYAML, serviceYAML, ciYAML)
+	return testSet(t, teamYAML, serviceYAML, ciYAML, gitlabYAML)
 }
 
 func testMapper(t *testing.T, set definition.Set, kind string) *Mapper {

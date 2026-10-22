@@ -12,6 +12,7 @@ import (
 	"github.com/dvjn/goldport/internal/catalog"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
+	"github.com/dvjn/goldport/internal/integration"
 	"github.com/dvjn/goldport/internal/scim"
 	"github.com/dvjn/goldport/internal/web"
 	"github.com/dvjn/goldport/migrations"
@@ -75,6 +76,7 @@ func register(app *gofr.App) error {
 	}, grants, directoryStore, tokens, sessions, auditLog).Register(routes)
 	catalogStore := catalog.NewStore(app.GetSQL())
 	catalog.NewService(catalogStore, catalogStore, auditLog, time.Now).Register(routes)
+	integration.NewService(catalogStore, catalogStore, integration.NewRuns(app.GetSQL()), time.Now).Register(routes)
 
 	return nil
 }
