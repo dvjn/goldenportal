@@ -28,7 +28,7 @@ function BlueprintPage() {
       onDeleted={() => navigate({ to: "/blueprints" })}
       tab={tab}
       onTabChange={(next) => navigate({ search: { tab: next }, replace: true })}
-      overview={(spec) => <BlueprintOverview spec={spec} />}
+      overview={(spec, doc) => <BlueprintOverview spec={spec} blueprint={doc} />}
     />
   );
 }

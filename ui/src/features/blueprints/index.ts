@@ -7,5 +7,7 @@ export {
   type PropertyType,
   propertySource,
   type Reference,
+  type Usage,
+  type Writer,
 } from "./api";
-export { referencesQueryOptions, useBlueprint, useBlueprints } from "./queries";
+export { usageQueryOptions, useBlueprint, useBlueprints } from "./queries";

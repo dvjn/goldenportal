@@ -42,6 +42,16 @@ export type BlueprintSpec = {
 export type Blueprint = ConfigDoc<BlueprintSpec>;
 export type BlueprintSummary = DocSummary;
 
+// Writer is an integration that writes a blueprint's entities.
+export type Writer = {
+  integration: string;
+  title: string;
+  entities: number;
+  // mapped is false when it wrote entities before its mappings dropped the blueprint.
+  mapped: boolean;
+  lastRunAt: string | null;
+};
+
 // Reference is a relation on another blueprint that points at this one.
 export type Reference = {
   blueprint: string;
@@ -53,14 +63,18 @@ export type Reference = {
 
 export const blueprints = configDocs<BlueprintSpec>("blueprints");
 
-export const referencesKey = (identifier: string) =>
-  [...blueprints.keys.detail(identifier), "references"] as const;
+// Usage is how a blueprint is used: its entities, who writes them, and
+// which blueprints relate to it.
+export type Usage = { entities: number; writers: Writer[]; references: Reference[] };
 
-export async function listReferences(identifier: string): Promise<Reference[]> {
+export const usageKey = (identifier: string) =>
+  [...blueprints.keys.detail(identifier), "usage"] as const;
+
+export async function getUsage(identifier: string): Promise<Usage> {
   return (
     await api
-      .get(`blueprints/${encodeURIComponent(identifier)}/references`)
-      .json<ApiDataResponse<Reference[]>>()
+      .get(`blueprints/${encodeURIComponent(identifier)}/usage`)
+      .json<ApiDataResponse<Usage>>()
   ).data;
 }
 

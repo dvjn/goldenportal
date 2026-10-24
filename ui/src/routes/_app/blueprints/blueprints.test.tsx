@@ -76,16 +76,27 @@ const serviceRoutes = {
   "GET blueprints/service/versions": ok([
     { version: 1, publishedAt: "2026-10-24T10:00:00Z", publishedBy: "ada@example.com" },
   ]),
-  "GET blueprints/service/references": ok([
-    {
-      blueprint: "deployment",
-      title: "Deployment",
-      property: "service",
-      propertyTitle: "Service",
-      many: false,
-    },
-  ]),
-  "GET entities": ok({ entities: [], total: 12 }),
+  "GET blueprints/service/usage": ok({
+    entities: 12,
+    writers: [
+      {
+        integration: "registry",
+        title: "Service Registry",
+        entities: 12,
+        mapped: true,
+        lastRunAt: "2026-10-24T10:00:00Z",
+      },
+    ],
+    references: [
+      {
+        blueprint: "deployment",
+        title: "Deployment",
+        property: "service",
+        propertyTitle: "Service",
+        many: false,
+      },
+    ],
+  }),
 };
 
 describe("blueprints", () => {
@@ -136,6 +147,11 @@ describe("blueprints", () => {
     expect(await screen.findByText("There's an unpublished draft")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "deployment" })).toBeInTheDocument();
     expect(await screen.findByText("12")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Service Registry" })).toHaveAttribute(
+      "href",
+      "/integrations/registry",
+    );
+    expect(screen.getByText("$identifier")).toBeInTheDocument();
   });
 
   it("edits the draft on the definition tab", async () => {

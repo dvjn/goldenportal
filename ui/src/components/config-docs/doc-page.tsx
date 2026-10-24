@@ -42,7 +42,7 @@ type DocPageProps<S> = {
   onTabChange: (tab: DocTab) => void;
   // overview renders the document read-only: the published version, or the
   // draft until there is one.
-  overview: (spec: S) => ReactNode;
+  overview: (spec: S, doc: ConfigDoc<S>) => ReactNode;
 };
 
 // DocPage is the page of one configuration document: a read-only overview,
@@ -165,7 +165,7 @@ function DocWorkspace<S>({
               </AlertAction>
             </Alert>
           )}
-          {shown && overview(shown)}
+          {shown && overview(shown, doc)}
         </TabsContent>
 
         <TabsContent value="definition" className="pt-2">
