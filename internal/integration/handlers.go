@@ -29,6 +29,7 @@ func Register(app *gofr.App) {
 	app.POST("/api/v1/integrations/{identifier}/tokens", createToken)
 	app.DELETE("/api/v1/integrations/{identifier}/tokens/{id}", revokeToken)
 	app.GET("/api/v1/integrations/{identifier}/runs", listRuns)
+	app.GET("/api/v1/blueprints/{identifier}/usage", blueprintUsage)
 	app.POST(auth.IngestPrefix+"{integration}", ingest)
 	app.DELETE(auth.IngestPrefix+"{integration}/entities/{blueprint}/{identifier:.+}", deleteEntity)
 }

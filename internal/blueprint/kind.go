@@ -12,7 +12,6 @@ import (
 
 	"gofr.dev/pkg/gofr"
 
-	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
@@ -38,10 +37,7 @@ var Kind = configdoc.Kind[Spec]{
 	Published: published,
 }
 
-func Register(app *gofr.App) {
-	configdoc.Register(app, Kind)
-	app.GET("/api/v1/blueprints/{identifier}/references", references)
-}
+func Register(app *gofr.App) { configdoc.Register(app, Kind) }
 
 // Reference is a relation on a published blueprint that points at another.
 type Reference struct {
@@ -52,18 +48,8 @@ type Reference struct {
 	Many          bool   `json:"many"`
 }
 
-// references lists the relations that point at a blueprint, so its page can
-// show what depends on it.
-func references(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
-		return nil, err
-	}
-	published, err := Published(ctx, ctx.SQL)
-	if err != nil {
-		return nil, err
-	}
-
-	identifier := ctx.PathParam("identifier")
+// References lists the relations among published that point at identifier.
+func References(published map[string]Spec, identifier string) []Reference {
 	refs := []Reference{}
 	for _, spec := range published {
 		for _, prop := range spec.Properties {
@@ -77,7 +63,7 @@ func references(ctx *gofr.Context) (any, error) {
 		return strings.Compare(a.Blueprint+"."+a.Property, b.Blueprint+"."+b.Property)
 	})
 
-	return refs, nil
+	return refs
 }
 
 // Published returns every published blueprint, by identifier. Sources that
