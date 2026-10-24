@@ -17,13 +17,13 @@ const (
 	SignOut        = "auth.sign_out"
 	TokenCreate    = "token.create"
 	TokenRevoke    = "token.revoke"
-	UserRole       = "access.user_role"
-	GroupUpdate    = "access.group_update"
+	AccessGrant    = "access.grant"
+	AccessRevoke   = "access.revoke"
 	BootstrapAdmin = "access.bootstrap_admin"
 )
 
 // Actions lists every action, for filters.
-var Actions = []string{SignIn, SignOut, TokenCreate, TokenRevoke, UserRole, GroupUpdate, BootstrapAdmin}
+var Actions = []string{SignIn, SignOut, TokenCreate, TokenRevoke, AccessGrant, AccessRevoke, BootstrapAdmin}
 
 type DB interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)

@@ -17,11 +17,20 @@ import (
 )
 
 func Register(app *gofr.App) {
+	app.GET("/api/v1/access", listGrants)
+	app.PUT("/api/v1/access/{type}/{id}", grant)
+	app.DELETE("/api/v1/access/{type}/{id}", revoke)
 	app.GET("/api/v1/users", listUsers)
-	app.PUT("/api/v1/users/{id}/role", setUserRole)
 	app.GET("/api/v1/groups", listGroups)
-	app.PUT("/api/v1/groups/{id}", updateGroup)
 	app.GET("/api/v1/audit", listAudit)
+}
+
+func listGrants(ctx *gofr.Context) (any, error) {
+	if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+
+	return NewStore(ctx.SQL).ListGrants(ctx)
 }
 
 func listUsers(ctx *gofr.Context) (any, error) {
@@ -40,84 +49,76 @@ func listGroups(ctx *gofr.Context) (any, error) {
 	return NewStore(ctx.SQL).ListGroups(ctx)
 }
 
-type roleRequest struct {
-	// Role is "admin", "builder" or "member", or null to remove the binding.
-	Role *string `json:"role"`
+type grantRequest struct {
+	Role string `json:"role"`
 }
 
-func setUserRole(ctx *gofr.Context) (any, error) {
-	p, err := auth.Require(ctx, auth.RoleAdmin)
+func grant(ctx *gofr.Context) (any, error) {
+	p, subjectType, id, err := subject(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	id, err := pathID(ctx, "user")
-	if err != nil {
-		return nil, err
-	}
-	// Admins can't demote themselves, so the portal never loses its last admin by accident.
-	if id == p.ID {
-		return nil, httpx.Error{Code: http.StatusConflict, Message: "you can't change your own role; ask another admin"}
-	}
-
-	var req roleRequest
+	var req grantRequest
 	if err := ctx.Bind(&req); err != nil {
 		return nil, badRequest("the request body is not valid JSON")
 	}
-	role, err := parseRole(req.Role)
-	if err != nil {
-		return nil, err
+	role, ok := auth.ParseRole(req.Role)
+	if !ok {
+		return nil, badRequest(`choose "admin", "builder" or "member" for the role`)
 	}
 
-	label, err := NewStore(ctx.SQL).SetRole(ctx, "user", id, role)
+	name, err := NewStore(ctx.SQL).Grant(ctx, subjectType, id, role)
 	if err != nil {
-		return nil, notFoundAs(err, "user")
+		return nil, notFoundAs(err, subjectType)
 	}
 
-	auth.Record(ctx, p, audit.UserRole, audit.Target{Type: "user", ID: id, Label: label},
+	auth.Record(ctx, p, audit.AccessGrant, audit.Target{Type: subjectType, ID: id, Label: name},
 		map[string]any{"role": role})
 
 	return nil, nil
 }
 
-type groupRequest struct {
-	Role   *string `json:"role"`
-	IsTeam bool    `json:"isTeam"`
-}
-
-func updateGroup(ctx *gofr.Context) (any, error) {
-	p, err := auth.Require(ctx, auth.RoleAdmin)
+func revoke(ctx *gofr.Context) (any, error) {
+	p, subjectType, id, err := subject(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	id, err := pathID(ctx, "group")
+	name, err := NewStore(ctx.SQL).Revoke(ctx, subjectType, id)
+	if errors.Is(err, errNoGrant) {
+		return nil, httpx.Error{Code: http.StatusNotFound, Message: "this " + subjectType + " has no role granted directly"}
+	}
 	if err != nil {
-		return nil, err
+		return nil, notFoundAs(err, subjectType)
 	}
 
-	var req groupRequest
-	if err := ctx.Bind(&req); err != nil {
-		return nil, badRequest("the request body is not valid JSON")
-	}
-	role, err := parseRole(req.Role)
-	if err != nil {
-		return nil, err
-	}
-
-	store := NewStore(ctx.SQL)
-	label, err := store.SetRole(ctx, "group", id, role)
-	if err != nil {
-		return nil, notFoundAs(err, "group")
-	}
-	if err := store.SetTeam(ctx, id, req.IsTeam); err != nil {
-		return nil, err
-	}
-
-	auth.Record(ctx, p, audit.GroupUpdate, audit.Target{Type: "group", ID: id, Label: label},
-		map[string]any{"role": role, "isTeam": req.IsTeam})
+	auth.Record(ctx, p, audit.AccessRevoke, audit.Target{Type: subjectType, ID: id, Label: name}, nil)
 
 	return nil, nil
+}
+
+// subject checks the caller is an admin and reads the user or group from the path.
+func subject(ctx *gofr.Context) (auth.Principal, string, string, error) {
+	p, err := auth.Require(ctx, auth.RoleAdmin)
+	if err != nil {
+		return auth.Principal{}, "", "", err
+	}
+
+	subjectType := ctx.PathParam("type")
+	if subjectType != "user" && subjectType != "group" {
+		return auth.Principal{}, "", "", httpx.Error{Code: http.StatusNotFound, Message: `grant access to a "user" or a "group"`}
+	}
+	id := ctx.PathParam("id")
+	if _, err := uuid.Parse(id); err != nil {
+		return auth.Principal{}, "", "", notFound(subjectType)
+	}
+	// Admins can't change their own access, so the portal never loses its last admin by accident.
+	if subjectType == "user" && id == p.ID {
+		return auth.Principal{}, "", "", httpx.Error{Code: http.StatusConflict, Message: "you can't change your own access; ask another admin"}
+	}
+
+	return p, subjectType, id, nil
 }
 
 var auditPageSizes = []int{10, 20, 50, 100}
@@ -182,27 +183,6 @@ func dateParam(ctx *gofr.Context, name string) (time.Time, error) {
 	}
 
 	return date, nil
-}
-
-func parseRole(value *string) (*auth.Role, error) {
-	if value == nil {
-		return nil, nil
-	}
-	role, ok := auth.ParseRole(*value)
-	if !ok {
-		return nil, badRequest(`choose "admin", "builder", "member" or null for the role`)
-	}
-
-	return &role, nil
-}
-
-func pathID(ctx *gofr.Context, kind string) (string, error) {
-	id := ctx.PathParam("id")
-	if _, err := uuid.Parse(id); err != nil {
-		return "", notFound(kind)
-	}
-
-	return id, nil
 }
 
 func notFoundAs(err error, kind string) error {

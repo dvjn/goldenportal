@@ -1,4 +1,4 @@
-// Package access lets admins see users and groups and bind roles to them.
+// Package access lets admins grant roles to users and groups directly.
 package access
 
 import (
@@ -7,12 +7,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/lib/pq"
-
 	"github.com/dvjn/goldenportal/internal/auth"
 )
 
-var errNotFound = errors.New("not found")
+var (
+	errNotFound = errors.New("not found")
+	errNoGrant  = errors.New("no role granted directly")
+)
 
 type DB interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -24,39 +25,72 @@ type Store struct{ db DB }
 
 func NewStore(db DB) Store { return Store{db: db} }
 
+// Grant is a role given directly to a user or a group.
+type Grant struct {
+	SubjectType string    `json:"subjectType"`
+	SubjectID   string    `json:"subjectId"`
+	Name        string    `json:"name"`
+	Email       string    `json:"email,omitempty"`
+	MemberCount *int      `json:"memberCount,omitempty"`
+	Role        auth.Role `json:"role"`
+	GrantedAt   time.Time `json:"grantedAt"`
+}
+
+// User and Group are what an admin can grant a role to.
 type User struct {
-	ID          string     `json:"id"`
-	Email       string     `json:"email"`
-	DisplayName string     `json:"displayName"`
-	Status      string     `json:"status"`
-	LastLoginAt *time.Time `json:"lastLoginAt"`
-	// Role is bound to the user directly; nil means none.
-	Role *auth.Role `json:"role"`
-	// EffectiveRole also counts roles bound to the user's groups.
-	EffectiveRole auth.Role `json:"effectiveRole"`
-	Groups        []string  `json:"groups"`
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
 }
 
 type Group struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	IsTeam      bool       `json:"isTeam"`
-	MemberCount int        `json:"memberCount"`
-	Role        *auth.Role `json:"role"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	MemberCount int    `json:"memberCount"`
+}
+
+// ListGrants returns every role given directly to a user or group. Roles
+// people get through their groups are not listed.
+func (s Store) ListGrants(ctx context.Context) ([]Grant, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rb.subject_type, rb.subject_id, rb.role, rb.created_at,
+			coalesce(u.display_name, g.name), coalesce(u.email, ''),
+			CASE WHEN g.id IS NOT NULL
+				THEN (SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id) END
+		FROM role_bindings rb
+		LEFT JOIN users u ON rb.subject_type = 'user' AND u.id = rb.subject_id
+		LEFT JOIN groups g ON rb.subject_type = 'group' AND g.id = rb.subject_id
+		WHERE u.id IS NOT NULL OR g.id IS NOT NULL
+		ORDER BY lower(coalesce(u.display_name, g.name))`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	grants := []Grant{}
+	for rows.Next() {
+		var (
+			g       Grant
+			members sql.NullInt64
+		)
+		if err := rows.Scan(&g.SubjectType, &g.SubjectID, &g.Role, &g.GrantedAt, &g.Name, &g.Email, &members); err != nil {
+			return nil, err
+		}
+		if members.Valid {
+			n := int(members.Int64)
+			g.MemberCount = &n
+		}
+		grants = append(grants, g)
+	}
+
+	return grants, rows.Err()
 }
 
 func (s Store) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.email, u.display_name, u.status, u.last_login_at,
-			(SELECT rb.role FROM role_bindings rb
-				WHERE rb.subject_type = 'user' AND rb.subject_id = u.id
-				ORDER BY CASE rb.role WHEN 'admin' THEN 3 WHEN 'builder' THEN 2 ELSE 1 END DESC
-				LIMIT 1),
-			`+auth.EffectiveRoleSQL+`,
-			coalesce((SELECT array_agg(g.name ORDER BY g.name) FROM group_members gm
-				JOIN groups g ON g.id = gm.group_id WHERE gm.user_id = u.id), '{}')
-		FROM users u
-		ORDER BY lower(u.display_name), u.email`)
+		SELECT id, display_name, email FROM users
+		WHERE status = 'active'
+		ORDER BY lower(display_name), email`)
 	if err != nil {
 		return nil, err
 	}
@@ -64,15 +98,10 @@ func (s Store) ListUsers(ctx context.Context) ([]User, error) {
 
 	users := []User{}
 	for rows.Next() {
-		var (
-			u    User
-			role sql.NullString
-		)
-		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Status, &u.LastLoginAt,
-			&role, &u.EffectiveRole, pq.Array(&u.Groups)); err != nil {
+		var u User
+		if err := rows.Scan(&u.ID, &u.DisplayName, &u.Email); err != nil {
 			return nil, err
 		}
-		u.Role = nullRole(role)
 		users = append(users, u)
 	}
 
@@ -81,12 +110,7 @@ func (s Store) ListUsers(ctx context.Context) ([]User, error) {
 
 func (s Store) ListGroups(ctx context.Context) ([]Group, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT g.id, g.name, g.is_team,
-			(SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id),
-			(SELECT rb.role FROM role_bindings rb
-				WHERE rb.subject_type = 'group' AND rb.subject_id = g.id
-				ORDER BY CASE rb.role WHEN 'admin' THEN 3 WHEN 'builder' THEN 2 ELSE 1 END DESC
-				LIMIT 1)
+		SELECT g.id, g.name, (SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id)
 		FROM groups g
 		ORDER BY lower(g.name)`)
 	if err != nil {
@@ -96,24 +120,20 @@ func (s Store) ListGroups(ctx context.Context) ([]Group, error) {
 
 	groups := []Group{}
 	for rows.Next() {
-		var (
-			g    Group
-			role sql.NullString
-		)
-		if err := rows.Scan(&g.ID, &g.Name, &g.IsTeam, &g.MemberCount, &role); err != nil {
+		var g Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.MemberCount); err != nil {
 			return nil, err
 		}
-		g.Role = nullRole(role)
 		groups = append(groups, g)
 	}
 
 	return groups, rows.Err()
 }
 
-// SetRole replaces the role bound directly to a user or group; nil removes it.
-// It returns the subject's label for the audit log.
-func (s Store) SetRole(ctx context.Context, subjectType, subjectID string, role *auth.Role) (string, error) {
-	label, err := s.label(ctx, subjectType, subjectID)
+// Grant gives a user or group a role, replacing any role they had directly.
+// It returns the subject's name for the audit log.
+func (s Store) Grant(ctx context.Context, subjectType, subjectID string, role auth.Role) (string, error) {
+	name, err := s.name(ctx, subjectType, subjectID)
 	if err != nil {
 		return "", err
 	}
@@ -122,59 +142,48 @@ func (s Store) SetRole(ctx context.Context, subjectType, subjectID string, role 
 		DELETE FROM role_bindings WHERE subject_type = $1 AND subject_id = $2`, subjectType, subjectID); err != nil {
 		return "", err
 	}
-	if role == nil {
-		return label, nil
-	}
-
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO role_bindings (subject_type, subject_id, role) VALUES ($1, $2, $3)`,
-		subjectType, subjectID, string(*role))
+		subjectType, subjectID, string(role))
 
-	return label, err
+	return name, err
 }
 
-func (s Store) SetTeam(ctx context.Context, groupID string, isTeam bool) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE groups SET is_team = $2 WHERE id = $1`, groupID, isTeam)
+// Revoke removes the role given directly to a user or group.
+func (s Store) Revoke(ctx context.Context, subjectType, subjectID string) (string, error) {
+	name, err := s.name(ctx, subjectType, subjectID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return requireRow(result)
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM role_bindings WHERE subject_type = $1 AND subject_id = $2`, subjectType, subjectID)
+	if err != nil {
+		return "", err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return "", errNoGrant
+	}
+
+	return name, nil
 }
 
-// label returns a user's email or a group's name.
-func (s Store) label(ctx context.Context, subjectType, subjectID string) (string, error) {
+// name returns a user's display name or a group's name.
+func (s Store) name(ctx context.Context, subjectType, subjectID string) (string, error) {
 	query := map[string]string{
-		"user":  `SELECT email FROM users WHERE id = $1`,
+		"user":  `SELECT display_name FROM users WHERE id = $1`,
 		"group": `SELECT name FROM groups WHERE id = $1`,
 	}[subjectType]
 
-	var label string
-	err := s.db.QueryRowContext(ctx, query, subjectID).Scan(&label)
+	var name string
+	err := s.db.QueryRowContext(ctx, query, subjectID).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", errNotFound
 	}
 
-	return label, err
-}
-
-func requireRow(result sql.Result) error {
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return errNotFound
-	}
-
-	return nil
-}
-
-func nullRole(value sql.NullString) *auth.Role {
-	if !value.Valid {
-		return nil
-	}
-	role := auth.Role(value.String)
-
-	return &role
+	return name, err
 }
