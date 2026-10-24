@@ -10,5 +10,6 @@ func All() map[int64]migration.Migrate {
 		20261024210000: createAuditEvents(),
 		20261025100000: addSCIMProvisioning(),
 		20261025120000: createConfigDocuments(),
+		20261025140000: createEntities(),
 	}
 }
