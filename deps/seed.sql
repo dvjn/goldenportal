@@ -36,3 +36,67 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_bindings (subject_type, subject_id, role)
 SELECT 'group', id, 'builder' FROM groups WHERE name = 'platform-engineers'
 ON CONFLICT DO NOTHING;
+
+-- Example blueprints, published as version 1. They're only examples: nothing
+-- in the portal depends on them, and they can be changed or deleted.
+WITH example (identifier, source) AS (VALUES
+  ('team', $yaml$identifier: team
+title: Team
+description: A group of people who own things in the catalog.
+icon: users
+properties:
+  slackChannel:
+    title: Slack Channel
+    type: string
+    format: url
+  oncall:
+    title: On-call Rotation
+    type: string
+    format: url
+$yaml$),
+  ('service', $yaml$identifier: service
+title: Service
+description: A deployable unit of software.
+icon: server
+properties:
+  language:
+    title: Language
+    type: string
+    enum: [go, python, typescript, java]
+  tier:
+    title: Tier
+    type: string
+    enum: [critical, standard, experimental]
+    required: true
+  repository:
+    title: Repository
+    type: string
+    format: url
+  tags:
+    title: Tags
+    type: array
+    items:
+      type: string
+  owner:
+    title: Owner
+    relation: team
+  dependsOn:
+    title: Depends On
+    relation: service
+    many: true
+  ownerSlack:
+    title: Owner Slack
+    lookup: owner.slackChannel
+  critical:
+    title: Critical
+    type: boolean
+    compute: .properties.tier == "critical"
+$yaml$)
+), created AS (
+  INSERT INTO config_documents (kind, identifier, published_version)
+  SELECT 'blueprint', identifier, 1 FROM example
+  ON CONFLICT (kind, identifier) DO NOTHING
+  RETURNING id, identifier
+)
+INSERT INTO config_versions (document_id, version, source)
+SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
