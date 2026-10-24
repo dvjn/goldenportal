@@ -43,7 +43,13 @@ const users = [
 const groups = [{ id: "g1", name: "platform-engineers", memberCount: 3 }];
 
 const serverConfiguration = {
-  portal: { name: "Acme", logoUrl: "", baseUrl: "https://portal.example.com" },
+  portal: {
+    name: "Acme",
+    logoUrl: "",
+    faviconUrl: "",
+    faviconIsLogo: true,
+    baseUrl: "https://portal.example.com",
+  },
   oidc: {
     configured: true,
     issuer: "https://idp.example.com",

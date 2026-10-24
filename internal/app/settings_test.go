@@ -14,6 +14,7 @@ import (
 func TestDescribeConfig(t *testing.T) {
 	cfg := config.NewMockConfig(map[string]string{
 		"GP_NAME":               "Acme Portal",
+		"GP_LOGO_URL":           "https://cdn.example.com/logo.svg",
 		"GP_OIDC_ISSUER":        "https://idp.example.com",
 		"GP_OIDC_CLIENT_ID":     "portal",
 		"GP_OIDC_CLIENT_SECRET": "super-secret",
@@ -29,6 +30,9 @@ func TestDescribeConfig(t *testing.T) {
 
 	if got.Portal.Name != "Acme Portal" {
 		t.Errorf("portal name = %q, want the configured name", got.Portal.Name)
+	}
+	if got.Portal.FaviconURL != "https://cdn.example.com/logo.svg" || !got.Portal.FaviconIsLogo {
+		t.Errorf("favicon = %q (is logo %v), want the logo", got.Portal.FaviconURL, got.Portal.FaviconIsLogo)
 	}
 	if !got.OIDC.Configured || !got.OIDC.ClientSecretSet {
 		t.Errorf("oidc = %+v, want configured with a secret set", got.OIDC)

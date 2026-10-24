@@ -27,9 +27,11 @@ type serverConfig struct {
 }
 
 type portalConfig struct {
-	Name    string `json:"name"`
-	LogoURL string `json:"logoUrl"`
-	BaseURL string `json:"baseUrl"`
+	Name          string `json:"name"`
+	LogoURL       string `json:"logoUrl"`
+	FaviconURL    string `json:"faviconUrl"`
+	FaviconIsLogo bool   `json:"faviconIsLogo"`
+	BaseURL       string `json:"baseUrl"`
 }
 
 type oidcConfig struct {
@@ -81,9 +83,11 @@ type serverInfo struct {
 func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server) serverConfig {
 	return serverConfig{
 		Portal: portalConfig{
-			Name:    cfg.GetOrDefault("GP_NAME", "Golden Portal"),
-			LogoURL: cfg.Get("GP_LOGO_URL"),
-			BaseURL: cfg.Get("GP_BASE_URL"),
+			Name:          cfg.GetOrDefault("GP_NAME", "Golden Portal"),
+			LogoURL:       cfg.Get("GP_LOGO_URL"),
+			FaviconURL:    cfg.GetOrDefault("GP_FAVICON_URL", cfg.Get("GP_LOGO_URL")),
+			FaviconIsLogo: cfg.Get("GP_FAVICON_URL") == "",
+			BaseURL:       cfg.Get("GP_BASE_URL"),
 		},
 		OIDC: oidcConfig{
 			Configured:          oidc.Configured(),

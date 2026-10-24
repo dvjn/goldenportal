@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   configurationQueryOptions,
   runConfigAction,
@@ -60,21 +61,10 @@ function PortalCard({ portal }: Readonly<{ portal: ServerConfiguration["portal"]
     <Card>
       <ConfigCardHeader icon={AppWindow} title="Portal" />
       <CardContent className="flex items-center gap-4">
-        {portal.logoUrl ? (
-          <img
-            src={portal.logoUrl}
-            alt={`${portal.name} logo`}
-            className="size-12 shrink-0 rounded-lg bg-muted object-contain ring-1 ring-foreground/10"
-          />
-        ) : (
-          <div
-            className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-foreground/10"
-            title="No logo"
-          >
-            <ImageOff className="size-5" aria-hidden />
-            <span className="sr-only">No logo</span>
-          </div>
-        )}
+        <div className="flex shrink-0 gap-2">
+          <PortalImage label="Logo" src={portal.logoUrl} />
+          {!portal.faviconIsLogo && <PortalImage label="Favicon" src={portal.faviconUrl} />}
+        </div>
         <dl className="grid min-w-0 gap-0.5">
           <dt className="sr-only">Portal name</dt>
           <dd className="truncate text-base font-medium">{portal.name}</dd>
@@ -85,6 +75,31 @@ function PortalCard({ portal }: Readonly<{ portal: ServerConfiguration["portal"]
         </dl>
       </CardContent>
     </Card>
+  );
+}
+
+function PortalImage({ label, src }: Readonly<{ label: string; src: string }>) {
+  const frame =
+    "flex size-12 items-center justify-center rounded-lg bg-muted ring-1 ring-foreground/10";
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="rounded-lg">
+            {src ? (
+              <img src={src} alt={label} className={`${frame} object-contain`} />
+            ) : (
+              <span className={`${frame} text-muted-foreground`}>
+                <ImageOff className="size-5" aria-hidden />
+                <span className="sr-only">No {label.toLowerCase()}</span>
+              </span>
+            )}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{src ? label : `No ${label.toLowerCase()}`}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

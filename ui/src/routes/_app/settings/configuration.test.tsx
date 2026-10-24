@@ -19,7 +19,13 @@ const signedInAdmin = { "GET config": acmeConfig, "GET me": ok({ ...ada, role: "
 const logo = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'></svg>";
 
 const configuration: ServerConfiguration = {
-  portal: { name: "Acme", logoUrl: logo, baseUrl: "https://portal.example.com" },
+  portal: {
+    name: "Acme",
+    logoUrl: logo,
+    faviconUrl: logo,
+    faviconIsLogo: true,
+    baseUrl: "https://portal.example.com",
+  },
   oidc: {
     configured: true,
     issuer: "https://idp.example.com",
@@ -61,11 +67,30 @@ describe("configuration", () => {
     stubApi({ ...signedInAdmin, "GET settings/configuration": ok(configuration) });
     renderRoute("/settings/configuration");
 
-    const portal = await screen.findByRole("img", { name: "Acme logo" });
+    const portal = await screen.findByRole("img", { name: "Logo" });
     expect(portal).toHaveAttribute("src", logo);
     expect(within(card("Portal")).getByText("Acme")).toBeInTheDocument();
     expect(within(card("Portal")).getByText("https://portal.example.com")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Favicon" })).not.toBeInTheDocument();
     expect(screen.queryByText(logo)).toBeNull();
+  });
+
+  it("shows a separate favicon beside the logo, each named in a tooltip", async () => {
+    const user = userEvent.setup();
+    const favicon = "https://cdn.example.com/favicon.png";
+    stubApi({
+      ...signedInAdmin,
+      "GET settings/configuration": ok({
+        ...configuration,
+        portal: { ...configuration.portal, faviconUrl: favicon, faviconIsLogo: false },
+      }),
+    });
+    renderRoute("/settings/configuration");
+
+    const image = await screen.findByRole("img", { name: "Favicon" });
+    expect(image).toHaveAttribute("src", favicon);
+    await user.hover(image);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Favicon");
   });
 
   it("sums up authentication, with secrets only as set or not", async () => {

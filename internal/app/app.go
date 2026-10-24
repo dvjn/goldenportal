@@ -34,7 +34,13 @@ func New() *gofr.App {
 		app.Logger().Warn("Single sign-on is not set up, so nobody can sign in. Set GP_OIDC_ISSUER, GP_OIDC_CLIENT_ID and GP_OIDC_CLIENT_SECRET.")
 	}
 
-	app.UseMiddleware(web.SPA(web.Dist()))
+	// The favicon falls back to the logo.
+	favicon, err := web.Favicon(app.Config.GetOrDefault("GP_FAVICON_URL", app.Config.Get("GP_LOGO_URL")))
+	if err != nil {
+		app.Logger().Errorf("The favicon can't be served: %v", err)
+		favicon, _ = web.Favicon("")
+	}
+	app.UseMiddleware(favicon, web.SPA(web.Dist()))
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
 		return scimServer.Routes(c.SQL)(auth.Middleware(store)(oidc.Routes(store)(next)))

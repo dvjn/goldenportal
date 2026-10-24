@@ -3,7 +3,13 @@ import { type ApiDataResponse, api } from "@/lib/api";
 // ServerConfiguration summarises how the portal is set up. It is read-only:
 // the settings come from the environment, and secrets only say whether they are set.
 export type ServerConfiguration = {
-  portal: { name: string; logoUrl: string; baseUrl: string };
+  portal: {
+    name: string;
+    logoUrl: string;
+    faviconUrl: string;
+    faviconIsLogo: boolean;
+    baseUrl: string;
+  };
   oidc: {
     configured: boolean;
     issuer: string;
