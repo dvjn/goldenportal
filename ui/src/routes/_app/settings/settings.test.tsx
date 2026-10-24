@@ -15,33 +15,34 @@ afterEach(() => {
 
 const admin = { ...ada, role: "admin" };
 const signedInAdmin = { "GET config": acmeConfig, "GET me": ok(admin) };
+const now = new Date().toISOString();
+
+const grants = [
+  {
+    subjectType: "user",
+    subjectId: ada.id,
+    name: "Ada Lovelace",
+    email: ada.email,
+    role: "admin",
+    grantedAt: now,
+  },
+  {
+    subjectType: "group",
+    subjectId: "g1",
+    name: "platform-engineers",
+    memberCount: 3,
+    role: "builder",
+    grantedAt: now,
+  },
+];
 
 const users = [
-  {
-    ...admin,
-    status: "active",
-    lastLoginAt: new Date().toISOString(),
-    role: "admin",
-    effectiveRole: "admin",
-    groups: [],
-  },
-  {
-    id: "2",
-    email: "grace@example.com",
-    displayName: "Grace Hopper",
-    status: "active",
-    lastLoginAt: null,
-    role: null,
-    effectiveRole: "builder",
-    groups: ["platform-engineers"],
-  },
+  { id: ada.id, displayName: "Ada Lovelace", email: ada.email },
+  { id: "u2", displayName: "Grace Hopper", email: "grace@example.com" },
 ];
+const groups = [{ id: "g1", name: "platform-engineers", memberCount: 3 }];
 
-const groups = [
-  { id: "g1", name: "platform-engineers", isTeam: false, memberCount: 3, role: null },
-];
-
-const row = (name: string) => screen.getByText(name).closest("tr") as HTMLElement;
+const row = (text: string) => screen.getByText(text).closest("tr") as HTMLElement;
 
 describe("settings", () => {
   it("is only for admins", async () => {
@@ -51,15 +52,17 @@ describe("settings", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
-  it("shows admins the settings link in the user menu", async () => {
+  it("opens on the access tab from the user menu", async () => {
     const user = userEvent.setup();
-    stubApi({ ...signedInAdmin, "GET users": ok(users) });
+    stubApi({ ...signedInAdmin, "GET access": ok(grants) });
     const { router } = renderRoute("/");
 
     await user.click(await screen.findByRole("button", { name: "Open user menu" }));
     await user.click(screen.getByRole("menuitem", { name: "Settings" }));
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/settings/users"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/settings/access"));
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Access" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("hides the settings link from everyone else", async () => {
@@ -72,79 +75,104 @@ describe("settings", () => {
     expect(screen.queryByRole("menuitem", { name: "Settings" })).not.toBeInTheDocument();
   });
 
-  it("lists users with their groups and roles", async () => {
-    stubApi({ ...signedInAdmin, "GET users": ok(users) });
-    renderRoute("/settings/users");
+  it("switches tabs through links", async () => {
+    const user = userEvent.setup();
+    stubApi({ ...signedInAdmin, "GET access": ok(grants), "GET audit": ok([]) });
+    const { router } = renderRoute("/settings/access");
 
-    await screen.findByText("Grace Hopper");
-    const grace = row("Grace Hopper");
-    expect(within(grace).getByText("platform-engineers")).toBeInTheDocument();
-    expect(
-      within(grace).getByRole("combobox", { name: "Role for Grace Hopper" }),
-    ).toHaveTextContent("From groups");
-    expect(within(grace).getByText("Builder")).toBeInTheDocument();
-    expect(within(grace).getByText("Never")).toBeInTheDocument();
+    await user.click(await screen.findByRole("tab", { name: "Audit log" }));
 
+    await waitFor(() => expect(router.state.location.pathname).toBe("/settings/audit"));
+    expect(await screen.findByText("Nothing recorded yet")).toBeInTheDocument();
+  });
+});
+
+describe("access", () => {
+  it("lists only direct grants, and not your own controls", async () => {
+    stubApi({ ...signedInAdmin, "GET access": ok(grants) });
+    renderRoute("/settings/access");
+
+    await screen.findByText("platform-engineers");
+    expect(within(row("platform-engineers")).getByText("Group · 3 members")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Role for platform-engineers" })).toHaveTextContent(
+      "Builder",
+    );
     expect(screen.getByRole("combobox", { name: "Role for Ada Lovelace" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Remove access for Ada Lovelace" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("sets a user's role", async () => {
+  it("changes a group's role in place", async () => {
     const user = userEvent.setup();
     const requests = stubApi({
       ...signedInAdmin,
-      "GET users": ok(users),
-      "PUT users/2/role": () => new Response(null, { status: 200 }),
+      "GET access": ok(grants),
+      "PUT access/group/g1": () => new Response(null, { status: 200 }),
     });
-    renderRoute("/settings/users");
-
-    await user.click(await screen.findByRole("combobox", { name: "Role for Grace Hopper" }));
-    await user.click(screen.getByRole("option", { name: "Admin" }));
-
-    await waitFor(() => expect(requests["PUT users/2/role"]).toBeDefined());
-    expect(await requests["PUT users/2/role"]?.json()).toEqual({ role: "admin" });
-  });
-
-  it("gives a group a role and marks it as a team", async () => {
-    const user = userEvent.setup();
-    const requests = stubApi({
-      ...signedInAdmin,
-      "GET groups": ok(groups),
-      "PUT groups/g1": () => new Response(null, { status: 200 }),
-    });
-    renderRoute("/settings/groups");
+    renderRoute("/settings/access");
 
     await user.click(await screen.findByRole("combobox", { name: "Role for platform-engineers" }));
-    await user.click(screen.getByRole("option", { name: "Builder" }));
-    await waitFor(() => expect(requests["PUT groups/g1"]).toBeDefined());
-    expect(await requests["PUT groups/g1"]?.json()).toEqual({ role: "builder", isTeam: false });
+    await user.click(screen.getByRole("option", { name: "Admin" }));
 
-    await user.click(screen.getByRole("switch", { name: "platform-engineers is a team" }));
-    await waitFor(async () =>
-      expect(await requests["PUT groups/g1"]?.clone().json()).toEqual({
-        role: null,
-        isTeam: true,
-      }),
+    await waitFor(() => expect(requests["PUT access/group/g1"]).toBeDefined());
+    expect(await requests["PUT access/group/g1"]?.json()).toEqual({ role: "admin" });
+    expect(await screen.findByText("platform-engineers is now admin")).toBeInTheDocument();
+  });
+
+  it("grants a person a role", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      ...signedInAdmin,
+      "GET access": ok(grants),
+      "GET users": ok(users),
+      "GET groups": ok(groups),
+      "PUT access/user/u2": () => new Response(null, { status: 200 }),
+    });
+    renderRoute("/settings/access");
+
+    await user.click(await screen.findByRole("button", { name: "Grant access" }));
+    await user.click(screen.getByRole("combobox", { name: "Person or group" }));
+    expect(screen.queryByRole("option", { name: /Ada Lovelace/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("option", { name: /Grace Hopper/ }));
+    await user.click(screen.getByRole("button", { name: "Grant access" }));
+
+    await waitFor(() => expect(requests["PUT access/user/u2"]).toBeDefined());
+    expect(await requests["PUT access/user/u2"]?.json()).toEqual({ role: "builder" });
+    expect(await screen.findByText("Granted builder to Grace Hopper")).toBeInTheDocument();
+  });
+
+  it("removes a grant after confirming", async () => {
+    const user = userEvent.setup();
+    stubApi({ ...signedInAdmin, "GET access": ok(grants) });
+    renderRoute("/settings/access");
+
+    await user.click(
+      await screen.findByRole("button", { name: "Remove access for platform-engineers" }),
     );
+    const requests = stubApi({
+      ...signedInAdmin,
+      "GET access": ok([grants[0]]),
+      "DELETE access/group/g1": () => new Response(null, { status: 204 }),
+    });
+    await user.click(screen.getByRole("button", { name: "Remove access" }));
+
+    expect(await screen.findByText("Removed access for platform-engineers")).toBeInTheDocument();
+    expect(requests["DELETE access/group/g1"]).toBeDefined();
   });
 
   it("tells the admin when a change fails", async () => {
     const user = userEvent.setup();
     stubApi({
       ...signedInAdmin,
-      "GET groups": ok(groups),
-      "PUT groups/g1": fail(500, "the database is unavailable"),
+      "GET access": ok(grants),
+      "PUT access/group/g1": fail(500, "the database is unavailable"),
     });
-    renderRoute("/settings/groups");
+    renderRoute("/settings/access");
 
-    await user.click(await screen.findByRole("switch", { name: "platform-engineers is a team" }));
+    await user.click(await screen.findByRole("combobox", { name: "Role for platform-engineers" }));
+    await user.click(screen.getByRole("option", { name: "Member" }));
 
     expect(await screen.findByText("the database is unavailable")).toBeInTheDocument();
-  });
-
-  it("explains where groups come from when there are none", async () => {
-    stubApi({ ...signedInAdmin, "GET groups": ok([]) });
-    renderRoute("/settings/groups");
-
-    expect(await screen.findByText("No groups yet")).toBeInTheDocument();
   });
 });

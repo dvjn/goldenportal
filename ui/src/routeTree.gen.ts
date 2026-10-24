@@ -15,9 +15,8 @@ import { Route as AppIndexRouteImport } from "./routes/_app/index";
 import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
 import { Route as AppAccountTokensRouteImport } from "./routes/_app/account/tokens";
 import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings/index";
+import { Route as AppSettingsAccessRouteImport } from "./routes/_app/settings/access";
 import { Route as AppSettingsAuditRouteImport } from "./routes/_app/settings/audit";
-import { Route as AppSettingsGroupsRouteImport } from "./routes/_app/settings/groups";
-import { Route as AppSettingsUsersRouteImport } from "./routes/_app/settings/users";
 
 const AppRoute = AppRouteImport.update({
   id: "/_app",
@@ -48,19 +47,14 @@ const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   path: "/",
   getParentRoute: () => AppSettingsRoute,
 } as any);
+const AppSettingsAccessRoute = AppSettingsAccessRouteImport.update({
+  id: "/access",
+  path: "/access",
+  getParentRoute: () => AppSettingsRoute,
+} as any);
 const AppSettingsAuditRoute = AppSettingsAuditRouteImport.update({
   id: "/audit",
   path: "/audit",
-  getParentRoute: () => AppSettingsRoute,
-} as any);
-const AppSettingsGroupsRoute = AppSettingsGroupsRouteImport.update({
-  id: "/groups",
-  path: "/groups",
-  getParentRoute: () => AppSettingsRoute,
-} as any);
-const AppSettingsUsersRoute = AppSettingsUsersRouteImport.update({
-  id: "/users",
-  path: "/users",
   getParentRoute: () => AppSettingsRoute,
 } as any);
 
@@ -69,18 +63,16 @@ export interface FileRoutesByFullPath {
   "/sign-in": typeof SignInRoute;
   "/settings": typeof AppSettingsRouteWithChildren;
   "/account/tokens": typeof AppAccountTokensRoute;
+  "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
-  "/settings/groups": typeof AppSettingsGroupsRoute;
-  "/settings/users": typeof AppSettingsUsersRoute;
   "/settings/": typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesByTo {
   "/sign-in": typeof SignInRoute;
   "/": typeof AppIndexRoute;
   "/account/tokens": typeof AppAccountTokensRoute;
+  "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
-  "/settings/groups": typeof AppSettingsGroupsRoute;
-  "/settings/users": typeof AppSettingsUsersRoute;
   "/settings": typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesById {
@@ -90,9 +82,8 @@ export interface FileRoutesById {
   "/_app/settings": typeof AppSettingsRouteWithChildren;
   "/_app/": typeof AppIndexRoute;
   "/_app/account/tokens": typeof AppAccountTokensRoute;
+  "/_app/settings/access": typeof AppSettingsAccessRoute;
   "/_app/settings/audit": typeof AppSettingsAuditRoute;
-  "/_app/settings/groups": typeof AppSettingsGroupsRoute;
-  "/_app/settings/users": typeof AppSettingsUsersRoute;
   "/_app/settings/": typeof AppSettingsIndexRoute;
 }
 export interface FileRouteTypes {
@@ -102,18 +93,16 @@ export interface FileRouteTypes {
     | "/sign-in"
     | "/settings"
     | "/account/tokens"
+    | "/settings/access"
     | "/settings/audit"
-    | "/settings/groups"
-    | "/settings/users"
     | "/settings/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/sign-in"
     | "/"
     | "/account/tokens"
+    | "/settings/access"
     | "/settings/audit"
-    | "/settings/groups"
-    | "/settings/users"
     | "/settings";
   id:
     | "__root__"
@@ -122,9 +111,8 @@ export interface FileRouteTypes {
     | "/_app/settings"
     | "/_app/"
     | "/_app/account/tokens"
+    | "/_app/settings/access"
     | "/_app/settings/audit"
-    | "/_app/settings/groups"
-    | "/_app/settings/users"
     | "/_app/settings/";
   fileRoutesById: FileRoutesById;
 }
@@ -177,6 +165,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppSettingsIndexRouteImport;
       parentRoute: typeof AppSettingsRoute;
     };
+    "/_app/settings/access": {
+      id: "/_app/settings/access";
+      path: "/access";
+      fullPath: "/settings/access";
+      preLoaderRoute: typeof AppSettingsAccessRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
     "/_app/settings/audit": {
       id: "/_app/settings/audit";
       path: "/audit";
@@ -184,34 +179,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppSettingsAuditRouteImport;
       parentRoute: typeof AppSettingsRoute;
     };
-    "/_app/settings/groups": {
-      id: "/_app/settings/groups";
-      path: "/groups";
-      fullPath: "/settings/groups";
-      preLoaderRoute: typeof AppSettingsGroupsRouteImport;
-      parentRoute: typeof AppSettingsRoute;
-    };
-    "/_app/settings/users": {
-      id: "/_app/settings/users";
-      path: "/users";
-      fullPath: "/settings/users";
-      preLoaderRoute: typeof AppSettingsUsersRouteImport;
-      parentRoute: typeof AppSettingsRoute;
-    };
   }
 }
 
 interface AppSettingsRouteChildren {
+  AppSettingsAccessRoute: typeof AppSettingsAccessRoute;
   AppSettingsAuditRoute: typeof AppSettingsAuditRoute;
-  AppSettingsGroupsRoute: typeof AppSettingsGroupsRoute;
-  AppSettingsUsersRoute: typeof AppSettingsUsersRoute;
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute;
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
+  AppSettingsAccessRoute: AppSettingsAccessRoute,
   AppSettingsAuditRoute: AppSettingsAuditRoute,
-  AppSettingsGroupsRoute: AppSettingsGroupsRoute,
-  AppSettingsUsersRoute: AppSettingsUsersRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
 };
 

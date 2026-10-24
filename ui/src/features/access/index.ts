@@ -1,11 +1,13 @@
 export {
   accessKeys,
-  type Group,
-  type GroupUpdate,
+  type DirectoryGroup,
+  type DirectoryUser,
+  type Grant,
+  grantRole,
+  listGrants,
   listGroups,
   listUsers,
-  setUserRole,
-  type User,
-  updateGroup,
+  revokeGrant,
+  type SubjectType,
 } from "./api";
-export { groupsQueryOptions, useGroups, usersQueryOptions, useUsers } from "./queries";
+export { grantsQueryOptions, groupsQueryOptions, useGrants, usersQueryOptions } from "./queries";

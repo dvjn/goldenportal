@@ -1,10 +1,10 @@
-import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router";
-import { buttonVariants } from "@/components/ui/button";
+import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/react-router";
+import { PageHeader } from "@/components/page-header";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { meQueryOptions } from "@/features/auth";
 
 const sections = [
-  { to: "/settings/users", label: "Users" },
-  { to: "/settings/groups", label: "Groups" },
+  { to: "/settings/access", label: "Access" },
   { to: "/settings/audit", label: "Audit log" },
 ] as const;
 
@@ -19,26 +19,28 @@ export const Route = createFileRoute("/_app/settings")({
 });
 
 function SettingsLayout() {
+  const { pathname } = useLocation();
+  const active = sections.find((section) => pathname.startsWith(section.to))?.to;
+
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold">Settings</h1>
-      <div className="flex flex-col gap-6 md:flex-row">
-        <nav aria-label="Settings" className="flex gap-1 md:w-44 md:shrink-0 md:flex-col">
+      <PageHeader title="Settings" description="Who can do what in the portal." />
+      <Tabs value={active}>
+        <TabsList variant="line" aria-label="Settings">
           {sections.map((section) => (
-            <Link
+            <TabsTrigger
               key={section.to}
-              to={section.to}
-              className={buttonVariants({ variant: "ghost", className: "justify-start" })}
-              activeProps={{ className: "bg-muted text-foreground", "aria-current": "page" }}
+              value={section.to}
+              asChild
+              // A soft highlight suits underlined tabs better than the default ring.
+              className="focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none"
             >
-              {section.label}
-            </Link>
+              <Link to={section.to}>{section.label}</Link>
+            </TabsTrigger>
           ))}
-        </nav>
-        <div className="min-w-0 flex-1">
-          <Outlet />
-        </div>
-      </div>
+        </TabsList>
+      </Tabs>
+      <Outlet />
     </div>
   );
 }

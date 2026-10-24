@@ -13,29 +13,22 @@ export const roleLabels: Record<Role, string> = {
   member: "Member",
 };
 
-const none = "none";
-
 type RoleSelectProps = {
-  value: Role | null;
-  onChange: (role: Role | null) => void;
-  // noneLabel names the "no role bound" choice, e.g. "From groups".
-  noneLabel: string;
+  value: Role;
+  onChange: (role: Role) => void;
   label: string;
+  id?: string;
   disabled?: boolean;
+  className?: string;
 };
 
-export function RoleSelect({ value, onChange, noneLabel, label, disabled }: RoleSelectProps) {
+export function RoleSelect({ value, onChange, label, id, disabled, className }: RoleSelectProps) {
   return (
-    <Select
-      value={value ?? none}
-      onValueChange={(next) => onChange(next === none ? null : (next as Role))}
-      disabled={disabled}
-    >
-      <SelectTrigger size="sm" className="w-36" aria-label={label}>
+    <Select value={value} onValueChange={(next) => onChange(next as Role)} disabled={disabled}>
+      <SelectTrigger id={id} size="sm" className={className ?? "w-32"} aria-label={label}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={none}>{noneLabel}</SelectItem>
         {(Object.keys(roleLabels) as Role[]).map((role) => (
           <SelectItem key={role} value={role}>
             {roleLabels[role]}

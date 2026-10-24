@@ -1,5 +1,10 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { accessKeys, listGroups, listUsers } from "./api";
+import { accessKeys, listGrants, listGroups, listUsers } from "./api";
+
+export const grantsQueryOptions = queryOptions({
+  queryKey: accessKeys.grants,
+  queryFn: listGrants,
+});
 
 export const usersQueryOptions = queryOptions({
   queryKey: accessKeys.users,
@@ -11,10 +16,6 @@ export const groupsQueryOptions = queryOptions({
   queryFn: listGroups,
 });
 
-export function useUsers() {
-  return useSuspenseQuery(usersQueryOptions).data;
-}
-
-export function useGroups() {
-  return useSuspenseQuery(groupsQueryOptions).data;
+export function useGrants() {
+  return useSuspenseQuery(grantsQueryOptions).data;
 }

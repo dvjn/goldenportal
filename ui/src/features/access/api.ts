@@ -1,46 +1,44 @@
 import type { Role } from "@/features/auth";
 import { type ApiDataResponse, api } from "@/lib/api";
 
-export type User = {
-  id: string;
-  email: string;
-  displayName: string;
-  status: "active" | "deactivated";
-  lastLoginAt: string | null;
-  // The role bound to the user directly, or null when they only get roles from groups.
-  role: Role | null;
-  // The highest role from the user and their groups.
-  effectiveRole: Role;
-  groups: string[];
-};
+export type SubjectType = "user" | "group";
 
-export type Group = {
-  id: string;
+// Grant is a role given directly to a user or a group.
+export type Grant = {
+  subjectType: SubjectType;
+  subjectId: string;
   name: string;
-  isTeam: boolean;
-  memberCount: number;
-  role: Role | null;
+  email?: string;
+  memberCount?: number;
+  role: Role;
+  grantedAt: string;
 };
 
-export type GroupUpdate = Pick<Group, "role" | "isTeam">;
+export type DirectoryUser = { id: string; displayName: string; email: string };
+export type DirectoryGroup = { id: string; name: string; memberCount: number };
 
 export const accessKeys = {
+  grants: ["access"] as const,
   users: ["users"] as const,
   groups: ["groups"] as const,
 };
 
-export async function listUsers(): Promise<User[]> {
-  return (await api.get("users").json<ApiDataResponse<User[]>>()).data;
+export async function listGrants(): Promise<Grant[]> {
+  return (await api.get("access").json<ApiDataResponse<Grant[]>>()).data;
 }
 
-export async function setUserRole(id: string, role: Role | null): Promise<void> {
-  await api.put(`users/${id}/role`, { json: { role } });
+export async function grantRole(type: SubjectType, id: string, role: Role): Promise<void> {
+  await api.put(`access/${type}/${id}`, { json: { role } });
 }
 
-export async function listGroups(): Promise<Group[]> {
-  return (await api.get("groups").json<ApiDataResponse<Group[]>>()).data;
+export async function revokeGrant(type: SubjectType, id: string): Promise<void> {
+  await api.delete(`access/${type}/${id}`);
 }
 
-export async function updateGroup(id: string, update: GroupUpdate): Promise<void> {
-  await api.put(`groups/${id}`, { json: update });
+export async function listUsers(): Promise<DirectoryUser[]> {
+  return (await api.get("users").json<ApiDataResponse<DirectoryUser[]>>()).data;
+}
+
+export async function listGroups(): Promise<DirectoryGroup[]> {
+  return (await api.get("groups").json<ApiDataResponse<DirectoryGroup[]>>()).data;
 }
