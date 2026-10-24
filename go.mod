@@ -1,4 +1,4 @@
-module github.com/dvjn/goldport
+module github.com/dvjn/goldenportal
 
 go 1.27.3
 

@@ -15,29 +15,29 @@ depends = ["api:dev", "ui:dev"]
 description = "Run the API with hot reload"
 depends = ["deps:up"]
 env = { _.file = "configs/.dev.env" }
-run = "air --build.cmd 'go build -o .local/tmp/goldport ./cmd/goldport' --build.bin .local/tmp/goldport -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,.local' --misc.clean_on_exit true"
+run = "air --build.cmd 'go build -o .local/tmp/goldenportal ./cmd/goldenportal' --build.bin .local/tmp/goldenportal -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,.local' --misc.clean_on_exit true"
 
 [tasks.build]
-description = "Build the UI, then the goldport binary that embeds it"
+description = "Build the UI, then the goldenportal binary that embeds it"
 depends = ["ui:build"]
-run = "go build ./cmd/goldport"
+run = "go build ./cmd/goldenportal"
 
 [tasks.dist]
-description = "Build the UI, then cross-compile the release binaries into dist/<arch>/goldport"
+description = "Build the UI, then cross-compile the release binaries into dist/<arch>/goldenportal"
 depends = ["ui:build"]
 env = { CGO_ENABLED = "0", GOOS = "linux" }
 run = '''
 set -eu
 rm -rf dist
 for arch in amd64 arm64; do
-  GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/$arch/goldport" ./cmd/goldport
+  GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/$arch/goldenportal" ./cmd/goldenportal
 done
 '''
 
 [tasks.image]
 description = "Build the container image for both architectures"
 depends = ["dist"]
-run = "podman build --platform linux/amd64,linux/arm64 --manifest goldport:local ."
+run = "podman build --platform linux/amd64,linux/arm64 --manifest goldenportal:local ."
 
 [tasks."ui:dev"]
 description = "Run the Vite dev server on port 47273, proxying /api to the API"

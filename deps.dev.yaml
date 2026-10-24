@@ -1,12 +1,12 @@
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:18.4-bookworm}
-    container_name: ${POSTGRES_CONTAINER:-goldport-postgres}
+    container_name: ${POSTGRES_CONTAINER:-goldenportal-postgres}
     user: root
     environment:
-      POSTGRES_USER: ${DB_USER:-goldport}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-goldport-local-dev-password}
-      POSTGRES_DB: ${DB_NAME:-goldport}
+      POSTGRES_USER: ${DB_USER:-goldenportal}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-goldenportal-local-dev-password}
+      POSTGRES_DB: ${DB_NAME:-goldenportal}
     ports:
       - "${DB_PORT:-47433}:5432"
     volumes:

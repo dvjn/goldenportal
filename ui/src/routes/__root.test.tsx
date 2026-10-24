@@ -74,7 +74,7 @@ describe("app shell", () => {
 
     expect(document.documentElement).toHaveClass("light");
     expect(document.documentElement).not.toHaveClass("dark");
-    expect(localStorage.getItem("goldport-ui-theme")).toBe("light");
+    expect(localStorage.getItem("gp-ui-theme")).toBe("light");
   });
 
   it("shows the not found page for unknown routes", async () => {

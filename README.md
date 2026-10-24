@@ -1,6 +1,6 @@
-# GoldPort
+# Golden Portal
 
-GoldPort is a developer portal. It brings dashboards, scorecards, and golden paths to developers in one place.
+Golden Portal is a developer portal. It brings dashboards, scorecards, and golden paths to developers in one place.
 
 ## License
 

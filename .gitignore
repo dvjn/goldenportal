@@ -3,7 +3,7 @@ mise.local.toml
 .local/
 *.out
 coverage.txt
-/goldport
+/goldenportal
 /dist
 ui/node_modules
 ui/coverage

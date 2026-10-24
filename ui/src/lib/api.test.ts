@@ -16,9 +16,9 @@ afterEach(() => {
 
 describe("api", () => {
   it("requests paths under the prefix as JSON", async () => {
-    const fetchMock = stubFetch(Response.json({ data: { name: "GoldPort" } }));
+    const fetchMock = stubFetch(Response.json({ data: { name: "Golden Portal" } }));
 
-    await expect(api.get("config").json()).resolves.toEqual({ data: { name: "GoldPort" } });
+    await expect(api.get("config").json()).resolves.toEqual({ data: { name: "Golden Portal" } });
 
     const request = fetchMock.mock.calls[0]?.[0];
     expect(request?.url).toBe("http://localhost/api/v1/config");
