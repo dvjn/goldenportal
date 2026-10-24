@@ -99,7 +99,7 @@ func (s Store) TokenPrincipal(ctx context.Context, secretHash []byte) (Principal
 	)
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, t.read_only, t.last_used_at, `+userRole+`
+		SELECT u.id, u.email, u.display_name, t.read_only, t.last_used_at, `+EffectiveRoleSQL+`
 		FROM api_tokens t
 		JOIN users u ON u.id = t.user_id
 		WHERE t.secret_hash = $1

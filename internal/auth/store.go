@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const (
@@ -18,10 +20,13 @@ const (
 	signInTimeout      = 10 * time.Minute
 )
 
-// userRole selects the highest role bound to user u; everyone is at least a member.
-const userRole = `coalesce((
+// EffectiveRoleSQL selects the highest role bound to user u directly or
+// through one of their groups; everyone is at least a member.
+const EffectiveRoleSQL = `coalesce((
 	SELECT rb.role FROM role_bindings rb
-	WHERE rb.subject_type = 'user' AND rb.subject_id = u.id
+	WHERE (rb.subject_type = 'user' AND rb.subject_id = u.id)
+		OR (rb.subject_type = 'group' AND rb.subject_id IN (
+			SELECT gm.group_id FROM group_members gm WHERE gm.user_id = u.id))
 	ORDER BY CASE rb.role WHEN 'admin' THEN 3 WHEN 'builder' THEN 2 ELSE 1 END DESC
 	LIMIT 1
 ), 'member')`
@@ -108,6 +113,31 @@ func (s Store) UpsertUser(ctx context.Context, issuer, subject, email, displayNa
 	return id, nil
 }
 
+// SyncGroups makes the user's group memberships match the identity provider's
+// list, creating groups the portal hasn't seen before.
+func (s Store) SyncGroups(ctx context.Context, userID string, names []string) error {
+	groups := pq.Array(names)
+
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO groups (name) SELECT unnest($1::text[])
+		ON CONFLICT (name) DO NOTHING`, groups); err != nil {
+		return err
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM group_members WHERE user_id = $1
+			AND group_id NOT IN (SELECT id FROM groups WHERE name = ANY($2))`, userID, groups); err != nil {
+		return err
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO group_members (group_id, user_id)
+		SELECT id, $1 FROM groups WHERE name = ANY($2)
+		ON CONFLICT DO NOTHING`, userID, groups)
+
+	return err
+}
+
 func (s Store) GrantRole(ctx context.Context, userID string, role Role) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO role_bindings (subject_type, subject_id, role)
@@ -146,7 +176,7 @@ func (s Store) SessionPrincipal(ctx context.Context, sessionHash []byte) (Princi
 	)
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, s.last_seen_at, `+userRole+`
+		SELECT u.id, u.email, u.display_name, s.last_seen_at, `+EffectiveRoleSQL+`
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.id_hash = $1

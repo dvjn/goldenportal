@@ -1,5 +1,6 @@
 # Local development only. Creates the Golden Portal OIDC application in
-# Authentik and a member account. The admin account (akadmin) comes from
+# Authentik, a member account, and a builder account in the
+# platform-engineers group. The admin account (akadmin) comes from
 # AUTHENTIK_BOOTSTRAP_EMAIL and AUTHENTIK_BOOTSTRAP_PASSWORD in deps.dev.yaml.
 version: 1
 metadata:
@@ -54,3 +55,18 @@ entries:
       name: Dev Member
       email: member@example.com
       password: golden-portal-dev
+
+  - model: authentik_core.group
+    id: platform-engineers
+    identifiers:
+      name: platform-engineers
+
+  - model: authentik_core.user
+    identifiers:
+      username: builder
+    attrs:
+      name: Dev Builder
+      email: builder@example.com
+      password: golden-portal-dev
+      groups:
+        - !KeyOf platform-engineers

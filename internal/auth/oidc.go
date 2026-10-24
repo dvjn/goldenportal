@@ -28,6 +28,8 @@ type OIDCConfig struct {
 	Scopes       []string
 	// BaseURL is the portal's public URL. The identity provider redirects to BaseURL + /api/v1/auth/callback.
 	BaseURL string
+	// GroupsClaim names the ID token claim that lists the user's groups.
+	GroupsClaim string
 	// BootstrapAdminEmail is made an admin when they sign in with that email verified.
 	BootstrapAdminEmail string
 	SecureCookies       bool
@@ -198,6 +200,11 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 		o.fail(w, r, "read ID token claims", err)
 		return
 	}
+	groups, err := o.groups(idToken)
+	if err != nil {
+		o.fail(w, r, "read ID token groups", err)
+		return
+	}
 
 	userID, err := store.UpsertUser(ctx, idToken.Issuer, idToken.Subject, claims.Email, claims.displayName())
 	if errors.Is(err, errDeactivated) {
@@ -206,6 +213,11 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 	}
 	if err != nil {
 		o.fail(w, r, "save user", err)
+		return
+	}
+
+	if err := store.SyncGroups(ctx, userID, groups); err != nil {
+		o.fail(w, r, "sync groups", err)
 		return
 	}
 
@@ -226,6 +238,24 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 
 	http.SetCookie(w, o.cookie(sessionCookie, secret, int(sessionMaxAge.Seconds())))
 	http.Redirect(w, r, req.redirect, http.StatusFound)
+}
+
+// groups reads the configured groups claim. A missing claim means no groups.
+func (o *OIDC) groups(idToken *oidc.IDToken) ([]string, error) {
+	var all map[string]any
+	if err := idToken.Claims(&all); err != nil {
+		return nil, err
+	}
+
+	raw, _ := all[o.cfg.GroupsClaim].([]any)
+	groups := make([]string, 0, len(raw))
+	for _, value := range raw {
+		if name, ok := value.(string); ok && name != "" {
+			groups = append(groups, name)
+		}
+	}
+
+	return groups, nil
 }
 
 func (o *OIDC) fail(w http.ResponseWriter, r *http.Request, step string, err error) {

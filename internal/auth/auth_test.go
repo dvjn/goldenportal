@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"gofr.dev/pkg/gofr/logging"
+
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 func TestPrincipalRolesNest(t *testing.T) {
@@ -208,5 +210,24 @@ func TestCallbackRejectsProblemsBeforeTouchingTheProvider(t *testing.T) {
 				t.Fatalf("error = %q, want it to contain %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRequireChecksTheRole(t *testing.T) {
+	ctx := withAuth(context.Background(), authInfo{principal: Principal{ID: "1", Role: RoleBuilder}})
+
+	if _, err := Require(ctx, RoleBuilder); err != nil {
+		t.Fatalf("Require(builder) = %v, want no error", err)
+	}
+
+	_, err := Require(ctx, RoleAdmin)
+	var httpErr httpx.Error
+	if !errors.As(err, &httpErr) || httpErr.Code != http.StatusForbidden {
+		t.Fatalf("Require(admin) = %v, want a 403", err)
+	}
+
+	_, err = Require(context.Background(), RoleMember)
+	if !errors.As(err, &httpErr) || httpErr.Code != http.StatusUnauthorized {
+		t.Fatalf("Require() without a user = %v, want a 401", err)
 	}
 }

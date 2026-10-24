@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dvjn/goldenportal/internal/access"
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/web"
 	"github.com/dvjn/goldenportal/migrations"
@@ -22,6 +23,7 @@ func New() *gofr.App {
 		ClientSecret:        app.Config.Get("GP_OIDC_CLIENT_SECRET"),
 		Scopes:              strings.Fields(app.Config.GetOrDefault("GP_OIDC_SCOPES", "openid profile email")),
 		BaseURL:             app.Config.Get("GP_BASE_URL"),
+		GroupsClaim:         app.Config.GetOrDefault("GP_OIDC_GROUPS_CLAIM", "groups"),
 		BootstrapAdminEmail: app.Config.Get("GP_BOOTSTRAP_ADMIN_EMAIL"),
 		SecureCookies:       secureCookies,
 	}, app.Logger())
@@ -40,6 +42,7 @@ func New() *gofr.App {
 		LogoURL: app.Config.Get("GP_LOGO_URL"),
 	}))
 	auth.NewHandlers(secureCookies).Register(app)
+	access.Register(app)
 
 	return app
 }
