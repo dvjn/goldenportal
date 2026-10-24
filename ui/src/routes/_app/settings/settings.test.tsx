@@ -54,7 +54,7 @@ const serverConfiguration = {
     redirectUrl: "https://portal.example.com/api/v1/auth/callback",
     bootstrapAdminEmail: "",
   },
-  scim: { available: false },
+  scim: { enabled: false, url: "https://portal.example.com/scim/v2" },
   sessions: { secureCookies: true, idleTimeoutHours: 8, maxAgeHours: 168 },
   tokens: { prefix: "gpp_", maxDays: 365 },
   database: {

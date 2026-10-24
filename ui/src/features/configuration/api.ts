@@ -14,7 +14,8 @@ export type ServerConfiguration = {
     redirectUrl: string;
     bootstrapAdminEmail: string;
   };
-  scim: { available: boolean };
+  // scim.url is the SCIM base address to give the identity provider.
+  scim: { enabled: boolean; url: string };
   sessions: { secureCookies: boolean; idleTimeoutHours: number; maxAgeHours: number };
   tokens: { prefix: string; maxDays: number };
   database: {

@@ -16,7 +16,7 @@ const (
 	assetsPrefix = "assets/"
 )
 
-var passthroughPrefixes = []string{"/api/", "/.well-known/"}
+var passthroughPrefixes = []string{"/api/", "/scim/", "/.well-known/"}
 
 func Dist() fs.FS {
 	dist, err := fs.Sub(embedded, "dist")

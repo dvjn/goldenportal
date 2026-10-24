@@ -94,15 +94,36 @@ func (s Store) TakeSignInRequest(ctx context.Context, stateHash []byte) (signInR
 	return req, err
 }
 
-// UpsertUser creates or refreshes the user an identity provider vouched for.
-func (s Store) UpsertUser(ctx context.Context, issuer, subject, email, displayName string) (string, error) {
+// UpsertUser finds or creates the user an identity provider vouched for. Someone
+// provisioned over SCIM before their first sign-in is linked by their verified
+// email. Provisioned users keep the name and email SCIM gave them.
+func (s Store) UpsertUser(ctx context.Context, issuer, subject, email, displayName string, emailVerified bool) (string, error) {
 	var id, status string
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO users (oidc_issuer, oidc_subject, email, display_name)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (oidc_issuer, oidc_subject)
-		DO UPDATE SET email = EXCLUDED.email, display_name = EXCLUDED.display_name
+		UPDATE users SET
+			email = CASE WHEN provisioned THEN email ELSE $3 END,
+			display_name = CASE WHEN provisioned THEN display_name ELSE $4 END
+		WHERE oidc_issuer = $1 AND oidc_subject = $2
 		RETURNING id, status`, issuer, subject, email, displayName).Scan(&id, &status)
+
+	if errors.Is(err, sql.ErrNoRows) && emailVerified && email != "" {
+		err = s.db.QueryRowContext(ctx, `
+			UPDATE users SET oidc_issuer = $1, oidc_subject = $2
+			WHERE id = (
+				SELECT id FROM users
+				WHERE oidc_subject IS NULL AND lower(email) = lower($3)
+				ORDER BY created_at LIMIT 1
+			)
+			RETURNING id, status`, issuer, subject, email).Scan(&id, &status)
+	}
+
+	if errors.Is(err, sql.ErrNoRows) {
+		err = s.db.QueryRowContext(ctx, `
+			INSERT INTO users (oidc_issuer, oidc_subject, email, display_name)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (oidc_issuer, oidc_subject) DO UPDATE SET email = users.email
+			RETURNING id, status`, issuer, subject, email, displayName).Scan(&id, &status)
+	}
 	if err != nil {
 		return "", err
 	}

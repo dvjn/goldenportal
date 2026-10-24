@@ -160,22 +160,31 @@ function AuthenticationCard({
           <Row
             label="Provisioning"
             help={
-              scim.available
-                ? "Users and groups are provisioned from the identity provider."
+              scim.enabled
+                ? "Users and groups are provisioned over SCIM 2.0; the groups claim is ignored."
                 : "Group membership syncs from the groups claim on each sign-in."
             }
           >
-            {scim.available ? (
+            {scim.enabled ? (
               <Badge variant="secondary">
                 <CircleCheck className="text-success" aria-hidden />
-                SCIM available
+                SCIM on
               </Badge>
             ) : (
               <Badge variant="outline" className="text-muted-foreground">
-                SCIM not available yet
+                SCIM off
               </Badge>
             )}
           </Row>
+          {scim.enabled && (
+            <Row
+              label="SCIM Endpoint"
+              help="Configure this as the SCIM base URL in the identity provider."
+            >
+              {scim.url}
+              <CopyButton label="SCIM Endpoint" value={scim.url} />
+            </Row>
+          )}
         </Rows>
       </CardContent>
     </Card>

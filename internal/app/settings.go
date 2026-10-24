@@ -9,6 +9,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/scim"
 )
 
 // The configuration page summarises how the portal is set up, from settings
@@ -43,7 +44,9 @@ type oidcConfig struct {
 }
 
 type scimConfig struct {
-	Available bool `json:"available"`
+	Enabled bool `json:"enabled"`
+	// URL is the SCIM base address to give the identity provider.
+	URL string `json:"url"`
 }
 
 type sessionsConfig struct {
@@ -75,7 +78,7 @@ type serverInfo struct {
 	LogLevel    string `json:"logLevel"`
 }
 
-func describeConfig(cfg config.Config, oidc *auth.OIDC) serverConfig {
+func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server) serverConfig {
 	return serverConfig{
 		Portal: portalConfig{
 			Name:    cfg.GetOrDefault("GP_NAME", "Golden Portal"),
@@ -92,6 +95,7 @@ func describeConfig(cfg config.Config, oidc *auth.OIDC) serverConfig {
 			RedirectURL:         oidc.RedirectURL(),
 			BootstrapAdminEmail: cfg.Get("GP_BOOTSTRAP_ADMIN_EMAIL"),
 		},
+		SCIM: scimConfig{Enabled: scimServer.Enabled(), URL: scimServer.URL()},
 		Sessions: sessionsConfig{
 			SecureCookies:    cfg.GetOrDefault("GP_COOKIE_SECURE", "true") != "false",
 			IdleTimeoutHours: int(auth.SessionIdleTimeout.Hours()),
@@ -122,8 +126,8 @@ type actionResult struct {
 	Message string `json:"message"`
 }
 
-func registerSettings(app *gofr.App, oidc *auth.OIDC) {
-	summary := describeConfig(app.Config, oidc)
+func registerSettings(app *gofr.App, oidc *auth.OIDC, scimServer *scim.Server) {
+	summary := describeConfig(app.Config, oidc, scimServer)
 
 	app.GET("/api/v1/settings/configuration", func(ctx *gofr.Context) (any, error) {
 		if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {

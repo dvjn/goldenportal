@@ -20,10 +20,19 @@ const (
 	AccessGrant    = "access.grant"
 	AccessRevoke   = "access.revoke"
 	BootstrapAdmin = "access.bootstrap_admin"
+
+	SCIMUserProvision  = "scim.user_provision"
+	SCIMUserDeactivate = "scim.user_deactivate"
+	SCIMUserReactivate = "scim.user_reactivate"
+	SCIMGroupProvision = "scim.group_provision"
+	SCIMGroupDelete    = "scim.group_delete"
 )
 
 // Actions lists every action, for filters.
-var Actions = []string{SignIn, SignOut, TokenCreate, TokenRevoke, AccessGrant, AccessRevoke, BootstrapAdmin}
+var Actions = []string{
+	SignIn, SignOut, TokenCreate, TokenRevoke, AccessGrant, AccessRevoke, BootstrapAdmin,
+	SCIMUserProvision, SCIMUserDeactivate, SCIMUserReactivate, SCIMGroupProvision, SCIMGroupDelete,
+}
 
 type DB interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)

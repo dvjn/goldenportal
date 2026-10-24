@@ -34,6 +34,11 @@ export const auditActions: Record<string, string> = {
   "access.grant": "Granted access",
   "access.revoke": "Removed access",
   "access.bootstrap_admin": "Made bootstrap admin",
+  "scim.user_provision": "Provisioned user",
+  "scim.user_deactivate": "Deactivated user",
+  "scim.user_reactivate": "Reactivated user",
+  "scim.group_provision": "Provisioned group",
+  "scim.group_delete": "Deleted group",
 };
 
 export const auditKeys = {

@@ -8,6 +8,7 @@ import (
 	"gofr.dev/pkg/gofr/logging"
 
 	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/scim"
 )
 
 func TestDescribeConfig(t *testing.T) {
@@ -22,7 +23,9 @@ func TestDescribeConfig(t *testing.T) {
 		Issuer: "https://idp.example.com", ClientID: "portal", BaseURL: "https://portal.example.com/",
 	}, logging.NewMockLogger(logging.ERROR))
 
-	got := describeConfig(cfg, oidc)
+	scimServer := scim.New("a-long-enough-scim-token-for-the-test", "https://portal.example.com", logging.NewMockLogger(logging.ERROR))
+
+	got := describeConfig(cfg, oidc, scimServer)
 
 	if got.Portal.Name != "Acme Portal" {
 		t.Errorf("portal name = %q, want the configured name", got.Portal.Name)
@@ -35,6 +38,9 @@ func TestDescribeConfig(t *testing.T) {
 	}
 	if got.OIDC.RedirectURL != "https://portal.example.com/api/v1/auth/callback" {
 		t.Errorf("redirect URL = %q, want the callback under GP_BASE_URL", got.OIDC.RedirectURL)
+	}
+	if !got.SCIM.Enabled || got.SCIM.URL != "https://portal.example.com/scim/v2" {
+		t.Errorf("scim = %+v, want on at the portal's /scim/v2", got.SCIM)
 	}
 	if got.Database.PasswordSet {
 		t.Error("database password reported as set")

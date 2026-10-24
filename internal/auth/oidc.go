@@ -32,6 +32,8 @@ type OIDCConfig struct {
 	BaseURL string
 	// GroupsClaim names the ID token claim that lists the user's groups.
 	GroupsClaim string
+	// SCIMManagesGroups turns off group sync from the claim: SCIM keeps groups instead.
+	SCIMManagesGroups bool
 	// BootstrapAdminEmail is made an admin when they sign in with that email verified.
 	BootstrapAdminEmail string
 	SecureCookies       bool
@@ -208,7 +210,7 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 		return
 	}
 
-	userID, err := store.UpsertUser(ctx, idToken.Issuer, idToken.Subject, claims.Email, claims.displayName())
+	userID, err := store.UpsertUser(ctx, idToken.Issuer, idToken.Subject, claims.Email, claims.displayName(), claims.EmailVerified)
 	if errors.Is(err, errDeactivated) {
 		failSignIn(w, r, "Your account is deactivated. Ask an admin to reactivate it.")
 		return
@@ -218,9 +220,11 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 		return
 	}
 
-	if err := store.SyncGroups(ctx, userID, groups); err != nil {
-		o.fail(w, r, "sync groups", err)
-		return
+	if !o.cfg.SCIMManagesGroups {
+		if err := store.SyncGroups(ctx, userID, groups); err != nil {
+			o.fail(w, r, "sync groups", err)
+			return
+		}
 	}
 
 	if o.cfg.BootstrapAdminEmail != "" && strings.EqualFold(claims.Email, o.cfg.BootstrapAdminEmail) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/access"
 	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/web"
 	"github.com/dvjn/goldenportal/migrations"
 	"gofr.dev/pkg/gofr"
@@ -17,6 +18,7 @@ func New() *gofr.App {
 	app.Migrate(migrations.All())
 
 	secureCookies := app.Config.GetOrDefault("GP_COOKIE_SECURE", "true") != "false"
+	scimServer := scim.New(app.Config.Get("GP_SCIM_TOKEN"), app.Config.Get("GP_BASE_URL"), app.Logger())
 	oidc := auth.NewOIDC(auth.OIDCConfig{
 		Issuer:              app.Config.Get("GP_OIDC_ISSUER"),
 		ClientID:            app.Config.Get("GP_OIDC_CLIENT_ID"),
@@ -24,6 +26,7 @@ func New() *gofr.App {
 		Scopes:              strings.Fields(app.Config.GetOrDefault("GP_OIDC_SCOPES", "openid profile email")),
 		BaseURL:             app.Config.Get("GP_BASE_URL"),
 		GroupsClaim:         app.Config.GetOrDefault("GP_OIDC_GROUPS_CLAIM", "groups"),
+		SCIMManagesGroups:   scimServer.Enabled(),
 		BootstrapAdminEmail: app.Config.Get("GP_BOOTSTRAP_ADMIN_EMAIL"),
 		SecureCookies:       secureCookies,
 	}, app.Logger())
@@ -34,7 +37,7 @@ func New() *gofr.App {
 	app.UseMiddleware(web.SPA(web.Dist()))
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
-		return auth.Middleware(store)(oidc.Routes(store)(next))
+		return scimServer.Routes(c.SQL)(auth.Middleware(store)(oidc.Routes(store)(next)))
 	})
 
 	app.GET("/api/v1/config", configHandler(Config{
@@ -43,7 +46,7 @@ func New() *gofr.App {
 	}))
 	auth.NewHandlers(secureCookies).Register(app)
 	access.Register(app)
-	registerSettings(app, oidc)
+	registerSettings(app, oidc, scimServer)
 
 	return app
 }

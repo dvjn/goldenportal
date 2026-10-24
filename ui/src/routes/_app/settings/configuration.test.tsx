@@ -30,7 +30,7 @@ const configuration: ServerConfiguration = {
     redirectUrl: "https://portal.example.com/api/v1/auth/callback",
     bootstrapAdminEmail: "",
   },
-  scim: { available: false },
+  scim: { enabled: false, url: "https://portal.example.com/scim/v2" },
   sessions: { secureCookies: false, idleTimeoutHours: 8, maxAgeHours: 168 },
   tokens: { prefix: "gpp_", maxDays: 365 },
   database: {
@@ -82,7 +82,7 @@ describe("configuration", () => {
     }
     expect(within(row("Groups Claim")).getByText("groups")).toBeInTheDocument();
     expect(within(row("Bootstrap Admin")).getByText("Not set")).toBeInTheDocument();
-    expect(within(row("Provisioning")).getByText("SCIM not available yet")).toBeVisible();
+    expect(within(row("Provisioning")).getByText("SCIM off")).toBeVisible();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
@@ -154,5 +154,22 @@ describe("configuration", () => {
       await screen.findByText("Couldn't load the identity provider's settings: connection refused"),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Test connection" })).toBeEnabled();
+  });
+
+  it("gives the SCIM endpoint to copy when SCIM is on", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...signedInAdmin,
+      "GET settings/configuration": ok({
+        ...configuration,
+        scim: { enabled: true, url: "https://portal.example.com/scim/v2" },
+      }),
+    });
+    renderRoute("/settings/configuration");
+
+    expect(await screen.findByText("SCIM on")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Copy SCIM Endpoint" }));
+
+    expect(await navigator.clipboard.readText()).toBe("https://portal.example.com/scim/v2");
   });
 });
