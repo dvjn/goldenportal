@@ -232,3 +232,9 @@ func (s Store) DeleteSession(ctx context.Context, sessionHash []byte) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id_hash = $1`, sessionHash)
 	return err
 }
+
+// NewSecret returns a random secret for a token, and HashSecret the hash to
+// store for it, so other packages mint tokens the same way.
+func NewSecret() string { return newSecret() }
+
+func HashSecret(secret string) []byte { return hashSecret(secret) }

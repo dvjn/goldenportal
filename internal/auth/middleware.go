@@ -18,6 +18,10 @@ const (
 	csrfHeader = "X-GP-CSRF"
 )
 
+// IngestPrefix is where integrations push entities. Requests there sign in
+// with an ingestion token, which the ingest handlers check themselves.
+const IngestPrefix = "/api/v1/ingest/"
+
 // publicPaths answer without a signed-in user.
 var publicPaths = map[string]bool{
 	"/api/v1/config": true,
@@ -39,6 +43,11 @@ func Middleware(resolver principalResolver) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.HasPrefix(r.URL.Path, "/api/") {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, IngestPrefix) {
+				secret, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ingestKey{}, secret)))
 				return
 			}
 
@@ -112,4 +121,12 @@ func cookieAuth(r *http.Request, resolver principalResolver) (authInfo, int, str
 
 func isSafeMethod(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
+}
+
+type ingestKey struct{}
+
+// IngestionSecret returns the bearer token sent to an ingest path, if any.
+func IngestionSecret(ctx context.Context) string {
+	secret, _ := ctx.Value(ingestKey{}).(string)
+	return secret
 }

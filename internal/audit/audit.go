@@ -31,6 +31,13 @@ const (
 	BlueprintDraftDiscard = "blueprint.draft_discard"
 	BlueprintPublish      = "blueprint.publish"
 	BlueprintDelete       = "blueprint.delete"
+
+	IntegrationDraftSave    = "integration.draft_save"
+	IntegrationDraftDiscard = "integration.draft_discard"
+	IntegrationPublish      = "integration.publish"
+	IntegrationDelete       = "integration.delete"
+	IngestionTokenCreate    = "integration.token_create"
+	IngestionTokenRevoke    = "integration.token_revoke"
 )
 
 // Actions lists every action, for filters.
@@ -38,6 +45,8 @@ var Actions = []string{
 	SignIn, SignOut, TokenCreate, TokenRevoke, AccessGrant, AccessRevoke, BootstrapAdmin,
 	SCIMUserProvision, SCIMUserDeactivate, SCIMUserReactivate, SCIMGroupProvision, SCIMGroupDelete,
 	BlueprintDraftSave, BlueprintDraftDiscard, BlueprintPublish, BlueprintDelete,
+	IntegrationDraftSave, IntegrationDraftDiscard, IntegrationPublish, IntegrationDelete,
+	IngestionTokenCreate, IngestionTokenRevoke,
 }
 
 type DB interface {

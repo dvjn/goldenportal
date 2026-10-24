@@ -88,6 +88,8 @@ func TestMiddleware(t *testing.T) {
 		{name: "read-only tokens can't write", method: http.MethodPost, path: "/api/v1/things", bearer: "gpp_ro", wantStatus: http.StatusForbidden},
 		{name: "an unknown token is rejected even on public paths", method: http.MethodGet, path: "/api/v1/config", bearer: "gpp_nope", wantStatus: http.StatusUnauthorized},
 		{name: "a token wins over a session cookie", method: http.MethodGet, path: "/api/v1/me", bearer: "gpp_nope", cookie: "alice-session", wantStatus: http.StatusUnauthorized},
+		{name: "ingest paths leave the ingestion token to their handlers", method: http.MethodPost, path: "/api/v1/ingest/ci", bearer: "gpi_unknown", wantStatus: http.StatusOK},
+		{name: "ingest paths don't sign in with a session", method: http.MethodPost, path: "/api/v1/ingest/ci", cookie: "alice-session", wantStatus: http.StatusOK},
 	}
 
 	for _, tt := range tests {

@@ -8,6 +8,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/web"
 	"github.com/dvjn/goldenportal/migrations"
@@ -56,6 +57,7 @@ func New() *gofr.App {
 	access.Register(app)
 	blueprint.Register(app)
 	entity.Register(app)
+	integration.Register(app)
 	registerSettings(app, oidc, scimServer)
 
 	return app
