@@ -3,10 +3,15 @@ package access
 import (
 	"errors"
 	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gofr.dev/pkg/gofr"
 
+	"github.com/dvjn/goldenportal/internal/audit"
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
@@ -16,6 +21,7 @@ func Register(app *gofr.App) {
 	app.PUT("/api/v1/users/{id}/role", setUserRole)
 	app.GET("/api/v1/groups", listGroups)
 	app.PUT("/api/v1/groups/{id}", updateGroup)
+	app.GET("/api/v1/audit", listAudit)
 }
 
 func listUsers(ctx *gofr.Context) (any, error) {
@@ -63,7 +69,15 @@ func setUserRole(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	return nil, notFoundAs(NewStore(ctx.SQL).SetRole(ctx, "user", id, role), "user")
+	label, err := NewStore(ctx.SQL).SetRole(ctx, "user", id, role)
+	if err != nil {
+		return nil, notFoundAs(err, "user")
+	}
+
+	auth.Record(ctx, p, audit.UserRole, audit.Target{Type: "user", ID: id, Label: label},
+		map[string]any{"role": role})
+
+	return nil, nil
 }
 
 type groupRequest struct {
@@ -72,7 +86,8 @@ type groupRequest struct {
 }
 
 func updateGroup(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
+	p, err := auth.Require(ctx, auth.RoleAdmin)
+	if err != nil {
 		return nil, err
 	}
 
@@ -91,11 +106,82 @@ func updateGroup(ctx *gofr.Context) (any, error) {
 	}
 
 	store := NewStore(ctx.SQL)
-	if err := notFoundAs(store.SetRole(ctx, "group", id, role), "group"); err != nil {
+	label, err := store.SetRole(ctx, "group", id, role)
+	if err != nil {
+		return nil, notFoundAs(err, "group")
+	}
+	if err := store.SetTeam(ctx, id, req.IsTeam); err != nil {
 		return nil, err
 	}
 
-	return nil, store.SetTeam(ctx, id, req.IsTeam)
+	auth.Record(ctx, p, audit.GroupUpdate, audit.Target{Type: "group", ID: id, Label: label},
+		map[string]any{"role": role, "isTeam": req.IsTeam})
+
+	return nil, nil
+}
+
+var auditPageSizes = []int{10, 20, 50, 100}
+
+// listAudit returns a page of audit events, newest first. It filters by free
+// text (q), actions (a comma-separated action list) and a from/to date range,
+// and pages with page and size.
+func listAudit(ctx *gofr.Context) (any, error) {
+	if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+
+	q := audit.Query{Search: ctx.Param("q"), Page: 1, PageSize: auditPageSizes[0]}
+
+	if value := ctx.Param("page"); value != "" {
+		page, err := strconv.Atoi(value)
+		if err != nil || page < 1 {
+			return nil, badRequest("page must be a whole number from 1")
+		}
+		q.Page = page
+	}
+	if value := ctx.Param("size"); value != "" {
+		size, err := strconv.Atoi(value)
+		if err != nil || !slices.Contains(auditPageSizes, size) {
+			return nil, badRequest("size must be 10, 20, 50 or 100")
+		}
+		q.PageSize = size
+	}
+	if value := ctx.Param("action"); value != "" {
+		for action := range strings.SplitSeq(value, ",") {
+			if !slices.Contains(audit.Actions, action) {
+				return nil, badRequest("unknown action " + strconv.Quote(action))
+			}
+			q.Actions = append(q.Actions, action)
+		}
+	}
+
+	var err error
+	if q.From, err = dateParam(ctx, "from"); err != nil {
+		return nil, err
+	}
+	if q.To, err = dateParam(ctx, "to"); err != nil {
+		return nil, err
+	}
+	// to names the last day to include.
+	if !q.To.IsZero() {
+		q.To = q.To.AddDate(0, 0, 1)
+	}
+
+	return audit.List(ctx, ctx.SQL, q)
+}
+
+// dateParam reads a YYYY-MM-DD date, as the start of that day in UTC.
+func dateParam(ctx *gofr.Context, name string) (time.Time, error) {
+	value := ctx.Param(name)
+	if value == "" {
+		return time.Time{}, nil
+	}
+	date, err := time.Parse(time.DateOnly, value)
+	if err != nil {
+		return time.Time{}, badRequest(name + " must be a date like 2026-10-24")
+	}
+
+	return date, nil
 }
 
 func parseRole(value *string) (*auth.Role, error) {

@@ -138,13 +138,18 @@ func (s Store) SyncGroups(ctx context.Context, userID string, names []string) er
 	return err
 }
 
-func (s Store) GrantRole(ctx context.Context, userID string, role Role) error {
-	_, err := s.db.ExecContext(ctx, `
+// GrantRole binds role to the user and reports whether they didn't have it yet.
+func (s Store) GrantRole(ctx context.Context, userID string, role Role) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO role_bindings (subject_type, subject_id, role)
 		VALUES ('user', $1, $2)
 		ON CONFLICT DO NOTHING`, userID, string(role))
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
 
-	return err
+	return n > 0, err
 }
 
 // CreateSession stores a new session for userID and clears out expired ones.

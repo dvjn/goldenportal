@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"gofr.dev/pkg/gofr"
 
+	"github.com/dvjn/goldenportal/internal/audit"
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
@@ -72,22 +73,18 @@ func (s Store) ListTokens(ctx context.Context, userID string) ([]APIToken, error
 	return tokens, rows.Err()
 }
 
-func (s Store) RevokeToken(ctx context.Context, userID, tokenID string) error {
-	result, err := s.db.ExecContext(ctx, `
+// RevokeToken revokes one of the user's tokens and returns its name.
+func (s Store) RevokeToken(ctx context.Context, userID, tokenID string) (string, error) {
+	var name string
+	err := s.db.QueryRowContext(ctx, `
 		UPDATE api_tokens SET revoked_at = now()
-		WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, tokenID, userID)
-	if err != nil {
-		return err
-	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return errNotFound
+		WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+		RETURNING name`, tokenID, userID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errNotFound
 	}
 
-	return nil
+	return name, err
 }
 
 // TokenPrincipal returns the user behind a live API token and whether the token is read-only.
@@ -185,6 +182,9 @@ func (h Handlers) createToken(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
+	Record(ctx, p, audit.TokenCreate, audit.Target{Type: "token", ID: token.ID, Label: token.Name},
+		map[string]any{"readOnly": token.ReadOnly, "expiresAt": token.ExpiresAt})
+
 	return createdToken{Token: token, Secret: secret}, nil
 }
 
@@ -200,10 +200,15 @@ func (h Handlers) revokeToken(ctx *gofr.Context) (any, error) {
 		return nil, notFound
 	}
 
-	err = NewStore(ctx.SQL).RevokeToken(ctx, p.ID, id)
+	name, err := NewStore(ctx.SQL).RevokeToken(ctx, p.ID, id)
 	if errors.Is(err, errNotFound) {
 		return nil, notFound
 	}
+	if err != nil {
+		return nil, err
+	}
 
-	return nil, err
+	Record(ctx, p, audit.TokenRevoke, audit.Target{Type: "token", ID: id, Label: name}, nil)
+
+	return nil, nil
 }

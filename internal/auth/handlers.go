@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"github.com/dvjn/goldenportal/internal/audit"
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/http/response"
 )
@@ -26,11 +27,21 @@ func (h Handlers) logout(ctx *gofr.Context) (any, error) {
 		if err := NewStore(ctx.SQL).DeleteSession(ctx, info.sessionHash); err != nil {
 			return nil, err
 		}
+		p := info.principal
+		Record(ctx, p, audit.SignOut, audit.Target{Type: "user", ID: p.ID, Label: p.Email}, nil)
 	}
 
 	return response.Response{
 		Headers: map[string]string{"Set-Cookie": newCookie(sessionCookie, "", -1, h.secureCookie).String()},
 	}, nil
+}
+
+// Record writes an audit event for a change p made. A failure is logged, not
+// returned: the change has already happened.
+func Record(ctx *gofr.Context, p Principal, action string, target audit.Target, details map[string]any) {
+	if err := audit.Record(ctx, ctx.SQL, ctx, p.Actor(), action, target, details); err != nil {
+		ctx.Errorf("record audit event %s: %v", action, err)
+	}
 }
 
 func (h Handlers) me(ctx *gofr.Context) (any, error) {

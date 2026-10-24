@@ -12,6 +12,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"gofr.dev/pkg/gofr/logging"
 	"golang.org/x/oauth2"
+
+	"github.com/dvjn/goldenportal/internal/audit"
 )
 
 const (
@@ -224,9 +226,16 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 	if o.cfg.BootstrapAdminEmail != "" && strings.EqualFold(claims.Email, o.cfg.BootstrapAdminEmail) {
 		if !claims.EmailVerified {
 			o.logger.Warnf("%s signed in but the identity provider did not mark the email as verified, so they were not made an admin", claims.Email)
-		} else if err := store.GrantRole(ctx, userID, RoleAdmin); err != nil {
-			o.fail(w, r, "grant bootstrap admin", err)
-			return
+		} else {
+			granted, err := store.GrantRole(ctx, userID, RoleAdmin)
+			if err != nil {
+				o.fail(w, r, "grant bootstrap admin", err)
+				return
+			}
+			if granted {
+				o.record(ctx, store, audit.Actor{Label: "GP_BOOTSTRAP_ADMIN_EMAIL"}, audit.BootstrapAdmin,
+					audit.Target{Type: "user", ID: userID, Label: claims.Email}, map[string]any{"role": RoleAdmin})
+			}
 		}
 	}
 
@@ -236,8 +245,18 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 		return
 	}
 
+	o.record(ctx, store, audit.Actor{ID: userID, Label: claims.Email}, audit.SignIn,
+		audit.Target{Type: "user", ID: userID, Label: claims.Email}, nil)
+
 	http.SetCookie(w, o.cookie(sessionCookie, secret, int(sessionMaxAge.Seconds())))
 	http.Redirect(w, r, req.redirect, http.StatusFound)
+}
+
+// record writes an audit event. A failure is logged but doesn't stop the sign-in.
+func (o *OIDC) record(ctx context.Context, store Store, actor audit.Actor, action string, target audit.Target, details map[string]any) {
+	if err := audit.Record(ctx, store.db, o.logger, actor, action, target, details); err != nil {
+		o.logger.Errorf("record audit event %s: %v", action, err)
+	}
 }
 
 // groups reads the configured groups claim. A missing claim means no groups.

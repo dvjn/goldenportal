@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/dvjn/goldenportal/internal/audit"
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
@@ -30,6 +31,11 @@ type Principal struct {
 // an admin can do everything a builder can, and a builder everything a member can.
 func (p Principal) Can(role Role) bool {
 	return roleRank[p.Role] >= roleRank[role]
+}
+
+// Actor describes the principal in the audit log.
+func (p Principal) Actor() audit.Actor {
+	return audit.Actor{ID: p.ID, Label: p.Email}
 }
 
 // ParseRole accepts the roles that can be bound to a user or group.

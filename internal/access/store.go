@@ -111,24 +111,26 @@ func (s Store) ListGroups(ctx context.Context) ([]Group, error) {
 }
 
 // SetRole replaces the role bound directly to a user or group; nil removes it.
-func (s Store) SetRole(ctx context.Context, subjectType, subjectID string, role *auth.Role) error {
-	if err := s.exists(ctx, subjectType, subjectID); err != nil {
-		return err
+// It returns the subject's label for the audit log.
+func (s Store) SetRole(ctx context.Context, subjectType, subjectID string, role *auth.Role) (string, error) {
+	label, err := s.label(ctx, subjectType, subjectID)
+	if err != nil {
+		return "", err
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
 		DELETE FROM role_bindings WHERE subject_type = $1 AND subject_id = $2`, subjectType, subjectID); err != nil {
-		return err
+		return "", err
 	}
 	if role == nil {
-		return nil
+		return label, nil
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO role_bindings (subject_type, subject_id, role) VALUES ($1, $2, $3)`,
 		subjectType, subjectID, string(*role))
 
-	return err
+	return label, err
 }
 
 func (s Store) SetTeam(ctx context.Context, groupID string, isTeam bool) error {
@@ -140,19 +142,20 @@ func (s Store) SetTeam(ctx context.Context, groupID string, isTeam bool) error {
 	return requireRow(result)
 }
 
-func (s Store) exists(ctx context.Context, subjectType, subjectID string) error {
-	table := map[string]string{"user": "users", "group": "groups"}[subjectType]
+// label returns a user's email or a group's name.
+func (s Store) label(ctx context.Context, subjectType, subjectID string) (string, error) {
+	query := map[string]string{
+		"user":  `SELECT email FROM users WHERE id = $1`,
+		"group": `SELECT name FROM groups WHERE id = $1`,
+	}[subjectType]
 
-	var exists bool
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM `+table+` WHERE id = $1)`, subjectID).Scan(&exists); err != nil {
-		return err
-	}
-	if !exists {
-		return errNotFound
+	var label string
+	err := s.db.QueryRowContext(ctx, query, subjectID).Scan(&label)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errNotFound
 	}
 
-	return nil
+	return label, err
 }
 
 func requireRow(result sql.Result) error {
