@@ -8,8 +8,37 @@ pnpm = "12.15.0"
 "go:mvdan.cc/gofumpt" = "0.12.0"
 
 [tasks.dev]
-description = "Run the development servers"
-depends = ["api:dev", "ui:dev"]
+description = "Run the development servers and load the seed data"
+depends = ["api:dev", "ui:dev", "dev:seed"]
+
+[tasks."dev:fresh"]
+description = "Delete the local database, then run the development servers on a fresh, seeded one"
+depends = ["deps:reset"]
+run = "mise run dev"
+
+[tasks."dev:seed"]
+description = "Load deps/seed.sql once the API has migrated the database (safe to run again)"
+depends = ["deps:up"]
+env = { _.file = "configs/.dev.env" }
+run = '''
+set -eu
+compose="docker compose --env-file configs/.dev.env -f deps.dev.yaml"
+psql() { $compose exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 "$@"; }
+
+# The API creates the tables on start, so wait for the last ones the seed fills.
+attempts=0
+until [ "$(psql -tAc "SELECT to_regclass('public.role_bindings') IS NOT NULL AND to_regclass('public.group_members') IS NOT NULL" 2>/dev/null)" = "t" ]; do
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 120 ]; then
+    echo "Skipped the seed data: the database tables did not appear within 2 minutes" >&2
+    exit 0
+  fi
+  sleep 1
+done
+
+psql -q -v issuer="$GP_OIDC_ISSUER" < deps/seed.sql
+echo "Seed data loaded"
+'''
 
 [tasks."api:dev"]
 description = "Run the API with hot reload"
@@ -73,6 +102,19 @@ until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgr
 done
 
 echo "PostgreSQL ready. Authentik is starting at http://localhost:47900 (the first start takes a minute)."
+'''
+
+[tasks."deps:reset"]
+description = "Delete the local Golden Portal database (Authentik keeps its data)"
+env = { _.file = "configs/.dev.env" }
+run = '''
+set -eu
+docker compose --env-file configs/.dev.env -f deps.dev.yaml stop postgres >/dev/null 2>&1 || true
+docker rm -f "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+# The data belongs to the container's root user, so delete it from a container.
+mkdir -p .local/postgres
+docker run --rm -v "$PWD/.local/postgres:/data" --entrypoint sh "$POSTGRES_IMAGE" -c 'rm -rf /data/* /data/.[!.]*'
+echo "Deleted the local database"
 '''
 
 [tasks."deps:down"]
