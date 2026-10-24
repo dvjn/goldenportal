@@ -26,12 +26,18 @@ const (
 	SCIMUserReactivate = "scim.user_reactivate"
 	SCIMGroupProvision = "scim.group_provision"
 	SCIMGroupDelete    = "scim.group_delete"
+
+	BlueprintDraftSave    = "blueprint.draft_save"
+	BlueprintDraftDiscard = "blueprint.draft_discard"
+	BlueprintPublish      = "blueprint.publish"
+	BlueprintDelete       = "blueprint.delete"
 )
 
 // Actions lists every action, for filters.
 var Actions = []string{
 	SignIn, SignOut, TokenCreate, TokenRevoke, AccessGrant, AccessRevoke, BootstrapAdmin,
 	SCIMUserProvision, SCIMUserDeactivate, SCIMUserReactivate, SCIMGroupProvision, SCIMGroupDelete,
+	BlueprintDraftSave, BlueprintDraftDiscard, BlueprintPublish, BlueprintDelete,
 }
 
 type DB interface {

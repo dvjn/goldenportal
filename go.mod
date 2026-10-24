@@ -6,7 +6,9 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/google/uuid v1.6.0
+	github.com/itchyny/gojq v0.12.19
 	github.com/lib/pq v1.12.3
+	go.yaml.in/yaml/v3 v3.0.5
 	gofr.dev v1.62.0
 	golang.org/x/oauth2 v0.37.0
 )
@@ -43,6 +45,7 @@ require (
 	github.com/graphql-go/graphql v0.8.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
+	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
@@ -85,7 +88,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
