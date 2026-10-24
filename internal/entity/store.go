@@ -111,11 +111,21 @@ type Entity struct {
 	Blueprint  string `json:"blueprint"`
 	Identifier string `json:"identifier"`
 	Title      string `json:"title"`
-	// Properties include relations and computed properties.
-	Properties  map[string]any `json:"properties"`
-	Integration string         `json:"integration"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	// Properties include relations, computed properties and resolved lookups.
+	Properties map[string]any `json:"properties"`
+	// Related names the entities each relation points at, with their titles.
+	Related     map[string][]Link `json:"related"`
+	Integration string            `json:"integration"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
+
+	stored, relations, computed map[string]any
+}
+
+// Link is a related entity. Title is empty when it hasn't been ingested yet.
+type Link struct {
+	Identifier string `json:"identifier"`
+	Title      string `json:"title,omitempty"`
 }
 
 const (
@@ -127,79 +137,96 @@ const (
 	JOIN config_documents i ON i.id = e.integration_id`
 )
 
-func scanEntity(scan func(...any) error, extra ...any) (Entity, error) {
+func scanEntity(scan func(...any) error, extra ...any) (*Entity, error) {
 	var (
 		e                               Entity
-		relationValues, computedValues  map[string]any
 		properties, relations, computed []byte
 	)
 	err := scan(append([]any{&e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
 		&e.Integration, &e.CreatedAt, &e.UpdatedAt}, extra...)...)
 	if err != nil {
-		return Entity{}, err
+		return nil, err
 	}
 	for _, field := range []struct {
 		raw    []byte
 		target *map[string]any
-	}{{properties, &e.Properties}, {relations, &relationValues}, {computed, &computedValues}} {
+	}{{properties, &e.stored}, {relations, &e.relations}, {computed, &e.computed}} {
 		if err := json.Unmarshal(field.raw, field.target); err != nil {
-			return Entity{}, err
+			return nil, err
 		}
 	}
-	for _, values := range []map[string]any{relationValues, computedValues} {
+	e.Properties = map[string]any{}
+	for _, values := range []map[string]any{e.stored, e.relations, e.computed} {
 		for key, value := range values {
 			e.Properties[key] = value
 		}
 	}
+	e.Related = map[string][]Link{}
 
-	return e, nil
+	return &e, nil
 }
 
-func (s Store) Get(ctx context.Context, blueprintIdentifier, identifier string) (Entity, error) {
+func (s Store) Get(ctx context.Context, blueprintIdentifier, identifier string) (*Entity, error) {
 	e, err := scanEntity(s.db.QueryRowContext(ctx, `SELECT `+entityColumns+entityFrom+`
 		WHERE b.identifier = $1 AND b.kind = 'blueprint' AND e.identifier = $2`, blueprintIdentifier, identifier).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Entity{}, ErrNotFound
+		return nil, ErrNotFound
 	}
 
 	return e, err
 }
 
-// Query picks a page of entities. Empty fields don't filter.
+// Query picks a page of one blueprint's entities.
 type Query struct {
-	Blueprint   string
-	Integration string
+	Blueprint blueprint.Spec
 	// Search matches the identifier or title, ignoring case.
-	Search   string
+	Search string
+	Filter *Filter
+	// Sort is a property, or -property for descending.
+	Sort     string
 	Page     int
 	PageSize int
 }
 
 type Page struct {
-	Entities []Entity `json:"entities"`
-	Total    int      `json:"total"`
+	Entities []*Entity `json:"entities"`
+	Total    int       `json:"total"`
 }
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
+// List returns a page of entities. Filter and sort problems come back as a
+// FilterError, since they're the caller's to fix.
 func (s Store) List(ctx context.Context, q Query) (Page, error) {
-	search := ""
+	c := &compiler{spec: q.Blueprint, args: []any{q.Blueprint.Identifier}}
+	where := "b.kind = 'blueprint' AND b.identifier = $1"
 	if q.Search != "" {
-		search = "%" + likeEscaper.Replace(q.Search) + "%"
+		search := c.arg("%" + likeEscaper.Replace(q.Search) + "%")
+		where += " AND (e.identifier ILIKE " + search + " OR e.title ILIKE " + search + ")"
 	}
+	if q.Filter != nil {
+		sql, err := c.compile(*q.Filter, 1)
+		if err != nil {
+			return Page{}, FilterError{err}
+		}
+		where += " AND coalesce(" + sql + ", false)"
+	}
+	order, err := orderBy(q.Blueprint, q.Sort)
+	if err != nil {
+		return Page{}, FilterError{err}
+	}
+
+	limit, offset := c.arg(q.PageSize), c.arg((q.Page-1)*q.PageSize)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns+`, count(*) OVER ()`+entityFrom+`
-		WHERE ($1 = '' OR b.identifier = $1)
-			AND ($2 = '' OR i.identifier = $2)
-			AND ($3 = '' OR e.identifier ILIKE $3 OR e.title ILIKE $3)
-		ORDER BY b.identifier, e.title, e.identifier
-		LIMIT $4 OFFSET $5`,
-		q.Blueprint, q.Integration, search, q.PageSize, (q.Page-1)*q.PageSize)
+		WHERE `+where+`
+		ORDER BY `+order+`
+		LIMIT `+limit+` OFFSET `+offset, c.args...)
 	if err != nil {
 		return Page{}, err
 	}
 	defer rows.Close()
 
-	page := Page{Entities: []Entity{}}
+	page := Page{Entities: []*Entity{}}
 	for rows.Next() {
 		e, err := scanEntity(rows.Scan, &page.Total)
 		if err != nil {
@@ -210,3 +237,8 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 
 	return page, rows.Err()
 }
+
+// FilterError is a filter or sort the blueprint can't answer.
+type FilterError struct{ err error }
+
+func (e FilterError) Error() string { return e.err.Error() }

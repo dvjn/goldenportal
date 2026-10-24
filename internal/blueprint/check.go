@@ -106,3 +106,6 @@ func (s Spec) HasProperty(id string) bool {
 	prop, ok := s.property(id)
 	return ok && !prop.Derived()
 }
+
+// Property returns the property named id.
+func (s Spec) Property(id string) (Property, bool) { return s.property(id) }

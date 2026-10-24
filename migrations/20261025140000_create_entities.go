@@ -23,6 +23,8 @@ func createEntities() migration.Migrate {
 					UNIQUE (blueprint_id, identifier)
 				)`,
 				`CREATE INDEX entities_integration_id_idx ON entities (integration_id)`,
+				// Finds the entities whose relations point at one, for entity pages.
+				`CREATE INDEX entities_relations_idx ON entities USING gin (relations jsonb_path_ops)`,
 			}
 
 			for _, statement := range statements {
