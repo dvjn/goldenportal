@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 import { configQueryOptions, useConfig } from "@/features/config";
 
 type RouterContext = {
@@ -28,7 +29,12 @@ function RootLayout() {
     document.title = portalName;
   }, [portalName]);
 
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      <Toaster />
+    </>
+  );
 }
 
 function RootError({ error }: ErrorComponentProps) {

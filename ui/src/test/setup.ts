@@ -16,6 +16,14 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
+// Radix measures some popovers with ResizeObserver, which jsdom lacks. It is
+// assigned rather than stubbed because tests unstub globals after each run.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 afterEach(() => {
   cleanup();
   localStorage.clear();

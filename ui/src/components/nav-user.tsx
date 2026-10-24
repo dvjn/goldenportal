@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { LogOut, type LucideIcon, Monitor, Moon, Sun } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { KeyRound, LogOut, type LucideIcon, Monitor, Moon, Sun } from "lucide-react";
 import { type Theme, useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -79,6 +79,12 @@ export function NavUser() {
           </div>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/account/tokens">
+            <KeyRound />
+            API tokens
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={handleSignOut}>
           <LogOut />
           Sign out
