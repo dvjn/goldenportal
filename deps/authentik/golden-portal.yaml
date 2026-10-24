@@ -44,14 +44,6 @@ entries:
         - !KeyOf email-verified
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
 
-  - model: authentik_core.application
-    identifiers:
-      slug: golden-portal
-    attrs:
-      name: Golden Portal
-      provider: !KeyOf provider
-      meta_launch_url: http://localhost:47273/
-
   - model: authentik_core.group
     id: platform-engineers
     identifiers:
@@ -105,3 +97,33 @@ entries:
       groups:
         - !KeyOf search
         - !KeyOf payments
+
+  # Pushes people and groups to the portal's SCIM endpoint on the host. The
+  # token matches GP_SCIM_TOKEN in configs/.dev.env.
+  - model: authentik_providers_scim.scimprovider
+    id: scim
+    identifiers:
+      name: Golden Portal SCIM
+    attrs:
+      url: http://host.docker.internal:47200/scim/v2
+      token: golden-portal-dev-scim-token-not-for-production
+      exclude_users_service_account: true
+      # Only the portal's dev groups, not Authentik's own.
+      group_filters:
+        - !KeyOf platform-engineers
+        - !KeyOf payments
+        - !KeyOf search
+      property_mappings:
+        - !Find [authentik_providers_scim.scimmapping, [managed, goauthentik.io/providers/scim/user]]
+      property_mappings_group:
+        - !Find [authentik_providers_scim.scimmapping, [managed, goauthentik.io/providers/scim/group]]
+
+  - model: authentik_core.application
+    identifiers:
+      slug: golden-portal
+    attrs:
+      name: Golden Portal
+      provider: !KeyOf provider
+      backchannel_providers:
+        - !KeyOf scim
+      meta_launch_url: http://localhost:47273/

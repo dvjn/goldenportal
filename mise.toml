@@ -38,6 +38,19 @@ done
 
 psql -q -v issuer="$GP_OIDC_ISSUER" < deps/seed.sql
 echo "Seed data loaded"
+
+# Ask Authentik to push its people and groups over SCIM now, rather than at
+# its next scheduled sync. Authentik may still be starting, so this is best effort.
+if docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T authentik-worker ak shell -c "
+from authentik.providers.scim.models import SCIMProvider
+from authentik.providers.scim.tasks import scim_sync
+for provider in SCIMProvider.objects.filter(name='Golden Portal SCIM'):
+    scim_sync.send(provider.pk)
+" >/dev/null 2>&1; then
+  echo "Asked Authentik to sync people and groups over SCIM"
+else
+  echo "Authentik isn't ready; it will sync people and groups over SCIM on its own schedule"
+fi
 '''
 
 [tasks."api:dev"]

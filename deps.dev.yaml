@@ -55,6 +55,9 @@ services:
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
     ports:
       - "${AUTHENTIK_PORT:-47900}:9000"
+    # Lets Authentik reach the portal's API on the host for SCIM.
+    extra_hosts: &authentik-hosts
+      - "host.docker.internal:host-gateway"
     volumes: &authentik-volumes
       - ./deps/authentik:/blueprints/custom:ro
     depends_on:
@@ -66,6 +69,7 @@ services:
     container_name: goldenportal-authentik-worker
     command: worker
     environment: *authentik-environment
+    extra_hosts: *authentik-hosts
     volumes: *authentik-volumes
     depends_on:
       authentik-postgres:
