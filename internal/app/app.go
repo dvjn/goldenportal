@@ -43,6 +43,7 @@ func New() *gofr.App {
 	}))
 	auth.NewHandlers(secureCookies).Register(app)
 	access.Register(app)
+	registerSettings(app, oidc)
 
 	return app
 }

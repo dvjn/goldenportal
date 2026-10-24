@@ -97,7 +97,7 @@ func (o *OIDC) oauth(provider *oidc.Provider) *oauth2.Config {
 		ClientID:     o.cfg.ClientID,
 		ClientSecret: o.cfg.ClientSecret,
 		Endpoint:     provider.Endpoint(),
-		RedirectURL:  strings.TrimRight(o.cfg.BaseURL, "/") + callbackPath,
+		RedirectURL:  o.RedirectURL(),
 		Scopes:       o.cfg.Scopes,
 	}
 }

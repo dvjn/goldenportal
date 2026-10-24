@@ -4,8 +4,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { meQueryOptions } from "@/features/auth";
 
 const sections = [
+  { to: "/settings/configuration", label: "Server Configuration" },
   { to: "/settings/access", label: "Access" },
-  { to: "/settings/audit", label: "Audit log" },
+  { to: "/settings/audit", label: "Audit Log" },
 ] as const;
 
 export const Route = createFileRoute("/_app/settings")({
@@ -24,7 +25,7 @@ function SettingsLayout() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Settings" description="Who can do what in the portal." />
+      <PageHeader title="Settings" description="How the portal is set up, and who can do what." />
       <Tabs value={active}>
         <TabsList variant="line" aria-label="Settings">
           {sections.map((section) => (

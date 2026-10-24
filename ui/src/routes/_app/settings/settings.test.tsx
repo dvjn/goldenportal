@@ -42,6 +42,39 @@ const users = [
 ];
 const groups = [{ id: "g1", name: "platform-engineers", memberCount: 3 }];
 
+const serverConfiguration = {
+  portal: { name: "Acme", logoUrl: "", baseUrl: "https://portal.example.com" },
+  oidc: {
+    configured: true,
+    issuer: "https://idp.example.com",
+    clientId: "portal",
+    clientSecretSet: true,
+    scopes: ["openid"],
+    groupsClaim: "groups",
+    redirectUrl: "https://portal.example.com/api/v1/auth/callback",
+    bootstrapAdminEmail: "",
+  },
+  scim: { available: false },
+  sessions: { secureCookies: true, idleTimeoutHours: 8, maxAgeHours: 168 },
+  tokens: { prefix: "gpp_", maxDays: 365 },
+  database: {
+    dialect: "postgres",
+    host: "db",
+    port: "5432",
+    name: "portal",
+    user: "portal",
+    passwordSet: true,
+    sslMode: "require",
+  },
+  server: {
+    environment: "production",
+    version: "1.0.0",
+    httpPort: "8000",
+    metricsPort: "2121",
+    logLevel: "INFO",
+  },
+};
+
 const row = (text: string) => screen.getByText(text).closest("tr") as HTMLElement;
 
 describe("settings", () => {
@@ -52,17 +85,19 @@ describe("settings", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
-  it("opens on the access tab from the user menu", async () => {
+  it("opens on the server configuration tab from the user menu", async () => {
     const user = userEvent.setup();
-    stubApi({ ...signedInAdmin, "GET access": ok(grants) });
+    stubApi({ ...signedInAdmin, "GET settings/configuration": ok(serverConfiguration) });
     const { router } = renderRoute("/");
 
     await user.click(await screen.findByRole("button", { name: "Open user menu" }));
     await user.click(screen.getByRole("menuitem", { name: "Settings" }));
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/settings/access"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/settings/configuration"));
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Access" })).toHaveAttribute("aria-selected", "true");
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0]).toHaveTextContent("Server Configuration");
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });
 
   it("hides the settings link from everyone else", async () => {
@@ -80,7 +115,7 @@ describe("settings", () => {
     stubApi({ ...signedInAdmin, "GET access": ok(grants), "GET audit": ok([]) });
     const { router } = renderRoute("/settings/access");
 
-    await user.click(await screen.findByRole("tab", { name: "Audit log" }));
+    await user.click(await screen.findByRole("tab", { name: "Audit Log" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings/audit"));
     expect(await screen.findByText("Nothing recorded yet")).toBeInTheDocument();
