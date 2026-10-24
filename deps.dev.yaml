@@ -18,3 +18,55 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Authentik is the local OIDC provider. deps/authentik/golden-portal.yaml
+  # sets up the Golden Portal application and two sign-in accounts.
+  authentik-postgres:
+    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.4-bookworm}
+    container_name: goldenportal-authentik-postgres
+    user: root
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: authentik-local-dev-password
+      POSTGRES_DB: authentik
+    volumes:
+      - ./.local/authentik-postgres:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U authentik -d authentik
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  authentik-server:
+    image: &authentik-image ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server:2026.8.5}
+    container_name: goldenportal-authentik-server
+    command: server
+    environment: &authentik-environment
+      AUTHENTIK_SECRET_KEY: golden-portal-local-dev-authentik-secret-key-not-for-production
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: authentik-local-dev-password
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${GP_BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: golden-portal-dev
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    ports:
+      - "${AUTHENTIK_PORT:-47900}:9000"
+    volumes: &authentik-volumes
+      - ./deps/authentik:/blueprints/custom:ro
+    depends_on:
+      authentik-postgres:
+        condition: service_healthy
+
+  authentik-worker:
+    image: *authentik-image
+    container_name: goldenportal-authentik-worker
+    command: worker
+    environment: *authentik-environment
+    volumes: *authentik-volumes
+    depends_on:
+      authentik-postgres:
+        condition: service_healthy

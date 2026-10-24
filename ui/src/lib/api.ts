@@ -13,6 +13,10 @@ const adoptEnvelopeMessage: BeforeErrorHook = ({ error }) => {
   return error;
 };
 
+export function isUnauthorized(error: unknown) {
+  return error instanceof HTTPError && error.response.status === 401;
+}
+
 export function createApi(prefix: string) {
   return ky.create({
     prefix,
@@ -20,6 +24,9 @@ export function createApi(prefix: string) {
     timeout: 30000,
     headers: {
       Accept: "application/json",
+      // The server rejects state-changing requests without this header, which
+      // cross-site pages can't send.
+      "X-GP-CSRF": "1",
     },
     hooks: {
       beforeError: [adoptEnvelopeMessage],

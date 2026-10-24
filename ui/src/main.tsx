@@ -1,12 +1,24 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { ThemeProvider } from "./components/theme-provider";
+import { authKeys } from "./features/auth";
+import { isUnauthorized } from "./lib/api";
 import { routeTree } from "./routeTree.gen";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    // A request that fails because the session ended sends the user back to sign in.
+    // The route guard handles the "me" query itself.
+    onError: (error, query) => {
+      if (!isUnauthorized(error) || query.queryKey[0] === authKeys.me[0]) return;
+      queryClient.removeQueries({ queryKey: authKeys.me });
+      void router.navigate({ to: "/sign-in", search: { redirect: router.state.location.href } });
+    },
+  }),
+});
 
 const router = createRouter({
   routeTree,

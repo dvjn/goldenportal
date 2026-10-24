@@ -7,7 +7,6 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { configQueryOptions, useConfig } from "@/features/config";
 
@@ -29,14 +28,7 @@ function RootLayout() {
     document.title = portalName;
   }, [portalName]);
 
-  return (
-    <div className="flex min-h-svh flex-col [--header-height:calc(--spacing(14))]">
-      <SiteHeader />
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4">
-        <Outlet />
-      </main>
-    </div>
-  );
+  return <Outlet />;
 }
 
 function RootError({ error }: ErrorComponentProps) {
@@ -56,7 +48,7 @@ function RootError({ error }: ErrorComponentProps) {
 
 function NotFound() {
   return (
-    <section className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
+    <section className="flex min-h-svh flex-col items-center justify-center gap-4 text-center">
       <h1 className="text-2xl font-semibold">Page not found</h1>
       <p className="text-muted-foreground">The page you are looking for does not exist.</p>
       <Button asChild variant="outline">

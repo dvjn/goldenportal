@@ -1,0 +1,56 @@
+# Local development only. Creates the Golden Portal OIDC application in
+# Authentik and a member account. The admin account (akadmin) comes from
+# AUTHENTIK_BOOTSTRAP_EMAIL and AUTHENTIK_BOOTSTRAP_PASSWORD in deps.dev.yaml.
+version: 1
+metadata:
+  name: Golden Portal local development
+entries:
+  # Authentik's built-in email mapping always sends email_verified: false.
+  # Golden Portal only grants GP_BOOTSTRAP_ADMIN_EMAIL admin when the email is
+  # verified, so this mapping vouches for the seeded dev accounts' emails.
+  - model: authentik_providers_oauth2.scopemapping
+    id: email-verified
+    identifiers:
+      name: Golden Portal email (verified)
+    attrs:
+      scope_name: email
+      description: Email address
+      expression: |
+        return {"email": request.user.email, "email_verified": True}
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers:
+      name: Golden Portal
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      grant_types: [authorization_code, refresh_token]
+      client_id: golden-portal-dev
+      client_secret: golden-portal-dev-secret
+      # Any localhost port, so the Vite dev server and a locally built binary both work.
+      redirect_uris:
+        - matching_mode: regex
+          url: ^http://localhost:\d+/api/v1/auth/callback$
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !KeyOf email-verified
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+
+  - model: authentik_core.application
+    identifiers:
+      slug: golden-portal
+    attrs:
+      name: Golden Portal
+      provider: !KeyOf provider
+      meta_launch_url: http://localhost:47273/
+
+  - model: authentik_core.user
+    identifiers:
+      username: member
+    attrs:
+      name: Dev Member
+      email: member@example.com
+      password: golden-portal-dev

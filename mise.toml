@@ -55,12 +55,12 @@ dir = "ui"
 run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
 
 [tasks."deps:up"]
-description = "Start local Postgres"
+description = "Start local Postgres and Authentik"
 env = { _.file = "configs/.dev.env" }
 run = '''
 set -eu
-mkdir -p .local/postgres
-docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d postgres
+mkdir -p .local/postgres .local/authentik-postgres
+docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d
 
 attempts=0
 until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgres pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; do
@@ -72,11 +72,11 @@ until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgr
   sleep 1
 done
 
-echo "PostgreSQL ready"
+echo "PostgreSQL ready. Authentik is starting at http://localhost:47900 (the first start takes a minute)."
 '''
 
 [tasks."deps:down"]
-description = "Stop local Postgres"
+description = "Stop local Postgres and Authentik"
 env = { _.file = "configs/.dev.env" }
 run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml down"
 

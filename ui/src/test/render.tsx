@@ -31,10 +31,11 @@ export function renderRoute(path: string, queryClient = createTestQueryClient())
     history: createMemoryHistory({ initialEntries: [path] }),
     context: { queryClient },
   });
-  return renderWithQueryClient(
+  const result = renderWithQueryClient(
     <ThemeProvider>
       <RouterProvider router={router} />
     </ThemeProvider>,
     queryClient,
   );
+  return { router, ...result };
 }

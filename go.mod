@@ -2,7 +2,11 @@ module github.com/dvjn/goldenportal
 
 go 1.27.3
 
-require gofr.dev v1.62.0
+require (
+	github.com/coreos/go-oidc/v3 v3.21.0
+	gofr.dev v1.62.0
+	golang.org/x/oauth2 v0.37.0
+)
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
@@ -23,6 +27,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.5.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
@@ -83,7 +88,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
