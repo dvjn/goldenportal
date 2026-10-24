@@ -18,6 +18,14 @@ const (
 	signInTimeout      = 10 * time.Minute
 )
 
+// userRole selects the highest role bound to user u; everyone is at least a member.
+const userRole = `coalesce((
+	SELECT rb.role FROM role_bindings rb
+	WHERE rb.subject_type = 'user' AND rb.subject_id = u.id
+	ORDER BY CASE rb.role WHEN 'admin' THEN 3 WHEN 'builder' THEN 2 ELSE 1 END DESC
+	LIMIT 1
+), 'member')`
+
 var (
 	errNotFound    = errors.New("not found")
 	errDeactivated = errors.New("user is deactivated")
@@ -25,6 +33,7 @@ var (
 
 // DB is the part of the gofr SQL datasource the store uses.
 type DB interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
@@ -137,13 +146,7 @@ func (s Store) SessionPrincipal(ctx context.Context, sessionHash []byte) (Princi
 	)
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, s.last_seen_at,
-			coalesce((
-				SELECT rb.role FROM role_bindings rb
-				WHERE rb.subject_type = 'user' AND rb.subject_id = u.id
-				ORDER BY CASE rb.role WHEN 'admin' THEN 3 WHEN 'builder' THEN 2 ELSE 1 END DESC
-				LIMIT 1
-			), 'member')
+		SELECT u.id, u.email, u.display_name, s.last_seen_at, `+userRole+`
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.id_hash = $1

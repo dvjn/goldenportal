@@ -27,22 +27,26 @@ func (p Principal) Can(role Role) bool {
 	return roleRank[p.Role] >= roleRank[role]
 }
 
-type principalKey struct{}
+type authKey struct{}
 
-type sessionKey struct{}
+// authInfo is how the request was signed in: by a session cookie or an API token.
+type authInfo struct {
+	principal   Principal
+	sessionHash []byte
+	viaToken    bool
+}
 
-func withPrincipal(ctx context.Context, p Principal, sessionHash []byte) context.Context {
-	ctx = context.WithValue(ctx, principalKey{}, p)
-	return context.WithValue(ctx, sessionKey{}, sessionHash)
+func withAuth(ctx context.Context, info authInfo) context.Context {
+	return context.WithValue(ctx, authKey{}, info)
+}
+
+func authFromContext(ctx context.Context) (authInfo, bool) {
+	info, ok := ctx.Value(authKey{}).(authInfo)
+	return info, ok
 }
 
 // FromContext returns the principal the auth middleware attached to ctx.
 func FromContext(ctx context.Context) (Principal, bool) {
-	p, ok := ctx.Value(principalKey{}).(Principal)
-	return p, ok
-}
-
-func sessionFromContext(ctx context.Context) []byte {
-	hash, _ := ctx.Value(sessionKey{}).([]byte)
-	return hash
+	info, ok := authFromContext(ctx)
+	return info.principal, ok
 }

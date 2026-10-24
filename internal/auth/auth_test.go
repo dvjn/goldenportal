@@ -23,10 +23,14 @@ func TestPrincipalRolesNest(t *testing.T) {
 	}
 }
 
-type fakeSessions map[string]Principal
+type fakeResolver struct {
+	sessions map[string]Principal
+	tokens   map[string]Principal
+	readOnly map[string]bool
+}
 
-func (f fakeSessions) SessionPrincipal(_ context.Context, hash []byte) (Principal, error) {
-	if p, ok := f[string(hash)]; ok {
+func (f fakeResolver) SessionPrincipal(_ context.Context, hash []byte) (Principal, error) {
+	if p, ok := f.sessions[string(hash)]; ok {
 		return p, nil
 	}
 	if string(hash) == string(hashSecret("broken")) {
@@ -36,15 +40,31 @@ func (f fakeSessions) SessionPrincipal(_ context.Context, hash []byte) (Principa
 	return Principal{}, errNotFound
 }
 
+func (f fakeResolver) TokenPrincipal(_ context.Context, hash []byte) (Principal, bool, error) {
+	if p, ok := f.tokens[string(hash)]; ok {
+		return p, f.readOnly[string(hash)], nil
+	}
+
+	return Principal{}, false, errNotFound
+}
+
 func TestMiddleware(t *testing.T) {
 	alice := Principal{ID: "1", Email: "alice", Role: RoleAdmin}
-	sessions := fakeSessions{string(hashSecret("alice-session")): alice}
+	resolver := fakeResolver{
+		sessions: map[string]Principal{string(hashSecret("alice-session")): alice},
+		tokens: map[string]Principal{
+			string(hashSecret("gpp_rw")): alice,
+			string(hashSecret("gpp_ro")): alice,
+		},
+		readOnly: map[string]bool{string(hashSecret("gpp_ro")): true},
+	}
 
 	tests := []struct {
 		name       string
 		method     string
 		path       string
 		cookie     string
+		bearer     string
 		csrf       bool
 		wantStatus int
 		wantUser   string
@@ -60,6 +80,12 @@ func TestMiddleware(t *testing.T) {
 		{name: "writes need the CSRF header", method: http.MethodPost, path: "/api/v1/auth/logout", cookie: "alice-session", wantStatus: http.StatusForbidden},
 		{name: "writes with the CSRF header pass", method: http.MethodPost, path: "/api/v1/auth/logout", cookie: "alice-session", csrf: true, wantStatus: http.StatusOK, wantUser: "alice"},
 		{name: "public writes need the CSRF header too", method: http.MethodPost, path: "/api/v1/config", wantStatus: http.StatusForbidden},
+		{name: "an API token signs the request in", method: http.MethodGet, path: "/api/v1/me", bearer: "gpp_rw", wantStatus: http.StatusOK, wantUser: "alice"},
+		{name: "token writes need no CSRF header", method: http.MethodPost, path: "/api/v1/things", bearer: "gpp_rw", wantStatus: http.StatusOK, wantUser: "alice"},
+		{name: "read-only tokens can read", method: http.MethodGet, path: "/api/v1/me", bearer: "gpp_ro", wantStatus: http.StatusOK, wantUser: "alice"},
+		{name: "read-only tokens can't write", method: http.MethodPost, path: "/api/v1/things", bearer: "gpp_ro", wantStatus: http.StatusForbidden},
+		{name: "an unknown token is rejected even on public paths", method: http.MethodGet, path: "/api/v1/config", bearer: "gpp_nope", wantStatus: http.StatusUnauthorized},
+		{name: "a token wins over a session cookie", method: http.MethodGet, path: "/api/v1/me", bearer: "gpp_nope", cookie: "alice-session", wantStatus: http.StatusUnauthorized},
 	}
 
 	for _, tt := range tests {
@@ -75,12 +101,15 @@ func TestMiddleware(t *testing.T) {
 			if tt.cookie != "" {
 				req.AddCookie(&http.Cookie{Name: sessionCookie, Value: tt.cookie})
 			}
+			if tt.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			}
 			if tt.csrf {
 				req.Header.Set(csrfHeader, "1")
 			}
 			rec := httptest.NewRecorder()
 
-			Middleware(sessions)(next).ServeHTTP(rec, req)
+			Middleware(resolver)(next).ServeHTTP(rec, req)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d (body %s)", rec.Code, tt.wantStatus, rec.Body)
