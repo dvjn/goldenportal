@@ -1,0 +1,33 @@
+{
+  "teams": [
+    {
+      "slug": "payments",
+      "name": "Payments",
+      "links": {
+        "slack": "https://slack.example.com/archives/payments",
+        "oncall": "https://oncall.example.com/schedules/payments"
+      }
+    },
+    {
+      "slug": "search",
+      "name": "Search",
+      "links": {
+        "slack": "https://slack.example.com/archives/search",
+        "oncall": "https://oncall.example.com/schedules/search"
+      }
+    },
+    {
+      "slug": "identity",
+      "name": "Identity",
+      "links": { "slack": "https://slack.example.com/archives/identity" }
+    },
+    {
+      "slug": "platform",
+      "name": "Platform",
+      "links": {
+        "slack": "https://slack.example.com/archives/platform",
+        "oncall": "https://oncall.example.com/schedules/platform"
+      }
+    }
+  ]
+}

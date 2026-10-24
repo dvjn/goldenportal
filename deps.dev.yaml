@@ -74,3 +74,19 @@ services:
     depends_on:
       authentik-postgres:
         condition: service_healthy
+
+  # Pushes example data to the push integrations in deps/seed.sql, as an
+  # external system would. deps/mock-pusher has the payloads and the loop.
+  mock-pusher:
+    image: ${CURL_IMAGE:-docker.io/curlimages/curl:8.17.0}
+    container_name: goldenportal-mock-pusher
+    # Reaches the API on the host's localhost, where mise runs it.
+    network_mode: host
+    entrypoint: ["/bin/sh", "/data/push.sh"]
+    environment:
+      GP_API_URL: http://localhost:${HTTP_PORT:-47200}
+      PUSH_INTERVAL: ${MOCK_PUSH_INTERVAL:-60}
+      TEAM_DIRECTORY_TOKEN: ${GP_DEV_TEAM_DIRECTORY_TOKEN}
+      SERVICE_REGISTRY_TOKEN: ${GP_DEV_SERVICE_REGISTRY_TOKEN}
+    volumes:
+      - ./deps/mock-pusher:/data:ro

@@ -1,7 +1,9 @@
 -- Development seed data: the people and groups in deps/authentik/golden-portal.yaml,
--- so the portal has users, groups and roles before anyone signs in.
+-- so the portal has users, groups and roles before anyone signs in, plus example
+-- blueprints and the push integrations the mock pusher in deps.dev.yaml feeds.
 -- Every insert skips rows that already exist, so this is safe to run again.
--- psql sets :issuer to GP_OIDC_ISSUER; the dev Authentik uses the email as the subject.
+-- psql sets :issuer to GP_OIDC_ISSUER, the dev Authentik uses the email as the
+-- subject, and :team_token and :service_token are the mock pusher's tokens.
 
 INSERT INTO groups (name)
 VALUES ('platform-engineers'), ('payments'), ('search')
@@ -77,6 +79,10 @@ properties:
     type: array
     items:
       type: string
+  lastDeployedAt:
+    title: Last Deployed
+    type: string
+    format: date-time
   owner:
     title: Owner
     relation: team
@@ -100,3 +106,55 @@ $yaml$)
 )
 INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
+
+-- Example push integrations. Each mapping is jq over the JSON its system sends.
+WITH example (identifier, source) AS (VALUES
+  ('team-directory', $yaml$identifier: team-directory
+title: Team Directory
+description: Teams and their channels, from the team directory.
+connector: push
+mappings:
+  - blueprint: team
+    items: .teams[]
+    identifier: .slug
+    title: .name
+    properties:
+      slackChannel: .links.slack
+      oncall: .links.oncall
+$yaml$),
+  ('service-registry', $yaml$identifier: service-registry
+title: Service Registry
+description: Services from the deployment registry. Retired ones are left out.
+connector: push
+mappings:
+  - blueprint: service
+    items: .services[]
+    filter: .lifecycle != "retired"
+    identifier: .name
+    title: .displayName
+    properties:
+      language: .language
+      tier: .tier
+      repository: .repo
+      tags: .tags
+      lastDeployedAt: .lastDeploy
+      owner: .owner
+      dependsOn: .dependencies
+$yaml$)
+), created AS (
+  INSERT INTO config_documents (kind, identifier, published_version)
+  SELECT 'integration', identifier, 1 FROM example
+  ON CONFLICT (kind, identifier) DO NOTHING
+  RETURNING id, identifier
+)
+INSERT INTO config_versions (document_id, version, source)
+SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
+
+INSERT INTO ingestion_tokens (integration_id, name, prefix, secret_hash)
+SELECT d.id, 'Mock Pusher', left(t.token, 12), sha256(convert_to(t.token, 'UTF8'))
+FROM (VALUES
+  ('team-directory', :'team_token'),
+  ('service-registry', :'service_token')
+) AS t (identifier, token)
+JOIN config_documents d ON d.kind = 'integration' AND d.identifier = t.identifier
+ON CONFLICT (secret_hash) DO NOTHING;

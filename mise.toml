@@ -27,7 +27,7 @@ psql() { $compose exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_
 
 # The API creates the tables on start, so wait for the last ones the seed fills.
 attempts=0
-until [ "$(psql -tAc "SELECT to_regclass('public.role_bindings') IS NOT NULL AND to_regclass('public.group_members') IS NOT NULL AND to_regclass('public.config_versions') IS NOT NULL" 2>/dev/null)" = "t" ]; do
+until [ "$(psql -tAc "SELECT to_regclass('public.role_bindings') IS NOT NULL AND to_regclass('public.group_members') IS NOT NULL AND to_regclass('public.ingestion_tokens') IS NOT NULL" 2>/dev/null)" = "t" ]; do
   attempts=$((attempts + 1))
   if [ "$attempts" -ge 120 ]; then
     echo "Skipped the seed data: the database tables did not appear within 2 minutes" >&2
@@ -36,7 +36,8 @@ until [ "$(psql -tAc "SELECT to_regclass('public.role_bindings') IS NOT NULL AND
   sleep 1
 done
 
-psql -q -v issuer="$GP_OIDC_ISSUER" < deps/seed.sql
+psql -q -v issuer="$GP_OIDC_ISSUER" -v team_token="$GP_DEV_TEAM_DIRECTORY_TOKEN" \
+  -v service_token="$GP_DEV_SERVICE_REGISTRY_TOKEN" < deps/seed.sql
 echo "Seed data loaded"
 
 # Ask Authentik to push its people and groups over SCIM now, rather than at
@@ -97,7 +98,7 @@ dir = "ui"
 run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
 
 [tasks."deps:up"]
-description = "Start local Postgres and Authentik"
+description = "Start local Postgres, Authentik and the mock pusher"
 env = { _.file = "configs/.dev.env" }
 run = '''
 set -eu
@@ -131,7 +132,7 @@ echo "Deleted the local database"
 '''
 
 [tasks."deps:down"]
-description = "Stop local Postgres and Authentik"
+description = "Stop local Postgres, Authentik and the mock pusher"
 env = { _.file = "configs/.dev.env" }
 run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml down"
 

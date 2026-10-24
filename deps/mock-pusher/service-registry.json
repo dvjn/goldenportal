@@ -1,0 +1,108 @@
+{
+  "services": [
+    {
+      "name": "payments-api",
+      "displayName": "Payments API",
+      "language": "go",
+      "tier": "critical",
+      "repo": "https://git.example.com/payments/payments-api",
+      "tags": ["pci", "public"],
+      "owner": "payments",
+      "dependencies": ["ledger", "auth-service"],
+      "lastDeploy": "@DEPLOY:payments-api@",
+      "lifecycle": "production"
+    },
+    {
+      "name": "ledger",
+      "displayName": "Ledger",
+      "language": "java",
+      "tier": "critical",
+      "repo": "https://git.example.com/payments/ledger",
+      "tags": ["pci"],
+      "owner": "payments",
+      "dependencies": ["postgres-proxy"],
+      "lastDeploy": "@DEPLOY:ledger@",
+      "lifecycle": "production"
+    },
+    {
+      "name": "checkout-web",
+      "displayName": "Checkout Web",
+      "language": "typescript",
+      "tier": "standard",
+      "repo": "https://git.example.com/payments/checkout-web",
+      "tags": ["public", "frontend"],
+      "owner": "payments",
+      "dependencies": ["payments-api", "search-api"],
+      "lastDeploy": "@DEPLOY:checkout-web@",
+      "lifecycle": "production"
+    },
+    {
+      "name": "search-api",
+      "displayName": "Search API",
+      "language": "python",
+      "tier": "standard",
+      "repo": "https://git.example.com/search/search-api",
+      "tags": ["public"],
+      "owner": "search",
+      "dependencies": ["indexer"],
+      "lastDeploy": "@DEPLOY:search-api@",
+      "lifecycle": "production"
+    },
+    {
+      "name": "indexer",
+      "displayName": "Indexer",
+      "language": "python",
+      "tier": "experimental",
+      "repo": "https://git.example.com/search/indexer",
+      "tags": [],
+      "owner": "search",
+      "dependencies": ["feature-flags"],
+      "lastDeploy": "@DEPLOY:indexer@",
+      "lifecycle": "beta"
+    },
+    {
+      "name": "auth-service",
+      "displayName": "Auth Service",
+      "language": "go",
+      "tier": "critical",
+      "repo": "https://git.example.com/identity/auth-service",
+      "tags": ["public"],
+      "owner": "identity",
+      "dependencies": ["postgres-proxy"],
+      "lastDeploy": "@DEPLOY:auth-service@",
+      "lifecycle": "production"
+    },
+    {
+      "name": "postgres-proxy",
+      "displayName": "Postgres Proxy",
+      "language": "go",
+      "tier": "critical",
+      "repo": "https://git.example.com/platform/postgres-proxy",
+      "tags": ["internal"],
+      "owner": "platform",
+      "dependencies": [],
+      "lastDeploy": "@DEPLOY:postgres-proxy@",
+      "lifecycle": "production"
+    },
+    {
+      "name": "legacy-reports",
+      "displayName": "Legacy Reports",
+      "language": "java",
+      "tier": "standard",
+      "owner": "payments",
+      "dependencies": [],
+      "lastDeploy": "@DEPLOY:legacy-reports@",
+      "lifecycle": "retired"
+    },
+    {
+      "name": "billing-export",
+      "displayName": "Billing Export",
+      "language": "cobol",
+      "tier": "legacy",
+      "owner": "payments",
+      "dependencies": ["ledger"],
+      "lastDeploy": "@DEPLOY:billing-export@",
+      "lifecycle": "production"
+    }
+  ]
+}
