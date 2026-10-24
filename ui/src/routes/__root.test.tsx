@@ -20,14 +20,27 @@ afterEach(() => {
 });
 
 describe("app shell", () => {
-  it("renders the configured portal name and the header", async () => {
+  it("renders the configured portal name and the navbar", async () => {
     renderRoute("/");
 
     expect(await screen.findByRole("link", { name: "Acme" })).toHaveAttribute("href", "/");
     expect(document.title).toBe("Acme");
-    expect(screen.getAllByRole("button", { name: "Toggle Sidebar" })).toHaveLength(3);
-    expect(screen.getByText("Home")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Open user menu" })).toBeInTheDocument();
+    expect(document.querySelector("header img")).not.toBeInTheDocument();
     expect(screen.queryByText(/version/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the configured logo next to the portal name", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ data: { name: "Acme", logoUrl: "https://example.com/logo.svg" } }),
+      ),
+    );
+    renderRoute("/");
+
+    const link = await screen.findByRole("link", { name: "Acme" });
+    expect(link.querySelector("img")).toHaveAttribute("src", "https://example.com/logo.svg");
   });
 
   it("renders nothing until the config has loaded", async () => {
@@ -69,8 +82,9 @@ describe("app shell", () => {
 
     expect(document.documentElement).toHaveClass("dark");
 
-    await user.click(await screen.findByRole("button", { name: "Toggle theme" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Light" }));
+    await user.click(await screen.findByRole("button", { name: "Open user menu" }));
+    expect(screen.getByRole("radio", { name: "Dark" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "Light" }));
 
     expect(document.documentElement).toHaveClass("light");
     expect(document.documentElement).not.toHaveClass("dark");

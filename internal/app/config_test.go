@@ -3,7 +3,7 @@ package app
 import "testing"
 
 func TestConfigHandlerReturnsThePortalConfig(t *testing.T) {
-	want := Config{Name: "Acme"}
+	want := Config{Name: "Acme", LogoURL: "https://example.com/logo.svg"}
 
 	got, err := configHandler(want)(nil)
 	if err != nil {

@@ -12,7 +12,8 @@ func New() *gofr.App {
 
 	app.UseMiddleware(web.SPA(web.Dist()))
 	app.GET("/api/v1/config", configHandler(Config{
-		Name: app.Config.GetOrDefault("GP_NAME", "Golden Portal"),
+		Name:    app.Config.GetOrDefault("GP_NAME", "Golden Portal"),
+		LogoURL: app.Config.Get("GP_LOGO_URL"),
 	}))
 
 	return app

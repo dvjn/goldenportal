@@ -3,7 +3,8 @@ package app
 import "gofr.dev/pkg/gofr"
 
 type Config struct {
-	Name string `json:"name"`
+	Name    string `json:"name"`
+	LogoURL string `json:"logoUrl,omitempty"`
 }
 
 func configHandler(config Config) gofr.Handler {

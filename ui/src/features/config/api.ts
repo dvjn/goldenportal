@@ -2,6 +2,7 @@ import { type ApiDataResponse, api } from "@/lib/api";
 
 export type Config = {
   name: string;
+  logoUrl?: string;
 };
 
 export const configKeys = {
