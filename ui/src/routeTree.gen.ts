@@ -19,6 +19,7 @@ import { Route as AppAccountTokensRouteImport } from "./routes/_app/account/toke
 import { Route as AppBlueprintsIndexRouteImport } from "./routes/_app/blueprints/index";
 import { Route as AppBlueprintsIdentifierRouteImport } from "./routes/_app/blueprints/$identifier";
 import { Route as AppBlueprintsNewRouteImport } from "./routes/_app/blueprints/new";
+import { Route as AppCatalogIndexRouteImport } from "./routes/_app/catalog/index";
 import { Route as AppIntegrationsIndexRouteImport } from "./routes/_app/integrations/index";
 import { Route as AppIntegrationsIdentifierRouteImport } from "./routes/_app/integrations/$identifier";
 import { Route as AppIntegrationsNewRouteImport } from "./routes/_app/integrations/new";
@@ -26,6 +27,8 @@ import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings/ind
 import { Route as AppSettingsAccessRouteImport } from "./routes/_app/settings/access";
 import { Route as AppSettingsAuditRouteImport } from "./routes/_app/settings/audit";
 import { Route as AppSettingsConfigurationRouteImport } from "./routes/_app/settings/configuration";
+import { Route as AppCatalogBlueprintIndexRouteImport } from "./routes/_app/catalog/$blueprint/index";
+import { Route as AppCatalogBlueprintSplatRouteImport } from "./routes/_app/catalog/$blueprint/$";
 
 const AppRoute = AppRouteImport.update({
   id: "/_app",
@@ -76,6 +79,11 @@ const AppBlueprintsNewRoute = AppBlueprintsNewRouteImport.update({
   path: "/new",
   getParentRoute: () => AppBlueprintsRoute,
 } as any);
+const AppCatalogIndexRoute = AppCatalogIndexRouteImport.update({
+  id: "/catalog/",
+  path: "/catalog/",
+  getParentRoute: () => AppRoute,
+} as any);
 const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -113,6 +121,18 @@ const AppSettingsConfigurationRoute =
     path: "/configuration",
     getParentRoute: () => AppSettingsRoute,
   } as any);
+const AppCatalogBlueprintIndexRoute =
+  AppCatalogBlueprintIndexRouteImport.update({
+    id: "/catalog/$blueprint/",
+    path: "/catalog/$blueprint/",
+    getParentRoute: () => AppRoute,
+  } as any);
+const AppCatalogBlueprintSplatRoute =
+  AppCatalogBlueprintSplatRouteImport.update({
+    id: "/catalog/$blueprint/$",
+    path: "/catalog/$blueprint/$",
+    getParentRoute: () => AppRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof AppIndexRoute;
@@ -129,8 +149,11 @@ export interface FileRoutesByFullPath {
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/blueprints/": typeof AppBlueprintsIndexRoute;
+  "/catalog/": typeof AppCatalogIndexRoute;
   "/integrations/": typeof AppIntegrationsIndexRoute;
   "/settings/": typeof AppSettingsIndexRoute;
+  "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
+  "/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
 }
 export interface FileRoutesByTo {
   "/sign-in": typeof SignInRoute;
@@ -144,8 +167,11 @@ export interface FileRoutesByTo {
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/blueprints": typeof AppBlueprintsIndexRoute;
+  "/catalog": typeof AppCatalogIndexRoute;
   "/integrations": typeof AppIntegrationsIndexRoute;
   "/settings": typeof AppSettingsIndexRoute;
+  "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
+  "/catalog/$blueprint": typeof AppCatalogBlueprintIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -164,8 +190,11 @@ export interface FileRoutesById {
   "/_app/settings/audit": typeof AppSettingsAuditRoute;
   "/_app/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/_app/blueprints/": typeof AppBlueprintsIndexRoute;
+  "/_app/catalog/": typeof AppCatalogIndexRoute;
   "/_app/integrations/": typeof AppIntegrationsIndexRoute;
   "/_app/settings/": typeof AppSettingsIndexRoute;
+  "/_app/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
+  "/_app/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -184,8 +213,11 @@ export interface FileRouteTypes {
     | "/settings/audit"
     | "/settings/configuration"
     | "/blueprints/"
+    | "/catalog/"
     | "/integrations/"
-    | "/settings/";
+    | "/settings/"
+    | "/catalog/$blueprint/$"
+    | "/catalog/$blueprint/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/sign-in"
@@ -199,8 +231,11 @@ export interface FileRouteTypes {
     | "/settings/audit"
     | "/settings/configuration"
     | "/blueprints"
+    | "/catalog"
     | "/integrations"
-    | "/settings";
+    | "/settings"
+    | "/catalog/$blueprint/$"
+    | "/catalog/$blueprint";
   id:
     | "__root__"
     | "/_app"
@@ -218,8 +253,11 @@ export interface FileRouteTypes {
     | "/_app/settings/audit"
     | "/_app/settings/configuration"
     | "/_app/blueprints/"
+    | "/_app/catalog/"
     | "/_app/integrations/"
-    | "/_app/settings/";
+    | "/_app/settings/"
+    | "/_app/catalog/$blueprint/$"
+    | "/_app/catalog/$blueprint/";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -299,6 +337,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppBlueprintsNewRouteImport;
       parentRoute: typeof AppBlueprintsRoute;
     };
+    "/_app/catalog/": {
+      id: "/_app/catalog/";
+      path: "/catalog";
+      fullPath: "/catalog/";
+      preLoaderRoute: typeof AppCatalogIndexRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/_app/integrations/": {
       id: "/_app/integrations/";
       path: "/";
@@ -347,6 +392,20 @@ declare module "@tanstack/react-router" {
       fullPath: "/settings/configuration";
       preLoaderRoute: typeof AppSettingsConfigurationRouteImport;
       parentRoute: typeof AppSettingsRoute;
+    };
+    "/_app/catalog/$blueprint/": {
+      id: "/_app/catalog/$blueprint/";
+      path: "/catalog/$blueprint";
+      fullPath: "/catalog/$blueprint/";
+      preLoaderRoute: typeof AppCatalogBlueprintIndexRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/_app/catalog/$blueprint/$": {
+      id: "/_app/catalog/$blueprint/$";
+      path: "/catalog/$blueprint/$";
+      fullPath: "/catalog/$blueprint/$";
+      preLoaderRoute: typeof AppCatalogBlueprintSplatRouteImport;
+      parentRoute: typeof AppRoute;
     };
   }
 }
@@ -407,6 +466,9 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
   AppAccountTokensRoute: typeof AppAccountTokensRoute;
+  AppCatalogIndexRoute: typeof AppCatalogIndexRoute;
+  AppCatalogBlueprintSplatRoute: typeof AppCatalogBlueprintSplatRoute;
+  AppCatalogBlueprintIndexRoute: typeof AppCatalogBlueprintIndexRoute;
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -415,6 +477,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppAccountTokensRoute: AppAccountTokensRoute,
+  AppCatalogIndexRoute: AppCatalogIndexRoute,
+  AppCatalogBlueprintSplatRoute: AppCatalogBlueprintSplatRoute,
+  AppCatalogBlueprintIndexRoute: AppCatalogBlueprintIndexRoute,
 };
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren);

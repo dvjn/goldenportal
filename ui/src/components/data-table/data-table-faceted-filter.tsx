@@ -13,7 +13,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 
-type Option = { value: string; label: string };
+// count, when known, is how many rows have the value.
+type Option = { value: string; label: string; count?: number };
 
 type DataTableFacetedFilterProps = {
   title: string;
@@ -86,6 +87,11 @@ export function DataTableFacetedFilter({
                     <Check className="size-3" />
                   </span>
                   {option.label}
+                  {option.count !== undefined && (
+                    <span className="ml-auto font-mono text-xs text-muted-foreground">
+                      {option.count}
+                    </span>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>

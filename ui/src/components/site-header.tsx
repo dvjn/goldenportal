@@ -11,6 +11,7 @@ import { hasRole, type Role, useMe } from "@/features/auth";
 import { useConfig } from "@/features/config";
 
 const navItems: { to: string; label: string; role: Role }[] = [
+  { to: "/catalog", label: "Catalog", role: "member" },
   { to: "/blueprints", label: "Blueprints", role: "builder" },
   { to: "/integrations", label: "Integrations", role: "builder" },
 ];
