@@ -13,11 +13,15 @@ import { Route as AppRouteImport } from "./routes/_app";
 import { Route as SignInRouteImport } from "./routes/sign-in";
 import { Route as AppIndexRouteImport } from "./routes/_app/index";
 import { Route as AppBlueprintsRouteImport } from "./routes/_app/blueprints";
+import { Route as AppIntegrationsRouteImport } from "./routes/_app/integrations";
 import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
 import { Route as AppAccountTokensRouteImport } from "./routes/_app/account/tokens";
 import { Route as AppBlueprintsIndexRouteImport } from "./routes/_app/blueprints/index";
 import { Route as AppBlueprintsIdentifierRouteImport } from "./routes/_app/blueprints/$identifier";
 import { Route as AppBlueprintsNewRouteImport } from "./routes/_app/blueprints/new";
+import { Route as AppIntegrationsIndexRouteImport } from "./routes/_app/integrations/index";
+import { Route as AppIntegrationsIdentifierRouteImport } from "./routes/_app/integrations/$identifier";
+import { Route as AppIntegrationsNewRouteImport } from "./routes/_app/integrations/new";
 import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings/index";
 import { Route as AppSettingsAccessRouteImport } from "./routes/_app/settings/access";
 import { Route as AppSettingsAuditRouteImport } from "./routes/_app/settings/audit";
@@ -40,6 +44,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppBlueprintsRoute = AppBlueprintsRouteImport.update({
   id: "/blueprints",
   path: "/blueprints",
+  getParentRoute: () => AppRoute,
+} as any);
+const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
+  id: "/integrations",
+  path: "/integrations",
   getParentRoute: () => AppRoute,
 } as any);
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -67,6 +76,22 @@ const AppBlueprintsNewRoute = AppBlueprintsNewRouteImport.update({
   path: "/new",
   getParentRoute: () => AppBlueprintsRoute,
 } as any);
+const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => AppIntegrationsRoute,
+} as any);
+const AppIntegrationsIdentifierRoute =
+  AppIntegrationsIdentifierRouteImport.update({
+    id: "/$identifier",
+    path: "/$identifier",
+    getParentRoute: () => AppIntegrationsRoute,
+  } as any);
+const AppIntegrationsNewRoute = AppIntegrationsNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => AppIntegrationsRoute,
+} as any);
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -93,14 +118,18 @@ export interface FileRoutesByFullPath {
   "/": typeof AppIndexRoute;
   "/sign-in": typeof SignInRoute;
   "/blueprints": typeof AppBlueprintsRouteWithChildren;
+  "/integrations": typeof AppIntegrationsRouteWithChildren;
   "/settings": typeof AppSettingsRouteWithChildren;
   "/account/tokens": typeof AppAccountTokensRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
+  "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
+  "/integrations/new": typeof AppIntegrationsNewRoute;
   "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/blueprints/": typeof AppBlueprintsIndexRoute;
+  "/integrations/": typeof AppIntegrationsIndexRoute;
   "/settings/": typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesByTo {
@@ -109,10 +138,13 @@ export interface FileRoutesByTo {
   "/account/tokens": typeof AppAccountTokensRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
+  "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
+  "/integrations/new": typeof AppIntegrationsNewRoute;
   "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/blueprints": typeof AppBlueprintsIndexRoute;
+  "/integrations": typeof AppIntegrationsIndexRoute;
   "/settings": typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesById {
@@ -120,15 +152,19 @@ export interface FileRoutesById {
   "/_app": typeof AppRouteWithChildren;
   "/sign-in": typeof SignInRoute;
   "/_app/blueprints": typeof AppBlueprintsRouteWithChildren;
+  "/_app/integrations": typeof AppIntegrationsRouteWithChildren;
   "/_app/settings": typeof AppSettingsRouteWithChildren;
   "/_app/": typeof AppIndexRoute;
   "/_app/account/tokens": typeof AppAccountTokensRoute;
   "/_app/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/_app/blueprints/new": typeof AppBlueprintsNewRoute;
+  "/_app/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
+  "/_app/integrations/new": typeof AppIntegrationsNewRoute;
   "/_app/settings/access": typeof AppSettingsAccessRoute;
   "/_app/settings/audit": typeof AppSettingsAuditRoute;
   "/_app/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/_app/blueprints/": typeof AppBlueprintsIndexRoute;
+  "/_app/integrations/": typeof AppIntegrationsIndexRoute;
   "/_app/settings/": typeof AppSettingsIndexRoute;
 }
 export interface FileRouteTypes {
@@ -137,14 +173,18 @@ export interface FileRouteTypes {
     | "/"
     | "/sign-in"
     | "/blueprints"
+    | "/integrations"
     | "/settings"
     | "/account/tokens"
     | "/blueprints/$identifier"
     | "/blueprints/new"
+    | "/integrations/$identifier"
+    | "/integrations/new"
     | "/settings/access"
     | "/settings/audit"
     | "/settings/configuration"
     | "/blueprints/"
+    | "/integrations/"
     | "/settings/";
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -153,25 +193,32 @@ export interface FileRouteTypes {
     | "/account/tokens"
     | "/blueprints/$identifier"
     | "/blueprints/new"
+    | "/integrations/$identifier"
+    | "/integrations/new"
     | "/settings/access"
     | "/settings/audit"
     | "/settings/configuration"
     | "/blueprints"
+    | "/integrations"
     | "/settings";
   id:
     | "__root__"
     | "/_app"
     | "/sign-in"
     | "/_app/blueprints"
+    | "/_app/integrations"
     | "/_app/settings"
     | "/_app/"
     | "/_app/account/tokens"
     | "/_app/blueprints/$identifier"
     | "/_app/blueprints/new"
+    | "/_app/integrations/$identifier"
+    | "/_app/integrations/new"
     | "/_app/settings/access"
     | "/_app/settings/audit"
     | "/_app/settings/configuration"
     | "/_app/blueprints/"
+    | "/_app/integrations/"
     | "/_app/settings/";
   fileRoutesById: FileRoutesById;
 }
@@ -210,6 +257,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppBlueprintsRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/integrations": {
+      id: "/_app/integrations";
+      path: "/integrations";
+      fullPath: "/integrations";
+      preLoaderRoute: typeof AppIntegrationsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/_app/settings": {
       id: "/_app/settings";
       path: "/settings";
@@ -244,6 +298,27 @@ declare module "@tanstack/react-router" {
       fullPath: "/blueprints/new";
       preLoaderRoute: typeof AppBlueprintsNewRouteImport;
       parentRoute: typeof AppBlueprintsRoute;
+    };
+    "/_app/integrations/": {
+      id: "/_app/integrations/";
+      path: "/";
+      fullPath: "/integrations/";
+      preLoaderRoute: typeof AppIntegrationsIndexRouteImport;
+      parentRoute: typeof AppIntegrationsRoute;
+    };
+    "/_app/integrations/$identifier": {
+      id: "/_app/integrations/$identifier";
+      path: "/$identifier";
+      fullPath: "/integrations/$identifier";
+      preLoaderRoute: typeof AppIntegrationsIdentifierRouteImport;
+      parentRoute: typeof AppIntegrationsRoute;
+    };
+    "/_app/integrations/new": {
+      id: "/_app/integrations/new";
+      path: "/new";
+      fullPath: "/integrations/new";
+      preLoaderRoute: typeof AppIntegrationsNewRouteImport;
+      parentRoute: typeof AppIntegrationsRoute;
     };
     "/_app/settings/": {
       id: "/_app/settings/";
@@ -292,6 +367,22 @@ const AppBlueprintsRouteWithChildren = AppBlueprintsRoute._addFileChildren(
   AppBlueprintsRouteChildren,
 );
 
+interface AppIntegrationsRouteChildren {
+  AppIntegrationsIdentifierRoute: typeof AppIntegrationsIdentifierRoute;
+  AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute;
+  AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute;
+}
+
+const AppIntegrationsRouteChildren: AppIntegrationsRouteChildren = {
+  AppIntegrationsIdentifierRoute: AppIntegrationsIdentifierRoute,
+  AppIntegrationsNewRoute: AppIntegrationsNewRoute,
+  AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
+};
+
+const AppIntegrationsRouteWithChildren = AppIntegrationsRoute._addFileChildren(
+  AppIntegrationsRouteChildren,
+);
+
 interface AppSettingsRouteChildren {
   AppSettingsAccessRoute: typeof AppSettingsAccessRoute;
   AppSettingsAuditRoute: typeof AppSettingsAuditRoute;
@@ -312,6 +403,7 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppBlueprintsRoute: typeof AppBlueprintsRouteWithChildren;
+  AppIntegrationsRoute: typeof AppIntegrationsRouteWithChildren;
   AppSettingsRoute: typeof AppSettingsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
   AppAccountTokensRoute: typeof AppAccountTokensRoute;
@@ -319,6 +411,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppBlueprintsRoute: AppBlueprintsRouteWithChildren,
+  AppIntegrationsRoute: AppIntegrationsRouteWithChildren,
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppAccountTokensRoute: AppAccountTokensRoute,

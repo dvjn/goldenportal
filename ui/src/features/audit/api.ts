@@ -43,6 +43,12 @@ export const auditActions: Record<string, string> = {
   "blueprint.draft_discard": "Discarded blueprint draft",
   "blueprint.publish": "Published blueprint",
   "blueprint.delete": "Deleted blueprint",
+  "integration.draft_save": "Saved integration draft",
+  "integration.draft_discard": "Discarded integration draft",
+  "integration.publish": "Published integration",
+  "integration.delete": "Deleted integration",
+  "integration.token_create": "Created ingestion token",
+  "integration.token_revoke": "Revoked ingestion token",
 };
 
 export const auditKeys = {
