@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:18.4-bookworm}
+    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.4-bookworm}
     container_name: ${POSTGRES_CONTAINER:-goldenportal-postgres}
     user: root
     environment:
