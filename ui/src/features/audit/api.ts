@@ -39,6 +39,10 @@ export const auditActions: Record<string, string> = {
   "scim.user_reactivate": "Reactivated user",
   "scim.group_provision": "Provisioned group",
   "scim.group_delete": "Deleted group",
+  "blueprint.draft_save": "Saved blueprint draft",
+  "blueprint.draft_discard": "Discarded blueprint draft",
+  "blueprint.publish": "Published blueprint",
+  "blueprint.delete": "Deleted blueprint",
 };
 
 export const auditKeys = {

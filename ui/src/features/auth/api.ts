@@ -2,6 +2,13 @@ import { type ApiDataResponse, api } from "@/lib/api";
 
 export type Role = "member" | "builder" | "admin";
 
+const roleRank: Record<Role, number> = { member: 1, builder: 2, admin: 3 };
+
+// hasRole reports whether role includes required. Roles nest, as on the server.
+export function hasRole(role: Role, required: Role) {
+  return roleRank[role] >= roleRank[required];
+}
+
 export type Me = {
   id: string;
   email: string;
