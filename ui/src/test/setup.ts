@@ -24,6 +24,11 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 
+// Radix Select uses pointer capture and scrolls the chosen option into view.
+Element.prototype.hasPointerCapture ??= () => false;
+Element.prototype.releasePointerCapture ??= () => {};
+Element.prototype.scrollIntoView ??= () => {};
+
 afterEach(() => {
   cleanup();
   localStorage.clear();

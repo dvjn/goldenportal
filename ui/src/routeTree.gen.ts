@@ -12,7 +12,11 @@ import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AppRouteImport } from "./routes/_app";
 import { Route as SignInRouteImport } from "./routes/sign-in";
 import { Route as AppIndexRouteImport } from "./routes/_app/index";
+import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
 import { Route as AppAccountTokensRouteImport } from "./routes/_app/account/tokens";
+import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings/index";
+import { Route as AppSettingsGroupsRouteImport } from "./routes/_app/settings/groups";
+import { Route as AppSettingsUsersRouteImport } from "./routes/_app/settings/users";
 
 const AppRoute = AppRouteImport.update({
   id: "/_app",
@@ -28,35 +32,88 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: "/",
   getParentRoute: () => AppRoute,
 } as any);
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: "/settings",
+  path: "/settings",
+  getParentRoute: () => AppRoute,
+} as any);
 const AppAccountTokensRoute = AppAccountTokensRouteImport.update({
   id: "/account/tokens",
   path: "/account/tokens",
   getParentRoute: () => AppRoute,
 } as any);
+const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => AppSettingsRoute,
+} as any);
+const AppSettingsGroupsRoute = AppSettingsGroupsRouteImport.update({
+  id: "/groups",
+  path: "/groups",
+  getParentRoute: () => AppSettingsRoute,
+} as any);
+const AppSettingsUsersRoute = AppSettingsUsersRouteImport.update({
+  id: "/users",
+  path: "/users",
+  getParentRoute: () => AppSettingsRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof AppIndexRoute;
   "/sign-in": typeof SignInRoute;
+  "/settings": typeof AppSettingsRouteWithChildren;
   "/account/tokens": typeof AppAccountTokensRoute;
+  "/settings/groups": typeof AppSettingsGroupsRoute;
+  "/settings/users": typeof AppSettingsUsersRoute;
+  "/settings/": typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesByTo {
   "/sign-in": typeof SignInRoute;
   "/": typeof AppIndexRoute;
   "/account/tokens": typeof AppAccountTokensRoute;
+  "/settings/groups": typeof AppSettingsGroupsRoute;
+  "/settings/users": typeof AppSettingsUsersRoute;
+  "/settings": typeof AppSettingsIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/_app": typeof AppRouteWithChildren;
   "/sign-in": typeof SignInRoute;
+  "/_app/settings": typeof AppSettingsRouteWithChildren;
   "/_app/": typeof AppIndexRoute;
   "/_app/account/tokens": typeof AppAccountTokensRoute;
+  "/_app/settings/groups": typeof AppSettingsGroupsRoute;
+  "/_app/settings/users": typeof AppSettingsUsersRoute;
+  "/_app/settings/": typeof AppSettingsIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/sign-in" | "/account/tokens";
+  fullPaths:
+    | "/"
+    | "/sign-in"
+    | "/settings"
+    | "/account/tokens"
+    | "/settings/groups"
+    | "/settings/users"
+    | "/settings/";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/sign-in" | "/" | "/account/tokens";
-  id: "__root__" | "/_app" | "/sign-in" | "/_app/" | "/_app/account/tokens";
+  to:
+    | "/sign-in"
+    | "/"
+    | "/account/tokens"
+    | "/settings/groups"
+    | "/settings/users"
+    | "/settings";
+  id:
+    | "__root__"
+    | "/_app"
+    | "/sign-in"
+    | "/_app/settings"
+    | "/_app/"
+    | "/_app/account/tokens"
+    | "/_app/settings/groups"
+    | "/_app/settings/users"
+    | "/_app/settings/";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -87,6 +144,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppIndexRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/settings": {
+      id: "/_app/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof AppSettingsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/_app/account/tokens": {
       id: "/_app/account/tokens";
       path: "/account/tokens";
@@ -94,15 +158,54 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppAccountTokensRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/settings/": {
+      id: "/_app/settings/";
+      path: "/";
+      fullPath: "/settings/";
+      preLoaderRoute: typeof AppSettingsIndexRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
+    "/_app/settings/groups": {
+      id: "/_app/settings/groups";
+      path: "/groups";
+      fullPath: "/settings/groups";
+      preLoaderRoute: typeof AppSettingsGroupsRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
+    "/_app/settings/users": {
+      id: "/_app/settings/users";
+      path: "/users";
+      fullPath: "/settings/users";
+      preLoaderRoute: typeof AppSettingsUsersRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
   }
 }
 
+interface AppSettingsRouteChildren {
+  AppSettingsGroupsRoute: typeof AppSettingsGroupsRoute;
+  AppSettingsUsersRoute: typeof AppSettingsUsersRoute;
+  AppSettingsIndexRoute: typeof AppSettingsIndexRoute;
+}
+
+const AppSettingsRouteChildren: AppSettingsRouteChildren = {
+  AppSettingsGroupsRoute: AppSettingsGroupsRoute,
+  AppSettingsUsersRoute: AppSettingsUsersRoute,
+  AppSettingsIndexRoute: AppSettingsIndexRoute,
+};
+
+const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
+  AppSettingsRouteChildren,
+);
+
 interface AppRouteChildren {
+  AppSettingsRoute: typeof AppSettingsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
   AppAccountTokensRoute: typeof AppAccountTokensRoute;
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppAccountTokensRoute: AppAccountTokensRoute,
 };
