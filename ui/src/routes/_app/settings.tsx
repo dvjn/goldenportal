@@ -5,6 +5,7 @@ import { meQueryOptions } from "@/features/auth";
 const sections = [
   { to: "/settings/users", label: "Users" },
   { to: "/settings/groups", label: "Groups" },
+  { to: "/settings/audit", label: "Audit log" },
 ] as const;
 
 export const Route = createFileRoute("/_app/settings")({

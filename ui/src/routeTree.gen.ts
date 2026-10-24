@@ -15,6 +15,7 @@ import { Route as AppIndexRouteImport } from "./routes/_app/index";
 import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
 import { Route as AppAccountTokensRouteImport } from "./routes/_app/account/tokens";
 import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings/index";
+import { Route as AppSettingsAuditRouteImport } from "./routes/_app/settings/audit";
 import { Route as AppSettingsGroupsRouteImport } from "./routes/_app/settings/groups";
 import { Route as AppSettingsUsersRouteImport } from "./routes/_app/settings/users";
 
@@ -47,6 +48,11 @@ const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   path: "/",
   getParentRoute: () => AppSettingsRoute,
 } as any);
+const AppSettingsAuditRoute = AppSettingsAuditRouteImport.update({
+  id: "/audit",
+  path: "/audit",
+  getParentRoute: () => AppSettingsRoute,
+} as any);
 const AppSettingsGroupsRoute = AppSettingsGroupsRouteImport.update({
   id: "/groups",
   path: "/groups",
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   "/sign-in": typeof SignInRoute;
   "/settings": typeof AppSettingsRouteWithChildren;
   "/account/tokens": typeof AppAccountTokensRoute;
+  "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/groups": typeof AppSettingsGroupsRoute;
   "/settings/users": typeof AppSettingsUsersRoute;
   "/settings/": typeof AppSettingsIndexRoute;
@@ -71,6 +78,7 @@ export interface FileRoutesByTo {
   "/sign-in": typeof SignInRoute;
   "/": typeof AppIndexRoute;
   "/account/tokens": typeof AppAccountTokensRoute;
+  "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/groups": typeof AppSettingsGroupsRoute;
   "/settings/users": typeof AppSettingsUsersRoute;
   "/settings": typeof AppSettingsIndexRoute;
@@ -82,6 +90,7 @@ export interface FileRoutesById {
   "/_app/settings": typeof AppSettingsRouteWithChildren;
   "/_app/": typeof AppIndexRoute;
   "/_app/account/tokens": typeof AppAccountTokensRoute;
+  "/_app/settings/audit": typeof AppSettingsAuditRoute;
   "/_app/settings/groups": typeof AppSettingsGroupsRoute;
   "/_app/settings/users": typeof AppSettingsUsersRoute;
   "/_app/settings/": typeof AppSettingsIndexRoute;
@@ -93,6 +102,7 @@ export interface FileRouteTypes {
     | "/sign-in"
     | "/settings"
     | "/account/tokens"
+    | "/settings/audit"
     | "/settings/groups"
     | "/settings/users"
     | "/settings/";
@@ -101,6 +111,7 @@ export interface FileRouteTypes {
     | "/sign-in"
     | "/"
     | "/account/tokens"
+    | "/settings/audit"
     | "/settings/groups"
     | "/settings/users"
     | "/settings";
@@ -111,6 +122,7 @@ export interface FileRouteTypes {
     | "/_app/settings"
     | "/_app/"
     | "/_app/account/tokens"
+    | "/_app/settings/audit"
     | "/_app/settings/groups"
     | "/_app/settings/users"
     | "/_app/settings/";
@@ -165,6 +177,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppSettingsIndexRouteImport;
       parentRoute: typeof AppSettingsRoute;
     };
+    "/_app/settings/audit": {
+      id: "/_app/settings/audit";
+      path: "/audit";
+      fullPath: "/settings/audit";
+      preLoaderRoute: typeof AppSettingsAuditRouteImport;
+      parentRoute: typeof AppSettingsRoute;
+    };
     "/_app/settings/groups": {
       id: "/_app/settings/groups";
       path: "/groups";
@@ -183,12 +202,14 @@ declare module "@tanstack/react-router" {
 }
 
 interface AppSettingsRouteChildren {
+  AppSettingsAuditRoute: typeof AppSettingsAuditRoute;
   AppSettingsGroupsRoute: typeof AppSettingsGroupsRoute;
   AppSettingsUsersRoute: typeof AppSettingsUsersRoute;
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute;
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
+  AppSettingsAuditRoute: AppSettingsAuditRoute,
   AppSettingsGroupsRoute: AppSettingsGroupsRoute,
   AppSettingsUsersRoute: AppSettingsUsersRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
