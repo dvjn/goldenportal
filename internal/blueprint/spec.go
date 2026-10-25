@@ -49,7 +49,8 @@ type Property struct {
 	// Lookup reads a value from a related entity, such as owner.slackChannel.
 	Lookup string `json:"lookup,omitempty"`
 	// Compute is a jq expression evaluated against the entity.
-	Compute string `json:"compute,omitempty"`
+	Compute string   `json:"compute,omitempty"`
+	Display *Display `json:"display,omitempty"`
 	line    int
 }
 
@@ -143,11 +144,21 @@ type parser struct{ configdoc.Reader }
 func (p *parser) property(id, path string, key, node *yaml.Node) Property {
 	prop := Property{ID: id, Title: id, line: key.Line}
 	fields, ok := p.Fields(node, path, "title", "description", "type", "format", "enum", "required",
-		"pattern", "minLength", "maxLength", "minimum", "maximum", "items", "relation", "many", "lookup", "compute")
+		"pattern", "minLength", "maxLength", "minimum", "maximum", "items", "relation", "many", "lookup", "compute",
+		"display")
 	if !ok {
 		return prop
 	}
+	prop = p.shape(prop, path, key, fields)
+	if n := fields["display"]; n != nil {
+		prop.Display = p.display(n, path+".display", prop)
+	}
 
+	return prop
+}
+
+// shape reads what kind of property it is and the values it takes.
+func (p *parser) shape(prop Property, path string, key *yaml.Node, fields map[string]*yaml.Node) Property {
 	p.titles(fields, path, &prop.Title, &prop.Description)
 	if fields["relation"] != nil {
 		return p.relation(prop, path, fields)

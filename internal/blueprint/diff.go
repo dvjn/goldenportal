@@ -102,6 +102,16 @@ func diffList[T any](previous, next []T, section string, id func(T) string,
 }
 
 func propertyChange(a, b Property) (bool, []string) {
+	breaking, fields := valueChange(a, b)
+	// Display changes only how values look, so they never break anything.
+	if !reflect.DeepEqual(a.Display, b.Display) {
+		fields = append(fields, "display")
+	}
+
+	return breaking, fields
+}
+
+func valueChange(a, b Property) (bool, []string) {
 	if a.Derived() || b.Derived() {
 		fields := changedFields(
 			a.Title != b.Title, "title",

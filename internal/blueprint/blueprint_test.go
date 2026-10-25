@@ -90,6 +90,36 @@ func TestParseKeepsOrderAndDefaults(t *testing.T) {
 	}
 }
 
+func TestParseDisplay(t *testing.T) {
+	spec := mustParse(t, `
+kind: Blueprint
+metadata: {name: s, title: S}
+spec:
+  properties:
+    tier:
+      type: string
+      enum: [critical, standard]
+      display: {as: badge, colors: {critical: red}, column: true, filter: false}
+    coverage:
+      type: number
+      maximum: 100
+      display: {as: progress, unit: "%"}
+    owner:
+      relation: team
+      display: {hidden: true}
+`)
+	tier, coverage, owner := spec.Properties[0].Display, spec.Properties[1].Display, spec.Properties[2].Display
+	if tier.As != "badge" || tier.Colors["critical"] != "red" || !*tier.Column || *tier.Filter {
+		t.Errorf("tier display = %+v", tier)
+	}
+	if coverage.As != "progress" || coverage.Unit != "%" || coverage.Column != nil {
+		t.Errorf("coverage display = %+v", coverage)
+	}
+	if !owner.Hidden {
+		t.Errorf("owner display = %+v", owner)
+	}
+}
+
 func TestParseAcceptsJSON(t *testing.T) {
 	spec := mustParse(t, `{"kind": "Blueprint", "metadata": {"name": "team", "title": "Team"},
 		"spec": {"properties": {"slack": {"type": "string"}}}}`)
@@ -125,6 +155,10 @@ func TestParseReportsProblemsWithLines(t *testing.T) {
 		{"bad jq", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      type: string\n      compute: .a |", "spec.properties.c.compute", "not valid jq", 7},
 		{"lookup and compute", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      lookup: a.b\n      compute: .a", "spec.properties.c", "not both", 7},
 		{"constraint on derived", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      type: string\n      compute: .a\n      required: true", "spec.properties.c.required", "only applies to stored", 8},
+		{"display as", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: boolean\n      display: {as: progress}", "spec.properties.a.display.as", "boolean properties show as badge, check", 7},
+		{"display unit", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      display: {unit: ms}", "spec.properties.a.display.unit", "only numbers have a unit", 7},
+		{"display color", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {x: navy}", "spec.properties.a.display.colors.x", "color must be one of", 9},
+		{"display color value", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {y: red}", "spec.properties.a.display.colors.y", "isn't one of the property's enum values", 9},
 		{"compute type", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      compute: .a", "spec.properties.c.type", "type must be one of", 5},
 	}
 

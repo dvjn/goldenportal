@@ -56,12 +56,6 @@ type Criterion struct {
 	line int
 }
 
-// Colors are the tier colors the UI knows.
-var Colors = []string{
-	"gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan",
-	"sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose",
-}
-
 var namePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
 
 func (s Spec) Key() string { return s.Identifier }
@@ -145,8 +139,8 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 	}
 	if n := fields["color"]; n != nil {
 		tier.Color = r.Text(n, path+".color")
-		if !slices.Contains(Colors, tier.Color) {
-			r.Errorf(n, path+".color", "color must be one of %s", strings.Join(Colors, ", "))
+		if !slices.Contains(configdoc.Colors, tier.Color) {
+			r.Errorf(n, path+".color", "color must be one of %s", strings.Join(configdoc.Colors, ", "))
 		}
 	}
 

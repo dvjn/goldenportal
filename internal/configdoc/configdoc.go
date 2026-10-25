@@ -100,3 +100,9 @@ const (
 func Actions(name string) []string {
 	return []string{name + "." + OpDraftSave, name + "." + OpDraftDiscard, name + "." + OpPublish, name + "." + OpDelete}
 }
+
+// Colors are the colors the UI knows, for tiers and property values.
+var Colors = []string{
+	"gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan",
+	"sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose",
+}
