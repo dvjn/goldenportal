@@ -37,6 +37,10 @@ func Diff(previous, next Spec) []configdoc.Change {
 		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged, Breaking: true,
 			Detail: fmt.Sprintf("switches the connector from %s to %s", previous.Connector.Type, next.Connector.Type)})
 	}
+	if !reflect.DeepEqual(previous.Connector.Config, next.Connector.Config) && previous.Connector.Type == next.Connector.Type {
+		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged,
+			Detail: "changes the connector config"})
+	}
 	if previous.SyncEvery() != next.SyncEvery() {
 		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged,
 			Detail: fmt.Sprintf("syncs every %s instead of every %s", next.SyncEvery(), previous.SyncEvery())})

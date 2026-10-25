@@ -28,6 +28,7 @@ type Spec struct {
 	// Mappings turn incoming data into entities. They're also the only
 	// blueprints the integration can write.
 	Mappings []Mapping `json:"mappings"`
+	http     *HTTPConfig
 }
 
 // ConnectorSpec picks the connector and configures it.
@@ -144,9 +145,15 @@ func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) Co
 		r.Errorf(configdoc.OrNode(fields["type"], node), "spec.connector.type",
 			"type must be one of %s", strings.Join(ids, ", "))
 	}
-	if n := fields["config"]; n != nil {
-		// No built-in connector takes config yet; ones that fetch from
-		// elsewhere will validate it against their schema.
+	n := fields["config"]
+	switch {
+	case c.ID == "http" && n == nil:
+		r.Errorf(node, "spec.connector.config", "add the resources to fetch, under config.resources")
+	case c.ID == "http":
+		spec.http = parseHTTPConfig(r, n, "spec.connector.config")
+		_ = n.Decode(&spec.Connector.Config)
+		c.Resources = spec.resourceNames(c)
+	case n != nil:
 		r.Errorf(n, "spec.connector.config", "the %s connector takes no config", spec.Connector.Type)
 	}
 

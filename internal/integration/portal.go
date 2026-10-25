@@ -67,7 +67,7 @@ type portalIntegration struct {
 // portalSnapshot reads the resources asked for: users, groups, and published
 // blueprints and integrations. Users are named by email and groups by name,
 // so mappings can relate them to each other.
-func portalSnapshot(ctx context.Context, db configdoc.DB, resources []string) (map[string]any, error) {
+func portalSnapshot(ctx context.Context, db configdoc.DB, _ Spec, resources []string) (map[string]any, error) {
 	data := portalData{Users: []portalUser{}, Groups: []portalGroup{}, Blueprints: []portalBlueprint{},
 		Integrations: []portalIntegration{}}
 	wants := func(resource string) bool { return slices.Contains(resources, resource) }

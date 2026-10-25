@@ -87,7 +87,7 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 			resources = append(resources, m.Resource)
 		}
 	}
-	pulled, err := pull(ctx, tx, resources)
+	pulled, err := pull(ctx, tx, spec, resources)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", identifier, err)
 	}
