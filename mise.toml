@@ -27,7 +27,7 @@ psql() { $compose exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_
 
 # The API creates the tables on start, so wait for the last ones the seed fills.
 attempts=0
-until [ "$(psql -tAc "SELECT to_regclass('public.role_bindings') IS NOT NULL AND to_regclass('public.group_members') IS NOT NULL AND to_regclass('public.ingestion_tokens') IS NOT NULL" 2>/dev/null)" = "t" ]; do
+until [ "$(psql -tAc "SELECT to_regclass('public.role_bindings') IS NOT NULL AND to_regclass('public.group_members') IS NOT NULL AND to_regclass('public.ingestion_tokens') IS NOT NULL AND to_regclass('public.scorecard_results') IS NOT NULL" 2>/dev/null)" = "t" ]; do
   attempts=$((attempts + 1))
   if [ "$attempts" -ge 120 ]; then
     echo "Skipped the seed data: the database tables did not appear within 2 minutes" >&2

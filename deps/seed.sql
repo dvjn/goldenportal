@@ -99,6 +99,9 @@ spec:
     ownerSlack:
       title: Owner Slack
       lookup: owner.slackChannel
+    ownerOncall:
+      title: Owner On-call
+      lookup: owner.oncall
     critical:
       title: Critical
       type: boolean
@@ -378,3 +381,88 @@ FROM (VALUES
 ) AS t (identifier, token)
 JOIN config_documents d ON d.kind = 'integration' AND d.identifier = t.identifier
 ON CONFLICT (secret_hash) DO NOTHING;
+
+-- Example scorecards. Checks are jq over each entity, with its relations and
+-- lookups as properties.
+WITH example (identifier, source) AS (VALUES
+  ('service-readiness', $yaml$kind: Scorecard
+metadata:
+  name: service-readiness
+  title: Service Readiness
+  description: What a service needs before people can rely on it.
+  icon: shield-check
+spec:
+  blueprint: service
+  filter: {property: tier, op: ne, value: experimental}
+  tiers:
+    - name: bronze
+      title: Bronze
+      color: orange
+      criteria:
+        hasOwner:
+          title: Has an owner
+          check: .properties.owner != null
+          fix: Set the owning team in the service registry.
+        hasRepository:
+          title: Has a repository
+          check: .properties.repository != null
+          fix: Add the repository URL to the service registry.
+    - name: silver
+      title: Silver
+      color: sky
+      criteria:
+        ownerOnSlack:
+          title: Owner has a Slack channel
+          check: .properties.ownerSlack != null
+          fix: Give the owning team a Slack channel in the team directory.
+        tagged:
+          title: Tagged
+          check: (.properties.tags // []) | length > 0
+          fix: Tag the service in the service registry.
+        criticalOnCall:
+          title: Owner is on call
+          when: .properties.critical
+          check: .properties.ownerOncall != null
+          fix: Critical services need an owning team with an on-call rotation.
+    - name: gold
+      title: Gold
+      color: amber
+      criteria:
+        deployedRecently:
+          title: Deployed in the last 6 hours
+          check: (.properties.lastDeployedAt // "1970-01-01T00:00:00Z" | fromdate) > (now - 6 * 3600)
+          fix: Ship small changes often.
+        dependenciesKnown:
+          title: Dependencies are listed
+          check: .properties.dependsOn != null
+          fix: List what the service calls in the service registry.
+$yaml$),
+  ('team-basics', $yaml$kind: Scorecard
+metadata:
+  name: team-basics
+  title: Team Basics
+  description: How to reach a team.
+  icon: contact
+spec:
+  blueprint: team
+  tiers:
+    - name: reachable
+      title: Reachable
+      color: emerald
+      criteria:
+        slack:
+          title: Has a Slack channel
+          check: .properties.slackChannel != null
+        oncall:
+          title: Has an on-call rotation
+          check: .properties.oncall != null
+          fix: Add the team's on-call rotation to the team directory.
+$yaml$)
+), created AS (
+  INSERT INTO config_documents (kind, identifier, published_version)
+  SELECT 'scorecard', identifier, 1 FROM example
+  ON CONFLICT (kind, identifier) DO NOTHING
+  RETURNING id, identifier
+)
+INSERT INTO config_versions (document_id, version, source)
+SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
