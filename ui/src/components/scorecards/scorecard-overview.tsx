@@ -213,7 +213,7 @@ function CriterionDetails({ criterion }: Readonly<{ criterion: Criterion }>) {
   return (
     <HoverCard openDelay={200}>
       <HoverCardTrigger asChild>
-        <span className="w-fit max-w-full cursor-default truncate font-medium underline decoration-muted-foreground/40 decoration-dotted underline-offset-4">
+        <span className="-mb-1 w-fit max-w-full cursor-default truncate pb-1 font-medium underline decoration-muted-foreground/40 decoration-dotted underline-offset-4">
           {criterion.title}
         </span>
       </HoverCardTrigger>
