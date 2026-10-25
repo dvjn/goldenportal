@@ -52,6 +52,7 @@ export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }
       </div>
       <div className="grid gap-4">
         <ConnectorCard connector={spec.connector.type} description={spec.description} />
+        {spec.connector.type === "http" && <ResourcesCard config={spec.connector.config} />}
         {pulls ? (
           <SyncCard identifier={spec.identifier} interval={spec.sync?.interval ?? "15m"} />
         ) : (
@@ -92,6 +93,54 @@ function PushCards({ identifier }: Readonly<{ identifier: string }>) {
         </CardContent>
       </Card>
     </>
+  );
+}
+
+type HTTPResource = {
+  url?: string;
+  next?: string;
+  headers?: Record<string, string | { env?: string }>;
+};
+
+// ResourcesCard lists what an http integration fetches. Headers show by
+// name only, and secrets by the variable they're read from.
+function ResourcesCard({ config }: Readonly<{ config?: Record<string, unknown> }>) {
+  const resources = (config?.resources ?? {}) as Record<string, HTTPResource>;
+
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>Resources</CardTitle>
+      </CardHeader>
+      <CardContent className="grid min-w-0 gap-4 text-sm">
+        {Object.entries(resources).map(([name, resource]) => (
+          <section key={name} className="grid min-w-0 gap-1.5">
+            <h3 className="font-mono text-xs font-medium">{name}</h3>
+            <code
+              className="truncate rounded bg-muted px-1.5 py-1 font-mono text-xs"
+              title={resource.url}
+            >
+              GET {resource.url}
+            </code>
+            {resource.next && (
+              <span className="text-xs text-muted-foreground">
+                Next page: <code className="font-mono">{resource.next}</code>
+              </span>
+            )}
+            {Object.entries(resource.headers ?? {}).map(([header, value]) => (
+              <span key={header} className="text-xs text-muted-foreground">
+                {header}:{" "}
+                {typeof value === "object" && value.env ? (
+                  <code className="font-mono">${value.env}</code>
+                ) : (
+                  "set"
+                )}
+              </span>
+            ))}
+          </section>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
