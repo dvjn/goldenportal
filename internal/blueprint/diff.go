@@ -30,8 +30,10 @@ func Diff(previous, next Spec) []Change {
 		meta = append(meta, "icon")
 	}
 	if len(meta) > 0 {
-		changes = append(changes, Change{Section: "blueprint", Change: ChangeChanged,
-			Detail: "changes the " + joinWords(meta)})
+		changes = append(changes, Change{
+			Section: "blueprint", Change: ChangeChanged,
+			Detail: "changes the " + joinWords(meta),
+		})
 	}
 
 	changes = append(changes, diffList(previous.Properties, next.Properties, "properties",
@@ -83,8 +85,10 @@ func diffList[T any](previous, next []T, section string, id func(T) string,
 		}
 		breaking, fields := changed(before, item)
 		if len(fields) > 0 {
-			changes = append(changes, Change{Section: section, ID: key, Change: ChangeChanged, Breaking: breaking,
-				Detail: "changes the " + joinWords(fields)})
+			changes = append(changes, Change{
+				Section: section, ID: key, Change: ChangeChanged, Breaking: breaking,
+				Detail: "changes the " + joinWords(fields),
+			})
 		}
 	}
 	for _, item := range previous {

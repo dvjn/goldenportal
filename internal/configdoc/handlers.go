@@ -187,16 +187,20 @@ func (h handlers[S]) get(ctx *gofr.Context) (any, error) {
 	out := detail[S]{Identifier: record.Identifier, Meta: h.meta(record, h.current(record)), CreatedAt: record.CreatedAt}
 	if record.Published() {
 		published, _ := h.kind.Parse(record.PublishedSource)
-		out.Published = &publishedView[S]{Version: record.PublishedVersion, Source: record.PublishedSource,
-			Spec: published, PublishedAt: record.PublishedAt, PublishedBy: record.PublishedBy}
+		out.Published = &publishedView[S]{
+			Version: record.PublishedVersion, Source: record.PublishedSource,
+			Spec: published, PublishedAt: record.PublishedAt, PublishedBy: record.PublishedBy,
+		}
 	}
 	if record.HasDraft() {
 		draft, issues, err := h.check(ctx, record.DraftSource)
 		if err != nil {
 			return nil, err
 		}
-		out.Draft = &draftView[S]{Source: record.DraftSource, Spec: draft, Issues: issues,
-			UpdatedAt: record.DraftUpdatedAt, UpdatedBy: record.DraftUpdatedBy}
+		out.Draft = &draftView[S]{
+			Source: record.DraftSource, Spec: draft, Issues: issues,
+			UpdatedAt: record.DraftUpdatedAt, UpdatedBy: record.DraftUpdatedBy,
+		}
 	}
 
 	return out, nil
@@ -231,8 +235,10 @@ func (h handlers[S]) saveDraft(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	if spec.Key() != identifier {
-		return nil, httpx.Error{Code: http.StatusUnprocessableEntity,
-			Message: fmt.Sprintf("the YAML's identifier is %q, not %q; identifiers can't change", spec.Key(), identifier)}
+		return nil, httpx.Error{
+			Code:    http.StatusUnprocessableEntity,
+			Message: fmt.Sprintf("the YAML's identifier is %q, not %q; identifiers can't change", spec.Key(), identifier),
+		}
 	}
 
 	created, err := h.store(ctx).SaveDraft(ctx, identifier, source, p.ID)
@@ -377,14 +383,18 @@ func (h handlers[S]) publishDraft(ctx *gofr.Context, tx DB, p auth.Principal, id
 		return Published{}, err
 	}
 	if view.Breaking && !acknowledgeBreaking {
-		return Published{}, httpx.Error{Code: http.StatusConflict,
-			Message: identifier + " has breaking changes; review the impact and publish with acknowledgeBreaking"}
+		return Published{}, httpx.Error{
+			Code:    http.StatusConflict,
+			Message: identifier + " has breaking changes; review the impact and publish with acknowledgeBreaking",
+		}
 	}
 
 	v, err := NewStore(tx, h.kind.Name).Publish(ctx, record.Identifier, record.DraftSource, p.ID)
 	if errors.Is(err, ErrDraftChanged) {
-		return Published{}, httpx.Error{Code: http.StatusConflict,
-			Message: "the draft of " + identifier + " changed while publishing; review it and try again"}
+		return Published{}, httpx.Error{
+			Code:    http.StatusConflict,
+			Message: "the draft of " + identifier + " changed while publishing; review it and try again",
+		}
 	}
 	if err != nil {
 		return Published{}, err
@@ -400,8 +410,10 @@ func (h handlers[S]) publishDraft(ctx *gofr.Context, tx DB, p auth.Principal, id
 		}
 	}
 
-	return Published{Kind: h.kind.Document, Name: identifier, Version: v, Breaking: view.Breaking,
-		title: h.target(identifier, spec).Label, changes: len(view.Changes)}, nil
+	return Published{
+		Kind: h.kind.Document, Name: identifier, Version: v, Breaking: view.Breaking,
+		title: h.target(identifier, spec).Label, changes: len(view.Changes),
+	}, nil
 }
 
 func (h handlers[S]) recordPublish(ctx *gofr.Context, p auth.Principal, out Published) {
@@ -612,8 +624,10 @@ func (h handlers[S]) invalid(issues []Issue) error {
 		messages = append(messages[:3], fmt.Sprintf("and %d more", len(messages)-3))
 	}
 
-	return httpx.Error{Code: http.StatusUnprocessableEntity,
-		Message: "the " + h.kind.Name + " isn't valid: " + strings.Join(messages, "; ")}
+	return httpx.Error{
+		Code:    http.StatusUnprocessableEntity,
+		Message: "the " + h.kind.Name + " isn't valid: " + strings.Join(messages, "; "),
+	}
 }
 
 func (h handlers[S]) target(identifier string, spec S) audit.Target {

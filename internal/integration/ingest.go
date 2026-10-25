@@ -27,8 +27,10 @@ type writer struct {
 func authenticate(ctx *gofr.Context) (writer, error) {
 	secret := auth.IngestionSecret(ctx)
 	if secret == "" {
-		return writer{}, httpx.Error{Code: http.StatusUnauthorized,
-			Message: `send the ingestion token as "Authorization: Bearer <token>"`}
+		return writer{}, httpx.Error{
+			Code:    http.StatusUnauthorized,
+			Message: `send the ingestion token as "Authorization: Bearer <token>"`,
+		}
 	}
 	tokenID, integration, err := NewStore(ctx.SQL).TokenIntegration(ctx, auth.HashSecret(secret))
 	if errors.Is(err, ErrTokenNotFound) {
@@ -139,8 +141,10 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, items []I
 		fail := func(problems ...string) {
 			run.Failed++
 			if len(run.Errors) < MaxRunErrors {
-				run.Errors = append(run.Errors, RunError{Index: i, Blueprint: item.Blueprint,
-					Identifier: item.Entity.Identifier, Problems: problems})
+				run.Errors = append(run.Errors, RunError{
+					Index: i, Blueprint: item.Blueprint,
+					Identifier: item.Entity.Identifier, Problems: problems,
+				})
 			}
 		}
 		if len(item.Problems) > 0 {

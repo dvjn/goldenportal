@@ -25,8 +25,10 @@ func Check(spec Spec, published map[string]Spec) []Issue {
 			continue
 		}
 		if _, ok := find(rel.Relation); !ok && ValidIdentifier(rel.Relation) {
-			issues = append(issues, Issue{Severity: SeverityWarning, Path: "spec.properties." + rel.ID + ".relation", Line: rel.line,
-				Message: fmt.Sprintf("no blueprint %q is published yet, so these relations won't resolve until it is", rel.Relation)})
+			issues = append(issues, Issue{
+				Severity: SeverityWarning, Path: "spec.properties." + rel.ID + ".relation", Line: rel.line,
+				Message: fmt.Sprintf("no blueprint %q is published yet, so these relations won't resolve until it is", rel.Relation),
+			})
 		}
 	}
 
@@ -39,8 +41,10 @@ func Check(spec Spec, published map[string]Spec) []Issue {
 			continue
 		}
 		issue := func(severity, format string, args ...any) {
-			issues = append(issues, Issue{Severity: severity, Path: "spec.properties." + lookup.ID + ".lookup",
-				Line: lookup.line, Message: fmt.Sprintf(format, args...)})
+			issues = append(issues, Issue{
+				Severity: severity, Path: "spec.properties." + lookup.ID + ".lookup",
+				Line: lookup.line, Message: fmt.Sprintf(format, args...),
+			})
 		}
 
 		current := spec

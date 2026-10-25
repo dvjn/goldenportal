@@ -27,8 +27,10 @@ func ParseYAML(source string) (*yaml.Node, []Issue) {
 	}
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); err == nil {
-		return nil, []Issue{{Severity: SeverityError, Line: extra.Line,
-			Message: "this holds more than one document; apply them together instead"}}
+		return nil, []Issue{{
+			Severity: SeverityError, Line: extra.Line,
+			Message: "this holds more than one document; apply them together instead",
+		}}
 	}
 	if len(doc.Content) == 0 {
 		return nil, []Issue{{Severity: SeverityError, Message: "the document is empty"}}

@@ -186,8 +186,10 @@ func (s Store) Incoming(ctx context.Context, specs map[string]blueprint.Spec, bl
 		if err != nil {
 			return nil, err
 		}
-		incoming := Incoming{Blueprint: ref.Blueprint, BlueprintTitle: ref.Title, Property: ref.Property,
-			PropertyTitle: ref.PropertyTitle, Entities: []Link{}}
+		incoming := Incoming{
+			Blueprint: ref.Blueprint, BlueprintTitle: ref.Title, Property: ref.Property,
+			PropertyTitle: ref.PropertyTitle, Entities: []Link{},
+		}
 		for rows.Next() {
 			var link Link
 			if err := rows.Scan(&link.Identifier, &link.Title, &incoming.Total); err != nil {

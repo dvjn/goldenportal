@@ -55,8 +55,10 @@ func References(published map[string]Spec, identifier string) []Reference {
 	for _, spec := range published {
 		for _, prop := range spec.Properties {
 			if prop.Relation == identifier {
-				refs = append(refs, Reference{Blueprint: spec.Identifier, Title: spec.Title, Property: prop.ID,
-					PropertyTitle: prop.Title, Many: prop.Many})
+				refs = append(refs, Reference{
+					Blueprint: spec.Identifier, Title: spec.Title, Property: prop.ID,
+					PropertyTitle: prop.Title, Many: prop.Many,
+				})
 			}
 		}
 	}

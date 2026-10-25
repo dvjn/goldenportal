@@ -142,8 +142,10 @@ func scanEntity(scan func(...any) error, extra ...any) (*Entity, error) {
 		e                               Entity
 		properties, relations, computed []byte
 	)
-	err := scan(append([]any{&e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
-		&e.Integration, &e.CreatedAt, &e.UpdatedAt}, extra...)...)
+	err := scan(append([]any{
+		&e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
+		&e.Integration, &e.CreatedAt, &e.UpdatedAt,
+	}, extra...)...)
 	if err != nil {
 		return nil, err
 	}

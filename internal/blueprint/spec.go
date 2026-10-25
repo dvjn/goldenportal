@@ -120,8 +120,10 @@ const DocumentKind = "Blueprint"
 func Parse(source string) (Spec, []Issue) {
 	p := &parser{}
 	doc := configdoc.ReadDocument(&p.Reader, source, DocumentKind)
-	spec := Spec{Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Properties: []Property{}}
+	spec := Spec{
+		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Icon: doc.Meta.Icon, Properties: []Property{},
+	}
 	if doc.Spec == nil {
 		return spec, p.Issues
 	}
@@ -254,8 +256,10 @@ func (p *parser) relation(prop Property, path string, fields map[string]*yaml.No
 	}
 	prop.Many = p.Bool(fields["many"], path+".many")
 	prop.Required = p.Bool(fields["required"], path+".required")
-	for _, name := range []string{"type", "format", "enum", "pattern", "minLength", "maxLength", "minimum", "maximum",
-		"items", "lookup", "compute"} {
+	for _, name := range []string{
+		"type", "format", "enum", "pattern", "minLength", "maxLength", "minimum", "maximum",
+		"items", "lookup", "compute",
+	} {
 		if n := fields[name]; n != nil {
 			p.Errorf(n, path+"."+name, "relations can't have %s", name)
 		}
@@ -331,8 +335,10 @@ func (p *parser) checkNames(spec Spec) {
 	check := func(id, section string, line int) {
 		path := "spec." + section + "." + id
 		if !fieldPattern.MatchString(id) {
-			p.Issues = append(p.Issues, Issue{Severity: SeverityError, Path: path, Line: line,
-				Message: fmt.Sprintf("%q must start with a letter and use only letters, digits and _ (up to 63)", id)})
+			p.Issues = append(p.Issues, Issue{
+				Severity: SeverityError, Path: path, Line: line,
+				Message: fmt.Sprintf("%q must start with a letter and use only letters, digits and _ (up to 63)", id),
+			})
 			return
 		}
 	}

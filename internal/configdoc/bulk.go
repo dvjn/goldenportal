@@ -135,17 +135,25 @@ func apply(ctx *gofr.Context) (any, error) {
 		k, ok := kindFor(document)
 		if !ok {
 			result.Valid = false
-			result.Documents = append(result.Documents, Planned{Kind: document, Name: name, Changes: []Change{},
-				Issues: shift([]Issue{{Severity: SeverityError, Path: "kind", Line: 1,
-					Message: fmt.Sprintf("unknown kind %q; use %s", document, strings.Join(documentKinds(), " or "))}}, chunk.Line)})
+			result.Documents = append(result.Documents, Planned{
+				Kind: document, Name: name, Changes: []Change{},
+				Issues: shift([]Issue{{
+					Severity: SeverityError, Path: "kind", Line: 1,
+					Message: fmt.Sprintf("unknown kind %q; use %s", document, strings.Join(documentKinds(), " or ")),
+				}}, chunk.Line),
+			})
 			continue
 		}
 		key := document + "/" + name
 		if name != "" && seen[key] {
 			result.Valid = false
-			result.Documents = append(result.Documents, Planned{Kind: document, Name: name, Changes: []Change{},
-				Issues: shift([]Issue{{Severity: SeverityError, Path: "metadata.name", Line: 1,
-					Message: fmt.Sprintf("%s %s is in the file twice", document, name)}}, chunk.Line)})
+			result.Documents = append(result.Documents, Planned{
+				Kind: document, Name: name, Changes: []Change{},
+				Issues: shift([]Issue{{
+					Severity: SeverityError, Path: "metadata.name", Line: 1,
+					Message: fmt.Sprintf("%s %s is in the file twice", document, name),
+				}}, chunk.Line),
+			})
 			continue
 		}
 		seen[key] = true
@@ -175,8 +183,10 @@ func apply(ctx *gofr.Context) (any, error) {
 		return result, nil
 	}
 	if !result.Valid {
-		return nil, httpx.Error{Code: http.StatusUnprocessableEntity,
-			Message: "some documents have problems; apply with dryRun=true to see them"}
+		return nil, httpx.Error{
+			Code:    http.StatusUnprocessableEntity,
+			Message: "some documents have problems; apply with dryRun=true to see them",
+		}
 	}
 
 	tx, err := ctx.SQL.Begin()

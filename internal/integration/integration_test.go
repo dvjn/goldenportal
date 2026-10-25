@@ -141,7 +141,6 @@ func TestDiff(t *testing.T) {
 	if len(changes) != 1 || changes[0].Change != configdoc.ChangeChanged || changes[0].Breaking {
 		t.Fatalf("changes = %+v", changes)
 	}
-
 }
 
 func TestMapResources(t *testing.T) {

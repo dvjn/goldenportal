@@ -11,8 +11,10 @@ func TestValidateEntity(t *testing.T) {
 
 	valid := Entity{
 		Identifier: "group/payments-api",
-		Properties: map[string]any{"language": "go", "stars": float64(120), "tags": []any{"pci"}, "ignored": nil,
-			"owner": "payments", "dependsOn": []any{"ledger", "ledger", ""}},
+		Properties: map[string]any{
+			"language": "go", "stars": float64(120), "tags": []any{"pci"}, "ignored": nil,
+			"owner": "payments", "dependsOn": []any{"ledger", "ledger", ""},
+		},
 	}
 	out, problems := spec.ValidateEntity(valid)
 	if len(problems) != 0 {
@@ -87,9 +89,11 @@ func TestCompute(t *testing.T) {
       type: string
       compute: .properties.stars
 `)
-	values, problems := spec.Compute(Entity{Identifier: "a",
+	values, problems := spec.Compute(Entity{
+		Identifier: "a",
 		Properties: map[string]any{"stars": float64(150)},
-		Relations:  map[string]any{"dependsOn": []string{"x", "y"}}})
+		Relations:  map[string]any{"dependsOn": []string{"x", "y"}},
+	})
 
 	if values["popular"] != true || values["owners"] != float64(2) {
 		t.Errorf("values = %#v", values)

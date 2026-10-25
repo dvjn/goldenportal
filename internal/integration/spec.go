@@ -102,8 +102,10 @@ func (s Spec) SyncEvery() time.Duration {
 func Parse(source string) (Spec, []configdoc.Issue) {
 	r := &configdoc.Reader{}
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
-	spec := Spec{Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Mappings: []Mapping{}}
+	spec := Spec{
+		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Icon: doc.Meta.Icon, Mappings: []Mapping{},
+	}
 	if doc.Spec == nil {
 		return spec, r.Issues
 	}
@@ -275,16 +277,20 @@ func Check(spec Spec, published map[string]blueprint.Spec) []configdoc.Issue {
 		bp, ok := published[m.Blueprint]
 		if !ok {
 			if configdoc.ValidIdentifier(m.Blueprint) {
-				issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityWarning, Path: path + ".blueprint", Line: m.line,
-					Message: fmt.Sprintf("no blueprint %q is published yet, so writing to it fails until it is", m.Blueprint)})
+				issues = append(issues, configdoc.Issue{
+					Severity: configdoc.SeverityWarning, Path: path + ".blueprint", Line: m.line,
+					Message: fmt.Sprintf("no blueprint %q is published yet, so writing to it fails until it is", m.Blueprint),
+				})
 			}
 			continue
 		}
 		for _, f := range m.Entity.Properties {
 			if !bp.HasProperty(f.ID) {
-				issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError,
-					Path: path + ".entity.properties." + f.ID, Line: f.line,
-					Message: fmt.Sprintf("%s has no stored property %q to write", m.Blueprint, f.ID)})
+				issues = append(issues, configdoc.Issue{
+					Severity: configdoc.SeverityError,
+					Path:     path + ".entity.properties." + f.ID, Line: f.line,
+					Message: fmt.Sprintf("%s has no stored property %q to write", m.Blueprint, f.ID),
+				})
 			}
 		}
 	}

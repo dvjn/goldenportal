@@ -66,8 +66,10 @@ func catalog(ctx *gofr.Context) (any, error) {
 
 	entries := make([]CatalogEntry, 0, len(specs))
 	for _, spec := range specs {
-		entries = append(entries, CatalogEntry{Identifier: spec.Identifier, Title: spec.Title,
-			Description: spec.Description, Icon: spec.Icon, Entities: counts[spec.Identifier]})
+		entries = append(entries, CatalogEntry{
+			Identifier: spec.Identifier, Title: spec.Title,
+			Description: spec.Description, Icon: spec.Icon, Entities: counts[spec.Identifier],
+		})
 	}
 	slices.SortFunc(entries, func(a, b CatalogEntry) int {
 		return strings.Compare(a.Title+"\x00"+a.Identifier, b.Title+"\x00"+b.Identifier)

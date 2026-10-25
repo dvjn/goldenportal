@@ -35,8 +35,10 @@ func (s Spec) ValidateEntity(in Entity) (Entity, []string) {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
-	out := Entity{Identifier: in.Identifier, Title: strings.TrimSpace(in.Title),
-		Properties: map[string]any{}, Relations: map[string]any{}}
+	out := Entity{
+		Identifier: in.Identifier, Title: strings.TrimSpace(in.Title),
+		Properties: map[string]any{}, Relations: map[string]any{},
+	}
 	switch {
 	case strings.TrimSpace(in.Identifier) == "":
 		add("identifier is missing")

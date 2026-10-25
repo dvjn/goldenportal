@@ -39,28 +39,55 @@ func TestCompileFilter(t *testing.T) {
 		name, filter, sql string
 		args              []any
 	}{
-		{"enum in", `{"property":"tier","op":"in","values":["critical","standard"]}`,
+		{
+			"enum in", `{"property":"tier","op":"in","values":["critical","standard"]}`,
 			`((e.properties -> 'tier' = $1::jsonb) OR (e.properties -> 'tier' = $2::jsonb))`,
-			[]any{`"critical"`, `"standard"`}},
-		{"many relation", `{"property":"dependsOn","op":"eq","value":"ledger"}`,
-			`(e.relations -> 'dependsOn' @> $1::jsonb)`, []any{`["ledger"]`}},
-		{"single relation", `{"property":"owner","op":"eq","value":"payments"}`,
-			`(e.relations -> 'owner' = $1::jsonb)`, []any{`"payments"`}},
-		{"computed", `{"property":"critical","op":"eq","value":true}`,
-			`(e.computed -> 'critical' = $1::jsonb)`, []any{`true`}},
-		{"number", `{"property":"stars","op":"gte","value":10}`,
-			`((e.properties -> 'stars')::numeric >= $1)`, []any{float64(10)}},
-		{"date", `{"property":"lastDeployedAt","op":"lt","value":"2026-10-01T00:00:00Z"}`,
-			`(((e.properties -> 'lastDeployedAt' #>> '{}'))::timestamptz < $1::timestamptz)`, []any{"2026-10-01T00:00:00Z"}},
-		{"title contains", `{"property":"$title","op":"contains","value":"50%"}`,
-			`(e.title ILIKE $1)`, []any{`%50\%%`}},
-		{"tag contains", `{"property":"tags","op":"contains","value":"pci"}`,
-			`(e.properties -> 'tags' @> $1::jsonb)`, []any{`["pci"]`}},
-		{"not exists", `{"not":{"property":"owner","op":"exists"}}`,
-			`NOT coalesce((e.relations -> 'owner' IS NOT NULL AND e.relations -> 'owner' <> 'null'::jsonb), false)`, nil},
-		{"and or", `{"and":[{"property":"tier","op":"eq","value":"critical"},{"or":[{"property":"owner","op":"eq","value":"a"},{"property":"owner","op":"eq","value":"b"}]}]}`,
+			[]any{`"critical"`, `"standard"`},
+		},
+		{
+			"many relation", `{"property":"dependsOn","op":"eq","value":"ledger"}`,
+			`(e.relations -> 'dependsOn' @> $1::jsonb)`,
+			[]any{`["ledger"]`},
+		},
+		{
+			"single relation", `{"property":"owner","op":"eq","value":"payments"}`,
+			`(e.relations -> 'owner' = $1::jsonb)`,
+			[]any{`"payments"`},
+		},
+		{
+			"computed", `{"property":"critical","op":"eq","value":true}`,
+			`(e.computed -> 'critical' = $1::jsonb)`,
+			[]any{`true`},
+		},
+		{
+			"number", `{"property":"stars","op":"gte","value":10}`,
+			`((e.properties -> 'stars')::numeric >= $1)`,
+			[]any{float64(10)},
+		},
+		{
+			"date", `{"property":"lastDeployedAt","op":"lt","value":"2026-10-01T00:00:00Z"}`,
+			`(((e.properties -> 'lastDeployedAt' #>> '{}'))::timestamptz < $1::timestamptz)`,
+			[]any{"2026-10-01T00:00:00Z"},
+		},
+		{
+			"title contains", `{"property":"$title","op":"contains","value":"50%"}`,
+			`(e.title ILIKE $1)`,
+			[]any{`%50\%%`},
+		},
+		{
+			"tag contains", `{"property":"tags","op":"contains","value":"pci"}`,
+			`(e.properties -> 'tags' @> $1::jsonb)`,
+			[]any{`["pci"]`},
+		},
+		{
+			"not exists", `{"not":{"property":"owner","op":"exists"}}`,
+			`NOT coalesce((e.relations -> 'owner' IS NOT NULL AND e.relations -> 'owner' <> 'null'::jsonb), false)`, nil,
+		},
+		{
+			"and or", `{"and":[{"property":"tier","op":"eq","value":"critical"},{"or":[{"property":"owner","op":"eq","value":"a"},{"property":"owner","op":"eq","value":"b"}]}]}`,
 			`((e.properties -> 'tier' = $1::jsonb) AND ((e.relations -> 'owner' = $2::jsonb) OR (e.relations -> 'owner' = $3::jsonb)))`,
-			[]any{`"critical"`, `"a"`, `"b"`}},
+			[]any{`"critical"`, `"a"`, `"b"`},
+		},
 	}
 
 	for _, test := range tests {

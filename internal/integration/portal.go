@@ -68,8 +68,10 @@ type portalIntegration struct {
 // blueprints and integrations. Users are named by email and groups by name,
 // so mappings can relate them to each other.
 func portalSnapshot(ctx context.Context, db configdoc.DB, _ Spec, resources []string) (map[string]any, error) {
-	data := portalData{Users: []portalUser{}, Groups: []portalGroup{}, Blueprints: []portalBlueprint{},
-		Integrations: []portalIntegration{}}
+	data := portalData{
+		Users: []portalUser{}, Groups: []portalGroup{}, Blueprints: []portalBlueprint{},
+		Integrations: []portalIntegration{},
+	}
 	wants := func(resource string) bool { return slices.Contains(resources, resource) }
 
 	if wants("users") {
@@ -166,9 +168,11 @@ func portalDocuments(ctx context.Context, db configdoc.DB, data *portalData) err
 			continue
 		}
 		spec, _ := blueprint.Parse(record.PublishedSource)
-		b := portalBlueprint{Identifier: record.Identifier, Title: spec.Title, Description: spec.Description,
+		b := portalBlueprint{
+			Identifier: record.Identifier, Title: spec.Title, Description: spec.Description,
 			Icon: spec.Icon, Version: record.PublishedVersion, Relations: []string{},
-			Entities: counts["blueprint:"+record.Identifier], PublishedAt: record.PublishedAt}
+			Entities: counts["blueprint:"+record.Identifier], PublishedAt: record.PublishedAt,
+		}
 		for _, prop := range spec.Properties {
 			b.Properties++
 			if prop.IsRelation() {
@@ -187,9 +191,11 @@ func portalDocuments(ctx context.Context, db configdoc.DB, data *portalData) err
 			continue
 		}
 		spec, _ := Parse(record.PublishedSource)
-		in := portalIntegration{Identifier: record.Identifier, Title: spec.Title, Description: spec.Description,
+		in := portalIntegration{
+			Identifier: record.Identifier, Title: spec.Title, Description: spec.Description,
 			Connector: spec.Connector.Type, Version: record.PublishedVersion, Blueprints: []string{},
-			Entities: counts["integration:"+record.Identifier], PublishedAt: record.PublishedAt}
+			Entities: counts["integration:"+record.Identifier], PublishedAt: record.PublishedAt,
+		}
 		if last, ok := lastRuns[record.Identifier]; ok {
 			in.LastRunAt = &last
 		}

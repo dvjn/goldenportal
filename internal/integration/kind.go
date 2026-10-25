@@ -34,20 +34,28 @@ var Kind = configdoc.Kind[Spec]{
 func Diff(previous, next Spec) []configdoc.Change {
 	changes := []configdoc.Change{}
 	if previous.Connector.Type != next.Connector.Type {
-		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged, Breaking: true,
-			Detail: fmt.Sprintf("switches the connector from %s to %s", previous.Connector.Type, next.Connector.Type)})
+		changes = append(changes, configdoc.Change{
+			Section: "integration", Change: configdoc.ChangeChanged, Breaking: true,
+			Detail: fmt.Sprintf("switches the connector from %s to %s", previous.Connector.Type, next.Connector.Type),
+		})
 	}
 	if !reflect.DeepEqual(previous.Connector.Config, next.Connector.Config) && previous.Connector.Type == next.Connector.Type {
-		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged,
-			Detail: "changes the connector config"})
+		changes = append(changes, configdoc.Change{
+			Section: "integration", Change: configdoc.ChangeChanged,
+			Detail: "changes the connector config",
+		})
 	}
 	if previous.SyncEvery() != next.SyncEvery() {
-		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged,
-			Detail: fmt.Sprintf("syncs every %s instead of every %s", next.SyncEvery(), previous.SyncEvery())})
+		changes = append(changes, configdoc.Change{
+			Section: "integration", Change: configdoc.ChangeChanged,
+			Detail: fmt.Sprintf("syncs every %s instead of every %s", next.SyncEvery(), previous.SyncEvery()),
+		})
 	}
 	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon {
-		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged,
-			Detail: "changes the title, description or icon"})
+		changes = append(changes, configdoc.Change{
+			Section: "integration", Change: configdoc.ChangeChanged,
+			Detail: "changes the title, description or icon",
+		})
 	}
 
 	before := map[string]Mapping{}
@@ -60,17 +68,23 @@ func Diff(previous, next Spec) []configdoc.Change {
 		old, ok := before[m.Blueprint]
 		switch {
 		case !ok:
-			changes = append(changes, configdoc.Change{Section: "mappings", ID: m.Blueprint, Change: configdoc.ChangeAdded,
-				Detail: "starts writing " + m.Blueprint + " entities"})
+			changes = append(changes, configdoc.Change{
+				Section: "mappings", ID: m.Blueprint, Change: configdoc.ChangeAdded,
+				Detail: "starts writing " + m.Blueprint + " entities",
+			})
 		case !sameMapping(old, m):
-			changes = append(changes, configdoc.Change{Section: "mappings", ID: m.Blueprint, Change: configdoc.ChangeChanged,
-				Detail: "changes how " + m.Blueprint + " entities are made"})
+			changes = append(changes, configdoc.Change{
+				Section: "mappings", ID: m.Blueprint, Change: configdoc.ChangeChanged,
+				Detail: "changes how " + m.Blueprint + " entities are made",
+			})
 		}
 	}
 	for _, m := range previous.Mappings {
 		if !seen[m.Blueprint] {
-			changes = append(changes, configdoc.Change{Section: "mappings", ID: m.Blueprint, Change: configdoc.ChangeRemoved,
-				Detail: "stops writing " + m.Blueprint + " entities; the ones already written stay"})
+			changes = append(changes, configdoc.Change{
+				Section: "mappings", ID: m.Blueprint, Change: configdoc.ChangeRemoved,
+				Detail: "stops writing " + m.Blueprint + " entities; the ones already written stay",
+			})
 		}
 	}
 
