@@ -4,12 +4,12 @@ import { type ApiDataResponse, api } from "@/lib/api";
 export type Field = { identifier: string; expression: string };
 
 export type Mapping = {
+  // resource is what a pull connector fetches for the mapping, such as users.
+  resource?: string;
   blueprint: string;
   items: string;
   filter?: string;
-  identifier: string;
-  title?: string;
-  properties: Field[];
+  entity: { identifier: string; title?: string; properties: Field[] };
 };
 
 export type IntegrationSpec = {
@@ -17,7 +17,8 @@ export type IntegrationSpec = {
   title: string;
   description?: string;
   icon?: string;
-  connector: string;
+  connector: { type: string; config?: Record<string, unknown> };
+  sync?: { interval: string };
   // mappings are also the only blueprints the integration writes.
   mappings: Mapping[];
 };
@@ -30,6 +31,7 @@ export type Connector = {
   title: string;
   description: string;
   mode: "push" | "pull";
+  resources?: string[];
 };
 
 export type IngestionToken = {

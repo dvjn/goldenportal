@@ -6,7 +6,7 @@ export function IntegrationPreview({ spec }: Readonly<{ spec: IntegrationSpec }>
     <dl className="grid gap-3 text-sm">
       <div>
         <dt className="text-muted-foreground">Connector</dt>
-        <dd className="font-mono">{spec.connector}</dd>
+        <dd className="font-mono">{spec.connector.type}</dd>
       </div>
       <div>
         <dt className="text-muted-foreground">Writes</dt>

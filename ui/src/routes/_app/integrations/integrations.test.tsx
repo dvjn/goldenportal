@@ -23,13 +23,15 @@ const inventory: Integration = {
     spec: {
       identifier: "inventory",
       title: "Inventory",
-      connector: "push",
+      connector: { type: "push" },
       mappings: [
         {
           blueprint: "service",
           items: ".services[]",
-          identifier: ".id",
-          properties: [{ identifier: "owner", expression: ".team" }],
+          entity: {
+            identifier: ".id",
+            properties: [{ identifier: "owner", expression: ".team" }],
+          },
         },
       ],
     },
@@ -117,7 +119,12 @@ describe("integrations", () => {
       identifier: "portal",
       published: inventory.published && {
         ...inventory.published,
-        spec: { ...inventory.published.spec, identifier: "portal", connector: "portal" },
+        spec: {
+          ...inventory.published.spec,
+          identifier: "portal",
+          connector: { type: "portal" },
+          sync: { interval: "1m" },
+        },
       },
     };
     const requests = stubApi({

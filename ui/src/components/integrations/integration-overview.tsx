@@ -22,7 +22,7 @@ import {
 // data reaches it, how data becomes entities, and what recent runs did.
 export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }>) {
   const { data: connectors } = useQuery(connectorsQueryOptions);
-  const pulls = connectors?.find((c) => c.id === spec.connector)?.mode === "pull";
+  const pulls = connectors?.find((c) => c.id === spec.connector.type)?.mode === "pull";
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -51,9 +51,9 @@ export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }
         </Card>
       </div>
       <div className="grid gap-4">
-        <ConnectorCard connector={spec.connector} description={spec.description} />
+        <ConnectorCard connector={spec.connector.type} description={spec.description} />
         {pulls ? (
-          <SyncCard identifier={spec.identifier} />
+          <SyncCard identifier={spec.identifier} interval={spec.sync?.interval ?? "15m"} />
         ) : (
           <PushCards identifier={spec.identifier} />
         )}
@@ -96,7 +96,7 @@ function PushCards({ identifier }: Readonly<{ identifier: string }>) {
 }
 
 // SyncCard syncs a pull integration now, on top of its schedule.
-function SyncCard({ identifier }: Readonly<{ identifier: string }>) {
+function SyncCard({ identifier, interval }: Readonly<{ identifier: string; interval: string }>) {
   const queryClient = useQueryClient();
   const sync = useMutation({
     mutationFn: () => syncIntegration(identifier),
@@ -117,8 +117,8 @@ function SyncCard({ identifier }: Readonly<{ identifier: string }>) {
       </CardHeader>
       <CardContent className="grid gap-3 text-sm">
         <p className="text-muted-foreground">
-          Syncs every minute. Each sync is a full snapshot, so entities that drop out of it are
-          deleted.
+          Syncs every <code className="font-mono">{interval}</code>. Each sync is a full snapshot,
+          so entities that drop out of it are deleted.
         </p>
         <Button
           variant="outline"
@@ -161,15 +161,18 @@ function ConnectorCard({
 
 function MappingView({ mapping }: Readonly<{ mapping: Mapping }>) {
   const rows: [string, string | undefined][] = [
-    ["Items", mapping.items],
+    ["Items", mapping.items === "." ? undefined : mapping.items],
     ["Filter", mapping.filter],
-    ["Identifier", mapping.identifier],
-    ["Title", mapping.title],
+    ["Identifier", mapping.entity.identifier],
+    ["Title", mapping.entity.title],
   ];
 
   return (
     <section className="grid gap-3 rounded-md border p-3">
       <h3 className="flex items-center gap-2 text-sm font-medium">
+        {mapping.resource && (
+          <code className="font-mono text-muted-foreground">{mapping.resource}</code>
+        )}
         <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
         <Link
           to="/blueprints/$identifier"
@@ -185,7 +188,7 @@ function MappingView({ mapping }: Readonly<{ mapping: Mapping }>) {
           .map(([label, value]) => (
             <Expression key={label} label={label} value={value ?? ""} />
           ))}
-        {mapping.properties.map((field) => (
+        {mapping.entity.properties.map((field) => (
           <Expression
             key={field.identifier}
             label={field.identifier}

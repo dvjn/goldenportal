@@ -4,17 +4,22 @@ import { IntegrationPreview } from "@/components/integrations/integration-previe
 import { integrations } from "@/features/integrations";
 
 // Every expression in a mapping is jq, run against the pushed JSON.
-const template = `identifier: example
-title: Example
-description: Where these entities come from.
-connector: push
-mappings:
-  - blueprint: service
-    items: .services[]
-    identifier: .id
-    title: .name
-    properties:
-      owner: .team
+const template = `kind: Integration
+metadata:
+  name: example
+  title: Example
+  description: Where these entities come from.
+spec:
+  connector:
+    type: push
+  mappings:
+    - blueprint: service
+      items: .services[]
+      entity:
+        identifier: .id
+        title: .name
+        properties:
+          owner: .team
 `;
 
 export const Route = createFileRoute("/_app/integrations/new")({

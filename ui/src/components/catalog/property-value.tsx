@@ -73,7 +73,7 @@ export function PropertyValue({ property, value, links }: PropertyValueProps) {
 
   const text = String(value);
   switch (property.format) {
-    case "url":
+    case "uri":
       return (
         <a href={text} target="_blank" rel="noreferrer" className="break-all hover:underline">
           {text.replace(/^https?:\/\//, "")}
