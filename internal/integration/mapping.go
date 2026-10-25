@@ -16,11 +16,18 @@ type Item struct {
 	Problems  []string
 }
 
-// Map turns incoming data into entities through the mappings.
+// Map turns incoming data into entities through the mappings. For a pull
+// connector, data maps each resource to its objects, and a mapping runs over
+// each object of its resource; otherwise it runs over the data as sent.
 func (s Spec) Map(data any) ([]Item, error) {
 	var items []Item
 	for _, m := range s.Mappings {
-		mapped, err := m.apply(data)
+		inputs := []any{data}
+		if m.Resource != "" {
+			resources, _ := data.(map[string]any)
+			inputs, _ = resources[m.Resource].([]any)
+		}
+		mapped, err := m.apply(inputs)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +59,7 @@ func (m Mapping) compile() (compiled, error) {
 	for _, field := range []struct {
 		target     **gojq.Code
 		expression string
-	}{{&c.items, m.Items}, {&c.filter, m.Filter}, {&c.identifier, m.Identifier}, {&c.title, m.Title}} {
+	}{{&c.items, m.Items}, {&c.filter, m.Filter}, {&c.identifier, m.Entity.Identifier}, {&c.title, m.Entity.Title}} {
 		if field.expression == "" {
 			continue
 		}
@@ -60,7 +67,7 @@ func (m Mapping) compile() (compiled, error) {
 			return c, err
 		}
 	}
-	for _, f := range m.Properties {
+	for _, f := range m.Entity.Properties {
 		if c.properties[f.ID], err = compile(f.Expression); err != nil {
 			return c, err
 		}
@@ -69,23 +76,25 @@ func (m Mapping) compile() (compiled, error) {
 	return c, nil
 }
 
-func (m Mapping) apply(data any) ([]Item, error) {
+func (m Mapping) apply(sources []any) ([]Item, error) {
 	c, err := m.compile()
 	if err != nil {
 		return nil, err
 	}
 
 	var inputs []any
-	iter := c.items.Run(data)
-	for {
-		value, ok := iter.Next()
-		if !ok {
-			break
+	for _, source := range sources {
+		iter := c.items.Run(source)
+		for {
+			value, ok := iter.Next()
+			if !ok {
+				break
+			}
+			if err, isErr := value.(error); isErr {
+				return nil, fmt.Errorf("the items of the %s mapping: %w", m.Blueprint, err)
+			}
+			inputs = append(inputs, value)
 		}
-		if err, isErr := value.(error); isErr {
-			return nil, fmt.Errorf("the items of the %s mapping: %w", m.Blueprint, err)
-		}
-		inputs = append(inputs, value)
 	}
 
 	items := make([]Item, 0, len(inputs))

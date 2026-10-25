@@ -13,12 +13,15 @@ type Connector struct {
 	Description string `json:"description"`
 	// Mode is "push" when other systems send entities, or "pull" when the portal fetches them.
 	Mode string `json:"mode"`
+	// Resources are what a pull connector can fetch, which mappings name.
+	Resources []string `json:"resources,omitempty"`
 }
 
 // pull fetches the data a pull connector's mappings run over. It's a
 // function rather than a field so the connector list doesn't depend on
 // the code that parses integrations.
-func (c Connector) pull() func(ctx context.Context, db configdoc.DB) (any, error) {
+// It fetches only the resources asked for, as a map from resource to its objects.
+func (c Connector) pull() func(ctx context.Context, db configdoc.DB, resources []string) (map[string]any, error) {
 	switch c.ID {
 	case "portal":
 		return portalSnapshot
@@ -43,8 +46,9 @@ var Connectors = []Connector{
 	{
 		ID:          "portal",
 		Title:       "Portal",
-		Description: "The portal's own users, groups, blueprints and integrations, synced one way every minute. Changes to the entities never flow back.",
+		Description: "The portal's own users, groups, blueprints and integrations, synced one way. Changes to the entities never flow back.",
 		Mode:        ModePull,
+		Resources:   []string{"users", "groups", "blueprints", "integrations"},
 	},
 }
 

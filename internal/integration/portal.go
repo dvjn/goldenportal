@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/lib/pq"
@@ -63,13 +64,44 @@ type portalIntegration struct {
 	PublishedAt time.Time  `json:"publishedAt"`
 }
 
-// portalSnapshot reads the portal's users, groups and published blueprints
-// and integrations. Users are named by email and groups by name, so
-// mappings can relate them to each other.
-func portalSnapshot(ctx context.Context, db configdoc.DB) (any, error) {
+// portalSnapshot reads the resources asked for: users, groups, and published
+// blueprints and integrations. Users are named by email and groups by name,
+// so mappings can relate them to each other.
+func portalSnapshot(ctx context.Context, db configdoc.DB, resources []string) (map[string]any, error) {
 	data := portalData{Users: []portalUser{}, Groups: []portalGroup{}, Blueprints: []portalBlueprint{},
 		Integrations: []portalIntegration{}}
+	wants := func(resource string) bool { return slices.Contains(resources, resource) }
 
+	if wants("users") {
+		if err := portalUsers(ctx, db, &data); err != nil {
+			return nil, err
+		}
+	}
+	if wants("groups") {
+		if err := portalGroups(ctx, db, &data); err != nil {
+			return nil, err
+		}
+	}
+	if wants("blueprints") || wants("integrations") {
+		if err := portalDocuments(ctx, db, &data); err != nil {
+			return nil, err
+		}
+	}
+
+	value, err := toJSONValue(data)
+	if err != nil {
+		return nil, err
+	}
+	all, _ := value.(map[string]any)
+	out := map[string]any{}
+	for _, resource := range resources {
+		out[resource] = all[resource]
+	}
+
+	return out, nil
+}
+
+func portalUsers(ctx context.Context, db configdoc.DB, data *portalData) error {
 	users, err := db.QueryContext(ctx, `
 		SELECT u.id, u.email, u.display_name, coalesce(u.username, ''), u.status = 'active',
 			coalesce(array_agg(g.name ORDER BY g.name) FILTER (WHERE g.id IS NOT NULL), '{}'),
@@ -80,21 +112,22 @@ func portalSnapshot(ctx context.Context, db configdoc.DB) (any, error) {
 		GROUP BY u.id
 		ORDER BY u.email`)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer users.Close()
 	for users.Next() {
 		var u portalUser
 		if err := users.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Username, &u.Active, pq.Array(&u.Groups),
 			&u.CreatedAt, &u.LastSignedIn); err != nil {
-			return nil, err
+			return err
 		}
 		data.Users = append(data.Users, u)
 	}
-	if err := users.Err(); err != nil {
-		return nil, err
-	}
 
+	return users.Err()
+}
+
+func portalGroups(ctx context.Context, db configdoc.DB, data *portalData) error {
 	groups, err := db.QueryContext(ctx, `
 		SELECT g.id, g.name,
 			coalesce(array_agg(u.email ORDER BY u.email) FILTER (WHERE u.id IS NOT NULL), '{}'), g.created_at
@@ -104,28 +137,29 @@ func portalSnapshot(ctx context.Context, db configdoc.DB) (any, error) {
 		GROUP BY g.id
 		ORDER BY g.name`)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer groups.Close()
 	for groups.Next() {
 		var g portalGroup
 		if err := groups.Scan(&g.ID, &g.Name, pq.Array(&g.Members), &g.CreatedAt); err != nil {
-			return nil, err
+			return err
 		}
 		data.Groups = append(data.Groups, g)
 	}
-	if err := groups.Err(); err != nil {
-		return nil, err
-	}
 
+	return groups.Err()
+}
+
+func portalDocuments(ctx context.Context, db configdoc.DB, data *portalData) error {
 	counts, lastRuns, err := portalCounts(ctx, db)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	blueprints, err := configdoc.NewStore(db, blueprint.Name).List(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, record := range blueprints {
 		if !record.Published() {
@@ -146,7 +180,7 @@ func portalSnapshot(ctx context.Context, db configdoc.DB) (any, error) {
 
 	integrations, err := configdoc.NewStore(db, Name).List(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, record := range integrations {
 		if !record.Published() {
@@ -154,7 +188,7 @@ func portalSnapshot(ctx context.Context, db configdoc.DB) (any, error) {
 		}
 		spec, _ := Parse(record.PublishedSource)
 		in := portalIntegration{Identifier: record.Identifier, Title: spec.Title, Description: spec.Description,
-			Connector: spec.Connector, Version: record.PublishedVersion, Blueprints: []string{},
+			Connector: spec.Connector.Type, Version: record.PublishedVersion, Blueprints: []string{},
 			Entities: counts["integration:"+record.Identifier], PublishedAt: record.PublishedAt}
 		if last, ok := lastRuns[record.Identifier]; ok {
 			in.LastRunAt = &last
@@ -165,7 +199,7 @@ func portalSnapshot(ctx context.Context, db configdoc.DB) (any, error) {
 		data.Integrations = append(data.Integrations, in)
 	}
 
-	return toJSONValue(data)
+	return nil
 }
 
 // portalCounts counts entities by blueprint and by integration, keyed as

@@ -1,6 +1,7 @@
 package configdoc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -26,6 +27,7 @@ func ValidIdentifier(s string) bool { return identifierPattern.MatchString(s) }
 // read them; builders can change them.
 func Register[S Spec](app *gofr.App, kind Kind[S]) {
 	h := handlers[S]{kind: kind}
+	kinds = append(kinds, h)
 	base := "/api/v1/" + kind.Plural
 	app.GET(base, h.list)
 	app.POST(base+"/validate", h.validate)
@@ -332,7 +334,7 @@ func (h handlers[S]) publish(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	record, err := h.load(ctx)
+	identifier, err := h.identifierParam(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -340,30 +342,52 @@ func (h handlers[S]) publish(ctx *gofr.Context) (any, error) {
 	// An empty body means no acknowledgement.
 	_ = ctx.Bind(&req)
 
-	view, spec, err := h.draftImpact(ctx, record)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.invalid(view.Issues); err != nil {
-		return nil, err
-	}
-	if view.Breaking && !req.AcknowledgeBreaking {
-		return nil, httpx.Error{Code: http.StatusConflict,
-			Message: "this draft has breaking changes; review the impact and publish with acknowledgeBreaking"}
-	}
-
 	tx, err := ctx.SQL.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	out, err := h.publishDraft(ctx, tx, p, identifier, req.AcknowledgeBreaking)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	h.recordPublish(ctx, p, out)
+
+	return published{Version: out.Version}, nil
+}
+
+// publishDraft checks a draft and publishes it within tx. Checks see what
+// ctx has pending, so drafts published together can refer to each other.
+func (h handlers[S]) publishDraft(ctx *gofr.Context, tx DB, p auth.Principal, identifier string, acknowledgeBreaking bool) (Published, error) {
+	record, err := NewStore(ctx.SQL, h.kind.Name).Get(ctx, identifier)
+	if errors.Is(err, ErrNotFound) {
+		return Published{}, h.notFound()
+	}
+	if err != nil {
+		return Published{}, err
+	}
+	view, spec, err := h.draftImpact(ctx, record)
+	if err != nil {
+		return Published{}, err
+	}
+	if err := h.invalid(view.Issues); err != nil {
+		return Published{}, err
+	}
+	if view.Breaking && !acknowledgeBreaking {
+		return Published{}, httpx.Error{Code: http.StatusConflict,
+			Message: identifier + " has breaking changes; review the impact and publish with acknowledgeBreaking"}
+	}
 
 	v, err := NewStore(tx, h.kind.Name).Publish(ctx, record.Identifier, record.DraftSource, p.ID)
 	if errors.Is(err, ErrDraftChanged) {
-		return nil, httpx.Error{Code: http.StatusConflict, Message: "the draft changed while publishing; review it and try again"}
+		return Published{}, httpx.Error{Code: http.StatusConflict,
+			Message: "the draft of " + identifier + " changed while publishing; review it and try again"}
 	}
 	if err != nil {
-		return nil, err
+		return Published{}, err
 	}
 	if h.kind.Published != nil {
 		var previous *S
@@ -372,17 +396,96 @@ func (h handlers[S]) publish(ctx *gofr.Context) (any, error) {
 			previous = &spec
 		}
 		if err := h.kind.Published(ctx, tx, previous, spec); err != nil {
-			return nil, err
+			return Published{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
+
+	return Published{Kind: h.kind.Document, Name: identifier, Version: v, Breaking: view.Breaking,
+		title: h.target(identifier, spec).Label, changes: len(view.Changes)}, nil
+}
+
+func (h handlers[S]) recordPublish(ctx *gofr.Context, p auth.Principal, out Published) {
+	auth.Record(ctx, p, h.kind.Action(OpPublish), audit.Target{Type: h.kind.Name, ID: out.Name, Label: out.title},
+		map[string]any{"version": out.Version, "changes": out.changes, "breaking": out.Breaking})
+}
+
+func (h handlers[S]) documentKind() string { return h.kind.Document }
+
+// plan works out what applying source would do, checking it against
+// whatever ctx has pending.
+func (h handlers[S]) plan(ctx context.Context, db DB, source string) (Planned, error) {
+	spec, issues := h.kind.Parse(source)
+	out := Planned{Kind: h.kind.Document, Name: spec.Key(), Changes: []Change{}, source: source}
+	if !HasErrors(issues) && h.kind.Check != nil {
+		more, err := h.kind.Check(ctx, db, spec)
+		if err != nil {
+			return Planned{}, err
+		}
+		issues = append(issues, more...)
+	}
+	out.Issues = orEmpty(issues)
+	if HasErrors(issues) {
+		return out, nil
 	}
 
-	auth.Record(ctx, p, h.kind.Action(OpPublish), h.target(record.Identifier, spec),
-		map[string]any{"version": v, "changes": len(view.Changes), "breaking": view.Breaking})
+	record, err := NewStore(db, h.kind.Name).Get(ctx, spec.Key())
+	switch {
+	case errors.Is(err, ErrNotFound):
+		out.Action = ActionCreate
+		return out, nil
+	case err != nil:
+		return Planned{}, err
+	}
+	current, _ := h.kind.Parse(h.currentSource(record))
+	out.Action = ActionUpdate
+	if sameSpec(current, spec) {
+		out.Action = ActionUnchanged
+	}
+	if record.Published() && h.kind.Diff != nil {
+		published, _ := h.kind.Parse(record.PublishedSource)
+		out.Changes = h.kind.Diff(published, spec)
+		out.Breaking = Breaking(out.Changes)
+	}
 
-	return published{Version: v}, nil
+	return out, nil
+}
+
+func (h handlers[S]) currentSource(record Record) string {
+	if record.HasDraft() {
+		return record.DraftSource
+	}
+
+	return record.PublishedSource
+}
+
+func (h handlers[S]) saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, name, source string) error {
+	created, err := NewStore(db, h.kind.Name).SaveDraft(ctx, name, source, p.ID)
+	if err != nil {
+		return err
+	}
+	spec, _ := h.kind.Parse(source)
+	auth.Record(ctx, p, h.kind.Action(OpDraftSave), h.target(name, spec), map[string]any{"created": created, "applied": true})
+
+	return nil
+}
+
+func (h handlers[S]) publishedSources(ctx context.Context, db DB) (map[string]string, error) {
+	return NewStore(db, h.kind.Name).PublishedSources(ctx)
+}
+
+func (h handlers[S]) draftSource(ctx context.Context, db DB, name string) (string, error) {
+	record, err := NewStore(db, h.kind.Name).Get(ctx, name)
+	if errors.Is(err, ErrNotFound) {
+		return "", httpx.Error{Code: http.StatusNotFound, Message: "no such " + h.kind.Name + " " + name}
+	}
+	if err != nil {
+		return "", err
+	}
+	if !record.HasDraft() {
+		return "", httpx.Error{Code: http.StatusConflict, Message: name + " has no draft to publish"}
+	}
+
+	return record.DraftSource, nil
 }
 
 func (h handlers[S]) versions(ctx *gofr.Context) (any, error) {

@@ -167,3 +167,14 @@ func nullable(s string) any {
 
 	return s
 }
+
+// LastSync is when an integration's last sync finished, or zero if it hasn't synced.
+func (s Store) LastSync(ctx context.Context, identifier string) (time.Time, error) {
+	var last sql.NullTime
+	err := s.db.QueryRowContext(ctx, `
+		SELECT max(r.finished_at) FROM ingestion_runs r
+		JOIN config_documents d ON d.id = r.integration_id
+		WHERE d.kind = 'integration' AND d.identifier = $1 AND r.trigger <> 'push'`, identifier).Scan(&last)
+
+	return last.Time, err
+}

@@ -21,9 +21,10 @@ const Name = "blueprint"
 
 // Kind serves blueprints as configuration documents.
 var Kind = configdoc.Kind[Spec]{
-	Name:   Name,
-	Plural: "blueprints",
-	Parse:  Parse,
+	Name:     Name,
+	Document: DocumentKind,
+	Plural:   "blueprints",
+	Parse:    Parse,
 	Check: func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error) {
 		published, err := Published(ctx, db)
 		if err != nil {
@@ -66,12 +67,16 @@ func References(published map[string]Spec, identifier string) []Reference {
 	return refs
 }
 
-// Published returns every published blueprint, by identifier. Sources that
-// no longer parse are left out.
+// Published returns every published blueprint, by identifier, with any
+// that ctx has pending in their place, so documents applied or published
+// together see each other. Sources that don't parse are left out.
 func Published(ctx context.Context, db configdoc.DB) (map[string]Spec, error) {
 	sources, err := configdoc.NewStore(db, Name).PublishedSources(ctx)
 	if err != nil {
 		return nil, err
+	}
+	for name, source := range configdoc.PendingSources(ctx, DocumentKind) {
+		sources[name] = source
 	}
 	specs := map[string]Spec{}
 	for identifier, source := range sources {

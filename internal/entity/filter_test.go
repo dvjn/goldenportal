@@ -8,17 +8,20 @@ import (
 )
 
 const serviceYAML = `
-identifier: service
-title: Service
-properties:
-  tier: {type: string, enum: [critical, standard]}
-  stars: {type: integer}
-  tags: {type: array, items: {type: string}}
-  lastDeployedAt: {type: string, format: date-time}
-  owner: {relation: team}
-  dependsOn: {relation: service, many: true}
-  ownerSlack: {lookup: owner.slackChannel}
-  critical: {type: boolean, compute: .properties.tier == "critical"}
+kind: Blueprint
+metadata:
+  name: service
+  title: Service
+spec:
+  properties:
+    tier: {type: string, enum: [critical, standard]}
+    stars: {type: integer}
+    tags: {type: array, items: {type: string}}
+    lastDeployedAt: {type: string, format: date-time}
+    owner: {relation: team}
+    dependsOn: {relation: service, many: true}
+    ownerSlack: {lookup: owner.slackChannel}
+    critical: {type: boolean, compute: .properties.tier == "critical"}
 `
 
 func service(t *testing.T) blueprint.Spec {

@@ -14,9 +14,10 @@ const Name = "integration"
 
 // Kind serves integrations as configuration documents.
 var Kind = configdoc.Kind[Spec]{
-	Name:   Name,
-	Plural: "integrations",
-	Parse:  Parse,
+	Name:     Name,
+	Document: DocumentKind,
+	Plural:   "integrations",
+	Parse:    Parse,
 	Check: func(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, error) {
 		published, err := blueprint.Published(ctx, db)
 		if err != nil {
@@ -32,9 +33,13 @@ var Kind = configdoc.Kind[Spec]{
 // written stay, so only switching connector is breaking.
 func Diff(previous, next Spec) []configdoc.Change {
 	changes := []configdoc.Change{}
-	if previous.Connector != next.Connector {
+	if previous.Connector.Type != next.Connector.Type {
 		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged, Breaking: true,
-			Detail: fmt.Sprintf("switches the connector from %s to %s", previous.Connector, next.Connector)})
+			Detail: fmt.Sprintf("switches the connector from %s to %s", previous.Connector.Type, next.Connector.Type)})
+	}
+	if previous.SyncEvery() != next.SyncEvery() {
+		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged,
+			Detail: fmt.Sprintf("syncs every %s instead of every %s", next.SyncEvery(), previous.SyncEvery())})
 	}
 	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon {
 		changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged,
@@ -77,7 +82,7 @@ func sameMapping(a, b Mapping) bool {
 		}
 		return out
 	}
-	a.Properties, b.Properties = strip(a.Properties), strip(b.Properties)
+	a.Entity.Properties, b.Entity.Properties = strip(a.Entity.Properties), strip(b.Entity.Properties)
 
 	return reflect.DeepEqual(a, b)
 }

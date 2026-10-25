@@ -67,6 +67,8 @@ type Meta struct {
 type Kind[S Spec] struct {
 	// Name is singular and used in messages and audit actions, e.g. "blueprint".
 	Name string
+	// Document is the kind as documents write it, e.g. "Blueprint".
+	Document string
 	// Plural is the API path segment, e.g. "blueprints".
 	Plural string
 	// Parse reads a source and checks everything that doesn't depend on other documents.

@@ -175,7 +175,7 @@ func pulls(ctx *gofr.Context, identifier string) bool {
 		source = record.DraftSource
 	}
 	spec, _ := Parse(source)
-	c, _ := connector(spec.Connector)
+	c, _ := connector(spec.Connector.Type)
 
 	return c.Mode == ModePull
 }

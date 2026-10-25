@@ -60,18 +60,19 @@ func TestValidateEntity(t *testing.T) {
 
 func TestValidateEntityFormats(t *testing.T) {
 	spec := mustParse(t, `
-identifier: thing
-title: Thing
-properties:
-  site: {type: string, format: url}
-  born: {type: string, format: date}
-  code: {type: string, pattern: '^[A-Z]{3}$', maxLength: 3}
+kind: Blueprint
+metadata: {name: thing, title: Thing}
+spec:
+  properties:
+    site: {type: string, format: uri}
+    born: {type: string, format: date}
+    code: {type: string, pattern: '^[A-Z]{3}$', maxLength: 3}
 `)
 	_, problems := spec.ValidateEntity(Entity{Identifier: "a", Properties: map[string]any{
 		"site": "example.com", "born": "25/10/2026", "code": "abcd",
 	}})
 	got := strings.Join(problems, "\n")
-	for _, want := range []string{"site must be an absolute URL", "born must be a date", "code doesn't match", "code is longer than 3"} {
+	for _, want := range []string{"site must be an absolute URI", "born must be a date", "code doesn't match", "code is longer than 3"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("problems = %v, want %q", problems, want)
 		}
@@ -79,12 +80,12 @@ properties:
 }
 
 func TestCompute(t *testing.T) {
-	spec := mustParse(t, serviceYAML+`  owners:
-    type: number
-    compute: .properties.dependsOn | length
-  broken:
-    type: string
-    compute: .properties.stars
+	spec := mustParse(t, serviceYAML+`    owners:
+      type: number
+      compute: .properties.dependsOn | length
+    broken:
+      type: string
+      compute: .properties.stars
 `)
 	values, problems := spec.Compute(Entity{Identifier: "a",
 		Properties: map[string]any{"stars": float64(150)},

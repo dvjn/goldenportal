@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/lib/pq"
@@ -24,7 +25,8 @@ const (
 	TriggerManual   = "manual"
 )
 
-// SyncSchedule is how often pull integrations sync, as a cron expression.
+// SyncSchedule is how often the scheduler looks for pull integrations due
+// a sync, as a cron expression.
 const SyncSchedule = "* * * * *"
 
 var (
@@ -54,7 +56,7 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 		return nil, ErrUnsynced
 	}
 	spec, _ := Parse(record.PublishedSource)
-	c, _ := connector(spec.Connector)
+	c, _ := connector(spec.Connector.Type)
 	pull := c.pull()
 	if pull == nil {
 		return nil, ErrNotPull
@@ -79,9 +81,19 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 		return nil, ErrSyncing
 	}
 
-	data, err := pull(ctx, tx)
+	var resources []string
+	for _, m := range spec.Mappings {
+		if !slices.Contains(resources, m.Resource) {
+			resources = append(resources, m.Resource)
+		}
+	}
+	pulled, err := pull(ctx, tx, resources)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", identifier, err)
+	}
+	data, err := toJSONValue(pulled)
+	if err != nil {
+		return nil, err
 	}
 	items, err := spec.Map(data)
 	if err != nil {
@@ -117,7 +129,8 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 	return run, tx.Commit()
 }
 
-// syncAll syncs every published pull integration, on the schedule.
+// syncAll syncs the published pull integrations whose interval has passed
+// since their last sync. It runs every minute.
 func syncAll(ctx *gofr.Context) {
 	records, err := configdoc.NewStore(ctx.SQL, Name).List(ctx)
 	if err != nil {
@@ -129,7 +142,16 @@ func syncAll(ctx *gofr.Context) {
 			continue
 		}
 		spec, _ := Parse(record.PublishedSource)
-		if c, _ := connector(spec.Connector); c.pull() == nil {
+		if c, _ := connector(spec.Connector.Type); c.pull() == nil {
+			continue
+		}
+		last, err := NewStore(ctx.SQL).LastSync(ctx, record.Identifier)
+		if err != nil {
+			ctx.Errorf("find the last sync of %s: %v", record.Identifier, err)
+			continue
+		}
+		// A little slack, so a one-minute interval isn't skipped by jitter in the scheduler.
+		if !last.IsZero() && time.Since(last) < spec.SyncEvery()-5*time.Second {
 			continue
 		}
 		if _, err := Sync(ctx, ctx.SQL, record.Identifier, TriggerSchedule); err != nil && !errors.Is(err, ErrSyncing) {

@@ -50,7 +50,7 @@ func authenticate(ctx *gofr.Context) (writer, error) {
 		return writer{}, httpx.Error{Code: http.StatusConflict, Message: "publish the integration before ingesting"}
 	}
 	spec, _ := Parse(record.PublishedSource)
-	if c, _ := connector(spec.Connector); c.Mode != ModePush {
+	if c, _ := connector(spec.Connector.Type); c.Mode != ModePush {
 		return writer{}, httpx.Error{Code: http.StatusConflict, Message: "the " + integration + " integration pulls its data, so nothing can push to it"}
 	}
 	id, err := store.PublishedID(ctx, integration)

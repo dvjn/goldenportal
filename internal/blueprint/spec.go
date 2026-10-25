@@ -103,7 +103,7 @@ var (
 
 	propertyTypes = []string{"string", "number", "integer", "boolean", "array", "object"}
 	itemTypes     = []string{"string", "number", "integer", "boolean", "object"}
-	stringFormats = []string{"date", "date-time", "url", "email", "markdown"}
+	stringFormats = []string{"date", "date-time", "uri", "email", "markdown"}
 
 	// BuiltIns are the fields every entity has, which lookups can end on.
 	BuiltIns = []string{"$identifier", "$title"}
@@ -112,53 +112,31 @@ var (
 // ValidIdentifier reports whether s can name a blueprint.
 func ValidIdentifier(s string) bool { return configdoc.ValidIdentifier(s) }
 
-// Parse reads a blueprint from YAML (or JSON, which is YAML too) and checks
-// everything that doesn't depend on other blueprints.
+// DocumentKind is how blueprint documents name their kind.
+const DocumentKind = "Blueprint"
+
+// Parse reads a blueprint document from YAML (or JSON, which is YAML too) and
+// checks everything that doesn't depend on other blueprints.
 func Parse(source string) (Spec, []Issue) {
-	root, issues := configdoc.ParseYAML(source)
-	if root == nil {
-		return Spec{}, issues
+	p := &parser{}
+	doc := configdoc.ReadDocument(&p.Reader, source, DocumentKind)
+	spec := Spec{Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Icon: doc.Meta.Icon, Properties: []Property{}}
+	if doc.Spec == nil {
+		return spec, p.Issues
 	}
 
-	p := &parser{}
-	spec := p.spec(root)
+	if fields, ok := p.Fields(doc.Spec, "spec", "properties"); ok {
+		p.Each(fields["properties"], "spec.properties", func(id string, key, value *yaml.Node) {
+			spec.Properties = append(spec.Properties, p.property(id, "spec.properties."+id, key, value))
+		})
+	}
 	p.checkNames(spec)
 
 	return spec, p.Issues
 }
 
 type parser struct{ configdoc.Reader }
-
-func (p *parser) spec(root *yaml.Node) Spec {
-	var spec Spec
-	fields, ok := p.Fields(root, "", "identifier", "title", "description", "icon",
-		"properties")
-	if !ok {
-		return spec
-	}
-
-	spec.Identifier = p.Text(fields["identifier"], "identifier")
-	switch {
-	case fields["identifier"] == nil:
-		p.Errorf(root, "identifier", "add an identifier, such as service")
-	case !ValidIdentifier(spec.Identifier):
-		p.Errorf(fields["identifier"], "identifier",
-			"identifier must start with a lowercase letter and use only lowercase letters, digits, - and _ (up to 63)")
-	}
-	spec.Title = p.Text(fields["title"], "title")
-	if strings.TrimSpace(spec.Title) == "" {
-		p.Errorf(configdoc.OrNode(fields["title"], root), "title", "add a title, such as Service")
-	}
-	spec.Description = p.Text(fields["description"], "description")
-	spec.Icon = p.Text(fields["icon"], "icon")
-
-	spec.Properties = []Property{}
-	p.Each(fields["properties"], "properties", func(id string, key, value *yaml.Node) {
-		spec.Properties = append(spec.Properties, p.property(id, "properties."+id, key, value))
-	})
-
-	return spec
-}
 
 func (p *parser) property(id, path string, key, node *yaml.Node) Property {
 	prop := Property{ID: id, Title: id, line: key.Line}
@@ -351,7 +329,7 @@ func CompileExpression(expression string) error {
 // checkNames checks every property name is valid.
 func (p *parser) checkNames(spec Spec) {
 	check := func(id, section string, line int) {
-		path := section + "." + id
+		path := "spec." + section + "." + id
 		if !fieldPattern.MatchString(id) {
 			p.Issues = append(p.Issues, Issue{Severity: SeverityError, Path: path, Line: line,
 				Message: fmt.Sprintf("%q must start with a letter and use only letters, digits and _ (up to 63)", id)})

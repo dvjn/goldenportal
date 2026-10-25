@@ -1,7 +1,9 @@
 package configdoc
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"strconv"
@@ -12,22 +14,140 @@ import (
 
 var yamlLinePattern = regexp.MustCompile(`line (\d+)`)
 
-// ParseYAML reads a source into its root node. YAML is a superset of JSON,
-// so JSON sources work too.
+// ParseYAML reads a source holding one document into its root node. YAML is
+// a superset of JSON, so JSON sources work too.
 func ParseYAML(source string) (*yaml.Node, []Issue) {
+	decoder := yaml.NewDecoder(strings.NewReader(source))
 	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(source), &doc); err != nil {
-		issue := Issue{Severity: SeverityError, Message: strings.TrimPrefix(err.Error(), "yaml: ")}
-		if match := yamlLinePattern.FindStringSubmatch(err.Error()); match != nil {
-			issue.Line, _ = strconv.Atoi(match[1])
+	if err := decoder.Decode(&doc); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, []Issue{{Severity: SeverityError, Message: "the document is empty"}}
 		}
-		return nil, []Issue{issue}
+		return nil, []Issue{yamlIssue(err)}
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); err == nil {
+		return nil, []Issue{{Severity: SeverityError, Line: extra.Line,
+			Message: "this holds more than one document; apply them together instead"}}
 	}
 	if len(doc.Content) == 0 {
 		return nil, []Issue{{Severity: SeverityError, Message: "the document is empty"}}
 	}
 
 	return doc.Content[0], nil
+}
+
+func yamlIssue(err error) Issue {
+	issue := Issue{Severity: SeverityError, Message: strings.TrimPrefix(err.Error(), "yaml: ")}
+	if match := yamlLinePattern.FindStringSubmatch(err.Error()); match != nil {
+		issue.Line, _ = strconv.Atoi(match[1])
+	}
+
+	return issue
+}
+
+// Document is what every configuration document shares: its kind, its
+// metadata, and the spec its kind defines.
+type Document struct {
+	Kind string
+	Name string
+	Meta Meta
+	Spec *yaml.Node
+	Root *yaml.Node
+}
+
+// ReadDocument reads a document's envelope, kind / metadata / spec,
+// expecting kind. Issues go to r; the spec is nil when there's none to read.
+func ReadDocument(r *Reader, source, kind string) Document {
+	root, issues := ParseYAML(source)
+	r.Issues = append(r.Issues, issues...)
+	if root == nil {
+		return Document{}
+	}
+
+	doc := Document{Root: root}
+	fields, ok := r.Fields(root, "", "kind", "metadata", "spec")
+	if !ok {
+		return doc
+	}
+
+	doc.Kind = r.Text(fields["kind"], "kind")
+	switch {
+	case fields["kind"] == nil:
+		r.Errorf(root, "kind", "add kind: %s", kind)
+	case doc.Kind != kind:
+		r.Errorf(fields["kind"], "kind", "this takes kind: %s, not %s", kind, doc.Kind)
+	}
+
+	metadata := fields["metadata"]
+	if metadata == nil {
+		r.Errorf(root, "metadata", "add metadata with a name and a title")
+	} else if meta, ok := r.Fields(metadata, "metadata", "name", "title", "description", "icon"); ok {
+		doc.Name = r.Text(meta["name"], "metadata.name")
+		if !ValidIdentifier(doc.Name) {
+			r.Errorf(OrNode(meta["name"], metadata), "metadata.name",
+				"name must start with a lowercase letter and use only lowercase letters, digits, - and _ (up to 63)")
+		}
+		doc.Meta.Title = r.Text(meta["title"], "metadata.title")
+		if strings.TrimSpace(doc.Meta.Title) == "" {
+			r.Errorf(OrNode(meta["title"], metadata), "metadata.title", "add a title")
+		}
+		doc.Meta.Description = r.Text(meta["description"], "metadata.description")
+		doc.Meta.Icon = r.Text(meta["icon"], "metadata.icon")
+	}
+
+	doc.Spec = fields["spec"]
+	if doc.Spec == nil {
+		r.Errorf(root, "spec", "add a spec")
+	}
+
+	return doc
+}
+
+// documentSeparator splits multi-document files. Each document's text is
+// kept as written, since sources are stored verbatim.
+var documentSeparator = regexp.MustCompile(`(?m)^---[ \t]*(?:#.*)?$`)
+
+// SplitDocuments splits a multi-document source into its documents, leaving
+// out empty ones, with the line each starts on.
+func SplitDocuments(source string) []Chunk {
+	var chunks []Chunk
+	line, start := 1, 0
+	for _, match := range documentSeparator.FindAllStringIndex(source, -1) {
+		chunks = appendChunk(chunks, source[start:match[0]], line)
+		line += strings.Count(source[start:match[1]], "\n")
+		start = match[1]
+	}
+
+	return appendChunk(chunks, source[start:], line)
+}
+
+// Chunk is one document of a multi-document source.
+type Chunk struct {
+	Source string
+	// Line is where the document starts in the whole source.
+	Line int
+}
+
+func appendChunk(chunks []Chunk, text string, line int) []Chunk {
+	trimmed := strings.TrimLeft(text, "\n")
+	line += len(text) - len(trimmed)
+	if strings.TrimSpace(stripComments(trimmed)) == "" {
+		return chunks
+	}
+
+	return append(chunks, Chunk{Source: strings.TrimRight(trimmed, "\n") + "\n", Line: line})
+}
+
+func stripComments(text string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			b.WriteString(line)
+		}
+	}
+
+	return b.String()
 }
 
 // Reader reads YAML nodes, collecting issues with their lines as it goes.

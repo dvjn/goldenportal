@@ -301,9 +301,9 @@ func checkFormat(format, text string) string {
 		if _, err := time.Parse(time.RFC3339, text); err != nil {
 			return "must be a date and time like 2026-10-25T14:30:00Z"
 		}
-	case "url":
-		if u, err := url.Parse(text); err != nil || u.Scheme == "" || u.Host == "" {
-			return "must be an absolute URL"
+	case "uri":
+		if u, err := url.Parse(text); err != nil || u.Scheme == "" {
+			return "must be an absolute URI"
 		}
 	case "email":
 		if _, err := mail.ParseAddress(text); err != nil {
