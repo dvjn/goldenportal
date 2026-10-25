@@ -14,6 +14,7 @@ export {
   type Run,
   type RunError,
   revokeToken,
+  syncIntegration,
 } from "./api";
 export {
   connectorsQueryOptions,

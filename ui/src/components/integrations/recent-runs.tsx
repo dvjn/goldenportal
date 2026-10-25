@@ -29,12 +29,19 @@ const counts = [
   { key: "failed", label: "Failed" },
 ] as const;
 
-// RecentRuns lists the latest pushes and what each one did.
+// triggerLabel says what started a run: a push names its token.
+function triggerLabel(run: Run) {
+  if (run.trigger === "schedule") return "Schedule";
+  if (run.trigger === "manual") return "Sync Now";
+  return run.token ? `Push · ${run.token}` : "Push";
+}
+
+// RecentRuns lists the latest runs and what each one did.
 export function RecentRuns({ identifier }: Readonly<{ identifier: string }>) {
   const { data: runs } = useSuspenseQuery(runsQueryOptions(identifier));
 
   if (runs.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">Nothing has been pushed yet.</p>;
+    return <p className="p-4 text-sm text-muted-foreground">Nothing has run yet.</p>;
   }
 
   return (
@@ -42,7 +49,7 @@ export function RecentRuns({ identifier }: Readonly<{ identifier: string }>) {
       <TableHeader>
         <TableRow>
           <TableHead className="pl-4">When</TableHead>
-          <TableHead>Token</TableHead>
+          <TableHead>Trigger</TableHead>
           {counts.map((count) => (
             <TableHead key={count.key} className="text-right">
               {count.label}
@@ -57,7 +64,7 @@ export function RecentRuns({ identifier }: Readonly<{ identifier: string }>) {
             <TableCell className="pl-4" title={formatAbsolute(run.startedAt)}>
               {formatRelative(run.startedAt)}
             </TableCell>
-            <TableCell className="text-muted-foreground">{run.token || "—"}</TableCell>
+            <TableCell className="text-muted-foreground">{triggerLabel(run)}</TableCell>
             {counts.map((count) => (
               <TableCell
                 key={count.key}

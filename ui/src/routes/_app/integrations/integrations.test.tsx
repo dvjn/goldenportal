@@ -54,6 +54,7 @@ const routes = {
       id: 1,
       startedAt: "2026-10-24T10:00:00Z",
       finishedAt: "2026-10-24T10:00:01Z",
+      trigger: "push",
       token: "ci",
       received: 3,
       created: 1,
@@ -107,5 +108,46 @@ describe("integrations", () => {
 
     expect(await screen.findByLabelText("New ingestion token")).toHaveValue("gpi_abcdefghsecret");
     expect(await requests["POST integrations/inventory/tokens"].json()).toEqual({ name: "CI" });
+  });
+
+  it("syncs a pull integration instead of taking pushes", async () => {
+    const user = userEvent.setup();
+    const portal = {
+      ...inventory,
+      identifier: "portal",
+      published: inventory.published && {
+        ...inventory.published,
+        spec: { ...inventory.published.spec, identifier: "portal", connector: "portal" },
+      },
+    };
+    const requests = stubApi({
+      ...routes,
+      "GET integrations/portal": ok(portal),
+      "GET integrations/portal/versions": ok([]),
+      "GET integrations/portal/runs": ok([]),
+      "GET connectors": ok([
+        { id: "portal", title: "Portal", description: "The portal's own objects.", mode: "pull" },
+      ]),
+      "POST integrations/portal/sync": ok({
+        id: 2,
+        startedAt: "2026-10-24T10:00:00Z",
+        finishedAt: "2026-10-24T10:00:01Z",
+        trigger: "manual",
+        received: 3,
+        created: 1,
+        updated: 1,
+        unchanged: 1,
+        deleted: 2,
+        failed: 0,
+        errors: [],
+      }),
+    });
+    renderRoute("/integrations/portal");
+
+    await user.click(await screen.findByRole("button", { name: "Sync Now" }));
+    expect(await screen.findByText("Synced: 1 created, 1 updated, 2 deleted")).toBeInTheDocument();
+    expect(requests["POST integrations/portal/sync"]).toBeDefined();
+    expect(screen.queryByText("Push Endpoint")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ingestion Tokens")).not.toBeInTheDocument();
   });
 });

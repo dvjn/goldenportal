@@ -54,6 +54,7 @@ export type Run = {
   id: number;
   startedAt: string;
   finishedAt: string;
+  trigger: "push" | "schedule" | "manual";
   token?: string;
   received: number;
   created: number;
@@ -96,6 +97,11 @@ export async function createToken(
 
 export async function revokeToken(identifier: string, id: string): Promise<void> {
   await api.delete(`${path(identifier)}/tokens/${id}`);
+}
+
+// syncIntegration syncs a pull integration now.
+export async function syncIntegration(identifier: string): Promise<Run> {
+  return (await api.post(`${path(identifier)}/sync`).json<ApiDataResponse<Run>>()).data;
 }
 
 export async function listRuns(identifier: string): Promise<Run[]> {
