@@ -5,6 +5,7 @@ import { stringify } from "yaml";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
+import { ScorecardResult, ScorecardTab } from "@/components/scorecards/entity-scorecards";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -18,24 +19,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type BlueprintSpec, blueprints } from "@/features/blueprints";
 import { type EntityDetail, entityQueryOptions, type Incoming } from "@/features/catalog";
+import { entityScorecardsQueryOptions } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
-const tabs = ["overview", "relations", "yaml"] as const;
-type EntityTab = (typeof tabs)[number];
-const tabLabels: Record<EntityTab, string> = {
-  overview: "Overview",
-  relations: "Relations",
-  yaml: "YAML",
-};
+// Each scorecard that scores the entity gets a tab, named after the
+// scorecard, between Overview and the system tabs.
+const systemTabs = ["relations", "yaml"] as const;
 
 export const Route = createFileRoute("/_app/catalog/$blueprint/$")({
-  validateSearch: (search: Record<string, unknown>): { tab?: EntityTab } =>
-    tabs.includes(search.tab as EntityTab) ? { tab: search.tab as EntityTab } : {},
+  validateSearch: (search: Record<string, unknown>): { tab?: string } =>
+    typeof search.tab === "string" && search.tab !== "" ? { tab: search.tab } : {},
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(blueprints.queries.detail(params.blueprint)),
       context.queryClient.ensureQueryData(
         entityQueryOptions(params.blueprint, params._splat ?? ""),
+      ),
+      context.queryClient.ensureQueryData(
+        entityScorecardsQueryOptions(params.blueprint, params._splat ?? ""),
       ),
     ]),
   component: EntityPage,
@@ -47,8 +48,13 @@ function EntityPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const { data: doc } = useSuspenseQuery(blueprints.queries.detail(blueprint));
   const { data: entity } = useSuspenseQuery(entityQueryOptions(blueprint, identifier));
+  const { data: results } = useSuspenseQuery(entityScorecardsQueryOptions(blueprint, identifier));
   const spec = doc.published?.spec;
   if (!spec) return null;
+  const known: string[] = ["overview", ...results.map((r) => r.scorecard), ...systemTabs];
+  const active = known.includes(tab) ? tab : "overview";
+  const tabClass =
+    "focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none";
 
   return (
     <div className="flex flex-col gap-6">
@@ -104,28 +110,36 @@ function EntityPage() {
       </div>
 
       <Tabs
-        value={tab}
-        onValueChange={(next) => navigate({ search: { tab: next as EntityTab }, replace: true })}
+        value={active}
+        onValueChange={(next) => navigate({ search: { tab: next }, replace: true })}
       >
         <TabsList variant="line" aria-label="Entity">
-          {tabs.map((value) => (
-            <TabsTrigger
-              key={value}
-              value={value}
-              className="focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none"
-            >
-              {tabLabels[value]}
-              {value === "relations" && (
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {relationCount(spec, entity)}
-                </span>
-              )}
+          <TabsTrigger value="overview" className={tabClass}>
+            Overview
+          </TabsTrigger>
+          {results.map((result) => (
+            <TabsTrigger key={result.scorecard} value={result.scorecard} className={tabClass}>
+              <ScorecardTab result={result} />
             </TabsTrigger>
           ))}
+          <TabsTrigger value="relations" className={tabClass}>
+            Relations
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {relationCount(spec, entity)}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="yaml" className={tabClass}>
+            YAML
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="pt-2">
           <Overview spec={spec} entity={entity} />
         </TabsContent>
+        {results.map((result) => (
+          <TabsContent key={result.scorecard} value={result.scorecard} className="pt-2">
+            <ScorecardResult result={result} />
+          </TabsContent>
+        ))}
         <TabsContent value="relations" className="pt-2">
           <Relations spec={spec} entity={entity} />
         </TabsContent>

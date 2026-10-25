@@ -116,6 +116,7 @@ describe("catalog", () => {
       ...signedInMember,
       "GET blueprints/service": ok(service),
       "GET entities/service/ledger": ok(ledger),
+      "GET entity-scorecards": ok([]),
     });
     renderRoute("/catalog/service/ledger");
 

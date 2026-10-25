@@ -23,6 +23,9 @@ import { Route as AppCatalogIndexRouteImport } from "./routes/_app/catalog/index
 import { Route as AppIntegrationsIndexRouteImport } from "./routes/_app/integrations/index";
 import { Route as AppIntegrationsIdentifierRouteImport } from "./routes/_app/integrations/$identifier";
 import { Route as AppIntegrationsNewRouteImport } from "./routes/_app/integrations/new";
+import { Route as AppScorecardsIndexRouteImport } from "./routes/_app/scorecards/index";
+import { Route as AppScorecardsIdentifierRouteImport } from "./routes/_app/scorecards/$identifier";
+import { Route as AppScorecardsNewRouteImport } from "./routes/_app/scorecards/new";
 import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings/index";
 import { Route as AppSettingsAccessRouteImport } from "./routes/_app/settings/access";
 import { Route as AppSettingsAuditRouteImport } from "./routes/_app/settings/audit";
@@ -100,6 +103,21 @@ const AppIntegrationsNewRoute = AppIntegrationsNewRouteImport.update({
   path: "/new",
   getParentRoute: () => AppIntegrationsRoute,
 } as any);
+const AppScorecardsIndexRoute = AppScorecardsIndexRouteImport.update({
+  id: "/scorecards/",
+  path: "/scorecards/",
+  getParentRoute: () => AppRoute,
+} as any);
+const AppScorecardsIdentifierRoute = AppScorecardsIdentifierRouteImport.update({
+  id: "/scorecards/$identifier",
+  path: "/scorecards/$identifier",
+  getParentRoute: () => AppRoute,
+} as any);
+const AppScorecardsNewRoute = AppScorecardsNewRouteImport.update({
+  id: "/scorecards/new",
+  path: "/scorecards/new",
+  getParentRoute: () => AppRoute,
+} as any);
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -145,12 +163,15 @@ export interface FileRoutesByFullPath {
   "/blueprints/new": typeof AppBlueprintsNewRoute;
   "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
   "/integrations/new": typeof AppIntegrationsNewRoute;
+  "/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
+  "/scorecards/new": typeof AppScorecardsNewRoute;
   "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/blueprints/": typeof AppBlueprintsIndexRoute;
   "/catalog/": typeof AppCatalogIndexRoute;
   "/integrations/": typeof AppIntegrationsIndexRoute;
+  "/scorecards/": typeof AppScorecardsIndexRoute;
   "/settings/": typeof AppSettingsIndexRoute;
   "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
@@ -163,12 +184,15 @@ export interface FileRoutesByTo {
   "/blueprints/new": typeof AppBlueprintsNewRoute;
   "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
   "/integrations/new": typeof AppIntegrationsNewRoute;
+  "/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
+  "/scorecards/new": typeof AppScorecardsNewRoute;
   "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/blueprints": typeof AppBlueprintsIndexRoute;
   "/catalog": typeof AppCatalogIndexRoute;
   "/integrations": typeof AppIntegrationsIndexRoute;
+  "/scorecards": typeof AppScorecardsIndexRoute;
   "/settings": typeof AppSettingsIndexRoute;
   "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/catalog/$blueprint": typeof AppCatalogBlueprintIndexRoute;
@@ -186,12 +210,15 @@ export interface FileRoutesById {
   "/_app/blueprints/new": typeof AppBlueprintsNewRoute;
   "/_app/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
   "/_app/integrations/new": typeof AppIntegrationsNewRoute;
+  "/_app/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
+  "/_app/scorecards/new": typeof AppScorecardsNewRoute;
   "/_app/settings/access": typeof AppSettingsAccessRoute;
   "/_app/settings/audit": typeof AppSettingsAuditRoute;
   "/_app/settings/configuration": typeof AppSettingsConfigurationRoute;
   "/_app/blueprints/": typeof AppBlueprintsIndexRoute;
   "/_app/catalog/": typeof AppCatalogIndexRoute;
   "/_app/integrations/": typeof AppIntegrationsIndexRoute;
+  "/_app/scorecards/": typeof AppScorecardsIndexRoute;
   "/_app/settings/": typeof AppSettingsIndexRoute;
   "/_app/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/_app/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
@@ -209,12 +236,15 @@ export interface FileRouteTypes {
     | "/blueprints/new"
     | "/integrations/$identifier"
     | "/integrations/new"
+    | "/scorecards/$identifier"
+    | "/scorecards/new"
     | "/settings/access"
     | "/settings/audit"
     | "/settings/configuration"
     | "/blueprints/"
     | "/catalog/"
     | "/integrations/"
+    | "/scorecards/"
     | "/settings/"
     | "/catalog/$blueprint/$"
     | "/catalog/$blueprint/";
@@ -227,12 +257,15 @@ export interface FileRouteTypes {
     | "/blueprints/new"
     | "/integrations/$identifier"
     | "/integrations/new"
+    | "/scorecards/$identifier"
+    | "/scorecards/new"
     | "/settings/access"
     | "/settings/audit"
     | "/settings/configuration"
     | "/blueprints"
     | "/catalog"
     | "/integrations"
+    | "/scorecards"
     | "/settings"
     | "/catalog/$blueprint/$"
     | "/catalog/$blueprint";
@@ -249,12 +282,15 @@ export interface FileRouteTypes {
     | "/_app/blueprints/new"
     | "/_app/integrations/$identifier"
     | "/_app/integrations/new"
+    | "/_app/scorecards/$identifier"
+    | "/_app/scorecards/new"
     | "/_app/settings/access"
     | "/_app/settings/audit"
     | "/_app/settings/configuration"
     | "/_app/blueprints/"
     | "/_app/catalog/"
     | "/_app/integrations/"
+    | "/_app/scorecards/"
     | "/_app/settings/"
     | "/_app/catalog/$blueprint/$"
     | "/_app/catalog/$blueprint/";
@@ -365,6 +401,27 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppIntegrationsNewRouteImport;
       parentRoute: typeof AppIntegrationsRoute;
     };
+    "/_app/scorecards/": {
+      id: "/_app/scorecards/";
+      path: "/scorecards";
+      fullPath: "/scorecards/";
+      preLoaderRoute: typeof AppScorecardsIndexRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/_app/scorecards/$identifier": {
+      id: "/_app/scorecards/$identifier";
+      path: "/scorecards/$identifier";
+      fullPath: "/scorecards/$identifier";
+      preLoaderRoute: typeof AppScorecardsIdentifierRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/_app/scorecards/new": {
+      id: "/_app/scorecards/new";
+      path: "/scorecards/new";
+      fullPath: "/scorecards/new";
+      preLoaderRoute: typeof AppScorecardsNewRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/_app/settings/": {
       id: "/_app/settings/";
       path: "/";
@@ -466,7 +523,10 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
   AppAccountTokensRoute: typeof AppAccountTokensRoute;
+  AppScorecardsIdentifierRoute: typeof AppScorecardsIdentifierRoute;
+  AppScorecardsNewRoute: typeof AppScorecardsNewRoute;
   AppCatalogIndexRoute: typeof AppCatalogIndexRoute;
+  AppScorecardsIndexRoute: typeof AppScorecardsIndexRoute;
   AppCatalogBlueprintSplatRoute: typeof AppCatalogBlueprintSplatRoute;
   AppCatalogBlueprintIndexRoute: typeof AppCatalogBlueprintIndexRoute;
 }
@@ -477,7 +537,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppAccountTokensRoute: AppAccountTokensRoute,
+  AppScorecardsIdentifierRoute: AppScorecardsIdentifierRoute,
+  AppScorecardsNewRoute: AppScorecardsNewRoute,
   AppCatalogIndexRoute: AppCatalogIndexRoute,
+  AppScorecardsIndexRoute: AppScorecardsIndexRoute,
   AppCatalogBlueprintSplatRoute: AppCatalogBlueprintSplatRoute,
   AppCatalogBlueprintIndexRoute: AppCatalogBlueprintIndexRoute,
 };

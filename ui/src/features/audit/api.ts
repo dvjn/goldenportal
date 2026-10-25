@@ -49,6 +49,10 @@ export const auditActions: Record<string, string> = {
   "integration.delete": "Deleted integration",
   "integration.token_create": "Created ingestion token",
   "integration.token_revoke": "Revoked ingestion token",
+  "scorecard.draft_save": "Saved scorecard draft",
+  "scorecard.draft_discard": "Discarded scorecard draft",
+  "scorecard.publish": "Published scorecard",
+  "scorecard.delete": "Deleted scorecard",
 };
 
 export const auditKeys = {

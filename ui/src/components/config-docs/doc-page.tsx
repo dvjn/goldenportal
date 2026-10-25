@@ -43,12 +43,24 @@ type DocPageProps<S> = {
   // overview renders the document read-only: the published version, or the
   // draft until there is one.
   overview: (spec: S, doc: ConfigDoc<S>) => ReactNode;
+  // editable is false for people who can read the document but not change
+  // it: they see only the overview.
+  editable?: boolean;
 };
 
 // DocPage is the page of one configuration document: a read-only overview,
 // the YAML definition with its draft and publish actions, and its versions.
 export function DocPage<S>(props: DocPageProps<S>) {
   const { doc } = props;
+  if (props.editable === false) {
+    const shown = doc.published?.spec;
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title={doc.title} description={doc.description} />
+        {shown && props.overview(shown, doc)}
+      </div>
+    );
+  }
   const saved = doc.draft?.source ?? doc.published?.source ?? "";
 
   // Remount whenever the saved source changes, so the editor starts from it.

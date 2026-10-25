@@ -12,6 +12,7 @@ import { useConfig } from "@/features/config";
 
 const navItems: { to: string; label: string; role: Role }[] = [
   { to: "/catalog", label: "Catalog", role: "member" },
+  { to: "/scorecards", label: "Scorecards", role: "member" },
   { to: "/blueprints", label: "Blueprints", role: "builder" },
   { to: "/integrations", label: "Integrations", role: "builder" },
 ];
