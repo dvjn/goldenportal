@@ -3,6 +3,8 @@ package blueprint
 import (
 	"strings"
 	"testing"
+
+	"github.com/dvjn/goldenportal/internal/configdoc"
 )
 
 const serviceYAML = `
@@ -117,6 +119,53 @@ spec:
 	}
 	if !owner.Hidden {
 		t.Errorf("owner display = %+v", owner)
+	}
+}
+
+func TestParsePages(t *testing.T) {
+	source := `
+kind: Blueprint
+metadata: {name: service, title: Service}
+spec:
+  properties:
+    tier: {type: string}
+  catalog:
+    tabs:
+      overview:
+        title: Overview
+        widgets:
+          byTier: {type: donut, title: By Tier, groupBy: tier}
+  entity:
+    tabs:
+      overview:
+        widgets:
+          about: {type: properties, title: About}
+      deployments:
+        title: Deployments
+        widgets:
+          recent:
+            type: table
+            title: Recent
+            blueprint: deployment
+            filter: {property: service, op: eq, value: $entity}
+`
+	spec := mustParse(t, source)
+	if len(spec.Catalog.Tabs) != 1 || spec.Catalog.Tabs[0].Widgets[0].Blueprint != "service" {
+		t.Errorf("catalog = %+v", spec.Catalog)
+	}
+	if len(spec.Entity.Tabs) != 2 || spec.Entity.Tabs[1].Widgets[0].Path != "spec.entity.tabs.deployments.widgets.recent" {
+		t.Errorf("entity = %+v", spec.Entity)
+	}
+
+	next := mustParse(t, strings.Replace(source, "title: Recent", "title: Latest", 1))
+	changes := Diff(spec, next)
+	if len(changes) != 1 || changes[0].Section != "entity" || changes[0].ID != "deployments" || configdoc.Breaking(changes) {
+		t.Errorf("Diff() = %+v", changes)
+	}
+
+	_, issues := Parse(strings.Replace(source, "      deployments:", "      relations:", 1))
+	if !HasErrors(issues) || issues[0].Path != "spec.entity.tabs.relations" {
+		t.Errorf("reserved tab issues = %+v", issues)
 	}
 }
 

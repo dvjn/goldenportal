@@ -223,44 +223,69 @@ const MaxFacets = 50
 // Facets counts the values a property has across a blueprint's entities,
 // most common first, for filter options. Lists count each item.
 func (s Store) Facets(ctx context.Context, spec blueprint.Spec, property string) ([]Facet, error) {
+	facets, _, err := s.Group(ctx, spec, nil, property, MaxFacets)
+	return facets, err
+}
+
+// Group counts the values a property has across the entities matching
+// filter, most common first, up to limit values. Lists count each item.
+// None counts the entities without a value.
+func (s Store) Group(ctx context.Context, spec blueprint.Spec, filter *Filter, property string, limit int) (facets []Facet, none int, err error) {
 	fld, err := fieldFor(spec, property)
 	if err != nil {
-		return nil, FilterError{err}
+		return nil, 0, FilterError{err}
 	}
 	if fld.column {
-		return nil, FilterError{fmt.Errorf("%s can't be counted as filter options", property)}
+		return nil, 0, FilterError{fmt.Errorf("%s can't be counted by value", property)}
 	}
+	c := &compiler{spec: spec, args: []any{spec.Identifier}}
+	where := "b.kind = 'blueprint' AND b.identifier = $1"
+	if filter != nil {
+		sql, err := c.compile(*filter, 1)
+		if err != nil {
+			return nil, 0, FilterError{err}
+		}
+		where += " AND coalesce(" + sql + ", false)"
+	}
+	empty := "(" + fld.value + " IS NULL OR " + fld.value + " = 'null'::jsonb"
+	if fld.many {
+		empty += " OR " + fld.value + " = '[]'::jsonb"
+	}
+	empty += ")"
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*)`+entityFrom+` WHERE `+where+` AND `+empty, c.args...).Scan(&none); err != nil {
+		return nil, 0, err
+	}
+
 	value := fld.value
 	from := entityFrom
 	if fld.many {
 		from += `, jsonb_array_elements(CASE WHEN jsonb_typeof(` + fld.value + `) = 'array' THEN ` + fld.value + ` ELSE '[]' END) item`
 		value = "item"
 	}
-
 	rows, err := s.db.QueryContext(ctx, `SELECT `+value+`, count(*)`+from+`
-		WHERE b.kind = 'blueprint' AND b.identifier = $1 AND `+value+` IS NOT NULL AND `+value+` <> 'null'::jsonb
-		GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $2`, spec.Identifier, MaxFacets)
+		WHERE `+where+` AND `+value+` IS NOT NULL AND `+value+` <> 'null'::jsonb
+		GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT `+c.arg(limit), c.args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
-	facets := []Facet{}
+	facets = []Facet{}
 	for rows.Next() {
 		var (
 			raw []byte
 			f   Facet
 		)
 		if err := rows.Scan(&raw, &f.Count); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if err := json.Unmarshal(raw, &f.Value); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		facets = append(facets, f)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if prop, _ := spec.Property(property); prop.IsRelation() {
@@ -272,7 +297,7 @@ func (s Store) Facets(ctx context.Context, spec blueprint.Spec, property string)
 		}
 		found, err := s.fetch(ctx, prop.Relation, ids)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		for i, f := range facets {
 			if id, ok := f.Value.(string); ok {
@@ -283,5 +308,5 @@ func (s Store) Facets(ctx context.Context, spec blueprint.Spec, property string)
 		}
 	}
 
-	return facets, nil
+	return facets, none, nil
 }

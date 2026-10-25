@@ -38,7 +38,22 @@ var Kind = configdoc.Kind[Spec]{
 	Published: published,
 }
 
-func Register(app *gofr.App) { configdoc.Register(app, Kind) }
+// PagesChecker checks the widgets on a blueprint's pages against the
+// blueprints and scorecards they show, which this package can't import.
+type PagesChecker func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error)
+
+func Register(app *gofr.App, checkPages PagesChecker) {
+	kind := Kind
+	kind.Check = func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error) {
+		issues, err := Kind.Check(ctx, db, spec)
+		if err != nil {
+			return nil, err
+		}
+		more, err := checkPages(ctx, db, spec)
+		return append(issues, more...), err
+	}
+	configdoc.Register(app, kind)
+}
 
 // Reference is a relation on a published blueprint that points at another.
 type Reference struct {

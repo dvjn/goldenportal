@@ -1,12 +1,14 @@
 package blueprint
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
 	"strings"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/widget"
 )
 
 const (
@@ -34,6 +36,13 @@ func Diff(previous, next Spec) []Change {
 			Section: "blueprint", Change: ChangeChanged,
 			Detail: "changes the " + joinWords(meta),
 		})
+	}
+
+	for _, page := range []struct {
+		name           string
+		previous, next *Page
+	}{{"catalog", previous.Catalog, next.Catalog}, {"entity", previous.Entity, next.Entity}} {
+		changes = append(changes, diffTabs(page.name, page.previous, page.next)...)
 	}
 
 	changes = append(changes, diffList(previous.Properties, next.Properties, "properties",
@@ -200,4 +209,44 @@ func article(word string) string {
 	}
 
 	return "a " + word
+}
+
+// diffTabs lists the tabs added to, changed on or removed from a page.
+// Tabs only show data, so none of it is breaking.
+func diffTabs(section string, previous, next *Page) []Change {
+	tabs := func(p *Page) []widget.Tab {
+		if p == nil {
+			return nil
+		}
+		return p.Tabs
+	}
+	before := map[string]string{}
+	for _, tab := range tabs(previous) {
+		before[tab.ID] = encode(tab)
+	}
+	changes := []Change{}
+	seen := map[string]bool{}
+	for _, tab := range tabs(next) {
+		seen[tab.ID] = true
+		old, ok := before[tab.ID]
+		switch {
+		case !ok:
+			changes = append(changes, Change{Section: section, ID: tab.ID, Change: ChangeAdded, Detail: "adds the tab"})
+		case old != encode(tab):
+			changes = append(changes, Change{Section: section, ID: tab.ID, Change: ChangeChanged, Detail: "changes the tab"})
+		}
+	}
+	for _, tab := range tabs(previous) {
+		if !seen[tab.ID] {
+			changes = append(changes, Change{Section: section, ID: tab.ID, Change: ChangeRemoved, Detail: "removes the tab"})
+		}
+	}
+
+	return changes
+}
+
+// encode compares tabs by what they show, not where they're written.
+func encode(tab widget.Tab) string {
+	encoded, _ := json.Marshal(tab)
+	return string(encoded)
 }

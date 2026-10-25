@@ -13,6 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/widget"
 )
 
 // Spec is a parsed blueprint. Its lists keep the order they were written in,
@@ -23,7 +24,22 @@ type Spec struct {
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
 	Properties  []Property `json:"properties"`
+	// Catalog and Entity lay out the blueprint's catalog page and its
+	// entities' pages as tabs of widgets, beside the tabs every page has.
+	Catalog *Page `json:"catalog,omitempty"`
+	Entity  *Page `json:"entity,omitempty"`
 }
+
+// Page is the tabs a blueprint adds to one of its pages.
+type Page struct {
+	Tabs []widget.Tab `json:"tabs"`
+}
+
+// Tabs every page has. An entity tab named overview replaces the built-in one.
+var (
+	CatalogTabs = []string{"entities"}
+	EntityTabs  = []string{"relations", "yaml"}
+)
 
 // Property is a value entities have. Integrations write stored properties,
 // including relations, whose values are identifiers of entities of another
@@ -129,10 +145,12 @@ func Parse(source string) (Spec, []Issue) {
 		return spec, p.Issues
 	}
 
-	if fields, ok := p.Fields(doc.Spec, "spec", "properties"); ok {
+	if fields, ok := p.Fields(doc.Spec, "spec", "properties", "catalog", "entity"); ok {
 		p.Each(fields["properties"], "spec.properties", func(id string, key, value *yaml.Node) {
 			spec.Properties = append(spec.Properties, p.property(id, "spec.properties."+id, key, value))
 		})
+		spec.Catalog = p.page(fields["catalog"], "spec.catalog", widget.Scope{Blueprint: spec.Identifier}, CatalogTabs)
+		spec.Entity = p.page(fields["entity"], "spec.entity", widget.Scope{Blueprint: spec.Identifier, Entity: true}, EntityTabs)
 	}
 	p.checkNames(spec)
 
@@ -328,6 +346,18 @@ func (p *parser) derived(prop Property, path string, key *yaml.Node, fields map[
 	}
 
 	return prop
+}
+
+func (p *parser) page(node *yaml.Node, path string, scope widget.Scope, reserved []string) *Page {
+	if node == nil {
+		return nil
+	}
+	fields, ok := p.Fields(node, path, "tabs")
+	if !ok {
+		return nil
+	}
+
+	return &Page{Tabs: widget.ParseTabs(&p.Reader, fields["tabs"], path+".tabs", scope, reserved...)}
 }
 
 // CompileExpression checks a jq expression compiles.
