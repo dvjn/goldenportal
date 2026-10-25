@@ -10,6 +10,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/scorecard"
@@ -46,7 +47,7 @@ func New() *gofr.App {
 		app.Logger().Errorf("The favicon can't be served: %v", err)
 		favicon, _ = web.Favicon("")
 	}
-	app.UseMiddleware(favicon, web.SPA(web.Dist()))
+	app.UseMiddleware(favicon, web.SPA(web.Dist()), httpx.WithQuery)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
 		return scimServer.Routes(c.SQL)(auth.Middleware(store)(oidc.Routes(store)(next)))

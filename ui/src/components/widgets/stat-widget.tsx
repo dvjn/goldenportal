@@ -20,7 +20,11 @@ export function StatWidget({ source, widget, context }: WidgetProps) {
 
   const property = bp?.published?.spec.properties.find((p) => p.identifier === widget.property);
   const value = data.data.value;
-  const filters = toCatalogFilters(widget.filter, { entity: context.entity, me: me.email });
+  const filters = toCatalogFilters(widget.filter, {
+    entity: context.entity,
+    me,
+    filters: context.filters,
+  });
   const number = (
     <span className="text-3xl font-semibold tracking-tight tabular-nums">
       {value === null ? "—" : formatNumber(value, widget.unit ?? property?.display?.unit)}

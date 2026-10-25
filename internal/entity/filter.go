@@ -155,8 +155,12 @@ func (c *compiler) condition(f Filter) (string, error) {
 		}
 		return sql, nil
 	case OpIn:
-		if len(f.Values) == 0 {
+		if f.Values == nil {
 			return "", fmt.Errorf("in on %s needs values", f.Property)
+		}
+		// A list written empty, as a filter bound to no values is, matches nothing.
+		if len(f.Values) == 0 {
+			return "false", nil
 		}
 		sqls := make([]string, 0, len(f.Values))
 		for _, value := range f.Values {

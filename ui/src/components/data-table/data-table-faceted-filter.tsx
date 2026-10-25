@@ -1,4 +1,5 @@
 import { Check, PlusCircle } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,8 @@ type DataTableFacetedFilterProps = {
   options: Option[];
   selected: string[];
   onChange: (selected: string[]) => void;
+  // multiple is false when picking a value replaces the last one.
+  multiple?: boolean;
 };
 
 // DataTableFacetedFilter picks any number of values for one field, after the
@@ -30,10 +33,17 @@ export function DataTableFacetedFilter({
   options,
   selected,
   onChange,
+  multiple = true,
 }: DataTableFacetedFilterProps) {
+  const [open, setOpen] = useState(false);
   const chosen = new Set(selected);
 
   function toggle(value: string) {
+    if (!multiple) {
+      onChange(chosen.has(value) ? [] : [value]);
+      setOpen(false);
+      return;
+    }
     const next = new Set(chosen);
     if (next.has(value)) next.delete(value);
     else next.add(value);
@@ -41,7 +51,7 @@ export function DataTableFacetedFilter({
   }
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" className="border-dashed">
           <PlusCircle />

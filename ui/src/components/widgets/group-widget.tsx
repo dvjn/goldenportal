@@ -34,7 +34,11 @@ export function GroupWidget({ source, widget, context }: WidgetProps) {
   if (!data.data) return <WidgetLoading widget={widget} height="h-32" />;
 
   const property = bp?.published?.spec.properties.find((p) => p.identifier === widget.groupBy);
-  const base = toCatalogFilters(widget.filter, { entity: context.entity, me: me.email });
+  const base = toCatalogFilters(widget.filter, {
+    entity: context.entity,
+    me,
+    filters: context.filters,
+  });
   const groups = data.data.groups.map((facet, index) =>
     toGroup(
       facet,

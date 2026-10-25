@@ -33,6 +33,29 @@ func Diff(previous, next Spec) []configdoc.Change {
 		add("dashboard", "", configdoc.ChangeChanged, "changes the title, description or icon")
 	}
 
+	filters := map[string]Filter{}
+	for _, f := range previous.Filters {
+		f.line = 0
+		filters[f.ID] = f
+	}
+	seenFilters := map[string]bool{}
+	for _, f := range next.Filters {
+		seenFilters[f.ID] = true
+		f.line = 0
+		old, ok := filters[f.ID]
+		switch {
+		case !ok:
+			add("filters", f.ID, configdoc.ChangeAdded, "adds a %s filter", f.Type)
+		case !reflect.DeepEqual(old, f):
+			add("filters", f.ID, configdoc.ChangeChanged, "changes it")
+		}
+	}
+	for _, f := range previous.Filters {
+		if !seenFilters[f.ID] {
+			add("filters", f.ID, configdoc.ChangeRemoved, "removes it")
+		}
+	}
+
 	before := map[string]widget.Widget{}
 	for _, w := range previous.Widgets {
 		before[w.ID] = w

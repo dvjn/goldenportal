@@ -240,6 +240,20 @@ func (r *Reader) Bool(node *yaml.Node, path string) bool {
 }
 
 // OrNode picks node, or fallback when it's missing, to point issues at.
+// Field returns a mapping's value for a key, or nil.
+func Field(node *yaml.Node, name string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == name {
+			return node.Content[i+1]
+		}
+	}
+
+	return nil
+}
+
 func OrNode(node, fallback *yaml.Node) *yaml.Node {
 	if node != nil {
 		return node

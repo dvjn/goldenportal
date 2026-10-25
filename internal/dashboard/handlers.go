@@ -1,8 +1,11 @@
 package dashboard
 
 import (
+	"context"
 	"errors"
+	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -21,13 +24,15 @@ import (
 func Register(app *gofr.App) {
 	configdoc.Register(app, Kind)
 	app.GET("/api/v1/home", home)
+	app.GET("/api/v1/dashboards/{identifier}/view", dashboardView)
 	app.GET("/api/v1/dashboards/{identifier}/widgets/{widget}", dashboardWidget)
 	app.GET("/api/v1/blueprints/{identifier}/widgets/{page}/{tab}/{widget}", blueprintWidget)
 }
 
 // home lists the published dashboards, in the order Home shows them.
 func home(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+	p, err := auth.Require(ctx, auth.RoleMember)
+	if err != nil {
 		return nil, err
 	}
 	sources, err := configdoc.NewStore(ctx.SQL, Name).PublishedSources(ctx)
@@ -47,7 +52,137 @@ func home(ctx *gofr.Context) (any, error) {
 		return strings.Compare(a.Title+"\x00"+a.Identifier, b.Title+"\x00"+b.Identifier)
 	})
 
-	return specs, nil
+	views := make([]homeDashboard, 0, len(specs))
+	for _, spec := range specs {
+		v, problems := view(ctx, find(ctx), spec, p)
+		logProblems(ctx, spec, problems)
+		views = append(views, v)
+	}
+
+	return views, nil
+}
+
+// dashboardView is one dashboard as Home would show it to whoever is
+// looking, from the draft for builders who ask, so they can preview it.
+func dashboardView(ctx *gofr.Context) (any, error) {
+	p, err := auth.Require(ctx, auth.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	src, err := source(ctx, p, Name, ctx.PathParam("identifier"))
+	if err != nil {
+		return nil, err
+	}
+	spec, _ := Parse(src)
+	v, problems := view(ctx, find(ctx), spec, p)
+	logProblems(ctx, spec, problems)
+
+	return v, nil
+}
+
+// homeDashboard is a dashboard as Home shows it to whoever is looking,
+// with its text filled in for them.
+type homeDashboard struct {
+	Spec
+	// Defaults are what the filters start at for them, by identifier, with
+	// lookup defaults found. A filter without a default is left out; a
+	// lookup that found nothing is an empty list, which selects nothing.
+	Defaults map[string][]string `json:"defaults"`
+	// Problems say why a lookup default couldn't be found, by filter. The
+	// filter starts at nothing then, as if the lookup found none.
+	Problems map[string]string `json:"problems,omitempty"`
+}
+
+// view works out how whoever is looking sees a dashboard, and what went
+// wrong finding its defaults, for the log.
+func view(ctx context.Context, find finder, spec Spec, p auth.Principal) (homeDashboard, map[string]error) {
+	me := widget.MeValues(p)
+	values, problems := defaults(ctx, find, spec, me, nil)
+	v := homeDashboard{Spec: spec.render(me), Defaults: map[string][]string{}, Problems: map[string]string{}}
+	for _, f := range spec.Filters {
+		if value := values[widget.ValueFilter+f.ID]; value != nil {
+			v.Defaults[f.ID] = value
+		}
+		if err := problems[f.ID]; err != nil {
+			v.Problems[f.ID] = explain(err)
+		}
+	}
+
+	return v, problems
+}
+
+// explain says why a lookup failed, to whoever is looking. A filter the
+// blueprint can't answer names the property, which a builder can fix;
+// anything else is the server's problem, which the log has.
+func explain(err error) string {
+	var filterErr entity.FilterError
+	if errors.As(err, &filterErr) {
+		return "the default can't be found: " + filterErr.Error()
+	}
+
+	return "the default couldn't be looked up"
+}
+
+func logProblems(ctx *gofr.Context, spec Spec, problems map[string]error) {
+	for id, err := range problems {
+		ctx.Errorf("find the default of filter %s on dashboard %s: %v", id, spec.Identifier, err)
+	}
+}
+
+// lookupLimit caps what a lookup default finds, at what the bar offers.
+const lookupLimit = 100
+
+// finder finds the entities of a blueprint matching where, by identifier.
+// It finds nothing when the blueprint isn't published.
+type finder func(ctx context.Context, from string, where *filter.Filter) ([]string, error)
+
+func find(ctx *gofr.Context) finder {
+	return func(c context.Context, from string, where *filter.Filter) ([]string, error) {
+		blueprints, err := blueprint.Published(c, ctx.SQL)
+		if err != nil {
+			return nil, err
+		}
+		bp, ok := blueprints[from]
+		if !ok {
+			return nil, nil
+		}
+
+		return entity.NewStore(ctx.SQL).Identifiers(c, bp, where, lookupLimit)
+	}
+}
+
+// defaults is what a dashboard's filters are set to for whoever is
+// looking, by context value: what they picked, or else the filter's
+// default, with a lookup default found in the catalog with their $me
+// values. A lookup that finds no entity sets the filter to Nothing, so
+// widgets show nothing, unlike a filter they cleared, which is unset and
+// shows everything. A lookup that fails does the same, and says why by
+// filter, so one broken dashboard neither takes Home down nor shows more
+// than its author meant.
+func defaults(ctx context.Context, find finder, spec Spec, me, picked widget.Values) (widget.Values, map[string]error) {
+	values := widget.Values{}
+	problems := map[string]error{}
+	for _, f := range spec.Filters {
+		key := widget.ValueFilter + f.ID
+		if value, ok := picked[key]; ok {
+			values[key] = value
+			continue
+		}
+		if f.Lookup == nil {
+			values[key] = f.Default
+			continue
+		}
+		found, err := find(ctx, f.Lookup.From, widget.Bind(f.Lookup.Where, me))
+		if err != nil {
+			problems[f.ID] = err
+		}
+		if len(found) == 0 {
+			found = widget.Nothing
+		}
+		values[key] = found
+	}
+
+	return values, problems
 }
 
 // source returns the source of a document: its draft when the request asks
@@ -89,8 +224,50 @@ func dashboardWidget(ctx *gofr.Context) (any, error) {
 	if !ok {
 		return nil, noWidget(ctx)
 	}
+	picked, err := picked(spec, httpx.Query(ctx))
+	if err != nil {
+		return nil, err
+	}
+	me := widget.MeValues(p)
+	values, problems := defaults(ctx, find(ctx), spec, me, picked)
+	logProblems(ctx, spec, problems)
+	maps.Copy(values, me)
 
-	return respond(load(ctx, w, widget.Bind(w.Filter, map[string]string{widget.ValueMe: p.Email}), nil))
+	return respond(load(ctx, w, values, nil))
+}
+
+// picked reads what Home picked for a dashboard's filters from the query,
+// as filter.<id>=value, repeated for a multiple filter. An empty value
+// clears the filter, leaving it unset, and a filter the query doesn't
+// mention is left out, to take its default.
+func picked(spec Spec, query url.Values) (widget.Values, error) {
+	values := widget.Values{}
+	for key, raw := range query {
+		id, ok := strings.CutPrefix(key, "filter.")
+		if !ok {
+			continue
+		}
+		i := slices.IndexFunc(spec.Filters, func(f Filter) bool { return f.ID == id })
+		if i < 0 {
+			return nil, badRequest("the dashboard has no filter " + id)
+		}
+		f := spec.Filters[i]
+		picked := slices.DeleteFunc(slices.Clone(raw), func(value string) bool { return value == "" })
+		if len(picked) > 1 && !f.Multiple {
+			return nil, badRequest(f.ID + " takes one value")
+		}
+		for _, value := range picked {
+			if f.Type == FilterEnum && !slices.Contains(f.Values, value) {
+				return nil, badRequest(f.ID + " must be one of " + strings.Join(f.Values, ", "))
+			}
+		}
+		if len(picked) == 0 {
+			picked = nil
+		}
+		values[widget.ValueFilter+id] = picked
+	}
+
+	return values, nil
 }
 
 // blueprintWidget loads a widget on one of a blueprint's pages. Entity
@@ -106,17 +283,17 @@ func blueprintWidget(ctx *gofr.Context) (any, error) {
 	}
 	spec, _ := blueprint.Parse(src)
 
-	values := map[string]string{widget.ValueMe: p.Email}
+	values := widget.MeValues(p)
 	var page *blueprint.Page
 	switch ctx.PathParam("page") {
 	case "catalog":
 		page = spec.Catalog
 	case "entity":
 		page = spec.Entity
-		values[widget.ValueEntity] = ctx.Param("entity")
-		if values[widget.ValueEntity] == "" {
+		if ctx.Param("entity") == "" {
 			return nil, badRequest("choose the entity whose page it is")
 		}
+		values[widget.ValueEntity] = []string{ctx.Param("entity")}
 	default:
 		return nil, badRequest("page must be catalog or entity")
 	}
@@ -132,7 +309,7 @@ func blueprintWidget(ctx *gofr.Context) (any, error) {
 		return nil, noWidget(ctx)
 	}
 
-	return respond(load(ctx, w, widget.Bind(w.Filter, values), &spec))
+	return respond(load(ctx, w, values, &spec))
 }
 
 func noWidget(ctx *gofr.Context) error {
@@ -163,14 +340,22 @@ type (
 	tierData struct {
 		Tiers []scorecard.TierCount `json:"tiers"`
 	}
+	textData struct {
+		Text string `json:"text"`
+	}
 )
 
-// load works out what a widget shows, with own in place of its published
-// version, so a draft's widgets can show the draft's derived properties.
-func load(ctx *gofr.Context, w widget.Widget, f *filter.Filter, own *blueprint.Spec) (any, error) {
-	if w.Type == widget.TypeMarkdown || w.Type == widget.TypeProperties {
+// load works out what a widget shows for whoever is looking, with own in
+// place of its published version, so a draft's widgets can show the
+// draft's derived properties.
+func load(ctx *gofr.Context, w widget.Widget, values widget.Values, own *blueprint.Spec) (any, error) {
+	if w.Type == widget.TypeMarkdown {
+		return textData{Text: widget.Render(w.Text, values)}, nil
+	}
+	if w.Type == widget.TypeProperties {
 		return nil, badRequest(w.Type + " widgets have no data to load")
 	}
+	f := widget.Bind(w.Filter, values)
 	blueprints, err := blueprint.Published(ctx, ctx.SQL)
 	if err != nil {
 		return nil, err

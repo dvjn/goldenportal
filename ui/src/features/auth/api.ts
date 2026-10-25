@@ -14,6 +14,8 @@ export type Me = {
   email: string;
   displayName: string;
   role: Role;
+  // groups are the names of the identity provider's groups they're in.
+  groups?: string[];
 };
 
 export const authKeys = {

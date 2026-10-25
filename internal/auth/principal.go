@@ -25,6 +25,9 @@ type Principal struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"displayName"`
 	Role        Role   `json:"role"`
+	// Groups are the names of the identity provider's groups they're in,
+	// sorted, so widgets can compare with them as $me.groups.
+	Groups []string `json:"groups"`
 }
 
 // Can reports whether the principal's role includes role. Roles nest:

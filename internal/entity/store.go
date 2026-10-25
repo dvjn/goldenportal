@@ -242,6 +242,39 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 	return page, rows.Err()
 }
 
+// Identifiers lists the entities matching a filter, by identifier, in the
+// catalog's order. At most limit come back.
+func (s Store) Identifiers(ctx context.Context, spec blueprint.Spec, filter *Filter, limit int) ([]string, error) {
+	c := &compiler{spec: spec, args: []any{spec.Identifier}}
+	where := "b.kind = 'blueprint' AND b.identifier = $1"
+	if filter != nil {
+		sql, err := c.compile(*filter, 1)
+		if err != nil {
+			return nil, FilterError{err}
+		}
+		where += " AND coalesce(" + sql + ", false)"
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT e.identifier`+entityFrom+`
+		WHERE `+where+`
+		ORDER BY e.title, e.identifier
+		LIMIT `+c.arg(limit), c.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	identifiers := []string{}
+	for rows.Next() {
+		var identifier string
+		if err := rows.Scan(&identifier); err != nil {
+			return nil, err
+		}
+		identifiers = append(identifiers, identifier)
+	}
+
+	return identifiers, rows.Err()
+}
+
 // FilterError is a filter or sort the blueprint can't answer.
 type FilterError struct{ err error }
 

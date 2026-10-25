@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/audit"
@@ -96,14 +97,14 @@ func (s Store) TokenPrincipal(ctx context.Context, secretHash []byte) (Principal
 	)
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, t.read_only, t.last_used_at, `+EffectiveRoleSQL+`
+		SELECT u.id, u.email, u.display_name, t.read_only, t.last_used_at, `+EffectiveRoleSQL+`, `+GroupNamesSQL+`
 		FROM api_tokens t
 		JOIN users u ON u.id = t.user_id
 		WHERE t.secret_hash = $1
 			AND t.revoked_at IS NULL
 			AND t.expires_at > now()
 			AND u.status = 'active'`, secretHash).
-		Scan(&p.ID, &p.Email, &p.DisplayName, &readOnly, &lastUsed, &p.Role)
+		Scan(&p.ID, &p.Email, &p.DisplayName, &readOnly, &lastUsed, &p.Role, pq.Array(&p.Groups))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Principal{}, false, errNotFound
 	}

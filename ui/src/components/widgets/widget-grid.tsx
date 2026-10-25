@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
@@ -10,7 +11,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Widget, WidgetContext, WidgetSource } from "@/features/widgets";
+import {
+  type TextData,
+  type Widget,
+  type WidgetContext,
+  type WidgetSource,
+  widgetQueryOptions,
+} from "@/features/widgets";
 import { GroupWidget } from "./group-widget";
 import { PropertiesWidget } from "./properties-widget";
 import { ScorecardWidget } from "./scorecard-widget";
@@ -73,12 +80,32 @@ function WidgetBody(props: WidgetProps) {
     case "properties":
       return <PropertiesWidget {...props} />;
     case "markdown":
-      return (
-        <WidgetCard widget={props.widget}>
-          <Markdown>{props.widget.text ?? ""}</Markdown>
-        </WidgetCard>
-      );
+      return <MarkdownWidget {...props} />;
   }
+}
+
+// MarkdownWidget shows its text, with its {{ }} variables filled in for
+// whoever is looking. A dashboard comes to them already filled in, while a
+// blueprint's pages come as published, so there the text loads like any
+// widget's data.
+function MarkdownWidget({ source, widget, context }: WidgetProps) {
+  const loads = "blueprint" in source;
+  const data = useQuery({
+    ...widgetQueryOptions<TextData>(source, widget.identifier, context),
+    enabled: loads,
+  });
+  if (!loads) return <MarkdownCard widget={widget} text={widget.text ?? ""} />;
+  if (data.error) return <WidgetError widget={widget} error={data.error} />;
+  if (!data.data) return <WidgetLoading widget={widget} />;
+  return <MarkdownCard widget={widget} text={data.data.text} />;
+}
+
+function MarkdownCard({ widget, text }: Readonly<{ widget: Widget; text: string }>) {
+  return (
+    <WidgetCard widget={widget}>
+      <Markdown>{text}</Markdown>
+    </WidgetCard>
+  );
 }
 
 // WidgetCard is the frame every widget shares: its title, an action such as

@@ -43,14 +43,24 @@ export type WidgetSource =
   | { blueprint: string; page: "catalog" | "entity"; tab: string };
 
 // WidgetContext is what a widget loads against: the entity whose page it
-// is, and whether to load a builder's draft.
-export type WidgetContext = { entity?: string; draft?: boolean };
+// is, what the dashboard's filters are set to, and whether to load a
+// builder's draft. A filter is set to the values picked, to none when
+// cleared to show everything, or to null when its lookup default found
+// nothing, which shows nothing. The query can't say "nothing", so a null
+// filter is left out of the request and the server finds nothing again.
+export type WidgetContext = {
+  entity?: string;
+  filters?: Record<string, string[] | null>;
+  draft?: boolean;
+};
 
 export type StatData = { value: number | null };
 // none counts the entities without a value.
 export type GroupData = { groups: Facet[]; none: number };
 export type TierData = { tiers: { name: string; count: number }[] };
-export type WidgetData = StatData | GroupData | EntityPage | TierData;
+// TextData is a markdown widget's text, filled in for whoever is looking.
+export type TextData = { text: string };
+export type WidgetData = StatData | GroupData | EntityPage | TierData | TextData;
 
 function widgetPath(source: WidgetSource, widget: string) {
   const parts =
@@ -65,9 +75,14 @@ export async function loadWidget<D extends WidgetData>(
   widget: string,
   context: WidgetContext,
 ): Promise<D> {
-  const searchParams: Record<string, string> = {};
-  if (context.entity) searchParams.entity = context.entity;
-  if (context.draft) searchParams.draft = "true";
+  const searchParams = new URLSearchParams();
+  if (context.entity) searchParams.set("entity", context.entity);
+  if (context.draft) searchParams.set("draft", "true");
+  for (const [filter, values] of Object.entries(context.filters ?? {})) {
+    if (values === null) continue;
+    if (values.length === 0) searchParams.append(`filter.${filter}`, "");
+    for (const value of values) searchParams.append(`filter.${filter}`, value);
+  }
   return (await api.get(widgetPath(source, widget), { searchParams }).json<ApiDataResponse<D>>())
     .data;
 }

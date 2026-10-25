@@ -58,6 +58,10 @@ spec:
       title: On-call Rotation
       type: string
       format: uri
+    members:
+      title: Members
+      relation: user
+      many: true
   entity:
     tabs:
       services:
@@ -385,6 +389,7 @@ spec:
         properties:
           slackChannel: .links.slack
           oncall: .links.oncall
+          members: .members
 $yaml$),
   ('service-registry', $yaml$kind: Integration
 metadata:
@@ -596,7 +601,13 @@ INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
 -- Example dashboards, each a tab on Home. The blueprints above lay out
--- their own catalog and entity pages.
+-- their own catalog and entity pages. The overview's filters narrow its
+-- widgets to a team and tiers; unset, they match everything. My Services
+-- starts its team filter at the teams whose members include whoever is
+-- looking, found by their email, which is a user entity's identifier, and
+-- greets them by name with {{ $me.name }}. Its last widget compares with
+-- $me.groups instead: the dev teams are named after the identity
+-- provider's groups, so it counts the services of the groups they're in.
 WITH example (identifier, source) AS (VALUES
   ('overview', $yaml$kind: Dashboard
 metadata:
@@ -606,16 +617,33 @@ metadata:
   icon: layout-dashboard
 spec:
   order: 1
+  filters:
+    team:
+      title: Team
+      type: relation
+      relation: team
+    tier:
+      title: Tier
+      type: enum
+      values: [critical, standard, experimental]
+      multiple: true
   widgets:
     services:
       type: stat
       title: Services
       blueprint: service
+      filter:
+        and:
+          - {property: owner, op: eq, value: $filter.team}
+          - {property: tier, op: eq, value: $filter.tier}
     critical:
       type: stat
       title: Critical Services
       blueprint: service
-      filter: {property: tier, op: eq, value: critical}
+      filter:
+        and:
+          - {property: owner, op: eq, value: $filter.team}
+          - {property: tier, op: eq, value: critical}
     teams:
       type: stat
       title: Teams
@@ -629,11 +657,16 @@ spec:
       type: scorecard
       title: Service Readiness
       scorecard: service-readiness
+      filter:
+        and:
+          - {property: owner, op: eq, value: $filter.team}
+          - {property: tier, op: eq, value: $filter.tier}
     byOwner:
       type: bar
       title: Services by Owner
       blueprint: service
       groupBy: owner
+      filter: {property: tier, op: eq, value: $filter.tier}
     deployments:
       type: table
       title: Recent Deployments
@@ -642,6 +675,62 @@ spec:
       sort: -startedAt
       limit: 8
 $yaml$),
+  ('mine', $yaml$kind: Dashboard
+metadata:
+  name: mine
+  title: My Services
+  description: The services of the teams you're in.
+  icon: user-check
+spec:
+  order: 2
+  filters:
+    team:
+      title: Team
+      type: relation
+      relation: team
+      multiple: true
+      default:
+        from: team
+        where: {property: members, op: contains, value: $me}
+  widgets:
+    hello:
+      type: markdown
+      width: 12
+      text: |
+        **Hello {{ $me.name }}.** These are the services of the teams you're in.
+        Pick other teams above to look around.
+    services:
+      type: stat
+      title: Services
+      blueprint: service
+      filter: {property: owner, op: eq, value: $filter.team}
+    critical:
+      type: stat
+      title: Critical Services
+      blueprint: service
+      filter:
+        and:
+          - {property: owner, op: eq, value: $filter.team}
+          - {property: tier, op: eq, value: critical}
+    readiness:
+      type: scorecard
+      title: Service Readiness
+      scorecard: service-readiness
+      filter: {property: owner, op: eq, value: $filter.team}
+    list:
+      type: table
+      title: Services
+      blueprint: service
+      filter: {property: owner, op: eq, value: $filter.team}
+      columns: [owner, tier, language, lastDeployedAt]
+      sort: -lastDeployedAt
+    groupServices:
+      type: stat
+      title: Services of My Groups
+      description: Teams named after the groups you're in.
+      blueprint: service
+      filter: {property: owner, op: eq, value: $me.groups}
+$yaml$),
   ('portal', $yaml$kind: Dashboard
 metadata:
   name: portal
@@ -649,7 +738,7 @@ metadata:
   description: What the portal holds and where it comes from.
   icon: database
 spec:
-  order: 2
+  order: 3
   widgets:
     welcome:
       type: markdown

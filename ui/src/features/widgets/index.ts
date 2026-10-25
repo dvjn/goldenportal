@@ -2,6 +2,7 @@ export {
   type GroupData,
   type StatData,
   type Tab,
+  type TextData,
   type TierData,
   type Widget,
   type WidgetContext,

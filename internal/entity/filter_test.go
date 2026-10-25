@@ -80,6 +80,12 @@ func TestCompileFilter(t *testing.T) {
 			[]any{`["pci"]`},
 		},
 		{
+			"many relation contains", `{"property":"dependsOn","op":"contains","value":"ledger"}`,
+			`(e.relations -> 'dependsOn' @> $1::jsonb)`,
+			[]any{`["ledger"]`},
+		},
+		{"in no values", `{"property":"tier","op":"in","values":[]}`, `false`, nil},
+		{
 			"not exists", `{"not":{"property":"owner","op":"exists"}}`,
 			`NOT coalesce((e.relations -> 'owner' IS NOT NULL AND e.relations -> 'owner' <> 'null'::jsonb), false)`, nil,
 		},

@@ -73,8 +73,12 @@ var types = map[string]struct {
 const (
 	// ValueEntity is the identifier of the entity whose page it is.
 	ValueEntity = "$entity"
-	// ValueMe is the email of whoever is looking.
+	// ValueMe is whoever is looking: alone, their email, and $me.<name>
+	// one of their attributes, listed in me.go.
 	ValueMe = "$me"
+	// ValueFilter prefixes a dashboard filter's identifier: $filter.team is
+	// what Home picked for the filter team.
+	ValueFilter = "$filter."
 )
 
 const (
@@ -85,6 +89,9 @@ const (
 
 var namePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
 
+// ValidName reports whether id can name a widget, a tab or a filter.
+func ValidName(id string) bool { return namePattern.MatchString(id) }
+
 // Scope is the page widgets are on, which decides what they can use.
 type Scope struct {
 	// Blueprint is the page's blueprint, which widgets show unless they
@@ -92,6 +99,9 @@ type Scope struct {
 	Blueprint string
 	// Entity is set on entity pages, where $entity is the page's entity.
 	Entity bool
+	// Filters are the dashboard's filters, which widgets compare with as
+	// $filter.<id>. Only Home has them.
+	Filters []string
 }
 
 // Find returns the widget with an identifier.
@@ -124,7 +134,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		r.Errorf(node, path, "%s must be a mapping of fields", path)
 		return w
 	}
-	typeNode := field(node, "type")
+	typeNode := configdoc.Field(node, "type")
 	w.Type = r.Text(typeNode, path+".type")
 	kind, known := types[w.Type]
 	if !known {
@@ -141,6 +151,11 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		r.Errorf(key, path+".title", "add a title")
 	}
 	w.Description = r.Text(fields["description"], path+".description")
+	for _, name := range []string{"title", "description"} {
+		if n := fields[name]; n != nil {
+			checkText(r, n, path+"."+name, scope)
+		}
+	}
 	w.Width = kind.width
 	if n := fields["width"]; n != nil {
 		if err := n.Decode(&w.Width); err != nil || w.Width < 1 || w.Width > GridColumns {
@@ -190,6 +205,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		if strings.TrimSpace(w.Text) == "" {
 			r.Errorf(configdoc.OrNode(fields["text"], key), path+".text", "add the text to show")
 		}
+		checkText(r, fields["text"], path+".text", Scope{})
 	case TypeProperties:
 		if !scope.Entity {
 			r.Errorf(typeNode, path+".type", "properties widgets show one entity, so they go on entity pages")
@@ -200,14 +216,21 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 	return w
 }
 
-func field(node *yaml.Node, name string) *yaml.Node {
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == name {
-			return node.Content[i+1]
-		}
+// checkText checks the {{ }} variables in a text field. Titles and
+// descriptions render on Home only, where the dashboard comes to the viewer
+// already filled in; a blueprint's pages come as published, so there they
+// can't have any. Markdown text loads through its own endpoint everywhere.
+func checkText(r *configdoc.Reader, node *yaml.Node, path string, scope Scope) {
+	if node == nil {
+		return
 	}
-
-	return nil
+	if err := CheckText(node.Value); err != nil {
+		r.Errorf(node, path, "%v", err)
+		return
+	}
+	if scope.Blueprint != "" && tokenPattern.MatchString(node.Value) {
+		r.Errorf(node, path, "{{ }} variables fill in on Home, so a blueprint's pages only have them in markdown text")
+	}
 }
 
 func typeNames() []string {
@@ -244,6 +267,28 @@ func texts(r *configdoc.Reader, node *yaml.Node, path string) []string {
 
 // parseFilter reads a filter in the catalog's filter language.
 func parseFilter(r *configdoc.Reader, node *yaml.Node, path string, scope Scope) *filter.Filter {
+	f := ReadFilter(r, node, path)
+	if f == nil {
+		return nil
+	}
+	if !scope.Entity && Uses(f, ValueEntity) {
+		r.Errorf(node, path, "%s is the entity whose page it is, so only entity pages have it", ValueEntity)
+	}
+	for _, ref := range FilterRefs(f) {
+		id := strings.TrimPrefix(ref, ValueFilter)
+		switch {
+		case scope.Blueprint != "":
+			r.Errorf(node, path, "%s is a dashboard filter, so only Home has it", ref)
+		case !slices.Contains(scope.Filters, id):
+			r.Errorf(node, path, "no filter %q is declared in spec.filters", id)
+		}
+	}
+
+	return f
+}
+
+// ReadFilter reads a filter in the catalog's filter language, as YAML.
+func ReadFilter(r *configdoc.Reader, node *yaml.Node, path string) *filter.Filter {
 	var raw any
 	if err := node.Decode(&raw); err != nil {
 		r.Errorf(node, path, "filter is not valid: %v", err)
@@ -259,59 +304,165 @@ func parseFilter(r *configdoc.Reader, node *yaml.Node, path string, scope Scope)
 		r.Errorf(node, path, "%v", err)
 		return nil
 	}
-	if !scope.Entity && uses(f, ValueEntity) {
-		r.Errorf(node, path, "%s is the entity whose page it is, so only entity pages have it", ValueEntity)
+	var unknown error
+	eachText(f, func(text string) {
+		if err := checkVariable(text); err != nil && unknown == nil {
+			unknown = err
+		}
+	})
+	if unknown != nil {
+		r.Errorf(node, path, "%v", unknown)
+		return nil
 	}
 
 	return f
 }
 
-// uses reports whether a filter compares with a context value.
-func uses(f *filter.Filter, value string) bool {
-	if f == nil {
-		return false
-	}
-	if f.Value == value || slices.Contains(f.Values, any(value)) || uses(f.Not, value) {
-		return true
-	}
+// Uses reports whether a filter compares with a context value.
+func Uses(f *filter.Filter, value string) bool {
+	found := false
+	eachText(f, func(text string) { found = found || text == value })
 
-	return slices.ContainsFunc(slices.Concat(f.And, f.Or), func(part filter.Filter) bool { return uses(&part, value) })
+	return found
 }
 
-// Bind fills in a filter's context values.
-func Bind(f *filter.Filter, values map[string]string) *filter.Filter {
+// FilterRefs lists the dashboard filters a filter compares with, as written.
+func FilterRefs(f *filter.Filter) []string {
+	var refs []string
+	eachText(f, func(text string) {
+		if strings.HasPrefix(text, ValueFilter) && !slices.Contains(refs, text) {
+			refs = append(refs, text)
+		}
+	})
+
+	return refs
+}
+
+// eachText calls fn with every text a filter compares with.
+func eachText(f *filter.Filter, fn func(text string)) {
+	if f == nil {
+		return
+	}
+	if text, ok := f.Value.(string); ok {
+		fn(text)
+	}
+	for _, item := range f.Values {
+		if text, ok := item.(string); ok {
+			fn(text)
+		}
+	}
+	eachText(f.Not, fn)
+	for _, part := range slices.Concat(f.And, f.Or) {
+		eachText(&part, fn)
+	}
+}
+
+// Values are what the context values stand for when a widget loads. A nil
+// value is unset; Nothing is set, to no values at all.
+type Values map[string][]string
+
+// Nothing is what a context value stands for when nothing was found for it,
+// as when a lookup default matches no entity. The conditions comparing with
+// it stay and match nothing, where an unset value drops them.
+var Nothing = []string{}
+
+// Bind fills in a filter's context values. An unset value drops the
+// conditions that compare with it, and and, or and not drop once nothing is
+// left in them, so the result is nil when the whole filter falls away.
+func Bind(f *filter.Filter, values Values) *filter.Filter {
 	if f == nil {
 		return nil
 	}
 	bound := *f
-	if text, ok := f.Value.(string); ok {
-		if value, ok := values[text]; ok {
-			bound.Value = value
+	switch {
+	case len(f.And) > 0:
+		if bound.And = bindAll(f.And, values); len(bound.And) == 0 {
+			return nil
+		}
+	case len(f.Or) > 0:
+		if bound.Or = bindAll(f.Or, values); len(bound.Or) == 0 {
+			return nil
+		}
+	case f.Not != nil:
+		if bound.Not = Bind(f.Not, values); bound.Not == nil {
+			return nil
+		}
+	default:
+		return bindCondition(f, values)
+	}
+
+	return &bound
+}
+
+func bindAll(parts []filter.Filter, values Values) []filter.Filter {
+	out := make([]filter.Filter, 0, len(parts))
+	for i := range parts {
+		if part := Bind(&parts[i], values); part != nil {
+			out = append(out, *part)
 		}
 	}
-	if f.Values != nil {
-		bound.Values = make([]any, len(f.Values))
-		for i, item := range f.Values {
-			bound.Values[i] = item
-			if text, ok := item.(string); ok {
-				if value, ok := values[text]; ok {
-					bound.Values[i] = value
-				}
+
+	return out
+}
+
+func bindCondition(f *filter.Filter, values Values) *filter.Filter {
+	bound := *f
+	if text, ok := f.Value.(string); ok {
+		if picked, set := values[text]; set {
+			switch {
+			case picked == nil:
+				return nil
+			case len(picked) == 1:
+				bound.Value = picked[0]
+			default:
+				return anyOf(bound, picked)
 			}
 		}
 	}
-	bound.Not = Bind(f.Not, values)
-	bind := func(parts []filter.Filter) []filter.Filter {
-		if parts == nil {
+	if f.Values != nil {
+		// A list only Nothing fed stays, as in with no values, which
+		// matches nothing; one an unset value emptied drops.
+		unset := false
+		bound.Values = make([]any, 0, len(f.Values))
+		for _, item := range f.Values {
+			text, ok := item.(string)
+			picked, set := values[text]
+			if !ok || !set {
+				bound.Values = append(bound.Values, item)
+				continue
+			}
+			unset = unset || picked == nil
+			for _, value := range picked {
+				bound.Values = append(bound.Values, value)
+			}
+		}
+		if len(bound.Values) == 0 && len(f.Values) > 0 && unset {
 			return nil
 		}
-		out := make([]filter.Filter, len(parts))
-		for i := range parts {
-			out[i] = *Bind(&parts[i], values)
-		}
-		return out
 	}
-	bound.And, bound.Or = bind(f.And), bind(f.Or)
 
 	return &bound
+}
+
+// anyOf compares with several values at once. Picking several means "any of
+// these", so eq becomes in, and ne, its opposite, "none of these". Nothing
+// is in with no values, which matches nothing, or for ne everything.
+func anyOf(condition filter.Filter, picked []string) *filter.Filter {
+	values := make([]any, len(picked))
+	for i, value := range picked {
+		values[i] = value
+	}
+	switch {
+	case condition.Op == filter.OpNe:
+		return &filter.Filter{Not: &filter.Filter{Property: condition.Property, Op: filter.OpIn, Values: values}}
+	case condition.Op == filter.OpEq || len(picked) == 0:
+		return &filter.Filter{Property: condition.Property, Op: filter.OpIn, Values: values}
+	}
+	or := make([]filter.Filter, len(picked))
+	for i, value := range picked {
+		or[i] = condition
+		or[i].Value = value
+	}
+
+	return &filter.Filter{Or: or}
 }

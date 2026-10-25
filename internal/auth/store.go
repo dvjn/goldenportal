@@ -31,6 +31,14 @@ const EffectiveRoleSQL = `coalesce((
 	LIMIT 1
 ), 'member')`
 
+// GroupNamesSQL selects the sorted names of the groups user u is in, as a
+// text array, so the principal carries them without a second query.
+const GroupNamesSQL = `coalesce((
+	SELECT array_agg(g.name ORDER BY g.name) FROM group_members gm
+	JOIN groups g ON g.id = gm.group_id
+	WHERE gm.user_id = u.id
+), '{}')`
+
 var (
 	errNotFound    = errors.New("not found")
 	errDeactivated = errors.New("user is deactivated")
@@ -202,7 +210,7 @@ func (s Store) SessionPrincipal(ctx context.Context, sessionHash []byte) (Princi
 	)
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, s.last_seen_at, `+EffectiveRoleSQL+`
+		SELECT u.id, u.email, u.display_name, s.last_seen_at, `+EffectiveRoleSQL+`, `+GroupNamesSQL+`
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.id_hash = $1
@@ -210,7 +218,7 @@ func (s Store) SessionPrincipal(ctx context.Context, sessionHash []byte) (Princi
 			AND s.last_seen_at > now() - make_interval(secs => $2)
 			AND u.status = 'active'`,
 		sessionHash, sessionIdleTimeout.Seconds()).
-		Scan(&p.ID, &p.Email, &p.DisplayName, &lastSeen, &p.Role)
+		Scan(&p.ID, &p.Email, &p.DisplayName, &lastSeen, &p.Role, pq.Array(&p.Groups))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Principal{}, errNotFound
 	}

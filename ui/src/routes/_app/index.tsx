@@ -13,21 +13,40 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { WidgetGrid } from "@/components/widgets/widget-grid";
+import { DashboardView, type Picked } from "@/components/widgets/dashboard-view";
 import { hasRole, useMe } from "@/features/auth";
 import { homeQueryOptions } from "@/features/dashboards";
 
+// HomeSearch is the open dashboard, d, and what its filters are set to.
+type HomeSearch = Picked & { d?: string };
+
+function validateHomeSearch(search: Record<string, unknown>): HomeSearch {
+  const out: HomeSearch = {};
+  for (const [key, raw] of Object.entries(search)) {
+    if (key === "d") {
+      if (typeof raw === "string" && raw !== "") out.d = raw;
+    } else if (Array.isArray(raw)) {
+      out[key] = raw.filter(scalar).map(String);
+    } else if (scalar(raw)) {
+      out[key] = String(raw);
+    }
+  }
+  return out;
+}
+
+function scalar(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
 export const Route = createFileRoute("/_app/")({
-  // d is the open dashboard.
-  validateSearch: (search: Record<string, unknown>): { d?: string } =>
-    typeof search.d === "string" && search.d !== "" ? { d: search.d } : {},
+  validateSearch: validateHomeSearch,
   loader: ({ context }) => context.queryClient.ensureQueryData(homeQueryOptions),
   component: HomePage,
 });
 
 // HomePage shows the dashboards, one tab each.
 function HomePage() {
-  const { d } = Route.useSearch();
+  const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const { data: views } = useSuspenseQuery(homeQueryOptions);
   const builder = hasRole(useMe().role, "builder");
@@ -62,7 +81,7 @@ function HomePage() {
     );
   }
 
-  const active = views.find((v) => v.identifier === d) ?? views[0];
+  const active = views.find((v) => v.identifier === search.d) ?? views[0];
   return (
     <Tabs
       value={active.identifier}
@@ -83,7 +102,17 @@ function HomePage() {
       {views.map((v) => (
         <TabsContent key={v.identifier} value={v.identifier} className="grid gap-4 pt-2">
           {v.description && <p className="text-sm text-muted-foreground">{v.description}</p>}
-          <WidgetGrid widgets={v.widgets} source={{ dashboard: v.identifier }} context={{}} />
+          <DashboardView
+            view={v}
+            picked={search}
+            onPick={(patch) =>
+              navigate({
+                search: (prev) => ({ ...prev, ...patch }),
+                replace: true,
+                resetScroll: false,
+              })
+            }
+          />
         </TabsContent>
       ))}
     </Tabs>

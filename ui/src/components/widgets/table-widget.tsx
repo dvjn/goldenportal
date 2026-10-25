@@ -36,7 +36,11 @@ export function TableWidget({ source, widget, context }: WidgetProps) {
   if (!data.data || !spec) return <WidgetLoading widget={widget} height="h-40" />;
 
   const columns = (widget.columns ?? []).filter((column) => column !== "$title");
-  const filters = toCatalogFilters(widget.filter, { entity: context.entity, me: me.email });
+  const filters = toCatalogFilters(widget.filter, {
+    entity: context.entity,
+    me,
+    filters: context.filters,
+  });
   const { entities, total } = data.data;
   const more =
     filters && !context.draft ? (

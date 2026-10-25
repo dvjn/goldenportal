@@ -1,3 +1,4 @@
+import type { Me } from "@/features/auth";
 import type { Filter } from "@/features/catalog";
 
 type Value = string | number | boolean;
@@ -6,8 +7,26 @@ type Value = string | number | boolean;
 // matches any of its values, and every property must match.
 export type CatalogFilters = Record<string, Value[]>;
 
-// Context values a widget's filter can compare with.
-export type FilterContext = { entity?: string; me?: string };
+// Context values a widget's filter can compare with. filters is what the
+// dashboard's filters are set to, by identifier, as a WidgetContext has them.
+export type FilterContext = {
+  entity?: string;
+  me?: Me;
+  filters?: Record<string, string[] | null>;
+};
+
+// meValues is what $me and $me.<attribute> stand for, as the server binds
+// them, so a click shows the same entities the widget counted. An
+// attribute with no value matches nothing.
+function meValues(me: Me): Record<string, string[]> {
+  return {
+    $me: [me.email],
+    "$me.email": [me.email],
+    "$me.name": me.displayName ? [me.displayName] : [],
+    "$me.role": [me.role],
+    "$me.groups": me.groups ?? [],
+  };
+}
 
 // toCatalogFilters turns a widget's filter into the catalog's, so a click
 // shows the same entities. Filters the catalog can't express, such as ne
@@ -17,11 +36,21 @@ export function toCatalogFilters(
   context: FilterContext,
 ): CatalogFilters | undefined {
   if (!filter) return {};
-  const bind = (value: unknown): Value | undefined => {
-    if (value === "$entity") return context.entity;
-    if (value === "$me") return context.me;
+  // bind gives a value's entities-worth of values: none for an unset
+  // dashboard filter, which drops its condition as the server does. The
+  // catalog can't show nothing, so a filter set to nothing has no link.
+  const bind = (value: unknown): Value[] | undefined => {
+    if (value === "$entity") return context.entity === undefined ? undefined : [context.entity];
+    if (value === "$me" || (typeof value === "string" && value.startsWith("$me."))) {
+      const values = context.me && meValues(context.me)[value];
+      return values === undefined || values.length === 0 ? undefined : values;
+    }
+    if (typeof value === "string" && value.startsWith("$filter.")) {
+      const picked = context.filters?.[value.slice("$filter.".length)];
+      return picked === null ? undefined : (picked ?? []);
+    }
     return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-      ? value
+      ? [value]
       : undefined;
   };
 
@@ -35,11 +64,12 @@ export function toCatalogFilters(
         : condition.op === "in"
           ? condition.values
           : undefined;
-    const values = raw?.map(bind);
-    if (!values || values.some((value) => value === undefined) || filters[condition.property]) {
-      return undefined;
-    }
-    filters[condition.property] = values as Value[];
+    const bound = raw?.map(bind);
+    if (!bound || bound.some((values) => values === undefined)) return undefined;
+    const values = (bound as Value[][]).flat();
+    if (values.length === 0) continue;
+    if (filters[condition.property]) return undefined;
+    filters[condition.property] = values;
   }
   return filters;
 }

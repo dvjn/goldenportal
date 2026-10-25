@@ -6,7 +6,11 @@
       "links": {
         "slack": "https://slack.example.com/archives/payments",
         "oncall": "https://oncall.example.com/schedules/payments"
-      }
+      },
+      "members": [
+        "ada@example.com",
+        "grace@example.com"
+      ]
     },
     {
       "slug": "search",
@@ -14,12 +18,22 @@
       "links": {
         "slack": "https://slack.example.com/archives/search",
         "oncall": "https://oncall.example.com/schedules/search"
-      }
+      },
+      "members": [
+        "grace@example.com",
+        "member@example.com"
+      ]
     },
     {
       "slug": "identity",
       "name": "Identity",
-      "links": { "slack": "https://slack.example.com/archives/identity" }
+      "links": {
+        "slack": "https://slack.example.com/archives/identity"
+      },
+      "members": [
+        "member@example.com",
+        "builder@example.com"
+      ]
     },
     {
       "slug": "platform",
@@ -27,7 +41,11 @@
       "links": {
         "slack": "https://slack.example.com/archives/platform",
         "oncall": "https://oncall.example.com/schedules/platform"
-      }
+      },
+      "members": [
+        "admin@example.com",
+        "builder@example.com"
+      ]
     }
   ]
 }
