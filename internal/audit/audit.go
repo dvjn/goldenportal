@@ -38,6 +38,11 @@ const (
 	IntegrationDelete       = "integration.delete"
 	IngestionTokenCreate    = "integration.token_create"
 	IngestionTokenRevoke    = "integration.token_revoke"
+
+	ScorecardDraftSave    = "scorecard.draft_save"
+	ScorecardDraftDiscard = "scorecard.draft_discard"
+	ScorecardPublish      = "scorecard.publish"
+	ScorecardDelete       = "scorecard.delete"
 )
 
 // Actions lists every action, for filters.
@@ -47,6 +52,7 @@ var Actions = []string{
 	BlueprintDraftSave, BlueprintDraftDiscard, BlueprintPublish, BlueprintDelete,
 	IntegrationDraftSave, IntegrationDraftDiscard, IntegrationPublish, IntegrationDelete,
 	IngestionTokenCreate, IngestionTokenRevoke,
+	ScorecardDraftSave, ScorecardDraftDiscard, ScorecardPublish, ScorecardDelete,
 }
 
 type DB interface {

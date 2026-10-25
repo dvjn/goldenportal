@@ -60,6 +60,14 @@ func ParseFilter(raw string) (*Filter, error) {
 	return &f, nil
 }
 
+// CheckFilter reports whether a filter fits a blueprint, without running it.
+func CheckFilter(spec blueprint.Spec, f Filter) error {
+	c := &compiler{spec: spec}
+	_, err := c.compile(f, 1)
+
+	return err
+}
+
 // field is where a property's value lives in SQL.
 type field struct {
 	// value is a jsonb expression, or a typed column for the built-ins.

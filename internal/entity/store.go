@@ -108,6 +108,8 @@ func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifie
 
 // Entity is a stored entity as the API shows it.
 type Entity struct {
+	// ID is the row's ID, which other tables reference.
+	ID         string `json:"-"`
 	Blueprint  string `json:"blueprint"`
 	Identifier string `json:"identifier"`
 	Title      string `json:"title"`
@@ -130,7 +132,7 @@ type Link struct {
 
 const (
 	entityColumns = `
-	b.identifier, e.identifier, e.title, e.properties, e.relations, e.computed, i.identifier, e.created_at, e.updated_at`
+	e.id, b.identifier, e.identifier, e.title, e.properties, e.relations, e.computed, i.identifier, e.created_at, e.updated_at`
 	entityFrom = `
 	FROM entities e
 	JOIN config_documents b ON b.id = e.blueprint_id
@@ -143,7 +145,7 @@ func scanEntity(scan func(...any) error, extra ...any) (*Entity, error) {
 		properties, relations, computed []byte
 	)
 	err := scan(append([]any{
-		&e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
+		&e.ID, &e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
 		&e.Integration, &e.CreatedAt, &e.UpdatedAt,
 	}, extra...)...)
 	if err != nil {
