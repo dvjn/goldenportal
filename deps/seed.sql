@@ -188,6 +188,41 @@ spec:
       title: Writes
       relation: blueprint
       many: true
+$yaml$),
+  ('deployment', $yaml$kind: Blueprint
+metadata:
+  name: deployment
+  title: Deployment
+  description: A release of a service to an environment.
+  icon: rocket
+spec:
+  properties:
+    service:
+      title: Service
+      relation: service
+      required: true
+    environment:
+      title: Environment
+      type: string
+      enum: [production, staging]
+    version:
+      title: Version
+      type: string
+    status:
+      title: Status
+      type: string
+      enum: [running, succeeded, failed]
+    startedAt:
+      title: Started
+      type: string
+      format: date-time
+    finishedAt:
+      title: Finished
+      type: string
+      format: date-time
+    owner:
+      title: Owner
+      lookup: service.owner.$title
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -199,7 +234,8 @@ INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
 -- Example integrations: two push integrations, where each mapping is jq over
--- the JSON its system sends, and the Portal, which syncs the portal's own objects.
+-- the JSON its system sends; the Portal, which syncs the portal's own objects;
+-- and an http integration pulling from the mock deploy tracker.
 WITH example (identifier, source) AS (VALUES
   ('team-directory', $yaml$kind: Integration
 metadata:
@@ -292,6 +328,38 @@ spec:
           entities: .entities
           lastRunAt: .lastRunAt
           writes: .blueprints
+$yaml$),
+  ('deploy-tracker', $yaml$kind: Integration
+metadata:
+  name: deploy-tracker
+  title: Deploy Tracker
+  description: Deployments, pulled from the deploy tracker's API.
+spec:
+  connector:
+    type: http
+    config:
+      resources:
+        deployments:
+          url: http://localhost:47801/deployments/1.json
+          next: .next
+          headers:
+            Authorization: {env: GP_SECRET_DEPLOY_TRACKER}
+  sync:
+    interval: 1m
+  mappings:
+    - resource: deployments
+      blueprint: deployment
+      items: .deployments[]
+      entity:
+        identifier: .id
+        title: .service + " " + .version
+        properties:
+          service: .service
+          environment: .environment
+          version: .version
+          status: .status
+          startedAt: .startedAt
+          finishedAt: .finishedAt
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)

@@ -90,3 +90,16 @@ services:
       SERVICE_REGISTRY_TOKEN: ${GP_DEV_SERVICE_REGISTRY_TOKEN}
     volumes:
       - ./deps/mock-pusher:/data:ro
+
+  # A pretend deploy tracker with a JSON API, for the http integration in
+  # deps/seed.sql to pull from. deps/mock-deploy-tracker has the server.
+  mock-deploy-tracker:
+    image: ${BUSYBOX_IMAGE:-docker.io/library/busybox:1.37.0}
+    container_name: goldenportal-mock-deploy-tracker
+    entrypoint: ["/bin/sh", "/app/serve.sh"]
+    environment:
+      TICK: ${MOCK_DEPLOY_TICK:-30}
+    ports:
+      - "${MOCK_DEPLOY_TRACKER_PORT:-47801}:8080"
+    volumes:
+      - ./deps/mock-deploy-tracker:/app:ro
