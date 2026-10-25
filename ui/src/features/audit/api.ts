@@ -53,6 +53,10 @@ export const auditActions: Record<string, string> = {
   "scorecard.draft_discard": "Discarded scorecard draft",
   "scorecard.publish": "Published scorecard",
   "scorecard.delete": "Deleted scorecard",
+  "dashboard.draft_save": "Saved dashboard draft",
+  "dashboard.draft_discard": "Discarded dashboard draft",
+  "dashboard.publish": "Published dashboard",
+  "dashboard.delete": "Deleted dashboard",
 };
 
 export const auditKeys = {

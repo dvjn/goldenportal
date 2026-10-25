@@ -64,6 +64,7 @@ export function BlueprintOverview({
         <AboutCard spec={spec} blueprint={blueprint} usage={usage} />
         <WritersCard spec={spec} usage={usage} />
         <RelationsCard spec={spec} usage={usage} />
+        <PagesCard spec={spec} published={blueprint.published !== null} />
       </div>
     </div>
   );
@@ -302,6 +303,72 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
             ))}
           </ul>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// PagesCard lists the tabs of the blueprint's catalog page and its
+// entities' pages, its own beside those every page has.
+function PagesCard({ spec, published }: Readonly<{ spec: BlueprintSpec; published: boolean }>) {
+  const catalog = spec.catalog?.tabs ?? [];
+  const entity = spec.entity?.tabs ?? [];
+  const tab = (title: string, widgets?: number) => (
+    <>
+      {title}
+      {widgets !== undefined && (
+        <span className="text-xs text-muted-foreground">
+          {" "}
+          · {widgets} {widgets === 1 ? "widget" : "widgets"}
+        </span>
+      )}
+    </>
+  );
+
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>Pages</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4 text-sm">
+        <section className="grid gap-1.5">
+          <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Catalog Page
+          </h3>
+          <ul className="grid gap-1">
+            {catalog.map((t) => (
+              <li key={t.identifier}>
+                {published ? (
+                  <Link
+                    to="/catalog/$blueprint"
+                    params={{ blueprint: spec.identifier }}
+                    search={{ view: t.identifier }}
+                    className="hover:underline"
+                  >
+                    {tab(t.title, t.widgets.length)}
+                  </Link>
+                ) : (
+                  tab(t.title, t.widgets.length)
+                )}
+              </li>
+            ))}
+            <li className="text-muted-foreground">Entities</li>
+          </ul>
+        </section>
+        <section className="grid gap-1.5">
+          <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Entity Pages
+          </h3>
+          <ul className="grid gap-1">
+            {!entity.some((t) => t.identifier === "overview") && (
+              <li className="text-muted-foreground">Overview</li>
+            )}
+            {entity.map((t) => (
+              <li key={t.identifier}>{tab(t.title, t.widgets.length)}</li>
+            ))}
+            <li className="text-muted-foreground">Scorecards, Relations, YAML</li>
+          </ul>
+        </section>
       </CardContent>
     </Card>
   );

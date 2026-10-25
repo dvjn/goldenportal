@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Columns3, LayoutGrid } from "lucide-react";
+import { Columns3, LayoutGrid, Rows3 } from "lucide-react";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
@@ -36,6 +36,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WidgetGrid } from "@/components/widgets/widget-grid";
 import { type BlueprintSpec, blueprints, type Property } from "@/features/blueprints";
 import {
   type Entity,
@@ -49,14 +51,19 @@ import { formatAbsolute, formatRelative } from "@/lib/format";
 // Filters maps a property to the values it's filtered to.
 type Filters = Record<string, (string | number | boolean)[]>;
 
-// CatalogSearch is the table's state in the URL; cols lists the shown columns.
-type CatalogSearch = TableSearch & { f?: Filters; cols?: string };
+// CatalogSearch is the page's state in the URL: view is the open tab, a
+// dashboard or "entities", and the rest is the table's; cols lists the
+// shown columns.
+type CatalogSearch = TableSearch & { view?: string; f?: Filters; cols?: string };
+
+const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : undefined);
 
 function validateCatalogSearch(search: Record<string, unknown>): CatalogSearch {
   return {
     ...validateTableSearch(search),
+    view: text(search.view),
     f: validFilters(search.f),
-    cols: typeof search.cols === "string" && search.cols !== "" ? search.cols : undefined,
+    cols: text(search.cols),
   };
 }
 
@@ -99,7 +106,7 @@ function queryFrom(blueprint: string, search: CatalogSearch): EntityQuery {
 
 export const Route = createFileRoute("/_app/catalog/$blueprint/")({
   validateSearch: validateCatalogSearch,
-  loaderDeps: ({ search }) => search,
+  loaderDeps: ({ search: { view: _, ...table } }) => table,
   loader: ({ context, params, deps }) =>
     Promise.all([
       context.queryClient.ensureQueryData(blueprints.queries.detail(params.blueprint)),
@@ -116,9 +123,11 @@ function sortable(property: Property) {
   );
 }
 
-// filterable properties get a filter with their values to pick from.
+// filterable properties get a filter with their values to pick from: those
+// whose display asks for one, or else those with few values.
 function filterable(property: Property) {
   if (property.lookup) return false;
+  if (property.display?.filter !== undefined) return property.display.filter;
   return (
     Boolean(property.relation) ||
     Boolean(property.enum) ||
@@ -127,12 +136,17 @@ function filterable(property: Property) {
   );
 }
 
-// defaultColumns are the first few properties that fit in a cell.
+// defaultColumns are the properties whose display asks for a column, or
+// else the first few that fit in a cell.
 function defaultColumns(spec: BlueprintSpec) {
-  return spec.properties
-    .filter((property) => property.type !== "object")
-    .slice(0, 5)
-    .map((property) => property.identifier);
+  const chosen = spec.properties.filter((property) => property.display?.column);
+  const columns =
+    chosen.length > 0
+      ? chosen
+      : spec.properties
+          .filter((property) => property.type !== "object" && property.display?.column !== false)
+          .slice(0, 5);
+  return columns.map((property) => property.identifier);
 }
 
 const column = dataTableColumns<Entity>();
@@ -214,88 +228,143 @@ function BlueprintCatalogPage() {
   ];
 
   const filtered = Object.keys(filters).length > 0;
+  // The blueprint's own tabs come first, then the entities table every catalog page has.
+  const views = spec.catalog?.tabs ?? [];
+  const view = views.some((v) => v.identifier === search.view)
+    ? search.view
+    : search.view === "entities" || views.length === 0
+      ? "entities"
+      : views[0].identifier;
+
+  const header = (
+    <div className="grid gap-3">
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link to="/catalog">Catalog</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{spec.title}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+          <BlueprintIcon icon={spec.icon} className="size-5" />
+        </span>
+        <div className="grid">
+          <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
+          <p className="text-sm text-muted-foreground">
+            {spec.description}
+            {spec.description && page.data && " · "}
+            {page.data && `${page.data.total} ${page.data.total === 1 ? "entity" : "entities"}`}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const table = (
+    <DataTable
+      data={page.data?.entities ?? []}
+      columns={columns}
+      getRowId={(entity) => entity.identifier}
+      search={search}
+      searchLabel={`Search ${spec.title.toLowerCase()}`}
+      rowCount={page.data?.total ?? 0}
+      loading={page.isPlaceholderData}
+      filters={spec.properties.filter(filterable).map((property) => (
+        <PropertyFilter
+          key={property.identifier}
+          blueprint={blueprint}
+          property={property}
+          selected={(filters[property.identifier] ?? []).map((value) => JSON.stringify(value))}
+          onChange={(values) =>
+            setSearch({
+              f: validFilters({
+                ...filters,
+                [property.identifier]: values.map((value) => JSON.parse(value) as unknown),
+              }),
+              page: undefined,
+            })
+          }
+        />
+      ))}
+      filtered={filtered}
+      onClearFilters={() => setSearch({ f: undefined, page: undefined })}
+      actions={
+        <ColumnsMenu
+          spec={spec}
+          shown={shown}
+          onChange={(cols) => setSearch({ cols: cols.join(",") })}
+        />
+      }
+      empty={
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <LayoutGrid />
+            </EmptyMedia>
+            <EmptyTitle>No {spec.title.toLowerCase()} entities yet</EmptyTitle>
+            <EmptyDescription>They show up here once an integration writes them.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      }
+    />
+  );
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-3">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/catalog">Catalog</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{spec.title}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <BlueprintIcon icon={spec.icon} className="size-5" />
-          </span>
-          <div className="grid">
-            <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
-            <p className="text-sm text-muted-foreground">
-              {spec.description}
-              {spec.description && page.data && " · "}
-              {page.data && `${page.data.total} ${page.data.total === 1 ? "entity" : "entities"}`}
-            </p>
-          </div>
-        </div>
-      </div>
-      <DataTable
-        data={page.data?.entities ?? []}
-        columns={columns}
-        getRowId={(entity) => entity.identifier}
-        search={search}
-        searchLabel={`Search ${spec.title.toLowerCase()}`}
-        rowCount={page.data?.total ?? 0}
-        loading={page.isPlaceholderData}
-        filters={spec.properties.filter(filterable).map((property) => (
-          <PropertyFilter
-            key={property.identifier}
-            blueprint={blueprint}
-            property={property}
-            selected={(filters[property.identifier] ?? []).map((value) => JSON.stringify(value))}
-            onChange={(values) =>
-              setSearch({
-                f: validFilters({
-                  ...filters,
-                  [property.identifier]: values.map((value) => JSON.parse(value) as unknown),
-                }),
-                page: undefined,
-              })
-            }
-          />
-        ))}
-        filtered={filtered}
-        onClearFilters={() => setSearch({ f: undefined, page: undefined })}
-        actions={
-          <ColumnsMenu
-            spec={spec}
-            shown={shown}
-            onChange={(cols) => setSearch({ cols: cols.join(",") })}
-          />
-        }
-        empty={
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <LayoutGrid />
-              </EmptyMedia>
-              <EmptyTitle>No {spec.title.toLowerCase()} entities yet</EmptyTitle>
-              <EmptyDescription>
-                They show up here once an integration writes them.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        }
-      />
+      {header}
+      {views.length === 0 ? (
+        table
+      ) : (
+        <Tabs
+          value={view}
+          onValueChange={(next) =>
+            navigate({ search: (prev) => ({ ...prev, view: next }), replace: true })
+          }
+        >
+          <TabsList variant="line" aria-label={spec.title}>
+            {views.map((v) => (
+              <TabsTrigger key={v.identifier} value={v.identifier} className={tabClass}>
+                {v.icon && <BlueprintIcon icon={v.icon} />}
+                {v.title}
+              </TabsTrigger>
+            ))}
+            <TabsTrigger value="entities" className={tabClass}>
+              <Rows3 />
+              Entities
+              {page.data && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {page.data.total}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+          {views.map((v) => (
+            <TabsContent key={v.identifier} value={v.identifier} className="pt-2">
+              <WidgetGrid
+                widgets={v.widgets}
+                source={{ blueprint, page: "catalog", tab: v.identifier }}
+                context={{}}
+              />
+            </TabsContent>
+          ))}
+          <TabsContent value="entities" className="pt-2">
+            {table}
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }
+
+const tabClass =
+  "focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none";
 
 // PropertyFilter picks values of one property. Enums and booleans offer
 // their values; relations and tag lists offer what entities actually have.

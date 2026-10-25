@@ -5,7 +5,9 @@ type Handler = (request: Request) => Response | Promise<Response>;
 // stubApi answers API requests by "METHOD path", where path is relative to
 // /api/v1, e.g. "GET me" or "POST auth/login". Unstubbed requests fail loudly.
 // It returns the requests it saw, keyed the same way, with readable bodies.
-export function stubApi(routes: Record<string, Handler>) {
+// Home finds no dashboards unless a test stubs some.
+export function stubApi(stubs: Record<string, Handler>) {
+  const routes: Record<string, Handler> = { "GET home": ok([]), ...stubs };
   const requests: Record<string, Request> = {};
   const fetchMock = vi.fn(async (request: Request) => {
     const path = new URL(request.url).pathname.replace(/^\/api\/v1\//, "");

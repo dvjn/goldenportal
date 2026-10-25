@@ -3,6 +3,7 @@ export {
   type BlueprintSpec,
   type BlueprintSummary,
   blueprints,
+  type Display,
   type Property,
   type PropertyType,
   propertySource,

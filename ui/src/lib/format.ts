@@ -23,3 +23,10 @@ export function formatRelative(value: string | Date, now = new Date()) {
 export function formatAbsolute(value: string | Date) {
   return absolute.format(new Date(value));
 }
+
+// Dates have no time, so they're read and written in UTC to stay on their day.
+const dates = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
+
+export function formatDate(value: string | Date) {
+  return dates.format(new Date(value));
+}

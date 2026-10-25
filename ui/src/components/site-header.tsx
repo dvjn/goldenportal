@@ -15,6 +15,7 @@ const navItems: { to: string; label: string; role: Role }[] = [
   { to: "/scorecards", label: "Scorecards", role: "member" },
   { to: "/blueprints", label: "Blueprints", role: "builder" },
   { to: "/integrations", label: "Integrations", role: "builder" },
+  { to: "/dashboards", label: "Dashboards", role: "builder" },
 ];
 
 export function SiteHeader() {

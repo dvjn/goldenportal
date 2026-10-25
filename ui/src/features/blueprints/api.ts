@@ -1,4 +1,5 @@
 import { type ConfigDoc, configDocs, type DocSummary } from "@/features/config-docs";
+import type { Tab } from "@/features/widgets";
 import { type ApiDataResponse, api } from "@/lib/api";
 
 export type PropertyType =
@@ -29,6 +30,31 @@ export type Property = {
   many?: boolean;
   lookup?: string;
   compute?: string;
+  display?: Display;
+};
+
+// Display is how a property's values look; the type picks anything unset.
+export type Display = {
+  as?:
+    | "text"
+    | "badge"
+    | "code"
+    | "link"
+    | "date"
+    | "relative"
+    | "number"
+    | "progress"
+    | "check"
+    | "tags"
+    | "list"
+    | "json";
+  unit?: string;
+  colors?: Record<string, string>;
+  // column shows it in the catalog table until someone picks columns.
+  column?: boolean;
+  // filter offers its values as a catalog filter.
+  filter?: boolean;
+  hidden?: boolean;
 };
 
 export type BlueprintSpec = {
@@ -37,6 +63,10 @@ export type BlueprintSpec = {
   description?: string;
   icon?: string;
   properties: Property[];
+  // catalog and entity are the tabs the blueprint adds to its catalog page
+  // and its entities' pages.
+  catalog?: { tabs: Tab[] };
+  entity?: { tabs: Tab[] };
 };
 
 export type Blueprint = ConfigDoc<BlueprintSpec>;

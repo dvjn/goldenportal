@@ -17,13 +17,15 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WidgetGrid } from "@/components/widgets/widget-grid";
 import { type BlueprintSpec, blueprints } from "@/features/blueprints";
 import { type EntityDetail, entityQueryOptions, type Incoming } from "@/features/catalog";
 import { entityScorecardsQueryOptions } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
-// Each scorecard that scores the entity gets a tab, named after the
-// scorecard, between Overview and the system tabs.
+// The blueprint's entity tabs and each scorecard that scores the entity get
+// a tab, between Overview and the system tabs. A blueprint tab named
+// overview takes the built-in Overview's place.
 const systemTabs = ["relations", "yaml"] as const;
 
 export const Route = createFileRoute("/_app/catalog/$blueprint/$")({
@@ -51,7 +53,15 @@ function EntityPage() {
   const { data: results } = useSuspenseQuery(entityScorecardsQueryOptions(blueprint, identifier));
   const spec = doc.published?.spec;
   if (!spec) return null;
-  const known: string[] = ["overview", ...results.map((r) => r.scorecard), ...systemTabs];
+  const tabs = spec.entity?.tabs ?? [];
+  const overview = tabs.find((t) => t.identifier === "overview");
+  const views = tabs.filter((t) => t.identifier !== "overview");
+  const known: string[] = [
+    "overview",
+    ...views.map((v) => v.identifier),
+    ...results.map((r) => r.scorecard),
+    ...systemTabs,
+  ];
   const active = known.includes(tab) ? tab : "overview";
   const tabClass =
     "focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none";
@@ -115,8 +125,13 @@ function EntityPage() {
       >
         <TabsList variant="line" aria-label="Entity">
           <TabsTrigger value="overview" className={tabClass}>
-            Overview
+            {overview?.title ?? "Overview"}
           </TabsTrigger>
+          {views.map((v) => (
+            <TabsTrigger key={v.identifier} value={v.identifier} className={tabClass}>
+              {v.title}
+            </TabsTrigger>
+          ))}
           {results.map((result) => (
             <TabsTrigger key={result.scorecard} value={result.scorecard} className={tabClass}>
               <ScorecardTab result={result} />
@@ -133,8 +148,25 @@ function EntityPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="pt-2">
-          <Overview spec={spec} entity={entity} />
+          {overview ? (
+            <WidgetGrid
+              widgets={overview.widgets}
+              source={{ blueprint, page: "entity", tab: overview.identifier }}
+              context={{ entity: identifier }}
+            />
+          ) : (
+            <Overview spec={spec} entity={entity} />
+          )}
         </TabsContent>
+        {views.map((v) => (
+          <TabsContent key={v.identifier} value={v.identifier} className="pt-2">
+            <WidgetGrid
+              widgets={v.widgets}
+              source={{ blueprint, page: "entity", tab: v.identifier }}
+              context={{ entity: identifier }}
+            />
+          </TabsContent>
+        ))}
         {results.map((result) => (
           <TabsContent key={result.scorecard} value={result.scorecard} className="pt-2">
             <ScorecardResult result={result} />
@@ -172,6 +204,7 @@ function relationCount(spec: BlueprintSpec, entity: EntityDetail) {
 }
 
 function Overview({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: EntityDetail }>) {
+  const shown = spec.properties.filter((property) => !property.display?.hidden);
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <Card>
@@ -179,11 +212,11 @@ function Overview({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Enti
           <CardTitle>Properties</CardTitle>
         </CardHeader>
         <CardContent>
-          {spec.properties.length === 0 ? (
+          {shown.length === 0 ? (
             <p className="text-sm text-muted-foreground">This blueprint has no properties.</p>
           ) : (
             <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[minmax(8rem,auto)_minmax(0,1fr)]">
-              {spec.properties.map((property) => (
+              {shown.map((property) => (
                 <div key={property.identifier} className="contents">
                   <dt className="text-muted-foreground" title={property.description}>
                     {property.title}

@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { type ApiDataResponse, api } from "@/lib/api";
 
 // ConfigKind is the API path of a kind of configuration document.
-export type ConfigKind = "blueprints" | "integrations" | "scorecards";
+export type ConfigKind = "blueprints" | "integrations" | "scorecards" | "dashboards";
 
 export type IssueSeverity = "error" | "warning";
 

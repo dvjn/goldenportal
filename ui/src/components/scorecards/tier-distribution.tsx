@@ -25,7 +25,7 @@ export function TierDistribution({
             .map((tier) => (
               <span
                 key={tier.name || "none"}
-                className={cn("h-full", tierColors(tiers, tier.name).bar)}
+                className={cn("h-full", tierColors(tiers, tier.name).dot)}
                 style={{ width: `${(tier.count / total) * 100}%` }}
               />
             ))}

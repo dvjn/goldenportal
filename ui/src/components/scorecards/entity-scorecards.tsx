@@ -143,7 +143,7 @@ function Ladder({ tiers, reached }: Readonly<{ tiers: Tier[]; reached: number }>
             <span
               className={cn(
                 "h-2 rounded-full",
-                isReached ? color.bar : "bg-muted",
+                isReached ? color.dot : "bg-muted",
                 isNext && "ring-1 ring-foreground/30 ring-inset",
               )}
               aria-hidden
