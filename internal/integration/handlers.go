@@ -29,6 +29,8 @@ func Register(app *gofr.App) {
 	app.POST("/api/v1/integrations/{identifier}/tokens", createToken)
 	app.DELETE("/api/v1/integrations/{identifier}/tokens/{id}", revokeToken)
 	app.GET("/api/v1/integrations/{identifier}/runs", listRuns)
+	app.POST("/api/v1/integrations/{identifier}/sync", syncNow)
+	app.AddCronJob(SyncSchedule, "sync-pull-integrations", syncAll)
 	app.GET("/api/v1/blueprints/{identifier}/usage", blueprintUsage)
 	app.POST(auth.IngestPrefix+"{integration}", ingest)
 	app.DELETE(auth.IngestPrefix+"{integration}/entities/{blueprint}/{identifier:.+}", deleteEntity)
@@ -99,6 +101,10 @@ func createToken(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("give the token a name of up to 100 characters")
 	}
 
+	if pulls(ctx, identifier) {
+		return nil, httpx.Error{Code: http.StatusConflict, Message: "the " + identifier + " integration pulls its data, so it has no ingestion tokens"}
+	}
+
 	secret := tokenPrefix + auth.NewSecret()
 	token, err := NewStore(ctx.SQL).CreateToken(ctx, id, name, secret[:tokenDisplayLength], auth.HashSecret(secret), p.ID)
 	if err != nil {
@@ -155,4 +161,21 @@ func notFound() error {
 
 func badRequest(message string) error {
 	return httpx.Error{Code: http.StatusBadRequest, Message: message}
+}
+
+// pulls reports whether the integration's latest version, draft or
+// published, uses a pull connector.
+func pulls(ctx *gofr.Context, identifier string) bool {
+	record, err := configdoc.NewStore(ctx.SQL, Name).Get(ctx, identifier)
+	if err != nil {
+		return false
+	}
+	source := record.PublishedSource
+	if record.HasDraft() {
+		source = record.DraftSource
+	}
+	spec, _ := Parse(source)
+	c, _ := connector(spec.Connector)
+
+	return c.Mode == ModePull
 }

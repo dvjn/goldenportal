@@ -88,19 +88,21 @@ func (s Store) TokenIntegration(ctx context.Context, secretHash []byte) (tokenID
 	return tokenID, integration, err
 }
 
-// Run is one ingestion: a push, or later a sync.
+// Run is one ingestion: a push, or a sync of a pull integration.
 type Run struct {
-	ID         int64      `json:"id"`
-	StartedAt  time.Time  `json:"startedAt"`
-	FinishedAt time.Time  `json:"finishedAt"`
-	Token      string     `json:"token,omitempty"`
-	Received   int        `json:"received"`
-	Created    int        `json:"created"`
-	Updated    int        `json:"updated"`
-	Unchanged  int        `json:"unchanged"`
-	Deleted    int        `json:"deleted"`
-	Failed     int        `json:"failed"`
-	Errors     []RunError `json:"errors"`
+	ID         int64     `json:"id"`
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	// Trigger is push, schedule or manual.
+	Trigger   string     `json:"trigger"`
+	Token     string     `json:"token,omitempty"`
+	Received  int        `json:"received"`
+	Created   int        `json:"created"`
+	Updated   int        `json:"updated"`
+	Unchanged int        `json:"unchanged"`
+	Deleted   int        `json:"deleted"`
+	Failed    int        `json:"failed"`
+	Errors    []RunError `json:"errors"`
 }
 
 // RunError is why an item wasn't written.
@@ -118,17 +120,18 @@ func (s Store) RecordRun(ctx context.Context, integrationID, tokenID string, run
 	errorsJSON, _ := json.Marshal(run.Errors)
 
 	return s.db.QueryRowContext(ctx, `
-		INSERT INTO ingestion_runs (integration_id, token_id, started_at, received, created, updated, unchanged, deleted, failed, errors)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO ingestion_runs (integration_id, token_id, trigger, started_at, received, created, updated,
+			unchanged, deleted, failed, errors)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, finished_at`,
-		integrationID, nullable(tokenID), run.StartedAt, run.Received, run.Created, run.Updated, run.Unchanged,
-		run.Deleted, run.Failed, errorsJSON).Scan(&run.ID, &run.FinishedAt)
+		integrationID, nullable(tokenID), run.Trigger, run.StartedAt, run.Received, run.Created, run.Updated,
+		run.Unchanged, run.Deleted, run.Failed, errorsJSON).Scan(&run.ID, &run.FinishedAt)
 }
 
 // Runs lists an integration's latest runs, newest first.
 func (s Store) Runs(ctx context.Context, integrationID string, limit int) ([]Run, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id, r.started_at, r.finished_at, coalesce(t.name, ''), r.received, r.created, r.updated,
+		SELECT r.id, r.started_at, r.finished_at, r.trigger, coalesce(t.name, ''), r.received, r.created, r.updated,
 			r.unchanged, r.deleted, r.failed, r.errors
 		FROM ingestion_runs r LEFT JOIN ingestion_tokens t ON t.id = r.token_id
 		WHERE r.integration_id = $1
@@ -144,7 +147,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, limit int) ([]Run
 			r      Run
 			errors []byte
 		)
-		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Token, &r.Received, &r.Created, &r.Updated,
+		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.Received, &r.Created, &r.Updated,
 			&r.Unchanged, &r.Deleted, &r.Failed, &errors); err != nil {
 			return nil, err
 		}

@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -49,6 +50,9 @@ func authenticate(ctx *gofr.Context) (writer, error) {
 		return writer{}, httpx.Error{Code: http.StatusConflict, Message: "publish the integration before ingesting"}
 	}
 	spec, _ := Parse(record.PublishedSource)
+	if c, _ := connector(spec.Connector); c.Mode != ModePush {
+		return writer{}, httpx.Error{Code: http.StatusConflict, Message: "the " + integration + " integration pulls its data, so nothing can push to it"}
+	}
 	id, err := store.PublishedID(ctx, integration)
 
 	return writer{id: id, tokenID: tokenID, spec: spec}, err
@@ -72,60 +76,9 @@ func ingest(ctx *gofr.Context) (any, error) {
 		return nil, httpx.Error{Code: http.StatusUnprocessableEntity, Message: err.Error()}
 	}
 
-	run := &Run{StartedAt: started, Received: len(items), Errors: []RunError{}}
-	blueprints, err := blueprint.Published(ctx, ctx.SQL)
-	if err != nil {
+	run := &Run{StartedAt: started, Trigger: TriggerPush, Received: len(items), Errors: []RunError{}}
+	if _, err := write(ctx, ctx.SQL, w.id, items, run); err != nil {
 		return nil, err
-	}
-	blueprintIDs := map[string]string{}
-	entities := entity.NewStore(ctx.SQL)
-
-	for i, item := range items {
-		fail := func(problems ...string) {
-			run.Failed++
-			if len(run.Errors) < MaxRunErrors {
-				run.Errors = append(run.Errors, RunError{Index: i, Blueprint: item.Blueprint,
-					Identifier: item.Entity.Identifier, Problems: problems})
-			}
-		}
-		if len(item.Problems) > 0 {
-			fail(item.Problems...)
-			continue
-		}
-		spec, ok := blueprints[item.Blueprint]
-		if !ok {
-			fail("no blueprint " + item.Blueprint + " is published")
-			continue
-		}
-		if _, ok := blueprintIDs[item.Blueprint]; !ok {
-			if blueprintIDs[item.Blueprint], err = configdoc.NewStore(ctx.SQL, blueprint.Name).PublishedID(ctx, item.Blueprint); err != nil {
-				return nil, err
-			}
-		}
-
-		clean, problems := spec.ValidateEntity(item.Entity)
-		if len(problems) > 0 {
-			fail(problems...)
-			continue
-		}
-		computed, _ := spec.Compute(clean)
-		outcome, err := entities.Upsert(ctx, blueprintIDs[item.Blueprint], w.id, clean, computed)
-		var owned entity.OwnedError
-		switch {
-		case errors.As(err, &owned):
-			fail(owned.Error())
-			continue
-		case err != nil:
-			return nil, err
-		}
-		switch outcome {
-		case entity.Created:
-			run.Created++
-		case entity.Updated:
-			run.Updated++
-		default:
-			run.Unchanged++
-		}
 	}
 
 	if err := NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run); err != nil {
@@ -161,7 +114,74 @@ func deleteEntity(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	run := &Run{StartedAt: started, Received: 1, Deleted: 1, Errors: []RunError{}}
+	run := &Run{StartedAt: started, Trigger: TriggerPush, Received: 1, Deleted: 1, Errors: []RunError{}}
 
 	return nil, NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run)
+}
+
+// write validates items against their blueprints and writes them as the
+// integration, counting outcomes in run. Items that fail are reported
+// without stopping the rest. It returns the entities it saw, written or
+// not, by blueprint, so a full sync knows what not to delete.
+func write(ctx context.Context, db configdoc.DB, integrationID string, items []Item, run *Run) (map[string][]string, error) {
+	blueprints, err := blueprint.Published(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	blueprintIDs := map[string]string{}
+	seen := map[string][]string{}
+	entities := entity.NewStore(db)
+
+	for i, item := range items {
+		if item.Entity.Identifier != "" {
+			seen[item.Blueprint] = append(seen[item.Blueprint], item.Entity.Identifier)
+		}
+		fail := func(problems ...string) {
+			run.Failed++
+			if len(run.Errors) < MaxRunErrors {
+				run.Errors = append(run.Errors, RunError{Index: i, Blueprint: item.Blueprint,
+					Identifier: item.Entity.Identifier, Problems: problems})
+			}
+		}
+		if len(item.Problems) > 0 {
+			fail(item.Problems...)
+			continue
+		}
+		spec, ok := blueprints[item.Blueprint]
+		if !ok {
+			fail("no blueprint " + item.Blueprint + " is published")
+			continue
+		}
+		if _, ok := blueprintIDs[item.Blueprint]; !ok {
+			if blueprintIDs[item.Blueprint], err = configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, item.Blueprint); err != nil {
+				return nil, err
+			}
+		}
+
+		clean, problems := spec.ValidateEntity(item.Entity)
+		if len(problems) > 0 {
+			fail(problems...)
+			continue
+		}
+		computed, _ := spec.Compute(clean)
+		outcome, err := entities.Upsert(ctx, blueprintIDs[item.Blueprint], integrationID, clean, computed)
+		var owned entity.OwnedError
+		switch {
+		case errors.As(err, &owned):
+			fail(owned.Error())
+			continue
+		case err != nil:
+			return nil, err
+		}
+		switch outcome {
+		case entity.Created:
+			run.Created++
+		case entity.Updated:
+			run.Updated++
+		default:
+			run.Unchanged++
+		}
+	}
+
+	return seen, nil
 }
