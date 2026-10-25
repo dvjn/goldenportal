@@ -102,3 +102,39 @@ func TestCompute(t *testing.T) {
 		t.Errorf("broken = %v, problems = %v", values["broken"], problems)
 	}
 }
+
+func TestEntityWidgetVariables(t *testing.T) {
+	source := `kind: Blueprint
+metadata: {name: service, title: Service}
+spec:
+  properties:
+    owner: {relation: team}
+    coverage: {type: number}
+  entity:
+    tabs:
+      overview:
+        widgets:
+          about: {type: markdown, text: 'About {{ $entity.title }} ({{ $entity.blueprint }}), owned by {{ $entity.owner }}, as of {{ $today-7d }}.'}
+          peers: {type: stat, title: Peers, filter: {property: coverage, op: gte, value: $entity.coverage}}
+`
+	_, issues := Parse(source)
+	if HasErrors(issues) {
+		t.Fatalf("valid variables: %+v", issues)
+	}
+	for _, invalid := range []string{
+		strings.Replace(source, "$entity.owner", "$entity.owenr", 1),
+		strings.Replace(source, "$entity.coverage", "$entity.coveage", 1),
+		strings.Replace(source, "  entity:", "  catalog:", 1),
+		strings.Replace(source, "$today-7d", "$today-7w", 1),
+	} {
+		_, issues := Parse(invalid)
+		if !HasErrors(issues) {
+			t.Fatalf("accepted invalid variable: %s", invalid)
+		}
+		for _, issue := range issues {
+			if issue.Line == 0 {
+				t.Errorf("missing line: %+v", issue)
+			}
+		}
+	}
+}

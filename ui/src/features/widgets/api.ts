@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import type { EntityPage, Facet, Filter } from "@/features/catalog";
+import type { Entity, EntityPage, Facet, Filter } from "@/features/catalog";
 import { type ApiDataResponse, api } from "@/lib/api";
 
 export type WidgetType =
@@ -50,6 +50,7 @@ export type WidgetSource =
 // filter is left out of the request and the server finds nothing again.
 export type WidgetContext = {
   entity?: string;
+  entityData?: Entity;
   filters?: Record<string, string[] | null>;
   draft?: boolean;
 };

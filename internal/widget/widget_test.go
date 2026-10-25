@@ -325,7 +325,7 @@ func TestRender(t *testing.T) {
 
 	for text, want := range map[string]string{
 		"{{ $me.nmae }}":  "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups",
-		"{{ $entity }}":   "unknown variable $entity; known: $me, $me.email, $me.name, $me.role, $me.groups",
+		"{{ $entity }}":   "$entity is only available on entity pages",
 		"{{ }}":           "{{ }} must name a variable, like {{ $me.name }}",
 		"{{ $me.name }}":  "",
 		"{{ $me }} and $": "",

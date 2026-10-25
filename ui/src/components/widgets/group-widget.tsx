@@ -36,6 +36,7 @@ export function GroupWidget({ source, widget, context }: WidgetProps) {
   const property = bp?.published?.spec.properties.find((p) => p.identifier === widget.groupBy);
   const base = toCatalogFilters(widget.filter, {
     entity: context.entity,
+    entityData: context.entityData,
     me,
     filters: context.filters,
   });

@@ -60,6 +60,13 @@ func MeValues(p auth.Principal) Values {
 // fails at publish time rather than quietly comparing with the text. Other
 // texts are literals.
 func checkVariable(text string) error {
+	if strings.HasPrefix(text, "$today") {
+		_, err := dayOffset(text)
+		return err
+	}
+	if strings.HasPrefix(text, "$entity.") && !entityName.MatchString(text) {
+		return fmt.Errorf("invalid entity variable %s", text)
+	}
 	if !strings.HasPrefix(text, ValueMe+".") {
 		return nil
 	}
@@ -79,13 +86,29 @@ func checkMe(name string) error {
 // a bare $ is ordinary in prose.
 var tokenPattern = regexp.MustCompile(`\{\{([^{}]*)\}\}`)
 
-// CheckText reports the first {{ }} in text that doesn't name a $me
-// variable.
-func CheckText(text string) error {
+// CheckText validates templates outside entity pages.
+func CheckText(text string) error { return CheckTextIn(text, Scope{}) }
+
+func CheckTextIn(text string, scope Scope) error {
 	for _, match := range tokenPattern.FindAllStringSubmatch(text, -1) {
 		name := strings.TrimSpace(match[1])
 		if name == "" {
 			return fmt.Errorf("%s must name a variable, like {{ %s.name }}", match[0], ValueMe)
+		}
+		if name == "$entity" || strings.HasPrefix(name, "$entity.") {
+			if !scope.Entity {
+				return fmt.Errorf("%s is only available on entity pages", name)
+			}
+			if name != "$entity" && !entityName.MatchString(name) {
+				return fmt.Errorf("invalid entity variable %s", name)
+			}
+			continue
+		}
+		if strings.HasPrefix(name, "$today") {
+			if _, err := dayOffset(name); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := checkMe(name); err != nil {
 			return err
@@ -95,7 +118,7 @@ func CheckText(text string) error {
 	return nil
 }
 
-// Render fills in the {{ $me.<name> }} variables in text. A list joins
+// Render fills in template variables in text. A list joins
 // with commas, and a variable with no value leaves nothing behind.
 func Render(text string, values Values) string {
 	if !strings.Contains(text, "{{") {
@@ -104,7 +127,8 @@ func Render(text string, values Values) string {
 
 	return tokenPattern.ReplaceAllStringFunc(text, func(token string) string {
 		name := strings.TrimSpace(token[2 : len(token)-2])
-		return strings.Join(values[name], ", ")
+		value, _ := lookup(values, name)
+		return strings.Join(value, ", ")
 	})
 }
 

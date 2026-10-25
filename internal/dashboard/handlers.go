@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"gofr.dev/pkg/gofr"
 
@@ -97,6 +98,7 @@ type homeDashboard struct {
 // wrong finding its defaults, for the log.
 func view(ctx context.Context, find finder, spec Spec, p auth.Principal) (homeDashboard, map[string]error) {
 	me := widget.MeValues(p)
+	widget.SetToday(me, time.Now())
 	values, problems := defaults(ctx, find, spec, me, nil)
 	v := homeDashboard{Spec: spec.render(me), Defaults: map[string][]string{}, Problems: map[string]string{}}
 	for _, f := range spec.Filters {
@@ -229,11 +231,12 @@ func dashboardWidget(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	me := widget.MeValues(p)
+	widget.SetToday(me, time.Now())
 	values, problems := defaults(ctx, find(ctx), spec, me, picked)
 	logProblems(ctx, spec, problems)
 	maps.Copy(values, me)
 
-	return respond(load(ctx, w, values, nil))
+	return respond(load(ctx, w, values, nil, nil))
 }
 
 // picked reads what Home picked for a dashboard's filters from the query,
@@ -284,6 +287,7 @@ func blueprintWidget(ctx *gofr.Context) (any, error) {
 	spec, _ := blueprint.Parse(src)
 
 	values := widget.MeValues(p)
+	widget.SetToday(values, time.Now())
 	var page *blueprint.Page
 	switch ctx.PathParam("page") {
 	case "catalog":
@@ -309,7 +313,32 @@ func blueprintWidget(ctx *gofr.Context) (any, error) {
 		return nil, noWidget(ctx)
 	}
 
-	return respond(load(ctx, w, values, &spec))
+	var data map[string][]any
+	if ctx.PathParam("page") == "entity" {
+		store := entity.NewStore(ctx.SQL)
+		current, err := store.Get(ctx, spec.Identifier, ctx.Param("entity"))
+		if errors.Is(err, entity.ErrNotFound) {
+			return nil, httpx.Error{Code: http.StatusNotFound, Message: "no entity " + ctx.Param("entity")}
+		}
+		if err != nil {
+			return nil, err
+		}
+		blueprints, err := blueprint.Published(ctx, ctx.SQL)
+		if err != nil {
+			return nil, err
+		}
+		blueprints[spec.Identifier] = spec
+		if err := store.Resolve(ctx, blueprints, spec, []*entity.Entity{current}); err != nil {
+			return nil, err
+		}
+		names := make([]string, 0, len(spec.Properties))
+		for _, property := range spec.Properties {
+			names = append(names, property.ID)
+		}
+		data = widget.EntityValues(current.Identifier, current.Title, current.Blueprint, current.Properties, names)
+		maps.Copy(values, widget.TextValues(data))
+	}
+	return respond(load(ctx, w, values, &spec, data))
 }
 
 func noWidget(ctx *gofr.Context) error {
@@ -348,14 +377,14 @@ type (
 // load works out what a widget shows for whoever is looking, with own in
 // place of its published version, so a draft's widgets can show the
 // draft's derived properties.
-func load(ctx *gofr.Context, w widget.Widget, values widget.Values, own *blueprint.Spec) (any, error) {
+func load(ctx *gofr.Context, w widget.Widget, values widget.Values, own *blueprint.Spec, data map[string][]any) (any, error) {
 	if w.Type == widget.TypeMarkdown {
 		return textData{Text: widget.Render(w.Text, values)}, nil
 	}
 	if w.Type == widget.TypeProperties {
 		return nil, badRequest(w.Type + " widgets have no data to load")
 	}
-	f := widget.Bind(w.Filter, values)
+	f := widget.BindContext(w.Filter, values, data)
 	blueprints, err := blueprint.Published(ctx, ctx.SQL)
 	if err != nil {
 		return nil, err

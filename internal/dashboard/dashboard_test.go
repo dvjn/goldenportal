@@ -172,7 +172,7 @@ spec:
 
 	tests := []struct{ name, source, path, message string }{
 		{"title", "metadata: {name: d, title: 'Hi {{ $me.nmae }}'}\nspec:\n  widgets:\n    w: {type: markdown, text: x}", "metadata.title", "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups"},
-		{"description", "metadata: {name: d, title: D, description: '{{ $entity }}'}\nspec:\n  widgets:\n    w: {type: markdown, text: x}", "metadata.description", "unknown variable $entity"},
+		{"description", "metadata: {name: d, title: D, description: '{{ $entity }}'}\nspec:\n  widgets:\n    w: {type: markdown, text: x}", "metadata.description", "$entity is only available on entity pages"},
 		{"widget text", "metadata: {name: d, title: D}\nspec:\n  widgets:\n    w: {type: markdown, text: 'Hi {{ $filter.team }}'}", "spec.widgets.w.text", "unknown variable $filter.team"},
 		{"widget title", "metadata: {name: d, title: D}\nspec:\n  widgets:\n    w: {type: stat, title: 'Hi {{ }}', blueprint: s}", "spec.widgets.w.title", "{{ }} must name a variable"},
 		{"filter", "metadata: {name: d, title: D}\nspec:\n  widgets:\n    w: {type: stat, title: W, blueprint: s, filter: {property: p, op: eq, value: $me.id}}", "spec.widgets.w.filter", "unknown variable $me.id"},
@@ -446,5 +446,35 @@ func TestDiff(t *testing.T) {
 	}
 	if configdoc.Breaking(changes) {
 		t.Fatal("Diff() reports a breaking change")
+	}
+}
+
+func TestEntityVariableTypes(t *testing.T) {
+	own, issues := blueprint.Parse(`kind: Blueprint
+metadata: {name: service, title: Service}
+spec:
+  properties:
+    coverage: {type: number}
+    critical: {type: boolean}
+    owners: {relation: team, many: true}
+  entity:
+    tabs:
+      overview:
+        widgets:
+          coverage: {type: stat, title: Coverage, blueprint: other, filter: {property: coverage, op: gte, value: $entity.coverage}}
+          critical: {type: stat, title: Critical, blueprint: other, filter: {property: critical, op: eq, value: $entity.critical}}
+          owners: {type: stat, title: Owners, blueprint: other, filter: {property: owner, op: eq, value: $entity.owners}}
+`)
+	if configdoc.HasErrors(issues) {
+		t.Fatal(issues)
+	}
+	target := blueprint.Spec{Identifier: "other", Properties: []blueprint.Property{
+		{ID: "coverage", Type: "number"}, {ID: "critical", Type: "boolean"}, {ID: "owner", Type: "relation", Relation: "team"},
+	}}
+	for _, w := range own.Entity.Tabs[0].Widgets {
+		w.Filter = widget.BindData(w.Filter, sampleEntity(own, nil))
+		if err := checkFilter(target, w.Filter); err != nil {
+			t.Errorf("%s: %v", w.ID, err)
+		}
 	}
 }

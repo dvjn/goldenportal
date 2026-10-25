@@ -205,7 +205,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		if strings.TrimSpace(w.Text) == "" {
 			r.Errorf(configdoc.OrNode(fields["text"], key), path+".text", "add the text to show")
 		}
-		checkText(r, fields["text"], path+".text", Scope{})
+		checkText(r, fields["text"], path+".text", Scope{Entity: scope.Entity})
 	case TypeProperties:
 		if !scope.Entity {
 			r.Errorf(typeNode, path+".type", "properties widgets show one entity, so they go on entity pages")
@@ -224,7 +224,7 @@ func checkText(r *configdoc.Reader, node *yaml.Node, path string, scope Scope) {
 	if node == nil {
 		return
 	}
-	if err := CheckText(node.Value); err != nil {
+	if err := CheckTextIn(node.Value, scope); err != nil {
 		r.Errorf(node, path, "%v", err)
 		return
 	}
@@ -321,7 +321,7 @@ func ReadFilter(r *configdoc.Reader, node *yaml.Node, path string) *filter.Filte
 // Uses reports whether a filter compares with a context value.
 func Uses(f *filter.Filter, value string) bool {
 	found := false
-	eachText(f, func(text string) { found = found || text == value })
+	eachText(f, func(text string) { found = found || text == value || strings.HasPrefix(text, value+".") })
 
 	return found
 }
@@ -370,34 +370,59 @@ var Nothing = []string{}
 // conditions that compare with it, and and, or and not drop once nothing is
 // left in them, so the result is nil when the whole filter falls away.
 func Bind(f *filter.Filter, values Values) *filter.Filter {
+	return BindContext(f, values, nil)
+}
+
+func BindData(f *filter.Filter, values map[string][]any) *filter.Filter {
+	return BindContext(f, nil, values)
+}
+
+func BindContext(f *filter.Filter, values Values, data map[string][]any) *filter.Filter {
+	return bind(f, func(name string) ([]any, bool) {
+		if picked, set := data[name]; set {
+			return picked, true
+		}
+		picked, set := lookup(values, name)
+		if picked == nil {
+			return nil, set
+		}
+		out := make([]any, len(picked))
+		for i, value := range picked {
+			out[i] = value
+		}
+		return out, set
+	})
+}
+
+func bind(f *filter.Filter, resolve func(string) ([]any, bool)) *filter.Filter {
 	if f == nil {
 		return nil
 	}
 	bound := *f
 	switch {
 	case len(f.And) > 0:
-		if bound.And = bindAll(f.And, values); len(bound.And) == 0 {
+		if bound.And = bindAll(f.And, resolve); len(bound.And) == 0 {
 			return nil
 		}
 	case len(f.Or) > 0:
-		if bound.Or = bindAll(f.Or, values); len(bound.Or) == 0 {
+		if bound.Or = bindAll(f.Or, resolve); len(bound.Or) == 0 {
 			return nil
 		}
 	case f.Not != nil:
-		if bound.Not = Bind(f.Not, values); bound.Not == nil {
+		if bound.Not = bind(f.Not, resolve); bound.Not == nil {
 			return nil
 		}
 	default:
-		return bindCondition(f, values)
+		return bindCondition(f, resolve)
 	}
 
 	return &bound
 }
 
-func bindAll(parts []filter.Filter, values Values) []filter.Filter {
+func bindAll(parts []filter.Filter, resolve func(string) ([]any, bool)) []filter.Filter {
 	out := make([]filter.Filter, 0, len(parts))
 	for i := range parts {
-		if part := Bind(&parts[i], values); part != nil {
+		if part := bind(&parts[i], resolve); part != nil {
 			out = append(out, *part)
 		}
 	}
@@ -405,10 +430,10 @@ func bindAll(parts []filter.Filter, values Values) []filter.Filter {
 	return out
 }
 
-func bindCondition(f *filter.Filter, values Values) *filter.Filter {
+func bindCondition(f *filter.Filter, resolve func(string) ([]any, bool)) *filter.Filter {
 	bound := *f
 	if text, ok := f.Value.(string); ok {
-		if picked, set := values[text]; set {
+		if picked, set := resolve(text); set {
 			switch {
 			case picked == nil:
 				return nil
@@ -426,7 +451,7 @@ func bindCondition(f *filter.Filter, values Values) *filter.Filter {
 		bound.Values = make([]any, 0, len(f.Values))
 		for _, item := range f.Values {
 			text, ok := item.(string)
-			picked, set := values[text]
+			picked, set := resolve(text)
 			if !ok || !set {
 				bound.Values = append(bound.Values, item)
 				continue
@@ -447,7 +472,7 @@ func bindCondition(f *filter.Filter, values Values) *filter.Filter {
 // anyOf compares with several values at once. Picking several means "any of
 // these", so eq becomes in, and ne, its opposite, "none of these". Nothing
 // is in with no values, which matches nothing, or for ne everything.
-func anyOf(condition filter.Filter, picked []string) *filter.Filter {
+func anyOf(condition filter.Filter, picked []any) *filter.Filter {
 	values := make([]any, len(picked))
 	for i, value := range picked {
 		values[i] = value

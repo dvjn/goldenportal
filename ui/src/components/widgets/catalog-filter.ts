@@ -1,5 +1,5 @@
 import type { Me } from "@/features/auth";
-import type { Filter } from "@/features/catalog";
+import type { Entity, Filter } from "@/features/catalog";
 
 type Value = string | number | boolean;
 
@@ -11,6 +11,7 @@ export type CatalogFilters = Record<string, Value[]>;
 // dashboard's filters are set to, by identifier, as a WidgetContext has them.
 export type FilterContext = {
   entity?: string;
+  entityData?: Entity;
   me?: Me;
   filters?: Record<string, string[] | null>;
 };
@@ -44,6 +45,36 @@ export function toCatalogFilters(
     if (value === "$me" || (typeof value === "string" && value.startsWith("$me."))) {
       const values = context.me && meValues(context.me)[value];
       return values === undefined || values.length === 0 ? undefined : values;
+    }
+    if (typeof value === "string" && value.startsWith("$entity.")) {
+      const entity = context.entityData;
+      if (!entity) return undefined;
+      const name = value.slice("$entity.".length);
+      const raw =
+        name === "identifier"
+          ? entity.identifier
+          : name === "title"
+            ? entity.title
+            : name === "blueprint"
+              ? entity.blueprint
+              : entity.properties[name];
+      const items = Array.isArray(raw) ? raw : raw === null || raw === undefined ? [] : [raw];
+      return items.length > 0 &&
+        items.every(
+          (item) =>
+            typeof item === "string" || typeof item === "number" || typeof item === "boolean",
+        )
+        ? items
+        : undefined;
+    }
+    if (typeof value === "string" && value.startsWith("$today")) {
+      const match = /^\$today(?:([+-][0-9]+)d)?$/.exec(value);
+      if (!match) return undefined;
+      const days = Number(match[1] ?? 0);
+      if (!Number.isSafeInteger(days) || Math.abs(days) > 365000) return undefined;
+      const date = new Date();
+      date.setUTCDate(date.getUTCDate() + days);
+      return [date.toISOString().slice(0, 10)];
     }
     if (typeof value === "string" && value.startsWith("$filter.")) {
       const picked = context.filters?.[value.slice("$filter.".length)];

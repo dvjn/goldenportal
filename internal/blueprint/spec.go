@@ -152,6 +152,20 @@ func Parse(source string) (Spec, []Issue) {
 		spec.Catalog = p.page(fields["catalog"], "spec.catalog", widget.Scope{Blueprint: spec.Identifier}, CatalogTabs)
 		spec.Entity = p.page(fields["entity"], "spec.entity", widget.Scope{Blueprint: spec.Identifier, Entity: true}, EntityTabs)
 	}
+	if spec.Entity != nil {
+		for _, tab := range spec.Entity.Tabs {
+			for _, w := range tab.Widgets {
+				for _, name := range widget.EntityRefs(w) {
+					if name == "identifier" || name == "title" || name == "blueprint" {
+						continue
+					}
+					if _, ok := spec.Property(name); !ok {
+						p.Issues = append(p.Issues, Issue{Severity: SeverityError, Path: w.Path, Line: w.Line, Message: fmt.Sprintf("unknown variable $entity.%s; %s has no property %q", name, spec.Identifier, name)})
+					}
+				}
+			}
+		}
+	}
 	p.checkNames(spec)
 
 	return spec, p.Issues

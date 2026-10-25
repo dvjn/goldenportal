@@ -186,6 +186,10 @@ spec:
         title: Deployments
         icon: rocket
         widgets:
+          about:
+            type: markdown
+            width: 12
+            text: 'Deployments of **{{ $entity.title }}**, owned by {{ $entity.owner }}, as of {{ $today }}.'
           total:
             type: stat
             title: Deployments

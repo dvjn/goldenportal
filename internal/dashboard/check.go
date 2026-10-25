@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strings"
+	"time"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
@@ -42,7 +44,7 @@ func checkFilters(filters []Filter, blueprints map[string]blueprint.Spec) []conf
 		if f.Lookup == nil || f.Lookup.Where == nil {
 			continue
 		}
-		if err := entity.CheckFilter(bp, *widget.Bind(f.Lookup.Where, sampleMe)); err != nil {
+		if err := entity.CheckFilter(bp, *widget.Bind(f.Lookup.Where, sampleValues())); err != nil {
 			issues = append(issues, configdoc.Issue{
 				Severity: configdoc.SeverityError, Path: "spec.filters." + f.ID + ".default.where", Line: f.line,
 				Message: err.Error(),
@@ -60,17 +62,28 @@ var sampleMe = widget.MeValues(auth.Principal{Email: "me@example.com", DisplayNa
 // CheckPages checks the widgets on a blueprint's pages. They may show the
 // blueprint itself, so they're checked against the version being checked.
 func CheckPages(ctx context.Context, db configdoc.DB, spec blueprint.Spec) ([]configdoc.Issue, error) {
+	blueprints, scorecards, err := published(ctx, db, &spec)
+	if err != nil {
+		return nil, err
+	}
+	samples := sampleEntity(spec, blueprints)
 	var widgets []widget.Widget
 	for _, page := range []*blueprint.Page{spec.Catalog, spec.Entity} {
 		if page == nil {
 			continue
 		}
 		for _, tab := range page.Tabs {
-			widgets = append(widgets, tab.Widgets...)
+			for _, w := range tab.Widgets {
+				// Check with the page entity's types, even when the widget shows another blueprint.
+				if page == spec.Entity {
+					w.Filter = widget.BindData(w.Filter, samples)
+				}
+				widgets = append(widgets, w)
+			}
 		}
 	}
 
-	return CheckWidgets(ctx, db, widgets, &spec)
+	return checkWidgets(widgets, blueprints, scorecards), nil
 }
 
 // CheckWidgets checks widgets against the blueprints and scorecards they
@@ -181,6 +194,7 @@ func checkWidget(bp blueprint.Spec, w widget.Widget) []problem {
 func checkFilter(bp blueprint.Spec, f *filter.Filter) error {
 	values := maps.Clone(sampleMe)
 	values[widget.ValueEntity] = []string{"entity"}
+	widget.SetToday(values, time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC))
 	for _, ref := range widget.FilterRefs(f) {
 		values[ref] = []string{"value"}
 	}
@@ -190,4 +204,63 @@ func checkFilter(bp blueprint.Spec, f *filter.Filter) error {
 	}
 
 	return entity.CheckFilter(bp, *bound)
+}
+
+func sampleValues() widget.Values {
+	values := maps.Clone(sampleMe)
+	widget.SetToday(values, time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC))
+	return values
+}
+
+func sampleEntity(spec blueprint.Spec, blueprints map[string]blueprint.Spec) map[string][]any {
+	properties := map[string]any{}
+	names := []string{}
+	for _, p := range spec.Properties {
+		names = append(names, p.ID)
+		id := p.ID
+		if p.Lookup != "" {
+			at := spec
+			segments := strings.Split(p.Lookup, ".")
+			for _, segment := range segments[:len(segments)-1] {
+				relation, _ := at.Property(segment)
+				at = blueprints[relation.Relation]
+			}
+			if target, ok := at.Property(segments[len(segments)-1]); ok {
+				p = target
+			}
+		}
+		var value any = "value"
+		switch p.Type {
+		case "number", "integer":
+			value = float64(1)
+		case "boolean":
+			value = true
+		case "object":
+			value = map[string]any{}
+		case "array":
+			var item any = "value"
+			if p.Items != nil {
+				switch p.Items.Type {
+				case "number", "integer":
+					item = float64(1)
+				case "boolean":
+					item = true
+				case "object":
+					item = map[string]any{}
+				}
+			}
+			value = []any{item}
+		}
+		if p.Format == "date" {
+			value = "2026-10-25"
+		}
+		if p.Format == "date-time" {
+			value = "2026-10-25T00:00:00Z"
+		}
+		if p.Many {
+			value = []any{"entity"}
+		}
+		properties[id] = value
+	}
+	return widget.EntityValues("entity", "Entity", spec.Identifier, properties, names)
 }

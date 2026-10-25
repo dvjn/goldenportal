@@ -38,6 +38,7 @@ export function TableWidget({ source, widget, context }: WidgetProps) {
   const columns = (widget.columns ?? []).filter((column) => column !== "$title");
   const filters = toCatalogFilters(widget.filter, {
     entity: context.entity,
+    entityData: context.entityData,
     me,
     filters: context.filters,
   });

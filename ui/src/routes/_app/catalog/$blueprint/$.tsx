@@ -152,7 +152,7 @@ function EntityPage() {
             <WidgetGrid
               widgets={overview.widgets}
               source={{ blueprint, page: "entity", tab: overview.identifier }}
-              context={{ entity: identifier }}
+              context={{ entity: identifier, entityData: entity }}
             />
           ) : (
             <Overview spec={spec} entity={entity} />
@@ -163,7 +163,7 @@ function EntityPage() {
             <WidgetGrid
               widgets={v.widgets}
               source={{ blueprint, page: "entity", tab: v.identifier }}
-              context={{ entity: identifier }}
+              context={{ entity: identifier, entityData: entity }}
             />
           </TabsContent>
         ))}
