@@ -58,6 +58,36 @@ spec:
       title: On-call Rotation
       type: string
       format: uri
+  entity:
+    tabs:
+      services:
+        title: Services
+        icon: server
+        widgets:
+          owned:
+            type: stat
+            title: Services
+            blueprint: service
+            filter: {property: owner, op: eq, value: $entity}
+          critical:
+            type: stat
+            title: Critical
+            blueprint: service
+            filter:
+              and:
+                - {property: owner, op: eq, value: $entity}
+                - {property: tier, op: eq, value: critical}
+          readiness:
+            type: scorecard
+            title: Readiness
+            scorecard: service-readiness
+            filter: {property: owner, op: eq, value: $entity}
+          services:
+            type: table
+            title: Services
+            blueprint: service
+            filter: {property: owner, op: eq, value: $entity}
+            columns: [tier, language, lastDeployedAt]
 $yaml$),
   ('service', $yaml$kind: Blueprint
 metadata:
@@ -71,11 +101,17 @@ spec:
       title: Language
       type: string
       enum: [go, python, typescript, java]
+      display:
+        column: true
     tier:
       title: Tier
       type: string
       enum: [critical, standard, experimental]
       required: true
+      display:
+        as: badge
+        colors: {critical: red, standard: blue, experimental: gray}
+        column: true
     repository:
       title: Repository
       type: string
@@ -85,13 +121,19 @@ spec:
       type: array
       items:
         type: string
+      display:
+        filter: true
     lastDeployedAt:
       title: Last Deployed
       type: string
       format: date-time
+      display:
+        column: true
     owner:
       title: Owner
       relation: team
+      display:
+        column: true
     dependsOn:
       title: Depends On
       relation: service
@@ -106,6 +148,65 @@ spec:
       title: Critical
       type: boolean
       compute: .properties.tier == "critical"
+      display:
+        hidden: true
+  catalog:
+    tabs:
+      overview:
+        title: Overview
+        icon: layout-dashboard
+        widgets:
+          byTier:
+            type: donut
+            title: By Tier
+            groupBy: tier
+          byLanguage:
+            type: bar
+            title: By Language
+            width: 4
+            groupBy: language
+          readiness:
+            type: scorecard
+            title: Readiness
+            width: 4
+            scorecard: service-readiness
+          critical:
+            type: table
+            title: Critical Services
+            filter: {property: critical, op: eq, value: true}
+            columns: [owner, language, lastDeployedAt]
+            sort: -lastDeployedAt
+  entity:
+    tabs:
+      deployments:
+        title: Deployments
+        icon: rocket
+        widgets:
+          total:
+            type: stat
+            title: Deployments
+            blueprint: deployment
+            filter: {property: service, op: eq, value: $entity}
+          byStatus:
+            type: donut
+            title: By Status
+            width: 3
+            blueprint: deployment
+            groupBy: status
+            filter: {property: service, op: eq, value: $entity}
+          byEnvironment:
+            type: bar
+            title: By Environment
+            blueprint: deployment
+            groupBy: environment
+            filter: {property: service, op: eq, value: $entity}
+          recent:
+            type: table
+            title: Recent
+            blueprint: deployment
+            filter: {property: service, op: eq, value: $entity}
+            columns: [environment, version, status, startedAt]
+            sort: -startedAt
 $yaml$),
   ('user', $yaml$kind: Blueprint
 metadata:
@@ -208,6 +309,9 @@ spec:
       title: Environment
       type: string
       enum: [production, staging]
+      display:
+        as: badge
+        colors: {production: violet, staging: gray}
     version:
       title: Version
       type: string
@@ -215,6 +319,9 @@ spec:
       title: Status
       type: string
       enum: [running, succeeded, failed]
+      display:
+        as: badge
+        colors: {running: sky, succeeded: emerald, failed: red}
     startedAt:
       title: Started
       type: string
@@ -226,6 +333,27 @@ spec:
     owner:
       title: Owner
       lookup: service.owner.$title
+  catalog:
+    tabs:
+      overview:
+        title: Overview
+        icon: layout-dashboard
+        widgets:
+          byStatus:
+            type: donut
+            title: By Status
+            groupBy: status
+          byService:
+            type: bar
+            title: By Service
+            width: 8
+            groupBy: service
+          failed:
+            type: table
+            title: Failed
+            filter: {property: status, op: eq, value: failed}
+            columns: [service, environment, version, startedAt]
+            sort: -startedAt
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -461,6 +589,96 @@ $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
   SELECT 'scorecard', identifier, 1 FROM example
+  ON CONFLICT (kind, identifier) DO NOTHING
+  RETURNING id, identifier
+)
+INSERT INTO config_versions (document_id, version, source)
+SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
+
+-- Example dashboards, each a tab on Home. The blueprints above lay out
+-- their own catalog and entity pages.
+WITH example (identifier, source) AS (VALUES
+  ('overview', $yaml$kind: Dashboard
+metadata:
+  name: overview
+  title: Overview
+  description: How the services are doing.
+  icon: layout-dashboard
+spec:
+  order: 1
+  widgets:
+    services:
+      type: stat
+      title: Services
+      blueprint: service
+    critical:
+      type: stat
+      title: Critical Services
+      blueprint: service
+      filter: {property: tier, op: eq, value: critical}
+    teams:
+      type: stat
+      title: Teams
+      blueprint: team
+    failed:
+      type: stat
+      title: Failed Deployments
+      blueprint: deployment
+      filter: {property: status, op: eq, value: failed}
+    readiness:
+      type: scorecard
+      title: Service Readiness
+      scorecard: service-readiness
+    byOwner:
+      type: bar
+      title: Services by Owner
+      blueprint: service
+      groupBy: owner
+    deployments:
+      type: table
+      title: Recent Deployments
+      blueprint: deployment
+      columns: [service, environment, status, startedAt]
+      sort: -startedAt
+      limit: 8
+$yaml$),
+  ('portal', $yaml$kind: Dashboard
+metadata:
+  name: portal
+  title: Portal
+  description: What the portal holds and where it comes from.
+  icon: database
+spec:
+  order: 2
+  widgets:
+    welcome:
+      type: markdown
+      width: 4
+      text: |
+        **Welcome to the portal.** Everything here comes from integrations,
+        so fix data at its source. Builders can change these dashboards
+        under Dashboards.
+    users:
+      type: stat
+      title: Active Users
+      width: 4
+      blueprint: user
+      filter: {property: active, op: eq, value: true}
+    blueprints:
+      type: stat
+      title: Blueprints
+      width: 4
+      blueprint: blueprint
+    integrations:
+      type: table
+      title: Integrations
+      blueprint: integration
+      columns: [connector, entities, lastRunAt]
+      sort: -entities
+$yaml$)
+), created AS (
+  INSERT INTO config_documents (kind, identifier, published_version)
+  SELECT 'dashboard', identifier, 1 FROM example
   ON CONFLICT (kind, identifier) DO NOTHING
   RETURNING id, identifier
 )
