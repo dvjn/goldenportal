@@ -109,10 +109,11 @@ func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifie
 // Entity is a stored entity as the API shows it.
 type Entity struct {
 	// ID is the row's ID, which other tables reference.
-	ID         string `json:"-"`
-	Blueprint  string `json:"blueprint"`
-	Identifier string `json:"identifier"`
-	Title      string `json:"title"`
+	ID         string           `json:"-"`
+	Blueprint  string           `json:"blueprint"`
+	Identifier string           `json:"identifier"`
+	Title      string           `json:"title"`
+	Scorecards map[string]Score `json:"scorecards,omitempty"`
 	// Properties include relations, computed properties and resolved lookups.
 	Properties map[string]any `json:"properties"`
 	// Related names the entities each relation points at, with their titles.
@@ -215,9 +216,9 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 		}
 		where += " AND coalesce(" + sql + ", false)"
 	}
-	order, err := orderBy(q.Blueprint, q.Sort)
+	order, err := s.orderBy(ctx, q.Blueprint, q.Sort, c)
 	if err != nil {
-		return Page{}, FilterError{err}
+		return Page{}, err
 	}
 
 	limit, offset := c.arg(q.PageSize), c.arg((q.Page-1)*q.PageSize)

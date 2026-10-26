@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"gofr.dev/pkg/gofr"
 
@@ -23,6 +24,7 @@ func Register(app *gofr.App) {
 	app.GET("/api/v1/scorecards/{identifier}/results", listResults)
 	app.POST("/api/v1/scorecards/{identifier}/evaluate", evaluateNow)
 	app.GET("/api/v1/entity-scorecards", forEntity)
+	app.GET("/api/v1/scorecard-columns", columns)
 	app.AddCronJob(EvaluateSchedule, "evaluate-scorecards", evaluateAll)
 }
 
@@ -162,4 +164,33 @@ func evaluateAll(ctx *gofr.Context) {
 
 func badRequest(message string) error {
 	return httpx.Error{Code: http.StatusBadRequest, Message: message}
+}
+
+type column struct {
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+	Tiers      []Tier `json:"tiers"`
+}
+
+func columns(ctx *gofr.Context) (any, error) {
+	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+		return nil, err
+	}
+	if ctx.Param("blueprint") == "" {
+		return nil, badRequest("choose a blueprint")
+	}
+	specs, err := Published(ctx, ctx.SQL)
+	if err != nil {
+		return nil, err
+	}
+	out := []column{}
+	for _, spec := range specs {
+		if spec.Blueprint == ctx.Param("blueprint") {
+			out = append(out, column{Identifier: spec.Identifier, Title: spec.Title, Tiers: spec.Tiers})
+		}
+	}
+	slices.SortFunc(out, func(a, b column) int {
+		return strings.Compare(a.Title+"\x00"+a.Identifier, b.Title+"\x00"+b.Identifier)
+	})
+	return out, nil
 }

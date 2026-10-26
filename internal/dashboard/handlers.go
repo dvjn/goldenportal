@@ -42,7 +42,7 @@ func home(ctx *gofr.Context) (any, error) {
 	}
 	specs := []Spec{}
 	for _, source := range sources {
-		if spec, issues := Parse(source); !configdoc.HasErrors(issues) {
+		if spec, issues := Parse(source); !configdoc.HasErrors(issues) && spec.Visible(p) {
 			specs = append(specs, spec)
 		}
 	}
@@ -54,8 +54,13 @@ func home(ctx *gofr.Context) (any, error) {
 	})
 
 	views := make([]homeDashboard, 0, len(specs))
+	preferred := false
 	for _, spec := range specs {
 		v, problems := view(ctx, find(ctx), spec, p)
+		if !preferred && spec.DefaultFor != nil && spec.DefaultFor.Matches(p) {
+			v.Preferred = true
+			preferred = true
+		}
 		logProblems(ctx, spec, problems)
 		views = append(views, v)
 	}
@@ -85,6 +90,7 @@ func dashboardView(ctx *gofr.Context) (any, error) {
 // with its text filled in for them.
 type homeDashboard struct {
 	Spec
+	Preferred bool `json:"preferred,omitempty"`
 	// Defaults are what the filters start at for them, by identifier, with
 	// lookup defaults found. A filter without a default is left out; a
 	// lookup that found nothing is an empty list, which selects nothing.
@@ -201,6 +207,12 @@ func source(ctx *gofr.Context, p auth.Principal, kind, name string) (string, err
 	}
 	if err != nil {
 		return "", err
+	}
+	if kind == Name && !p.Can(auth.RoleBuilder) {
+		spec, issues := Parse(record.PublishedSource)
+		if !record.Published() || configdoc.HasErrors(issues) || !spec.Visible(p) {
+			return "", httpx.Error{Code: http.StatusNotFound, Message: "no published dashboard " + name}
+		}
 	}
 	if draft && record.HasDraft() {
 		return record.DraftSource, nil
@@ -437,6 +449,9 @@ func load(ctx *gofr.Context, w widget.Widget, values widget.Values, own *bluepri
 		return nil, err
 	}
 
+	if err := store.ResolveScores(ctx, page.Entities); err != nil {
+		return nil, err
+	}
 	return page, nil
 }
 

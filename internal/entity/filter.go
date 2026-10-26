@@ -45,13 +45,17 @@ func CheckFilter(spec blueprint.Spec, f Filter) error {
 // field is where a property's value lives in SQL.
 type field struct {
 	// value is a jsonb expression, or a typed column for the built-ins.
-	value  string
-	column bool
-	many   bool
-	kind   string
+	value    string
+	column   bool
+	nullable bool
+	many     bool
+	kind     string
 }
 
 func fieldFor(spec blueprint.Spec, property string) (field, error) {
+	if strings.HasPrefix(property, ScorecardPrefix) {
+		return scorecardField(property)
+	}
 	switch property {
 	case "$identifier":
 		return field{value: "e.identifier", column: true, kind: "string"}, nil
@@ -141,6 +145,9 @@ func (c *compiler) condition(f Filter) (string, error) {
 
 	switch f.Op {
 	case OpExists:
+		if fld.nullable {
+			return "(" + fld.value + " IS NOT NULL)", nil
+		}
 		if fld.column {
 			return "true", nil
 		}

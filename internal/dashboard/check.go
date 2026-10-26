@@ -147,6 +147,18 @@ func checkWidgets(widgets []widget.Widget, blueprints map[string]blueprint.Spec,
 			report(configdoc.SeverityWarning, w.Path+".blueprint", w.Line, "no blueprint %q is published yet", w.Blueprint)
 			continue
 		}
+		refs := append([]string{}, w.Columns...)
+		refs = append(refs, scorecardRefs(w.Filter)...)
+		for _, ref := range refs {
+			if name, ok := entity.ScorecardName(ref); ok {
+				sc, exists := scorecards[name]
+				if !exists {
+					report(configdoc.SeverityWarning, w.Path, w.Line, "no scorecard %q is published yet", name)
+				} else if sc.Blueprint != bp.Identifier {
+					report(configdoc.SeverityError, w.Path, w.Line, "%s scores %s, not %s", name, sc.Blueprint, bp.Identifier)
+				}
+			}
+		}
 		for _, problem := range checkWidget(bp, w) {
 			report(configdoc.SeverityError, w.Path+"."+problem.field, w.Line, "%v", problem.err)
 		}
@@ -263,4 +275,16 @@ func sampleEntity(spec blueprint.Spec, blueprints map[string]blueprint.Spec) map
 		properties[id] = value
 	}
 	return widget.EntityValues("entity", "Entity", spec.Identifier, properties, names)
+}
+
+func scorecardRefs(f *filter.Filter) []string {
+	if f == nil {
+		return nil
+	}
+	refs := []string{f.Property}
+	refs = append(refs, scorecardRefs(f.Not)...)
+	for _, part := range append(append([]filter.Filter{}, f.And...), f.Or...) {
+		refs = append(refs, scorecardRefs(&part)...)
+	}
+	return refs
 }

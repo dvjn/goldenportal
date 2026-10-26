@@ -16,6 +16,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
@@ -475,6 +476,25 @@ spec:
 		w.Filter = widget.BindData(w.Filter, sampleEntity(own, nil))
 		if err := checkFilter(target, w.Filter); err != nil {
 			t.Errorf("%s: %v", w.ID, err)
+		}
+	}
+}
+
+func TestScorecardColumns(t *testing.T) {
+	bp := blueprint.Spec{Identifier: "service"}
+	w := widget.Widget{ID: "services", Type: widget.TypeTable, Blueprint: "service", Columns: []string{"$scorecard.readiness"}}
+	specs := map[string]blueprint.Spec{"service": bp}
+	for _, test := range []struct{ target, severity string }{{"service", ""}, {"deployment", configdoc.SeverityError}, {"", configdoc.SeverityWarning}} {
+		cards := map[string]scorecard.Spec{}
+		if test.target != "" {
+			cards["readiness"] = scorecard.Spec{Identifier: "readiness", Blueprint: test.target}
+		}
+		issues := checkWidgets([]widget.Widget{w}, specs, cards)
+		if test.severity == "" && len(issues) != 0 {
+			t.Fatal(issues)
+		}
+		if test.severity != "" && (len(issues) == 0 || issues[0].Severity != test.severity) {
+			t.Fatalf("%s: %+v", test.target, issues)
 		}
 	}
 }

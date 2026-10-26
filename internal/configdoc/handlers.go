@@ -66,7 +66,15 @@ func (h handlers[S]) list(ctx *gofr.Context) (any, error) {
 
 	summaries := make([]summary, 0, len(records))
 	for _, record := range records {
+		if !h.canRead(ctx, record) {
+			continue
+		}
 		spec := h.current(record)
+		p, _ := auth.FromContext(ctx)
+		if h.kind.Readable != nil && !p.Can(auth.RoleBuilder) {
+			spec, _ = h.kind.Parse(record.PublishedSource)
+			record.DraftSource = ""
+		}
 		updated := record.PublishedAt
 		if record.HasDraft() {
 			updated = record.DraftUpdatedAt
@@ -184,6 +192,10 @@ func (h handlers[S]) get(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
+	p, _ := auth.FromContext(ctx)
+	if h.kind.Readable != nil && !p.Can(auth.RoleBuilder) {
+		record.DraftSource = ""
+	}
 	out := detail[S]{Identifier: record.Identifier, Meta: h.meta(record, h.current(record)), CreatedAt: record.CreatedAt}
 	if record.Published() {
 		published, _ := h.kind.Parse(record.PublishedSource)
@@ -482,7 +494,20 @@ func (h handlers[S]) saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, nam
 }
 
 func (h handlers[S]) publishedSources(ctx context.Context, db DB) (map[string]string, error) {
-	return NewStore(db, h.kind.Name).PublishedSources(ctx)
+	sources, err := NewStore(db, h.kind.Name).PublishedSources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, _ := auth.FromContext(ctx)
+	if h.kind.Readable != nil && !p.Can(auth.RoleBuilder) {
+		for name, source := range sources {
+			spec, issues := h.kind.Parse(source)
+			if HasErrors(issues) || !h.kind.Readable(spec, p) {
+				delete(sources, name)
+			}
+		}
+	}
+	return sources, nil
 }
 
 func (h handlers[S]) draftSource(ctx context.Context, db DB, name string) (string, error) {
@@ -516,10 +541,11 @@ func (h handlers[S]) version(ctx *gofr.Context) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	identifier, err := h.identifierParam(ctx)
+	record, err := h.load(ctx)
 	if err != nil {
 		return nil, err
 	}
+	identifier := record.Identifier
 	n, err := strconv.Atoi(ctx.PathParam("version"))
 	if err != nil || n < 1 {
 		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such version"}
@@ -530,6 +556,13 @@ func (h handlers[S]) version(ctx *gofr.Context) (any, error) {
 		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such version"}
 	}
 
+	if err == nil && h.kind.Readable != nil {
+		p, _ := auth.FromContext(ctx)
+		spec, issues := h.kind.Parse(v.Source)
+		if !p.Can(auth.RoleBuilder) && (HasErrors(issues) || !h.kind.Readable(spec, p)) {
+			return nil, h.notFound()
+		}
+	}
 	return v, err
 }
 
@@ -545,6 +578,10 @@ func (h handlers[S]) export(ctx *gofr.Context) (any, error) {
 
 	source := record.PublishedSource
 	if ctx.Param("draft") == "true" {
+		p, _ := auth.FromContext(ctx)
+		if h.kind.Readable != nil && !p.Can(auth.RoleBuilder) {
+			return nil, h.notFound()
+		}
 		source = record.DraftSource
 	}
 	if source == "" {
@@ -592,7 +629,25 @@ func (h handlers[S]) load(ctx *gofr.Context) (Record, error) {
 		return Record{}, h.notFound()
 	}
 
+	if err == nil && !h.canRead(ctx, record) {
+		return Record{}, h.notFound()
+	}
 	return record, err
+}
+
+func (h handlers[S]) canRead(ctx context.Context, record Record) bool {
+	if h.kind.Readable == nil {
+		return true
+	}
+	p, _ := auth.FromContext(ctx)
+	if p.Can(auth.RoleBuilder) {
+		return true
+	}
+	if !record.Published() {
+		return false
+	}
+	spec, issues := h.kind.Parse(record.PublishedSource)
+	return !HasErrors(issues) && h.kind.Readable(spec, p)
 }
 
 func (h handlers[S]) identifierParam(ctx *gofr.Context) (string, error) {

@@ -123,6 +123,9 @@ func list(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
+	if err := store.ResolveScores(ctx, page.Entities); err != nil {
+		return nil, err
+	}
 	return page, nil
 }
 

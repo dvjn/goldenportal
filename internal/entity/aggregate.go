@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 )
@@ -91,6 +92,10 @@ func CheckSort(spec blueprint.Spec, sort string) error {
 
 // CheckColumn reports whether a property, or a built-in field, can be shown.
 func CheckColumn(spec blueprint.Spec, column string) error {
+	if strings.HasPrefix(column, ScorecardPrefix) {
+		_, err := scorecardField(column)
+		return err
+	}
 	if slices.Contains([]string{"$identifier", "$title", "$integration", "$createdAt", "$updatedAt"}, column) {
 		return nil
 	}

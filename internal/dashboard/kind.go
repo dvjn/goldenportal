@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
@@ -16,6 +17,7 @@ var Kind = configdoc.Kind[Spec]{
 	Parse:    Parse,
 	Check:    Check,
 	Diff:     Diff,
+	Readable: func(s Spec, p auth.Principal) bool { return s.Visible(p) },
 }
 
 // Diff lists what publishing next over previous changes. Dashboards hold no
@@ -33,6 +35,12 @@ func Diff(previous, next Spec) []configdoc.Change {
 		add("dashboard", "", configdoc.ChangeChanged, "changes the title, description or icon")
 	}
 
+	if !reflect.DeepEqual(previous.Visibility, next.Visibility) {
+		add("dashboard", "", configdoc.ChangeChanged, "changes who can see it")
+	}
+	if !reflect.DeepEqual(previous.DefaultFor, next.DefaultFor) {
+		add("dashboard", "", configdoc.ChangeChanged, "changes whose default Home tab it is")
+	}
 	filters := map[string]Filter{}
 	for _, f := range previous.Filters {
 		f.line = 0

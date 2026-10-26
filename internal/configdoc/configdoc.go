@@ -6,6 +6,8 @@ package configdoc
 import (
 	"context"
 	"slices"
+
+	"github.com/dvjn/goldenportal/internal/auth"
 )
 
 const (
@@ -73,6 +75,8 @@ type Kind[S Spec] struct {
 	Plural string
 	// Parse reads a source and checks everything that doesn't depend on other documents.
 	Parse func(source string) (S, []Issue)
+	// Builders can always read documents they maintain.
+	Readable func(S, auth.Principal) bool
 	// Check finds problems that depend on other documents or data.
 	Check func(ctx context.Context, db DB, spec S) ([]Issue, error)
 	// Diff lists what publishing next over previous changes.

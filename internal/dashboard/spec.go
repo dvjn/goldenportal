@@ -28,9 +28,11 @@ type Spec struct {
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
 	// Order sorts Home's tabs, lowest first.
-	Order   int             `json:"order"`
-	Filters []Filter        `json:"filters"`
-	Widgets []widget.Widget `json:"widgets"`
+	Order      int             `json:"order"`
+	Visibility *Audience       `json:"visibility,omitempty"`
+	DefaultFor *Audience       `json:"defaultFor,omitempty"`
+	Filters    []Filter        `json:"filters"`
+	Widgets    []widget.Widget `json:"widgets"`
 }
 
 // Filter is a value Home asks for above the dashboard, which its widgets
@@ -106,7 +108,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	if doc.Spec == nil {
 		return spec, r.Issues
 	}
-	fields, ok := r.Fields(doc.Spec, "spec", "order", "filters", "widgets")
+	fields, ok := r.Fields(doc.Spec, "spec", "order", "filters", "widgets", "visibility", "defaultFor")
 	if !ok {
 		return spec, r.Issues
 	}
@@ -116,6 +118,8 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 			r.Errorf(n, "spec.order", "order must be a whole number")
 		}
 	}
+	spec.Visibility = parseAudience(r, fields["visibility"], "spec.visibility")
+	spec.DefaultFor = parseAudience(r, fields["defaultFor"], "spec.defaultFor")
 	scope := widget.Scope{}
 	r.Each(fields["filters"], "spec.filters", func(id string, key, value *yaml.Node) {
 		spec.Filters = append(spec.Filters, parseFilter(r, "spec.filters."+id, id, key, value))
