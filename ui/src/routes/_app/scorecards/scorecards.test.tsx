@@ -175,6 +175,10 @@ describe("scorecards", () => {
 
     const tabs = (await screen.findAllByRole("tab")).map((tab) => tab.textContent);
     expect(tabs).toEqual(["Overview", "Readiness", "Relations0", "YAML"]);
+    expect(await screen.findByRole("link", { name: /Readiness.*Bronze/ })).toHaveAttribute(
+      "href",
+      "/catalog/service/ledger?tab=readiness",
+    );
     await userEvent.setup().click(screen.getByRole("tab", { name: "Readiness" }));
     expect(await screen.findByText("1 criterion left")).toBeInTheDocument();
     expect(screen.getByText("· next").parentElement).toHaveTextContent("Silver · next");

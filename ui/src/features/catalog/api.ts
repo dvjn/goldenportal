@@ -18,6 +18,7 @@ export type Entity = {
   title: string;
   // properties include relations, computed values and resolved lookups.
   properties: Record<string, unknown>;
+  scorecards?: Record<string, { tier: string; score: number | null }>;
   related: Record<string, Link[]>;
   integration: string;
   createdAt: string;

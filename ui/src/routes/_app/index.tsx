@@ -81,7 +81,8 @@ function HomePage() {
     );
   }
 
-  const active = views.find((v) => v.identifier === search.d) ?? views[0];
+  const active =
+    views.find((v) => v.identifier === search.d) ?? views.find((v) => v.preferred) ?? views[0];
   return (
     <Tabs
       value={active.identifier}

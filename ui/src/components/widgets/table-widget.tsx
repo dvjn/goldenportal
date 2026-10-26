@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
+import { ScorecardCell } from "@/components/scorecards/scorecard-cell";
 import {
   Table,
   TableBody,
@@ -14,6 +15,7 @@ import {
 import { useMe } from "@/features/auth";
 import { blueprints, type Property } from "@/features/blueprints";
 import type { Entity, EntityPage } from "@/features/catalog";
+import { scorecardColumnsQueryOptions } from "@/features/scorecards";
 import { widgetQueryOptions } from "@/features/widgets";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 import { toCatalogFilters } from "./catalog-filter";
@@ -31,6 +33,7 @@ export function TableWidget({ source, widget, context }: WidgetProps) {
   const me = useMe();
   const data = useQuery(widgetQueryOptions<EntityPage>(source, widget.identifier, context));
   const { data: bp } = useQuery(blueprints.queries.detail(widget.blueprint ?? ""));
+  const { data: scorecards = [] } = useQuery(scorecardColumnsQueryOptions(widget.blueprint ?? ""));
   if (data.error) return <WidgetError widget={widget} error={data.error} />;
   const spec = bp?.published?.spec;
   if (!data.data || !spec) return <WidgetLoading widget={widget} height="h-40" />;
@@ -67,7 +70,8 @@ export function TableWidget({ source, widget, context }: WidgetProps) {
               <TableHead className="pl-4">Title</TableHead>
               {columns.map((column) => (
                 <TableHead key={column}>
-                  {builtIns[column] ??
+                  {scorecards.find((s) => column === `$scorecard.${s.identifier}`)?.title ??
+                    builtIns[column] ??
                     spec.properties.find((p) => p.identifier === column)?.title ??
                     column}
                 </TableHead>
@@ -84,11 +88,18 @@ export function TableWidget({ source, widget, context }: WidgetProps) {
                 </TableCell>
                 {columns.map((column) => (
                   <TableCell key={column}>
-                    <Cell
-                      entity={entity}
-                      column={column}
-                      property={spec.properties.find((p) => p.identifier === column)}
-                    />
+                    {column.startsWith("$scorecard.") ? (
+                      <ScorecardCell
+                        entity={entity}
+                        column={scorecards.find((s) => column === `$scorecard.${s.identifier}`)}
+                      />
+                    ) : (
+                      <Cell
+                        entity={entity}
+                        column={column}
+                        property={spec.properties.find((p) => p.identifier === column)}
+                      />
+                    )}
                   </TableCell>
                 ))}
               </TableRow>

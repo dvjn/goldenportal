@@ -115,6 +115,75 @@ function withTabs(pages: Pick<BlueprintSpec, "catalog" | "entity">): Blueprint {
 }
 
 describe("dashboards and page tabs", () => {
+  it("shows table widget tiers and distinguishes no tier from not evaluated", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        {
+          ...overview,
+          widgets: [
+            {
+              identifier: "tiers",
+              type: "table",
+              title: "Services",
+              blueprint: "service",
+              width: 12,
+              columns: ["$scorecard.readiness"],
+            },
+          ],
+        },
+      ]),
+      "GET blueprints/service": ok(service),
+      "GET scorecard-columns": ok([
+        {
+          identifier: "readiness",
+          title: "Readiness",
+          tiers: [{ name: "gold", title: "Gold", color: "amber", criteria: [] }],
+        },
+      ]),
+      "GET dashboards/overview/widgets/tiers": ok({
+        entities: [
+          {
+            ...ledger,
+            identifier: "gold",
+            title: "Gold Service",
+            scorecards: { readiness: { tier: "gold", score: 100 } },
+          },
+          {
+            ...ledger,
+            identifier: "none",
+            title: "Unready",
+            scorecards: { readiness: { tier: "", score: 0 } },
+          },
+          { ...ledger, identifier: "new", title: "New Service" },
+        ],
+        total: 3,
+      }),
+    });
+    renderRoute("/");
+    expect(await screen.findByRole("columnheader", { name: "Readiness" })).toBeInTheDocument();
+    expect(await screen.findByText("Gold")).toBeInTheDocument();
+    expect(screen.getByText("No tier")).toBeInTheDocument();
+    expect(screen.getByText("Not evaluated")).toBeInTheDocument();
+  });
+
+  it("opens the preferred visible dashboard unless the URL chooses another", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        { ...overview, widgets: [] },
+        { ...welcome, preferred: true },
+      ]),
+    });
+    renderRoute("/");
+    expect(await screen.findByRole("tab", { name: "Welcome", selected: true })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(
+      await screen.findByRole("tab", { name: "Overview", selected: true }),
+    ).toBeInTheDocument();
+  });
+
   it("shows Home's dashboards as tabs, each widget linking into the catalog", async () => {
     const user = userEvent.setup();
     stubApi({

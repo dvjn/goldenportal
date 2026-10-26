@@ -64,6 +64,46 @@ const ledger: EntityDetail = {
 const page: EntityPage = { entities: [ledger], total: 1 };
 
 describe("catalog", () => {
+  it("shows scorecard tiers, filters them on the server and lets columns be hidden", async () => {
+    const user = userEvent.setup();
+    const scored = { ...ledger, scorecards: { readiness: { tier: "gold", score: 100 } } };
+    const requests = stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET entities": ok({ entities: [scored], total: 1 }),
+      "GET scorecard-columns": ok([
+        {
+          identifier: "readiness",
+          title: "Readiness",
+          tiers: [{ name: "gold", title: "Gold", color: "amber", criteria: [] }],
+        },
+      ]),
+      "GET entities/facets": ok([]),
+    });
+    renderRoute("/catalog/service");
+    expect(await screen.findByText("Gold")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Readiness" })).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole("columnheader", { name: /Readiness/ })).getByRole("button"),
+    );
+    await vi.waitFor(() =>
+      expect(new URL(requests["GET entities"].url).searchParams.get("sort")).toBe(
+        "$scorecard.readiness",
+      ),
+    );
+    await user.click(screen.getAllByRole("button", { name: "Readiness" })[0]);
+    await user.click(await screen.findByRole("option", { name: "Gold" }));
+    await vi.waitFor(() =>
+      expect(
+        JSON.parse(new URL(requests["GET entities"].url).searchParams.get("filter") ?? "null"),
+      ).toEqual({ and: [{ property: "$scorecard.readiness", op: "in", values: ["gold"] }] }),
+    );
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Columns" }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: "Readiness" }));
+    expect(screen.queryByRole("columnheader", { name: "Readiness" })).not.toBeInTheDocument();
+  });
+
   it("lists blueprints with their entity counts", async () => {
     stubApi({
       ...signedInMember,

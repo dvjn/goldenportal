@@ -132,3 +132,17 @@ export const entityScorecardsQueryOptions = (blueprint: string, identifier: stri
     queryKey: scorecardKeys.entity(blueprint, identifier),
     queryFn: () => listEntityScorecards(blueprint, identifier),
   });
+
+export type ScorecardColumn = Pick<ScorecardSpec, "identifier" | "title" | "tiers">;
+
+export const scorecardColumnsQueryOptions = (blueprint: string) =>
+  queryOptions({
+    queryKey: [...scorecards.keys.all, "columns", blueprint] as const,
+    queryFn: async () =>
+      (
+        await api
+          .get("scorecard-columns", { searchParams: { blueprint } })
+          .json<ApiDataResponse<ScorecardColumn[]>>()
+      ).data,
+    enabled: blueprint !== "",
+  });

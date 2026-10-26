@@ -5,7 +5,11 @@ import { stringify } from "yaml";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
-import { ScorecardResult, ScorecardTab } from "@/components/scorecards/entity-scorecards";
+import {
+  ScorecardChip,
+  ScorecardResult,
+  ScorecardTab,
+} from "@/components/scorecards/entity-scorecards";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -98,6 +102,9 @@ function EntityPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-2xl font-semibold tracking-tight">{entity.title}</h1>
               <Badge variant="secondary">{spec.title}</Badge>
+              {results.map((result) => (
+                <ScorecardChip key={result.scorecard} result={result} />
+              ))}
             </div>
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               <code className="font-mono">{entity.identifier}</code>

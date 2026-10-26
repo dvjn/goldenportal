@@ -7,7 +7,11 @@ type Handler = (request: Request) => Response | Promise<Response>;
 // It returns the requests it saw, keyed the same way, with readable bodies.
 // Home finds no dashboards unless a test stubs some.
 export function stubApi(stubs: Record<string, Handler>) {
-  const routes: Record<string, Handler> = { "GET home": ok([]), ...stubs };
+  const routes: Record<string, Handler> = {
+    "GET home": ok([]),
+    "GET scorecard-columns": ok([]),
+    ...stubs,
+  };
   const requests: Record<string, Request> = {};
   const fetchMock = vi.fn(async (request: Request) => {
     const path = new URL(request.url).pathname.replace(/^\/api\/v1\//, "");

@@ -12,6 +12,7 @@ import {
   type TableSearch,
   validateTableSearch,
 } from "@/components/data-table";
+import { ScorecardCell } from "@/components/scorecards/scorecard-cell";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -46,6 +47,7 @@ import {
   type Filter,
   facetsQueryOptions,
 } from "@/features/catalog";
+import { type ScorecardColumn, scorecardColumnsQueryOptions } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
 // Filters maps a property to the values it's filtered to.
@@ -157,6 +159,7 @@ function BlueprintCatalogPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const { data: doc } = useSuspenseQuery(blueprints.queries.detail(blueprint));
   const spec = doc.published?.spec;
+  const { data: scorecards = [] } = useQuery(scorecardColumnsQueryOptions(blueprint));
   const page = useQuery({
     ...entitiesQueryOptions(queryFrom(blueprint, search)),
     placeholderData: keepPreviousData,
@@ -174,7 +177,10 @@ function BlueprintCatalogPage() {
   }
 
   const filters = search.f ?? {};
-  const shown = search.cols?.split(",") ?? defaultColumns(spec);
+  const shown = search.cols?.split(",") ?? [
+    ...defaultColumns(spec),
+    ...scorecards.map((s) => `$scorecard.${s.identifier}`),
+  ];
   const setSearch = (patch: Partial<CatalogSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
 
@@ -211,6 +217,15 @@ function BlueprintCatalogPage() {
               links={row.original.related[property.identifier]}
             />
           ),
+        }),
+      ),
+    ...scorecards
+      .filter((s) => shown.includes(`$scorecard.${s.identifier}`))
+      .map((s) =>
+        column.accessor((entity) => entity.scorecards?.[s.identifier]?.tier, {
+          id: `$scorecard.${s.identifier}`,
+          header: ({ column }) => <DataTableColumnHeader column={column} title={s.title} />,
+          cell: ({ row }) => <ScorecardCell entity={row.original} column={s} />,
         }),
       ),
     column.accessor("updatedAt", {
@@ -276,28 +291,50 @@ function BlueprintCatalogPage() {
       searchLabel={`Search ${spec.title.toLowerCase()}`}
       rowCount={page.data?.total ?? 0}
       loading={page.isPlaceholderData}
-      filters={spec.properties.filter(filterable).map((property) => (
-        <PropertyFilter
-          key={property.identifier}
-          blueprint={blueprint}
-          property={property}
-          selected={(filters[property.identifier] ?? []).map((value) => JSON.stringify(value))}
-          onChange={(values) =>
-            setSearch({
-              f: validFilters({
-                ...filters,
-                [property.identifier]: values.map((value) => JSON.parse(value) as unknown),
-              }),
-              page: undefined,
-            })
-          }
-        />
-      ))}
+      filters={
+        <>
+          {spec.properties.filter(filterable).map((property) => (
+            <PropertyFilter
+              key={property.identifier}
+              blueprint={blueprint}
+              property={property}
+              selected={(filters[property.identifier] ?? []).map((value) => JSON.stringify(value))}
+              onChange={(values) =>
+                setSearch({
+                  f: validFilters({
+                    ...filters,
+                    [property.identifier]: values.map((value) => JSON.parse(value) as unknown),
+                  }),
+                  page: undefined,
+                })
+              }
+            />
+          ))}
+          {scorecards.map((s) => (
+            <DataTableFacetedFilter
+              key={s.identifier}
+              title={s.title}
+              options={[
+                { value: "", label: "No tier" },
+                ...s.tiers.map((tier) => ({ value: tier.name, label: tier.title })),
+              ]}
+              selected={(filters[`$scorecard.${s.identifier}`] ?? []).map(String)}
+              onChange={(values) =>
+                setSearch({
+                  f: validFilters({ ...filters, [`$scorecard.${s.identifier}`]: values }),
+                  page: undefined,
+                })
+              }
+            />
+          ))}
+        </>
+      }
       filtered={filtered}
       onClearFilters={() => setSearch({ f: undefined, page: undefined })}
       actions={
         <ColumnsMenu
           spec={spec}
+          scorecards={scorecards}
           shown={shown}
           onChange={(cols) => setSearch({ cols: cols.join(",") })}
         />
@@ -408,9 +445,19 @@ function PropertyFilter({
 
 function ColumnsMenu({
   spec,
+  scorecards,
   shown,
   onChange,
-}: Readonly<{ spec: BlueprintSpec; shown: string[]; onChange: (cols: string[]) => void }>) {
+}: Readonly<{
+  spec: BlueprintSpec;
+  scorecards: ScorecardColumn[];
+  shown: string[];
+  onChange: (cols: string[]) => void;
+}>) {
+  const options = [
+    ...spec.properties,
+    ...scorecards.map((s) => ({ identifier: `$scorecard.${s.identifier}`, title: s.title })),
+  ];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -422,14 +469,14 @@ function ColumnsMenu({
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuLabel>Show Columns</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {spec.properties.map((property) => (
+        {options.map((property) => (
           <DropdownMenuCheckboxItem
             key={property.identifier}
             checked={shown.includes(property.identifier)}
             onSelect={(event) => event.preventDefault()}
             onCheckedChange={(checked) =>
               onChange(
-                spec.properties
+                options
                   .map((p) => p.identifier)
                   .filter((id) => (id === property.identifier ? checked : shown.includes(id))),
               )

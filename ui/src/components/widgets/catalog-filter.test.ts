@@ -16,6 +16,12 @@ const entity: Entity = {
 afterEach(() => vi.useRealTimers());
 
 describe("widget click-through variables", () => {
+  it("preserves scorecard tier filters in catalog links", () => {
+    expect(
+      toCatalogFilters({ property: "$scorecard.readiness", op: "in", values: ["gold", ""] }, {}),
+    ).toEqual({ "$scorecard.readiness": ["gold", ""] });
+  });
+
   it("preserves entity property types and expands many-valued relations", () => {
     const context = { entity: entity.identifier, entityData: entity };
     expect(

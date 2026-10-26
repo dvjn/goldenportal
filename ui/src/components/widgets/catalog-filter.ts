@@ -88,7 +88,11 @@ export function toCatalogFilters(
   const conditions = "and" in filter ? filter.and : [filter];
   const filters: CatalogFilters = {};
   for (const condition of conditions) {
-    if (!("property" in condition) || condition.property.startsWith("$")) return undefined;
+    if (
+      !("property" in condition) ||
+      (condition.property.startsWith("$") && !condition.property.startsWith("$scorecard."))
+    )
+      return undefined;
     const raw =
       condition.op === "eq"
         ? [condition.value]

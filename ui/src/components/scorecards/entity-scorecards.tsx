@@ -56,6 +56,26 @@ export function ScorecardTab({ result }: Readonly<{ result: EntityScorecard }>) 
   );
 }
 
+export function ScorecardChip({ result }: Readonly<{ result: EntityScorecard }>) {
+  const { data: doc } = useQuery(scorecards.queries.detail(result.scorecard));
+  return (
+    <Badge asChild variant="outline" className="h-auto gap-2 py-1">
+      <Link
+        to="/catalog/$blueprint/$"
+        params={{ blueprint: result.blueprint, _splat: result.identifier }}
+        search={{ tab: result.scorecard }}
+      >
+        {result.scorecardTitle}
+        <TierBadge
+          tiers={doc?.published?.spec.tiers ?? []}
+          name={result.tier}
+          className="text-xs"
+        />
+      </Link>
+    </Badge>
+  );
+}
+
 // ScorecardResult shows how an entity does on one scorecard: where it is on
 // the ladder, what stands between it and the next tier, and every criterion.
 export function ScorecardResult({ result }: Readonly<{ result: EntityScorecard }>) {

@@ -30,6 +30,8 @@ export type DashboardSpec = {
   icon?: string;
   // order sorts Home's tabs, lowest first.
   order: number;
+  visibility?: { roles?: string[]; groups?: string[] };
+  defaultFor?: { roles?: string[]; groups?: string[] };
   filters: DashboardFilter[];
   widgets: Widget[];
 };
@@ -41,6 +43,7 @@ export type HomeDashboard = DashboardSpec & {
   // lookup defaults found. A filter without a default is left out; a
   // lookup that found nothing is an empty list, which selects nothing.
   defaults: Record<string, string[]>;
+  preferred?: boolean;
   // problems say why a lookup default couldn't be found, by filter. The
   // filter starts at nothing then, as if the lookup found none.
   problems?: Record<string, string>;
