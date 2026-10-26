@@ -687,6 +687,7 @@ metadata:
   icon: user-check
 spec:
   order: 2
+  defaultFor: {groups: [payments, search]}
   filters:
     team:
       title: Team
@@ -726,7 +727,7 @@ spec:
       title: Services
       blueprint: service
       filter: {property: owner, op: eq, value: $filter.team}
-      columns: [owner, tier, language, lastDeployedAt]
+      columns: [owner, $scorecard.service-readiness, tier, language, lastDeployedAt]
       sort: -lastDeployedAt
     groupServices:
       type: stat
@@ -743,6 +744,7 @@ metadata:
   icon: database
 spec:
   order: 3
+  visibility: {roles: [builder, admin]}
   widgets:
     welcome:
       type: markdown
