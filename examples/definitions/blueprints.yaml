@@ -24,7 +24,7 @@ relations:
     title: Parent team
     target: team
     inverseTitle: Sub-teams
-display:
+table:
   columns:
     - focus
     - email
@@ -84,7 +84,7 @@ relations:
     target: service
     many: true
     inverseTitle: Used by
-display:
+table:
   columns:
     - tier
     - lifecycle

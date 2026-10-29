@@ -58,7 +58,7 @@ func newBlueprintView(set definition.Set, blueprint *definition.Blueprint, count
 		Properties:  []propertyView{},
 		Relations:   []relationView{},
 		Inverses:    []inverseView{},
-		Columns:     nonNil(blueprint.Columns()),
+		Columns:     nonNil(set.TableOf(blueprint).Columns),
 	}
 	for key, property := range blueprint.Properties.All() {
 		view.Properties = append(view.Properties, propertyView{

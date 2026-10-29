@@ -75,7 +75,7 @@ func TestMembersReadTheCatalog(t *testing.T) {
 		{Source: "service", SourceTitle: "Service", Relation: "owner", Title: "Services"},
 		{Source: "team", SourceTitle: "Team", Relation: "parent", Title: "Team (Parent team)"},
 	}
-	if !reflect.DeepEqual(team.Inverses, wantInverses) || !reflect.DeepEqual(team.Columns, []string{"email"}) {
+	if !reflect.DeepEqual(team.Inverses, wantInverses) || !reflect.DeepEqual(team.Columns, []string{"email", "parent"}) {
 		t.Fatalf("team = %+v", team)
 	}
 	expectStatus(t, h.do(http.MethodGet, "/api/v1/catalog/blueprints/group", "cara", nil), http.StatusNotFound)

@@ -43,11 +43,18 @@ func TestCheckFindsWhatTheSchemaCannotSee(t *testing.T) {
 			message: "apply only to string and array",
 		},
 		{
-			name:    "display column that is not a property",
-			text:    []byte("kind: Blueprint\nidentifier: team\ntitle: Team\ndisplay:\n  columns:\n    - email\n"),
+			name:    "table column that is not a property",
+			text:    []byte("kind: Blueprint\nidentifier: team\ntitle: Team\ntable:\n  columns:\n    - email\n"),
 			line:    6,
-			path:    "display.columns[0]",
-			message: `"email" is not a property`,
+			path:    "table.columns[0]",
+			message: `"email" is not a visible property`,
+		},
+		{
+			name:    "derived path through an unknown relation",
+			text:    []byte("kind: Blueprint\nidentifier: team\ntitle: Team\nderived:\n  lead:\n    path: lead.email\n"),
+			line:    6,
+			path:    "derived.lead.path",
+			message: `"lead" is not a relation or inverse`,
 		},
 		{
 			name:    "integration named manual",
@@ -72,7 +79,7 @@ func TestCheckFindsWhatTheSchemaCannotSee(t *testing.T) {
 		},
 		{
 			name:    "literal secret in the config",
-			text:    []byte("kind: Integration\nidentifier: gitlab\ntitle: GitLab\nconnector: gitlab\nconfig:\n  url: https://gitlab.example.test\n  apiToken: glpat-1234\n"),
+			text:    []byte("kind: Integration\nidentifier: gitlab\ntitle: GitLab\nconnector: push\nconfig:\n  url: https://gitlab.example.test\n  apiToken: glpat-1234\n"),
 			line:    7,
 			path:    "config.apiToken",
 			message: "looks like a secret",
