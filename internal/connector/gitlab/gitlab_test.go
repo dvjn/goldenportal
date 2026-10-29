@@ -49,15 +49,22 @@ func fakeGitLab(t *testing.T) *httptest.Server {
 			`[{"id": 13, "name": "Empty", "path_with_namespace": "acme/empty", "default_branch": null}]`,
 		)
 	})
-	mux.HandleFunc("GET /api/v4/projects/11/pipelines", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("ref") != "main" || r.URL.Query().Get("per_page") != "1" {
+	mux.HandleFunc("GET /api/v4/projects/11/pipelines/latest", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("ref") != "main" {
 			http.Error(w, "want the latest pipeline of main", http.StatusBadRequest)
 			return
 		}
-		_, _ = w.Write([]byte(`[{"id": 501, "status": "success", "ref": "main"}]`))
+		_, _ = w.Write([]byte(`{"id": 501, "status": "success", "ref": "main", "finished_at": "2026-10-24T08:00:00Z"}`))
 	})
-	mux.HandleFunc("GET /api/v4/projects/12/pipelines", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`[]`))
+	mux.HandleFunc("GET /api/v4/projects/12/pipelines/latest", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message": "404 Not found"}`, http.StatusNotFound)
+	})
+	mux.HandleFunc("GET /api/v4/projects/{id}/ci/lint", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("include_jobs") != "true" {
+			http.Error(w, "want include_jobs", http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"valid": true, "errors": [], "jobs": [{"name": "build", "stage": "build", "script": ["make"]}]}`))
 	})
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Private-Token") != token {
@@ -124,8 +131,28 @@ func TestFetchReadsTheLatestPipelineOfEachDefaultBranch(t *testing.T) {
 	if pipeline["status"] != "success" || project["path_with_namespace"] != "acme/payments/ledger" {
 		t.Fatalf("pipeline = %v, want ledger's successful pipeline", pipeline)
 	}
+	if pipeline["projectId"] != 11.0 || pipeline["finished_at"] != "2026-10-24T08:00:00Z" {
+		t.Fatalf("pipeline = %v, want projectId and finished_at", pipeline)
+	}
 	if _, read := records[KindProject]; read {
 		t.Fatal("returned projects, want only pipelines")
+	}
+}
+
+func TestFetchLintsTheCIConfigOfEachProjectWithoutScripts(t *testing.T) {
+	server := fakeGitLab(t)
+
+	records, err := New(server.Client()).Fetch(context.Background(), request(server, KindCIConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := identifiers(records[KindCIConfig], "projectPath"); got != "acme/payments/ledger,acme/platform/search,acme/empty" {
+		t.Fatalf("ci configs = %s, want one per project", got)
+	}
+	job := records[KindCIConfig][0].(map[string]any)["jobs"].([]any)[0].(map[string]any)
+	if _, kept := job["script"]; kept || job["name"] != "build" {
+		t.Fatalf("job = %v, want the build job without its script", job)
 	}
 }
 

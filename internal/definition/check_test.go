@@ -124,7 +124,7 @@ func TestCheckGivesEachMappingAKindItsConnectorReceives(t *testing.T) {
 			name:     "kind a pull connector does not read",
 			mappings: "kind: Integration\nidentifier: gitlab\ntitle: GitLab\nconnector: gitlab\nmappings:\n  - kind: issue\n    blueprint: team\n    identifier: .id\n",
 			path:     "mappings[0].kind",
-			message:  `the gitlab connector reads group, project, pipeline, not "issue"`,
+			message:  `the gitlab connector reads group, project, pipeline, ciConfig, not "issue"`,
 		},
 		{
 			name:     "pull mapping without an identifier",

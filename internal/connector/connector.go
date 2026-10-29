@@ -3,7 +3,7 @@
 package connector
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -48,18 +49,66 @@ type Connector interface {
 	Fetch(ctx context.Context, request Request) (Records, error)
 }
 
-// DecodeConfig reads the config into target, refusing unknown keys.
-func DecodeConfig(config json.RawMessage, target any) error {
-	if len(config) == 0 {
-		config = json.RawMessage("{}")
+// EachConcurrently calls read for every item with at most workers calls at a
+// time, and returns what they read in the order of the items. It stops at
+// the first error.
+func EachConcurrently[T any](ctx context.Context, items []T, workers int, read func(ctx context.Context, item T) ([]any, error)) ([]any, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make([][]any, len(items))
+	failures := make([]error, len(items))
+	slots := make(chan struct{}, workers)
+	var group sync.WaitGroup
+	for index, item := range items {
+		group.Go(func() {
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				failures[index] = ctx.Err()
+				return
+			}
+			defer func() { <-slots }()
+			results[index], failures[index] = read(ctx, item)
+			if failures[index] != nil {
+				cancel()
+			}
+		})
 	}
-	decoder := json.NewDecoder(bytes.NewReader(config))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("the config is not valid: %w", err)
+	group.Wait()
+	if err := firstError(failures); err != nil {
+		return nil, err
 	}
 
-	return nil
+	return slices.Concat(results...), nil
+}
+
+// firstError is the first failure that is not a cancellation another
+// failure caused.
+func firstError(failures []error) error {
+	var cancelled error
+	for _, err := range failures {
+		switch {
+		case err == nil:
+		case errors.Is(err, context.Canceled):
+			cancelled = cmp.Or(cancelled, err)
+		default:
+			return err
+		}
+	}
+
+	return cancelled
+}
+
+// StatusError is a source's answer that is not a success.
+type StatusError struct {
+	Source string
+	Status string
+	Code   int
+	Path   string
+}
+
+func (e StatusError) Error() string {
+	return fmt.Sprintf("%s answered %s for %s", e.Source, e.Status, e.Path)
 }
 
 // Client calls one source's JSON API.
@@ -98,7 +147,7 @@ func (c Client) Get(ctx context.Context, address string, target any) (http.Heade
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		_, _ = io.Copy(io.Discard, response.Body)
-		return nil, fmt.Errorf("%s answered %s for %s", c.Source, response.Status, pathOf(address))
+		return nil, StatusError{Source: c.Source, Status: response.Status, Code: response.StatusCode, Path: pathOf(address)}
 	}
 	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
 		return nil, fmt.Errorf("%s answered %s with JSON that could not be read: %w", c.Source, pathOf(address), err)

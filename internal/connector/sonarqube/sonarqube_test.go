@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,47 +16,69 @@ import (
 
 const token = "squ_test_token"
 
-// fakeSonarQube serves 101 projects over two pages; ledger has a failing
-// quality gate and measures, the others pass without measures.
+// fakeSonarQube serves 501 projects over two pages; ledger has a failing
+// quality gate, measures and a GitLab binding, the others pass without
+// measures or binding.
 func fakeSonarQube(t *testing.T) *httptest.Server {
 	t.Helper()
-	keys := []string{"ledger"}
-	for index := range 100 {
+	keys := []string{"ledger_0a1b2c3d-0000-4000-8000-000000000000"}
+	for index := range 500 {
 		keys = append(keys, fmt.Sprintf("service-%03d", index))
 	}
+	ledger := keys[0]
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/components/search", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("qualifiers") != "TRK" || r.URL.Query().Get("ps") != "100" {
-			http.Error(w, "want projects, 100 a page", http.StatusBadRequest)
+	mux.HandleFunc("GET /api/components/search_projects", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("filter") != "qualifier = TRK" || r.URL.Query().Get("ps") != "500" {
+			http.Error(w, "want projects, 500 a page", http.StatusBadRequest)
 			return
 		}
 		page := map[string]int{"1": 0, "2": 1}[r.URL.Query().Get("p")]
 		var components []map[string]string
-		for _, key := range keys[page*100 : min(len(keys), page*100+100)] {
-			components = append(components, map[string]string{"key": key, "name": strings.ToUpper(key), "lastAnalysisDate": "2026-10-24T08:00:00+0000"})
+		for _, key := range keys[page*500 : min(len(keys), page*500+500)] {
+			components = append(components, map[string]string{"key": key, "name": strings.ToUpper(key), "analysisDate": "2026-10-24T08:00:00+0000"})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"paging":     map[string]int{"pageIndex": page + 1, "pageSize": 100, "total": len(keys)},
+			"paging":     map[string]int{"pageIndex": page + 1, "pageSize": 500, "total": len(keys)},
 			"components": components,
 		})
 	})
+	mux.HandleFunc("GET /api/metrics/search", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"total": 3, "metrics": [{"key": "coverage"}, {"key": "bugs"}, {"key": "alert_status"}]}`))
+	})
+	mux.HandleFunc("GET /api/measures/search", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("metricKeys") != "coverage,bugs,alert_status" {
+			http.Error(w, "want the configured metrics", http.StatusBadRequest)
+			return
+		}
+		if !slices.Contains(strings.Split(r.URL.Query().Get("projectKeys"), ","), ledger) {
+			_, _ = w.Write([]byte(`{"measures": []}`))
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"measures": [
+			{"component": %[1]q, "metric": "coverage", "value": "81.5"},
+			{"component": %[1]q, "metric": "bugs", "value": "3"},
+			{"component": %[1]q, "metric": "alert_status", "value": "ERROR"}
+		]}`, ledger)
+	})
+	mux.HandleFunc("GET /api/qualitygates/get_by_project", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"qualityGate": {"name": "Sonar way", "default": true}}`))
+	})
 	mux.HandleFunc("GET /api/qualitygates/project_status", func(w http.ResponseWriter, r *http.Request) {
-		status := map[bool]string{true: "ERROR", false: "OK"}[r.URL.Query().Get("projectKey") == "ledger"]
+		status := map[bool]string{true: "ERROR", false: "OK"}[r.URL.Query().Get("projectKey") == ledger]
 		_, _ = fmt.Fprintf(w, `{"projectStatus": {"status": %q}}`, status)
 	})
-	mux.HandleFunc("GET /api/measures/component", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("metricKeys") != "coverage,bugs,vulnerabilities,code_smells" {
-			http.Error(w, "want the four metrics", http.StatusBadRequest)
+	mux.HandleFunc("GET /api/alm_settings/get_binding", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("project") != ledger {
+			http.Error(w, `{"errors": [{"msg": "not bound"}]}`, http.StatusNotFound)
 			return
 		}
-		if r.URL.Query().Get("component") != "ledger" {
-			_, _ = w.Write([]byte(`{"component": {"measures": []}}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"component": {"measures": [
-			{"metric": "coverage", "value": "81.5"}, {"metric": "bugs", "value": "3"},
-			{"metric": "vulnerabilities", "value": "0"}, {"metric": "code_smells", "value": "42"}
-		]}}`))
+		_, _ = w.Write([]byte(`{"alm": "gitlab", "repository": "11"}`))
+	})
+	mux.HandleFunc("GET /api/qualitygates/list", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"qualitygates": [{"name": "Sonar way", "isDefault": true, "isBuiltIn": true}]}`))
+	})
+	mux.HandleFunc("GET /api/qualitygates/show", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"conditions": [{"metric": "new_coverage", "op": "LT", "error": "80"}]}`))
 	})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer "+token {
@@ -71,9 +94,9 @@ func fakeSonarQube(t *testing.T) *httptest.Server {
 
 func request(server *httptest.Server, config string) connector.Request {
 	return connector.Request{
-		Config:  json.RawMessage(fmt.Sprintf(`{"url": %q%s}`, server.URL, config)),
+		Config:  json.RawMessage(fmt.Sprintf(`{"url": %q, "projectFilter": "qualifier = TRK", "metrics": ["coverage", "bugs", "alert_status"]%s}`, server.URL, config)),
 		Secrets: map[string]string{"token": token},
-		Kinds:   []string{KindProject},
+		Kinds:   []string{KindProject, KindQualityGate},
 	}
 }
 
@@ -86,29 +109,37 @@ func TestFetchReadsEveryPageOfProjectsWithGateAndMeasures(t *testing.T) {
 	}
 
 	projects := records[KindProject]
-	if len(projects) != 101 {
-		t.Fatalf("read %d projects, want all 101 over both pages", len(projects))
+	if len(projects) != 501 {
+		t.Fatalf("read %d projects, want all 501 over both pages", len(projects))
 	}
+	ledger := "ledger_0a1b2c3d-0000-4000-8000-000000000000"
 	want := map[string]any{
-		"key":              "ledger",
-		"name":             "LEDGER",
-		"lastAnalysisDate": "2026-10-24T08:00:00+0000",
-		"url":              server.URL + "/dashboard?id=ledger",
-		"qualityGate":      "ERROR",
-		"measures":         map[string]any{"coverage": 81.5, "bugs": 3.0, "vulnerabilities": 0.0, "code_smells": 42.0},
+		"key":              ledger,
+		"keyWithoutSuffix": "ledger",
+		"name":             strings.ToUpper(ledger),
+		"analysisDate":     "2026-10-24T08:00:00Z",
+		"url":              server.URL + "/dashboard?id=" + ledger,
+		"qualityGate":      map[string]any{"name": "Sonar way", "default": true, "status": "ERROR"},
+		"binding":          map[string]any{"alm": "gitlab", "repository": "11"},
+		"measures":         map[string]any{"coverage": 81.5, "bugs": 3.0, "alert_status": "ERROR"},
 	}
 	if !reflect.DeepEqual(projects[0], want) {
 		t.Fatalf("ledger = %v, want %v", projects[0], want)
 	}
-	if last := projects[100].(map[string]any); last["qualityGate"] != "OK" || len(last["measures"].(map[string]any)) != 0 {
-		t.Fatalf("last project = %v, want a passing gate without measures", last)
+	last := projects[500].(map[string]any)
+	if last["qualityGate"].(map[string]any)["status"] != "OK" || len(last["measures"].(map[string]any)) != 0 || last["binding"] != nil {
+		t.Fatalf("last project = %v, want a passing gate without measures or binding", last)
+	}
+	gates := records[KindQualityGate]
+	if len(gates) != 1 || len(gates[0].(map[string]any)["conditions"].([]any)) != 1 {
+		t.Fatalf("quality gates = %v, want Sonar way with its condition", gates)
 	}
 }
 
 func TestFetchReadsOnlyTheConfiguredProjects(t *testing.T) {
 	server := fakeSonarQube(t)
 
-	records, err := New(server.Client()).Fetch(context.Background(), request(server, `, "projects": ["service-099", "ledger"]`))
+	records, err := New(server.Client()).Fetch(context.Background(), request(server, `, "projects": ["service-099", "service-001"]`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +148,8 @@ func TestFetchReadsOnlyTheConfiguredProjects(t *testing.T) {
 	for _, project := range records[KindProject] {
 		keys = append(keys, project.(map[string]any)["key"].(string))
 	}
-	if strings.Join(keys, ",") != "ledger,service-099" {
-		t.Fatalf("projects = %v, want ledger and service-099", keys)
+	if strings.Join(keys, ",") != "service-001,service-099" {
+		t.Fatalf("projects = %v, want service-001 and service-099", keys)
 	}
 }
 
@@ -132,7 +163,7 @@ func TestFetchExplainsWhatWentWrong(t *testing.T) {
 		{
 			name:    "rejected token",
 			request: connector.Request{Config: request(server, "").Config, Secrets: map[string]string{"token": "wrong"}, Kinds: []string{KindProject}},
-			message: "SonarQube answered 401 Unauthorized for /api/components/search",
+			message: "SonarQube answered 401 Unauthorized for /api/components/search_projects",
 		},
 		{
 			name:    "no url",

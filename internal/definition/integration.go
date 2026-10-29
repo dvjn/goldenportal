@@ -132,8 +132,8 @@ func (Secret) JSONSchemaExtend(schema *jsonschema.Schema) {
 // connectorKinds are the kinds of resource each pull connector reads. The
 // static connector reads the kinds its config gives records for.
 var connectorKinds = map[Connector][]string{
-	ConnectorGitLab:    {"group", "project", "pipeline"},
-	ConnectorSonarQube: {"project"},
+	ConnectorGitLab:    {"group", "project", "pipeline", "ciConfig"},
+	ConnectorSonarQube: {"project", "qualityGate"},
 	ConnectorStatic:    nil,
 }
 
