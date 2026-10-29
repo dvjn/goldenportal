@@ -163,6 +163,6 @@ func (s *Service) revokeToken(ctx *gofr.Context) (any, error) {
 func ingestTokenResource(integration *definition.Integration, ingest token.Token) audit.Resource {
 	return audit.Resource{
 		Kind: audit.ResourceIngestToken, ID: ingest.ID, Name: ingest.Name,
-		Parent: audit.Parent{Kind: audit.ResourceIntegration, ID: integration.Identifier, Name: integration.Title},
+		Parent: integrationParent(integration),
 	}
 }

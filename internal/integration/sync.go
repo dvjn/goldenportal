@@ -42,6 +42,7 @@ type Syncer struct {
 	entities   entityWriter
 	runs       runStore
 	connectors map[definition.Connector]connector.Connector
+	lookups    lookupReader
 	locker     Locker
 	getenv     func(string) string
 	now        func() time.Time
@@ -61,6 +62,7 @@ type SyncerConfig struct {
 	Entities   entityWriter
 	Runs       runStore
 	Connectors map[definition.Connector]connector.Connector
+	Lookups    lookupReader
 	Locker     Locker
 	Getenv     func(string) string
 	Now        func() time.Time
@@ -72,6 +74,7 @@ func NewSyncer(config SyncerConfig) *Syncer {
 		entities:   config.Entities,
 		runs:       config.Runs,
 		connectors: config.Connectors,
+		lookups:    config.Lookups,
 		locker:     config.Locker,
 		getenv:     config.Getenv,
 		now:        config.Now,
@@ -167,12 +170,18 @@ func (s *Syncer) sync(ctx context.Context, start syncStart, run *Run) error {
 	}
 	write := catalog.OwnedWrite{Integration: integration.Identifier, Sweep: true}
 	groups := map[string]int{}
+	mapped := map[string][]any{}
 	for _, mapping := range integration.Mappings {
 		mapper, err := NewMapper(start.set, mapping)
 		if err != nil {
 			return syncError{message: err.Error()}
 		}
-		entities, problems := mapper.Map(ctx, records[mapping.Kind])
+		bound, err := lookups(ctx, s.lookups, integration.Identifier, mapper, mapped)
+		if err != nil {
+			return err
+		}
+		entities, problems := mapper.Map(ctx, records[mapping.Kind], bound...)
+		mapped[mapper.Blueprint()] = append(mapped[mapper.Blueprint()], LookupRecords(entities)...)
 		run.Counts.Fetched += len(records[mapping.Kind])
 		run.Counts.Skipped += skippedRecords(problems)
 		for _, problem := range problems {

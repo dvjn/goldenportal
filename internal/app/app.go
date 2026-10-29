@@ -78,16 +78,18 @@ func register(app *gofr.App) error {
 	catalogStore := catalog.NewStore(app.GetSQL())
 	catalog.NewService(catalogStore, catalogStore, auditLog, time.Now).Register(routes)
 	runs := integration.NewRuns(app.GetSQL())
+	lookups := integration.NewPostgresLookups(app.GetSQL())
 	syncer := integration.NewSyncer(integration.SyncerConfig{
 		Entities:   catalogStore,
 		Runs:       runs,
 		Connectors: integration.Connectors(connector.DefaultHTTPClient()),
+		Lookups:    lookups,
 		Locker:     integration.NewPostgresLocker(app.GetSQL()),
 		Getenv:     app.Config.Get,
 		Now:        time.Now,
 		Logger:     app.Logger(),
 	})
-	scheduler := integration.NewScheduler(catalogStore, runs, syncer, time.Now, app.Logger())
+	scheduler := integration.NewScheduler(catalogStore, runs, syncer, auditLog, time.Now, app.Logger())
 	app.OnStart(func(*gofr.Context) error {
 		go scheduler.Run(context.Background())
 		return nil
@@ -95,6 +97,7 @@ func register(app *gofr.App) error {
 	integration.NewService(integration.ServiceConfig{
 		Definitions: catalogStore,
 		Entities:    catalogStore,
+		Lookups:     lookups,
 		Counts:      catalogStore,
 		Runs:        runs,
 		Syncer:      syncer,

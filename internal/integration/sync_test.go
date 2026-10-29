@@ -217,7 +217,7 @@ func TestPostgresLockerTakesATransactionLock(t *testing.T) {
 }
 
 func newTestScheduler(h *harness, now *time.Time) *Scheduler {
-	scheduler := NewScheduler(h.definitions, h.runs, h.syncer, func() time.Time { return *now }, &silentLogger{})
+	scheduler := NewScheduler(h.definitions, h.runs, h.syncer, h.audit, func() time.Time { return *now }, &silentLogger{})
 	scheduler.started = at
 	scheduler.jitter = func() time.Duration { return 30 * time.Second }
 
@@ -263,8 +263,17 @@ func TestSchedulerSyncsTheIntegrationsThatAreDue(t *testing.T) {
 	now = at.Add(time.Minute)
 	scheduler.syncDue(context.Background())
 	run := h.runs.finished(t, 1)
-	if run.Integration != "gitlab" || run.Trigger != TriggerSchedule || run.Actor != scheduleActor || run.Status != StatusSucceeded {
+	if run.Integration != "gitlab" || run.Trigger != TriggerSchedule || run.Actor != audit.Scheduler.Label() || run.Status != StatusSucceeded {
 		t.Fatalf("run = %+v, want a scheduled gitlab sync", run)
+	}
+	wantEntry := audit.Entry{
+		Actor:    audit.Scheduler,
+		Action:   audit.IntegrationSynced,
+		Resource: audit.Resource{Kind: audit.ResourceIntegration, ID: "gitlab", Name: "GitLab"},
+		Details:  map[string]any{"run": int64(1), "trigger": TriggerSchedule},
+	}
+	if !reflect.DeepEqual(h.audit.entries, []audit.Entry{wantEntry}) {
+		t.Fatalf("audit = %+v, want %+v", h.audit.entries, wantEntry)
 	}
 
 	now = at.Add(30 * time.Minute)
@@ -296,7 +305,7 @@ func TestSyncNowStartsARunAndRecordsIt(t *testing.T) {
 		Actor:    audit.Actor{Kind: audit.ActorUser, ID: "u-2", Name: "Bob Baker", Email: "bob@example.test"},
 		Action:   audit.IntegrationSynced,
 		Resource: audit.Resource{Kind: audit.ResourceIntegration, ID: "gitlab", Name: "GitLab"},
-		Details:  map[string]any{"run": int64(1)},
+		Details:  map[string]any{"run": int64(1), "trigger": TriggerManual},
 	}
 	if !reflect.DeepEqual(h.audit.entries, []audit.Entry{want}) {
 		t.Fatalf("audit = %+v, want %+v", h.audit.entries, want)

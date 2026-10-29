@@ -37,7 +37,7 @@ type entityCounter interface {
 }
 
 type tokenStore interface {
-	Create(ctx context.Context, token token.NewToken) (token.Token, string, error)
+	Create(ctx context.Context, newToken token.NewToken) (token.Token, string, error)
 	ListIngest(ctx context.Context, integration string) ([]token.Token, error)
 	RevokeIngest(ctx context.Context, integration, id string) (token.Token, error)
 }
@@ -51,6 +51,7 @@ type auditLog interface {
 type ServiceConfig struct {
 	Definitions definitionReader
 	Entities    entityWriter
+	Lookups     lookupReader
 	Counts      entityCounter
 	Runs        runStore
 	Syncer      *Syncer
@@ -64,6 +65,7 @@ type ServiceConfig struct {
 type Service struct {
 	definitions definitionReader
 	entities    entityWriter
+	lookups     lookupReader
 	counts      entityCounter
 	runs        runStore
 	syncer      *Syncer
@@ -78,6 +80,7 @@ func NewService(config ServiceConfig) *Service {
 	return &Service{
 		definitions: config.Definitions,
 		entities:    config.Entities,
+		lookups:     config.Lookups,
 		counts:      config.Counts,
 		runs:        config.Runs,
 		syncer:      config.Syncer,
@@ -91,7 +94,7 @@ func NewService(config ServiceConfig) *Service {
 
 func (s *Service) Register(routes *httpx.Routes) {
 	routes.POST("/api/v1/ingest/{integration}/{kind}", httpx.Ingest(), s.ingest)
-	routes.DELETE("/api/v1/ingest/{integration}/{kind}/{identifier}", httpx.Ingest(), s.ingestDelete)
+	routes.DELETE("/api/v1/ingest/{integration}/{kind}/{identifier:.+}", httpx.Ingest(), s.ingestDelete)
 
 	routes.GET("/api/v1/integrations", httpx.Requires(access.CatalogRead), s.listIntegrations)
 	routes.GET("/api/v1/integrations/{integration}", httpx.Requires(access.CatalogRead), s.getIntegration)

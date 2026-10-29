@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/catalog"
 )
 
@@ -44,6 +45,18 @@ func TestIngestUpsertsTheMappedEntitiesAndRecordsTheRun(t *testing.T) {
 	}
 	if !reflect.DeepEqual(h.runs.runs, []Run{want}) {
 		t.Fatalf("runs = %+v, want %+v", h.runs.runs, want)
+	}
+	wantEntry := audit.Entry{
+		Actor:    audit.Actor{Kind: audit.ActorIngestToken, ID: "t-1", Name: "pipelines"},
+		Action:   audit.IntegrationPushed,
+		Resource: audit.Resource{Kind: audit.ResourceIntegration, ID: "ci", Name: "CI"},
+		Details: map[string]any{
+			"run": int64(1), "trigger": TriggerPush, "kind": "service", "mode": modeUpsert,
+			"status": StatusSucceeded, "upserted": 3, "deleted": 0,
+		},
+	}
+	if !reflect.DeepEqual(h.audit.entries, []audit.Entry{wantEntry}) {
+		t.Fatalf("audit = %+v, want %+v", h.audit.entries, wantEntry)
 	}
 }
 
@@ -129,6 +142,9 @@ func TestIngestRefusesTheWholePushWhenARecordHasAProblem(t *testing.T) {
 		!strings.HasPrefix(run.Warnings[0], "service record 2 (ledger): properties.tier:") {
 		t.Fatalf("run = %+v, want a failed run that lists the problem", run)
 	}
+	if len(h.audit.entries) != 0 {
+		t.Fatalf("audit = %+v, want none for a push that wrote nothing", h.audit.entries)
+	}
 }
 
 func TestIngestAcceptsOnlyTheIntegrationsOwnToken(t *testing.T) {
@@ -139,7 +155,7 @@ func TestIngestAcceptsOnlyTheIntegrationsOwnToken(t *testing.T) {
 		status int
 	}{
 		{"token of another integration", "gpi_gitlab", http.StatusForbidden},
-		{"api token", "gpt_ci", http.StatusUnauthorized},
+		{"service token", "gpt_ci", http.StatusUnauthorized},
 		{"maintainer session", "bob", http.StatusUnauthorized},
 		{"unknown token", "gpi_forged", http.StatusUnauthorized},
 	}

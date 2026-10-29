@@ -46,8 +46,9 @@ type draft struct {
 	relations  map[string]any
 }
 
-// extractor reads a draft from a record.
-type extractor func(ctx context.Context, record any) (draft, []fieldProblem)
+// extractor reads a draft from a record, with the lookups bound to their
+// jq variables.
+type extractor func(ctx context.Context, record any, lookups []any) (draft, []fieldProblem)
 
 type fieldProblem struct {
 	field   string
@@ -60,6 +61,7 @@ type Mapper struct {
 	kind      string
 	blueprint *definition.Blueprint
 	set       definition.Set
+	lookups   []string
 	extract   extractor
 }
 
@@ -70,7 +72,7 @@ func NewMapper(set definition.Set, mapping definition.Mapping) (*Mapper, error) 
 	if !ok {
 		return nil, fmt.Errorf("the %s mapping writes blueprint %s, which does not exist", mapping.Kind, mapping.Blueprint)
 	}
-	mapper := &Mapper{kind: mapping.Kind, blueprint: blueprint, set: set, extract: readCanonical}
+	mapper := &Mapper{kind: mapping.Kind, blueprint: blueprint, set: set, lookups: mapping.Lookups, extract: readCanonical}
 	if mapping.Canonical() {
 		return mapper, nil
 	}
@@ -85,16 +87,27 @@ func NewMapper(set definition.Set, mapping definition.Mapping) (*Mapper, error) 
 
 func (m *Mapper) Blueprint() string { return m.blueprint.Identifier }
 
+// Lookups are the blueprints whose entities the mapping's expressions read.
+func (m *Mapper) Lookups() []string { return m.lookups }
+
 // Map returns the entities the records describe and the problems of the
-// records that describe none.
-func (m *Mapper) Map(ctx context.Context, records []any) ([]catalog.OwnedEntity, []Problem) {
+// records that describe none. Lookups gives the entities of each of the
+// mapping's lookups, in order, as LookupRecords makes them.
+func (m *Mapper) Map(ctx context.Context, records []any, lookups ...[]any) ([]catalog.OwnedEntity, []Problem) {
+	bound := make([]any, len(m.lookups))
+	for index := range bound {
+		bound[index] = []any{}
+		if index < len(lookups) && lookups[index] != nil {
+			bound[index] = lookups[index]
+		}
+	}
 	var (
 		entities []catalog.OwnedEntity
 		problems []Problem
 		seen     = map[string]bool{}
 	)
 	for index, record := range records {
-		draft, extracted := m.extract(ctx, record)
+		draft, extracted := m.extract(ctx, record, bound)
 		entity, checked := m.check(draft)
 		if len(extracted) == 0 && len(checked) == 0 && seen[entity.Identifier] {
 			checked = append(checked, fieldProblem{"identifier", "another record already has this identifier"})
@@ -121,7 +134,7 @@ func (m *Mapper) check(draft draft) (catalog.OwnedEntity, []fieldProblem) {
 	identifier, _ := draft.identifier.(string)
 	if !catalog.ValidIdentifier(identifier) {
 		problems = append(problems, fieldProblem{
-			"identifier", fmt.Sprintf("give a string of letters, digits, dots, hyphens and underscores, at most 128, not %s", describe(draft.identifier)),
+			"identifier", fmt.Sprintf("give a string of at most 255 characters without control characters, not %s", describe(draft.identifier)),
 		})
 	}
 	title, isString := draft.title.(string)
@@ -202,7 +215,7 @@ type canonicalRecord struct {
 	Relations  map[string]any `json:"relations"`
 }
 
-func readCanonical(_ context.Context, record any) (draft, []fieldProblem) {
+func readCanonical(_ context.Context, record any, _ []any) (draft, []fieldProblem) {
 	var canonical canonicalRecord
 	if err := remarshal(record, &canonical); err != nil {
 		return draft{}, []fieldProblem{{"record", "give an object with identifier, title, properties and relations"}}
@@ -245,18 +258,18 @@ func compileMapping(mapping definition.Mapping) (extractor, error) {
 	for index := range expressions {
 		query, err := gojq.Parse(expressions[index].source)
 		if err == nil {
-			expressions[index].code, err = gojq.Compile(query)
+			expressions[index].code, err = gojq.Compile(query, gojq.WithVariables(definition.LookupVariables(mapping.Lookups)))
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", expressions[index].field, err)
 		}
 	}
 
-	return func(ctx context.Context, record any) (draft, []fieldProblem) {
+	return func(ctx context.Context, record any, lookups []any) (draft, []fieldProblem) {
 		result := draft{properties: map[string]any{}, relations: map[string]any{}}
 		var problems []fieldProblem
 		for _, expression := range expressions {
-			value, err := run(ctx, expression.code, record)
+			value, err := run(ctx, expression.code, record, lookups)
 			if err != nil {
 				problems = append(problems, fieldProblem{expression.field, err.Error()})
 				continue
@@ -270,8 +283,8 @@ func compileMapping(mapping definition.Mapping) (extractor, error) {
 
 // run returns the first value the expression gives, as JSON would decode
 // it, or nil when it gives none.
-func run(ctx context.Context, code *gojq.Code, record any) (any, error) {
-	value, ok := code.RunWithContext(ctx, record).Next()
+func run(ctx context.Context, code *gojq.Code, record any, lookups []any) (any, error) {
+	value, ok := code.RunWithContext(ctx, record, lookups...).Next()
 	if !ok {
 		return nil, nil
 	}
@@ -312,4 +325,26 @@ func orEmpty(properties map[string]any) map[string]any {
 	}
 
 	return properties
+}
+
+// LookupRecords gives entities as a mapping's lookups read them: objects
+// with identifier, title, properties and relations, a list of target
+// identifiers by relation.
+func LookupRecords(entities []catalog.OwnedEntity) []any {
+	records := make([]any, 0, len(entities))
+	for _, entity := range entities {
+		relations := map[string]any{}
+		for _, link := range entity.Links {
+			targets, _ := relations[link.Relation].([]any)
+			relations[link.Relation] = append(targets, link.Target.Identifier)
+		}
+		records = append(records, map[string]any{
+			"identifier": entity.Identifier,
+			"title":      entity.Title,
+			"properties": orEmpty(entity.Properties),
+			"relations":  relations,
+		})
+	}
+
+	return records
 }

@@ -346,7 +346,7 @@ func newHarness(t *testing.T) *harness {
 		Now:        func() time.Time { return at },
 		Logger:     &silentLogger{},
 	})
-	h.scheduler = NewScheduler(h.definitions, h.runs, h.syncer, func() time.Time { return at }, &silentLogger{})
+	h.scheduler = NewScheduler(h.definitions, h.runs, h.syncer, h.audit, func() time.Time { return at }, &silentLogger{})
 	h.scheduler.jitter = func() time.Duration { return 30 * time.Second }
 	h.router = httpxtest.NewRouter(&container.Container{Logger: logging.NewMockLogger(logging.FATAL)})
 	routes := httpx.NewRoutes(h.router)

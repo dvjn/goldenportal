@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/definition"
 )
 
 const (
 	schedulerTick  = 15 * time.Second
 	maxStartJitter = time.Minute
-	scheduleActor  = "Schedule"
 )
 
 // Scheduler syncs each pull integration on its interval. It reads the
@@ -23,6 +23,7 @@ type Scheduler struct {
 	definitions definitionReader
 	runs        runStore
 	syncer      *Syncer
+	audit       auditLog
 	now         func() time.Time
 	logger      logger
 	jitter      func() time.Duration
@@ -32,11 +33,12 @@ type Scheduler struct {
 	firstDue map[string]time.Time
 }
 
-func NewScheduler(definitions definitionReader, runs runStore, syncer *Syncer, now func() time.Time, logger logger) *Scheduler {
+func NewScheduler(definitions definitionReader, runs runStore, syncer *Syncer, log auditLog, now func() time.Time, logger logger) *Scheduler {
 	return &Scheduler{
 		definitions: definitions,
 		runs:        runs,
 		syncer:      syncer,
+		audit:       log,
 		now:         now,
 		logger:      logger,
 		jitter:      func() time.Duration { return rand.N(maxStartJitter) },
@@ -112,8 +114,8 @@ func (s *Scheduler) syncDue(ctx context.Context) {
 		if !due(lastPull) {
 			continue
 		}
-		_, perform, err := s.syncer.Start(ctx, syncStart{
-			set: set, integration: integration, trigger: TriggerSchedule, actor: scheduleActor, due: due,
+		run, perform, err := s.syncer.Start(ctx, syncStart{
+			set: set, integration: integration, trigger: TriggerSchedule, actor: audit.Scheduler.Label(), due: due,
 		})
 		switch {
 		case errors.Is(err, errSyncRunning) || errors.Is(err, errNotDue):
@@ -121,6 +123,9 @@ func (s *Scheduler) syncDue(ctx context.Context) {
 			s.logger.Errorf("start the sync of %s: %v", integration.Identifier, err)
 		default:
 			go perform(ctx)
+			if err := s.audit.Record(ctx, runEntry(audit.Scheduler, audit.IntegrationSynced, integration, run)); err != nil {
+				s.logger.Errorf("record the sync of %s in the audit log: %v", integration.Identifier, err)
+			}
 		}
 	}
 }

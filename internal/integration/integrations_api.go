@@ -1,7 +1,9 @@
 package integration
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -49,14 +51,20 @@ func newRunView(run Run) runView {
 
 const maxRuns = keptRuns
 
+// integrationSummary describes an integration. Document is the definition
+// that defines it, such as Integration/gitlab, and empty for the built-in
+// manual integration.
 type integrationSummary struct {
 	Identifier  string               `json:"identifier"`
 	Title       string               `json:"title"`
 	Description string               `json:"description,omitempty"`
 	Connector   definition.Connector `json:"connector"`
+	Icon        string               `json:"icon"`
 	Manual      bool                 `json:"manual"`
 	Pull        bool                 `json:"pull"`
 	Interval    string               `json:"interval,omitempty"`
+	Document    string               `json:"document,omitempty"`
+	Kinds       []kindView           `json:"kinds"`
 	EntityCount int                  `json:"entity_count"`
 	LastRun     *runView             `json:"last_run,omitempty"`
 	NextRunAt   time.Time            `json:"next_run_at,omitzero"`
@@ -75,18 +83,49 @@ type kindView struct {
 	Canonical      bool   `json:"canonical"`
 }
 
+// secretView names a secret and the environment variable that holds it.
+// Present reports whether the server has the variable set, never its value.
 type secretView struct {
 	Name     string `json:"name"`
 	Variable string `json:"variable"`
+	Present  bool   `json:"present"`
 }
 
-// integrationDetail adds what the integration's page shows. IngestURL is
-// where a push integration receives entities, followed by /<kind>.
+// mappingView is one mapping with its jq expressions. A canonical mapping
+// has none.
+type mappingView struct {
+	Kind           string         `json:"kind"`
+	Blueprint      string         `json:"blueprint"`
+	BlueprintTitle string         `json:"blueprint_title"`
+	Canonical      bool           `json:"canonical"`
+	Lookups        []string       `json:"lookups"`
+	Identifier     string         `json:"identifier,omitempty"`
+	Title          string         `json:"title,omitempty"`
+	Properties     []fieldMapping `json:"properties"`
+	Relations      []fieldMapping `json:"relations"`
+}
+
+// fieldMapping is the expression for one property or relation. Type is the
+// property's type, or relation; Target is the blueprint a relation links to.
+type fieldMapping struct {
+	Key        string `json:"key"`
+	Title      string `json:"title"`
+	Expression string `json:"expression"`
+	Type       string `json:"type"`
+	Format     string `json:"format,omitempty"`
+	Target     string `json:"target,omitempty"`
+	Many       bool   `json:"many,omitempty"`
+}
+
+// integrationDetail adds what the integration's page shows. Config holds the
+// connector's settings, which hold no secrets. IngestURL is where a push
+// integration receives entities, followed by /<kind>.
 type integrationDetail struct {
 	integrationSummary
 	Entities  []blueprintCount `json:"entities"`
-	Kinds     []kindView       `json:"kinds"`
+	Config    json.RawMessage  `json:"config"`
 	Secrets   []secretView     `json:"secrets"`
+	Mappings  []mappingView    `json:"mappings"`
 	IngestURL string           `json:"ingest_url,omitempty"`
 }
 
@@ -134,9 +173,20 @@ func (s *Service) summary(ctx context.Context, o overview, integration *definiti
 		Title:       integration.Title,
 		Description: integration.Description,
 		Connector:   integration.Connector,
+		Icon:        integration.IconName(),
 		Manual:      integration.Identifier == definition.Manual,
 		Pull:        integration.Pull(),
 		Interval:    integration.Interval,
+		Kinds:       []kindView{},
+	}
+	if !summary.Manual {
+		summary.Document = string(definition.KindIntegration) + "/" + integration.Identifier
+	}
+	for _, mapping := range integration.Mappings {
+		blueprint, _ := o.set.Blueprint(mapping.Blueprint)
+		summary.Kinds = append(summary.Kinds, kindView{
+			Kind: mapping.Kind, Blueprint: mapping.Blueprint, BlueprintTitle: titleOf(blueprint, mapping.Blueprint), Canonical: mapping.Canonical(),
+		})
 	}
 	for _, count := range o.counts {
 		if count.Integration == integration.Identifier {
@@ -196,8 +246,9 @@ func (s *Service) getIntegration(ctx *gofr.Context) (any, error) {
 	detail := integrationDetail{
 		integrationSummary: summary,
 		Entities:           []blueprintCount{},
-		Kinds:              []kindView{},
+		Config:             json.RawMessage("{}"),
 		Secrets:            []secretView{},
+		Mappings:           []mappingView{},
 	}
 	for _, count := range o.counts {
 		if count.Integration == integration.Identifier {
@@ -205,20 +256,54 @@ func (s *Service) getIntegration(ctx *gofr.Context) (any, error) {
 			detail.Entities = append(detail.Entities, blueprintCount{Blueprint: count.Blueprint, Title: titleOf(blueprint, count.Blueprint), Count: count.Count})
 		}
 	}
+	if len(integration.Config) > 0 {
+		detail.Config = integration.Config
+	}
 	for _, mapping := range integration.Mappings {
-		blueprint, _ := o.set.Blueprint(mapping.Blueprint)
-		detail.Kinds = append(detail.Kinds, kindView{
-			Kind: mapping.Kind, Blueprint: mapping.Blueprint, BlueprintTitle: titleOf(blueprint, mapping.Blueprint), Canonical: mapping.Canonical(),
-		})
+		detail.Mappings = append(detail.Mappings, newMappingView(o.set, mapping))
 	}
 	for name, secret := range integration.Secrets.All() {
-		detail.Secrets = append(detail.Secrets, secretView{Name: name, Variable: secret.SecretRef})
+		detail.Secrets = append(detail.Secrets, secretView{
+			Name: name, Variable: secret.SecretRef, Present: s.syncer.getenv(secret.SecretRef) != "",
+		})
 	}
 	if integration.Connector == definition.ConnectorPush {
 		detail.IngestURL = s.ingestURL(integration)
 	}
 
 	return detail, nil
+}
+
+func newMappingView(set definition.Set, mapping definition.Mapping) mappingView {
+	blueprint, known := set.Blueprint(mapping.Blueprint)
+	if !known {
+		blueprint = &definition.Blueprint{}
+	}
+	view := mappingView{
+		Kind:           mapping.Kind,
+		Blueprint:      mapping.Blueprint,
+		BlueprintTitle: cmp.Or(blueprint.Title, mapping.Blueprint),
+		Canonical:      mapping.Canonical(),
+		Lookups:        nonNil(mapping.Lookups),
+		Identifier:     mapping.Identifier,
+		Title:          mapping.Title,
+		Properties:     []fieldMapping{},
+		Relations:      []fieldMapping{},
+	}
+	for key, expression := range mapping.Properties.All() {
+		property, _ := blueprint.Properties.Get(key)
+		view.Properties = append(view.Properties, fieldMapping{
+			Key: key, Title: cmp.Or(property.Title, key), Expression: expression, Type: string(property.Type), Format: string(property.Format),
+		})
+	}
+	for key, expression := range mapping.Relations.All() {
+		relation, _ := blueprint.Relations.Get(key)
+		view.Relations = append(view.Relations, fieldMapping{
+			Key: key, Title: cmp.Or(relation.Title, key), Expression: expression, Type: "relation", Target: relation.Target, Many: relation.Many,
+		})
+	}
+
+	return view
 }
 
 func (s *Service) ingestURL(integration *definition.Integration) string {
@@ -293,14 +378,24 @@ func (s *Service) syncNow(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	go perform(context.WithoutCancel(ctx.Context))
-	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:    principal.Actor(),
-		Action:   audit.IntegrationSynced,
-		Resource: audit.Resource{Kind: audit.ResourceIntegration, ID: integration.Identifier, Name: integration.Title},
-		Details:  map[string]any{"run": run.ID},
-	}); err != nil {
+	if err := s.audit.Record(ctx, runEntry(principal.Actor(), audit.IntegrationSynced, integration, run)); err != nil {
 		return nil, err
 	}
 
 	return newRunView(run), nil
+}
+
+func runEntry(actor audit.Actor, action audit.Action, integration *definition.Integration, run Run) audit.Entry {
+	parent := integrationParent(integration)
+
+	return audit.Entry{
+		Actor:    actor,
+		Action:   action,
+		Resource: audit.Resource{Kind: parent.Kind, ID: parent.ID, Name: parent.Name},
+		Details:  map[string]any{"run": run.ID, "trigger": run.Trigger},
+	}
+}
+
+func integrationParent(integration *definition.Integration) audit.Parent {
+	return audit.Parent{Kind: audit.ResourceIntegration, ID: integration.Identifier, Name: integration.Title}
 }

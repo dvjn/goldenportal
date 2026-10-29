@@ -63,7 +63,7 @@ func TestGetIntegrationDescribesItsKindsEntitiesAndSecrets(t *testing.T) {
 		!reflect.DeepEqual(ci.Entities, []blueprintCount{{Blueprint: "service", Title: "Service", Count: 3}}) {
 		t.Errorf("ci = %+v, want its two kinds, its services and the ingest address", ci)
 	}
-	if !reflect.DeepEqual(gitlab.Secrets, []secretView{{Name: "token", Variable: "GITLAB_TOKEN"}}) || gitlab.IngestURL != "" {
+	if !reflect.DeepEqual(gitlab.Secrets, []secretView{{Name: "token", Variable: "GITLAB_TOKEN", Present: true}}) || gitlab.IngestURL != "" {
 		t.Errorf("gitlab = %+v, want its token secret and no ingest address", gitlab)
 	}
 	if manual.Title != "Manual" || len(manual.Entities) != 2 || len(manual.Kinds) != 0 {

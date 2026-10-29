@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/catalog"
 	"github.com/dvjn/goldport/internal/definition"
@@ -65,7 +67,7 @@ func (s *Service) ingest(ctx *gofr.Context) (any, error) {
 		err = s.receive(ctx, set, integration, mapping, request, &run)
 	}
 
-	return s.recordPush(ctx, run, err)
+	return s.recordPush(ctx, integration, run, err)
 }
 
 func (s *Service) ingestDelete(ctx *gofr.Context) (any, error) {
@@ -87,7 +89,7 @@ func (s *Service) ingestDelete(ctx *gofr.Context) (any, error) {
 		run.Counts.Deleted = 1
 	}
 
-	return s.recordPush(ctx, run, err)
+	return s.recordPush(ctx, integration, run, err)
 }
 
 // pushMapping returns the definitions, the push integration the path names
@@ -161,7 +163,11 @@ func (s *Service) receive(ctx context.Context, set definition.Set, integration *
 	if err != nil {
 		return err
 	}
-	entities, problems := mapper.Map(ctx, request.Entities)
+	bound, err := lookups(ctx, s.lookups, integration.Identifier, mapper, nil)
+	if err != nil {
+		return err
+	}
+	entities, problems := mapper.Map(ctx, request.Entities, bound...)
 	run.Counts.Fetched = len(request.Entities)
 	if len(problems) > 0 {
 		for _, problem := range problems {
@@ -223,8 +229,8 @@ func pushGuardWarning(guarded catalog.GuardedSweep) string {
 }
 
 // recordPush records the finished push and answers with it, or with the
-// error that ended it.
-func (s *Service) recordPush(ctx *gofr.Context, run Run, err error) (any, error) {
+// error that ended it. Only a push that wrote goes into the audit log.
+func (s *Service) recordPush(ctx *gofr.Context, integration *definition.Integration, run Run, err error) (any, error) {
 	run.finish(s.now(), failureText(err))
 	recorded, recordErr := s.runs.Record(ctx, run)
 	switch {
@@ -235,6 +241,15 @@ func (s *Service) recordPush(ctx *gofr.Context, run Run, err error) (any, error)
 		return nil, err
 	case recordErr != nil:
 		return nil, recordErr
+	}
+	principal, _ := auth.PrincipalFrom(ctx)
+	entry := runEntry(principal.Actor(), audit.IntegrationPushed, integration, recorded)
+	maps.Copy(entry.Details, map[string]any{
+		"kind": recorded.Kind, "mode": recorded.Mode, "status": recorded.Status,
+		"upserted": recorded.Counts.Upserted, "deleted": recorded.Counts.Deleted,
+	})
+	if err := s.audit.Record(ctx, entry); err != nil {
+		return nil, err
 	}
 
 	return ingestResponse{
