@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { ThemeProvider } from "./components/theme-provider";
+import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { routeTree } from "./routeTree.gen";
 
@@ -32,6 +33,7 @@ createRoot(rootElement).render(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <RouterProvider router={router} />
+          <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

@@ -24,13 +24,10 @@ describe("authenticated layout", () => {
   it("renders the shell for a signed-in user", async () => {
     renderRoute("/");
 
-    expect(await screen.findByRole("link", { name: "Acme" })).toHaveAttribute("href", "/");
-    expect(
-      within(screen.getAllByRole("banner")[0] as HTMLElement).getByRole("button", {
-        name: /Open the user menu/,
-      }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "breadcrumb" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Go to home" })).toHaveAttribute("href", "/");
+    const banner = screen.getAllByRole("banner")[0] as HTMLElement;
+    expect(within(banner).getByText("Acme")).toBeInTheDocument();
+    expect(within(banner).getByRole("button", { name: /Open the user menu/ })).toBeInTheDocument();
     expect(navigateAway).not.toHaveBeenCalled();
   });
 

@@ -51,7 +51,7 @@ describe("root route", () => {
     stubApi(signedIn);
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
-    expect(await screen.findByRole("link", { name: "Acme" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Go to home" })).toBeInTheDocument();
   });
 
   it("shows the not found page for unknown routes", async () => {
