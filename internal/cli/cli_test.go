@@ -47,7 +47,7 @@ func writeFiles(t *testing.T, files map[string]string) string {
 func TestValidateTheExamples(t *testing.T) {
 	got := run(t, "", nil, "validate", "-f", "../../examples/definitions")
 
-	if got.code != 0 || !strings.Contains(got.out, "5 definitions in 2 files, all valid") {
+	if got.code != 0 || !strings.Contains(got.out, "6 definitions in 2 files, all valid") {
 		t.Fatalf("validate = %+v", got)
 	}
 }

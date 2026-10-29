@@ -1,4 +1,37 @@
 kind: Integration
+identifier: teams
+title: Teams
+description: Acme's teams, kept in this definition
+connector: static
+config:
+  records:
+    team:
+      - identifier: engineering
+        title: Engineering
+        properties:
+          email: engineering@example.test
+          chat: https://chat.example.test/engineering
+          focus: product
+      - identifier: platform
+        title: Platform
+        properties:
+          email: platform@example.test
+          chat: https://chat.example.test/platform
+          focus: platform
+        relations:
+          parent: engineering
+      - identifier: security
+        title: Security
+        properties:
+          email: security@example.test
+          focus: security
+        relations:
+          parent: engineering
+mappings:
+  - kind: team
+    blueprint: team
+---
+kind: Integration
 identifier: ci
 title: CI
 description: Acme's pipelines push the services they deploy
@@ -31,10 +64,13 @@ secrets:
 mappings:
   - kind: project
     blueprint: repository
-    identifier: .path_with_namespace | gsub("/"; ".")
+    lookups:
+      - team
+    identifier: .path_with_namespace
     title: .name
     properties:
       url: .web_url
+      path: .path_with_namespace
       defaultBranch: .default_branch
       visibility: .visibility
       archived: .archived
@@ -42,4 +78,4 @@ mappings:
       lastActivity: .last_activity_at
       topics: .topics
     relations:
-      owner: .namespace.path
+      owner: .namespace.path as $path | [$team[] | select(.identifier == $path) | .identifier] | first

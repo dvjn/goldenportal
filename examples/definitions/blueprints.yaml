@@ -12,6 +12,7 @@ properties:
     title: Chat channel
     type: string
     format: url
+    linkLabel: Open channel
   focus:
     title: Focus
     type: string
@@ -19,15 +20,27 @@ properties:
       - product
       - platform
       - security
+    enumColors:
+      product: blue
+      platform: purple
+      security: red
 relations:
   parent:
     title: Parent team
     target: team
+    inverse: subTeams
     inverseTitle: Sub-teams
+display:
+  badges:
+    - focus
 table:
   columns:
     - focus
     - email
+    - services
+  filters:
+    - focus
+    - parent
 ---
 kind: Blueprint
 identifier: service
@@ -42,6 +55,10 @@ properties:
       - go
       - typescript
       - python
+    enumLabels:
+      go: Go
+      typescript: TypeScript
+      python: Python
   tier:
     title: Tier
     description: How critical the service is, 1 being the most critical
@@ -50,6 +67,14 @@ properties:
       - "1"
       - "2"
       - "3"
+    enumColors:
+      "1": red
+      "2": orange
+      "3": gray
+    enumLabels:
+      "1": Tier 1
+      "2": Tier 2
+      "3": Tier 3
   lifecycle:
     title: Lifecycle
     type: string
@@ -57,52 +82,104 @@ properties:
       - experimental
       - production
       - deprecated
+    display: status
+    enumColors:
+      experimental: yellow
+      production: green
+      deprecated: gray
   onCall:
     title: On call
     type: string
     format: email
+    display: avatar
+    emptyLabel: Nobody on call
   launched:
     title: Launched
     type: string
     format: date
+    display: absolute
   public:
     title: Public
     description: Whether customers reach the service from the internet
     type: boolean
+    display: badge
 relations:
   owner:
     title: Owner
     target: team
+    inverse: services
     inverseTitle: Services
   repositories:
     title: Repositories
     target: repository
     many: true
+    inverse: services
     inverseTitle: Services
   dependsOn:
     title: Depends on
     target: service
     many: true
+    inverse: usedBy
     inverseTitle: Used by
+derived:
+  ownerFocus:
+    title: Owner focus
+    path: owner.focus
+    emptyLabel: No owner
+  ownerChat:
+    title: Owner chat
+    path: owner.chat
+display:
+  badges:
+    - tier
+    - public
+  groups:
+    - title: Operations
+      properties:
+        - lifecycle
+        - onCall
+        - launched
+    - title: Ownership
+      properties:
+        - ownerFocus
+        - ownerChat
 table:
   columns:
     - tier
     - lifecycle
     - language
+    - owner
+    - ownerFocus
+  sort:
+    by: tier
+    direction: asc
+  filters:
+    - tier
+    - lifecycle
+    - language
+    - public
+    - owner
+    - ownerFocus
 ---
 kind: Blueprint
 identifier: repository
 title: Repository
 description: A Git repository on Acme's GitLab
-icon: git-branch
+icon: folder-git
 properties:
   url:
     title: URL
     type: string
     format: url
+    linkLabel: Open in GitLab
+  path:
+    title: Path
+    type: string
+    display: mono
   defaultBranch:
     title: Default branch
     type: string
+    display: mono
   visibility:
     title: Visibility
     type: string
@@ -110,9 +187,14 @@ properties:
       - private
       - internal
       - public
+    enumColors:
+      private: gray
+      internal: blue
+      public: green
   archived:
     title: Archived
     type: boolean
+    display: badge
   stars:
     title: Stars
     type: number
@@ -120,6 +202,7 @@ properties:
     title: Last activity
     type: string
     format: date-time
+    display: relative
   topics:
     title: Topics
     type: array
@@ -127,4 +210,38 @@ relations:
   owner:
     title: Owner
     target: team
+    inverse: repositories
     inverseTitle: Repositories
+derived:
+  serviceTiers:
+    title: Service tiers
+    path: services.tier
+    emptyLabel: No service uses this repository
+display:
+  subtitle: path
+  badges:
+    - visibility
+    - archived
+  groups:
+    - title: Source control
+      properties:
+        - defaultBranch
+        - lastActivity
+        - topics
+        - stars
+table:
+  columns:
+    - visibility
+    - owner
+    - services
+    - lastActivity
+    - stars
+  sort:
+    by: lastActivity
+    direction: desc
+  filters:
+    - visibility
+    - archived
+    - owner
+    - lastActivity
+    - services
