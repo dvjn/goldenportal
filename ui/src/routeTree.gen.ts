@@ -23,6 +23,8 @@ import { Route as AuthenticatedSettingsApiTokensRouteImport } from "./routes/_au
 import { Route as AuthenticatedSettingsAuditRouteImport } from "./routes/_authenticated/settings/audit";
 import { Route as AuthenticatedSettingsCatalogSetupRouteImport } from "./routes/_authenticated/settings/catalog-setup";
 import { Route as AuthenticatedSettingsGeneralRouteImport } from "./routes/_authenticated/settings/general";
+import { Route as AuthenticatedSettingsServiceTokensRouteImport } from "./routes/_authenticated/settings/service-tokens";
+import { Route as AuthenticatedSettingsSystemRouteImport } from "./routes/_authenticated/settings/system";
 import { Route as AuthenticatedCatalogBlueprintIndexRouteImport } from "./routes/_authenticated/catalog/$blueprint/index";
 import { Route as AuthenticatedCatalogBlueprintIdentifierRouteImport } from "./routes/_authenticated/catalog/$blueprint/$identifier";
 import { Route as AuthenticatedCatalogBlueprintNewRouteImport } from "./routes/_authenticated/catalog/$blueprint/new";
@@ -115,6 +117,18 @@ const AuthenticatedSettingsGeneralRoute =
     path: "/general",
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any);
+const AuthenticatedSettingsServiceTokensRoute =
+  AuthenticatedSettingsServiceTokensRouteImport.update({
+    id: "/service-tokens",
+    path: "/service-tokens",
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any);
+const AuthenticatedSettingsSystemRoute =
+  AuthenticatedSettingsSystemRouteImport.update({
+    id: "/system",
+    path: "/system",
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any);
 const AuthenticatedCatalogBlueprintIndexRoute =
   AuthenticatedCatalogBlueprintIndexRouteImport.update({
     id: "/",
@@ -199,6 +213,8 @@ export interface FileRoutesByFullPath {
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/catalog-setup": typeof AuthenticatedSettingsCatalogSetupRouteWithChildren;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/settings/service-tokens": typeof AuthenticatedSettingsServiceTokensRoute;
+  "/settings/system": typeof AuthenticatedSettingsSystemRoute;
   "/definitions/": typeof AuthenticatedDefinitionsIndexRoute;
   "/integrations/": typeof AuthenticatedIntegrationsIndexRoute;
   "/settings/": typeof AuthenticatedSettingsIndexRoute;
@@ -223,6 +239,8 @@ export interface FileRoutesByTo {
   "/settings/api-tokens": typeof AuthenticatedSettingsApiTokensRoute;
   "/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/settings/service-tokens": typeof AuthenticatedSettingsServiceTokensRoute;
+  "/settings/system": typeof AuthenticatedSettingsSystemRoute;
   "/definitions": typeof AuthenticatedDefinitionsIndexRoute;
   "/integrations": typeof AuthenticatedIntegrationsIndexRoute;
   "/settings": typeof AuthenticatedSettingsIndexRoute;
@@ -250,6 +268,8 @@ export interface FileRoutesById {
   "/_authenticated/settings/audit": typeof AuthenticatedSettingsAuditRoute;
   "/_authenticated/settings/catalog-setup": typeof AuthenticatedSettingsCatalogSetupRouteWithChildren;
   "/_authenticated/settings/general": typeof AuthenticatedSettingsGeneralRoute;
+  "/_authenticated/settings/service-tokens": typeof AuthenticatedSettingsServiceTokensRoute;
+  "/_authenticated/settings/system": typeof AuthenticatedSettingsSystemRoute;
   "/_authenticated/definitions/": typeof AuthenticatedDefinitionsIndexRoute;
   "/_authenticated/integrations/": typeof AuthenticatedIntegrationsIndexRoute;
   "/_authenticated/settings/": typeof AuthenticatedSettingsIndexRoute;
@@ -279,6 +299,8 @@ export interface FileRouteTypes {
     | "/settings/audit"
     | "/settings/catalog-setup"
     | "/settings/general"
+    | "/settings/service-tokens"
+    | "/settings/system"
     | "/definitions/"
     | "/integrations/"
     | "/settings/"
@@ -303,6 +325,8 @@ export interface FileRouteTypes {
     | "/settings/api-tokens"
     | "/settings/audit"
     | "/settings/general"
+    | "/settings/service-tokens"
+    | "/settings/system"
     | "/definitions"
     | "/integrations"
     | "/settings"
@@ -329,6 +353,8 @@ export interface FileRouteTypes {
     | "/_authenticated/settings/audit"
     | "/_authenticated/settings/catalog-setup"
     | "/_authenticated/settings/general"
+    | "/_authenticated/settings/service-tokens"
+    | "/_authenticated/settings/system"
     | "/_authenticated/definitions/"
     | "/_authenticated/integrations/"
     | "/_authenticated/settings/"
@@ -449,6 +475,20 @@ declare module "@tanstack/react-router" {
       path: "/general";
       fullPath: "/settings/general";
       preLoaderRoute: typeof AuthenticatedSettingsGeneralRouteImport;
+      parentRoute: typeof AuthenticatedSettingsRoute;
+    };
+    "/_authenticated/settings/service-tokens": {
+      id: "/_authenticated/settings/service-tokens";
+      path: "/service-tokens";
+      fullPath: "/settings/service-tokens";
+      preLoaderRoute: typeof AuthenticatedSettingsServiceTokensRouteImport;
+      parentRoute: typeof AuthenticatedSettingsRoute;
+    };
+    "/_authenticated/settings/system": {
+      id: "/_authenticated/settings/system";
+      path: "/system";
+      fullPath: "/settings/system";
+      preLoaderRoute: typeof AuthenticatedSettingsSystemRouteImport;
       parentRoute: typeof AuthenticatedSettingsRoute;
     };
     "/_authenticated/catalog/$blueprint/": {
@@ -580,6 +620,8 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsAuditRoute: typeof AuthenticatedSettingsAuditRoute;
   AuthenticatedSettingsCatalogSetupRoute: typeof AuthenticatedSettingsCatalogSetupRouteWithChildren;
   AuthenticatedSettingsGeneralRoute: typeof AuthenticatedSettingsGeneralRoute;
+  AuthenticatedSettingsServiceTokensRoute: typeof AuthenticatedSettingsServiceTokensRoute;
+  AuthenticatedSettingsSystemRoute: typeof AuthenticatedSettingsSystemRoute;
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute;
   AuthenticatedSettingsConfigurationSplatRoute: typeof AuthenticatedSettingsConfigurationSplatRoute;
 }
@@ -591,6 +633,9 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsCatalogSetupRoute:
     AuthenticatedSettingsCatalogSetupRouteWithChildren,
   AuthenticatedSettingsGeneralRoute: AuthenticatedSettingsGeneralRoute,
+  AuthenticatedSettingsServiceTokensRoute:
+    AuthenticatedSettingsServiceTokensRoute,
+  AuthenticatedSettingsSystemRoute: AuthenticatedSettingsSystemRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSettingsConfigurationSplatRoute:
     AuthenticatedSettingsConfigurationSplatRoute,

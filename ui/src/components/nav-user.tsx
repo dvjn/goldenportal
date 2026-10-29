@@ -1,12 +1,20 @@
-import { Link } from "@tanstack/react-router";
-import { Blocks, Cable, LogOut, Settings, ShieldCheck, SunMoon } from "lucide-react";
+import { Link, type LinkProps } from "@tanstack/react-router";
+import {
+  KeyRound,
+  LogOut,
+  type LucideIcon,
+  ScrollText,
+  Settings,
+  SlidersHorizontal,
+  SunMoon,
+  Users,
+} from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -17,7 +25,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useCan, useLogout, useMe } from "@/features/auth";
+import { type Permission, useCan, useLogout, useMe } from "@/features/auth";
 
 type Theme = ReturnType<typeof useTheme>["theme"];
 
@@ -27,12 +35,33 @@ const themes: { value: Theme; label: string }[] = [
   { value: "system", label: "System" },
 ];
 
-export function initials(name: string, email: string) {
-  const words = (name.trim() || email).split(/\s+/);
-  return words
-    .slice(0, 2)
-    .map((word) => word.charAt(0).toUpperCase())
-    .join("");
+type SettingsLink = {
+  to: LinkProps["to"];
+  label: string;
+  icon: LucideIcon;
+  permission: Permission;
+};
+
+const settingsLinks: SettingsLink[] = [
+  {
+    to: "/settings/catalog-setup",
+    label: "Catalog setup",
+    icon: SlidersHorizontal,
+    permission: "catalog.read",
+  },
+  { to: "/settings/access", label: "Users and groups", icon: Users, permission: "access.read" },
+  {
+    to: "/settings/service-tokens",
+    label: "Service tokens",
+    icon: KeyRound,
+    permission: "access.read",
+  },
+  { to: "/settings/audit", label: "Audit log", icon: ScrollText, permission: "audit.read" },
+  { to: "/settings/system", label: "System settings", icon: Settings, permission: "settings.read" },
+];
+
+export function avatarLetter(name: string, email: string) {
+  return (name.trim() || email).charAt(0).toUpperCase();
 }
 
 export function NavUser() {
@@ -42,7 +71,7 @@ export function NavUser() {
   const can = useCan();
   const avatar = (
     <Avatar>
-      <AvatarFallback>{initials(user.name, user.email)}</AvatarFallback>
+      <AvatarFallback>{avatarLetter(user.name, user.email)}</AvatarFallback>
     </Avatar>
   );
 
@@ -65,6 +94,17 @@ export function NavUser() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {settingsLinks
+          .filter((link) => can(link.permission))
+          .map(({ to, label, icon: Icon }) => (
+            <DropdownMenuItem key={label} asChild>
+              <Link to={to}>
+                <Icon />
+                {label}
+              </Link>
+            </DropdownMenuItem>
+          ))}
+        <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <SunMoon />
@@ -84,52 +124,6 @@ export function NavUser() {
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
-        {(can("catalog.model") || can("integrations.sync")) && (
-          <>
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Catalog</DropdownMenuLabel>
-              {can("catalog.model") && (
-                <DropdownMenuItem asChild>
-                  <Link to="/definitions">
-                    <Blocks />
-                    Definitions
-                  </Link>
-                </DropdownMenuItem>
-              )}
-              {can("integrations.sync") && (
-                <DropdownMenuItem asChild>
-                  <Link to="/integrations">
-                    <Cable />
-                    Integrations
-                  </Link>
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-          </>
-        )}
-        {can("settings.read") && (
-          <>
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Administration</DropdownMenuLabel>
-              <DropdownMenuItem asChild>
-                <Link to="/settings/general">
-                  <Settings />
-                  System settings
-                </Link>
-              </DropdownMenuItem>
-              {can("access.read") && (
-                <DropdownMenuItem asChild>
-                  <Link to="/settings/access">
-                    <ShieldCheck />
-                    Access
-                  </Link>
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-          </>
-        )}
         <DropdownMenuItem disabled={logout.isPending} onSelect={() => logout.mutate()}>
           <LogOut />
           Sign out

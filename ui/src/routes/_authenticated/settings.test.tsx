@@ -25,11 +25,11 @@ describe("system settings", () => {
     expect(fetchMock.mock.calls.some(([request]) => request.url.endsWith("/settings"))).toBe(false);
   });
 
-  it("opens the general page with the identity settings", async () => {
+  it("opens the system page with the identity settings", async () => {
     stubApi(adminApi);
     renderRoute("/settings");
 
-    expect(await screen.findByRole("heading", { name: "General" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "System settings" })).toBeInTheDocument();
     expect(
       screen.getByText("https://login.example.test/application/o/portal/"),
     ).toBeInTheDocument();
@@ -38,11 +38,6 @@ describe("system settings", () => {
     expect(screen.getByText("45 min")).toBeInTheDocument();
     expect(screen.getByText("https://portal.example.test/scim/v2")).toBeInTheDocument();
     expect(screen.queryByText("No push in the last 24 hours")).not.toBeInTheDocument();
-    const nav = screen.getByRole("navigation", { name: "System settings" });
-    expect(within(nav).getByRole("link", { name: "General" })).toHaveAttribute(
-      "href",
-      "/settings/general",
-    );
   });
 
   it("warns when the identity provider has not pushed for a day", async () => {
@@ -50,7 +45,7 @@ describe("system settings", () => {
       ...adminApi,
       "GET /api/v1/scim": () => Response.json({ data: { ...scim, last_push_at: undefined } }),
     });
-    renderRoute("/settings/general");
+    renderRoute("/settings/system");
 
     expect(await screen.findByText("No push in the last 24 hours")).toBeInTheDocument();
     expect(screen.getByText("No push yet")).toBeInTheDocument();
@@ -66,7 +61,7 @@ describe("system settings", () => {
           { status: 201 },
         ),
     });
-    renderRoute("/settings/general");
+    renderRoute("/settings/system");
 
     await user.click(await screen.findByRole("button", { name: "Rotate token" }));
     const confirm = await screen.findByRole("alertdialog");

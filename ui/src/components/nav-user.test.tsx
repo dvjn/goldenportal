@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { navigateAway } from "@/lib/navigation";
 import { cara, signedIn, signedInAs, stubApi } from "@/test/api";
 import { renderRoute } from "@/test/render";
-import { initials } from "./nav-user";
+import { avatarLetter } from "./nav-user";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
@@ -28,69 +28,58 @@ afterEach(() => {
   vi.mocked(navigateAway).mockClear();
 });
 
-async function openUserMenu(initialsShown = "AA") {
+async function openUserMenu(letterShown = "A") {
   const user = userEvent.setup();
   renderRoute("/");
   const trigger = await screen.findByRole("button", { name: /Open the user menu/ });
-  expect(await within(trigger).findByText(initialsShown)).toBeInTheDocument();
+  expect(await within(trigger).findByText(letterShown)).toBeInTheDocument();
   await user.click(trigger);
 
   return user;
 }
 
-describe("initials", () => {
-  it("takes the first letters of the first two names, or of the email", () => {
-    expect(initials("Alice Archer", "alice@example.test")).toBe("AA");
-    expect(initials("Cher", "cher@example.test")).toBe("C");
-    expect(initials("Mary Ann Lee", "mary@example.test")).toBe("MA");
-    expect(initials("  ", "bob@example.test")).toBe("B");
+describe("avatarLetter", () => {
+  it("takes the first letter of the name, or of the email", () => {
+    expect(avatarLetter("alice Archer", "alice@example.test")).toBe("A");
+    expect(avatarLetter("  ", "bob@example.test")).toBe("B");
   });
 });
 
 describe("NavUser", () => {
-  it("shows the initials in the top bar and the name and email in the menu", async () => {
+  it("shows the first letter in the top bar and the name and email in the menu", async () => {
     await openUserMenu();
 
     const label = await screen.findByText("alice@example.test");
     expect(label.parentElement).toHaveTextContent("Alice Archer");
   });
 
-  it("gives an admin the administration links", async () => {
+  it("gives an admin every settings link in order", async () => {
     await openUserMenu();
 
-    expect(await screen.findByText("Administration")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "System settings" })).toHaveAttribute(
-      "href",
-      "/settings/general",
-    );
-    expect(screen.getByRole("menuitem", { name: "Access" })).toHaveAttribute(
-      "href",
-      "/settings/access",
-    );
+    await screen.findByRole("menuitem", { name: "Sign out" });
+    const links = within(screen.getByRole("menu"))
+      .getAllByRole("menuitem")
+      .filter((item) => item.hasAttribute("href"))
+      .map((item) => [item.textContent, item.getAttribute("href")]);
+    expect(links).toEqual([
+      ["Catalog setup", "/settings/catalog-setup"],
+      ["Users and groups", "/settings/access"],
+      ["Service tokens", "/settings/service-tokens"],
+      ["Audit log", "/settings/audit"],
+      ["System settings", "/settings/system"],
+    ]);
   });
 
-  it("gives a modeler the definitions and integrations links", async () => {
-    await openUserMenu();
-
-    expect(await within(screen.getByRole("menu")).findByText("Catalog")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Definitions" })).toHaveAttribute(
-      "href",
-      "/definitions",
-    );
-    expect(screen.getByRole("menuitem", { name: "Integrations" })).toHaveAttribute(
-      "href",
-      "/integrations",
-    );
-  });
-
-  it("shows no administration links to a member", async () => {
+  it("shows a member only the catalog setup link", async () => {
     stubApi(signedInAs(cara));
-    await openUserMenu("CC");
+    await openUserMenu("C");
 
     expect(await screen.findByRole("menuitem", { name: "Sign out" })).toBeInTheDocument();
-    expect(screen.queryByText("Administration")).not.toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Definitions" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Integrations" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Catalog setup" })).toHaveAttribute(
+      "href",
+      "/settings/catalog-setup",
+    );
+    expect(screen.queryByRole("menuitem", { name: "Users and groups" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "System settings" })).not.toBeInTheDocument();
   });
 

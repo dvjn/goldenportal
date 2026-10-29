@@ -1,11 +1,11 @@
-import { createFileRoute, Link, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { PageError } from "@/components/page-error";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { GrantDialog, grantsQueryOptions, subjectsQueryOptions } from "@/features/access";
-import { meQueryOptions, type Permission, useCan } from "@/features/auth";
+import { meQueryOptions, useCan } from "@/features/auth";
 import { settingsQueryOptions, useSettings } from "@/features/settings";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -26,45 +26,14 @@ export const Route = createFileRoute("/_authenticated/settings")({
   errorComponent: PageError,
 });
 
-type Section = {
-  to: "/settings/general" | "/settings/access" | "/settings/api-tokens" | "/settings/audit";
-  label: string;
-  permission: Permission;
-};
-
-const sections: Section[] = [
-  { to: "/settings/general", label: "General", permission: "settings.read" },
-  { to: "/settings/access", label: "Access", permission: "access.read" },
-  { to: "/settings/api-tokens", label: "API tokens", permission: "access.read" },
-  { to: "/settings/audit", label: "Audit log", permission: "audit.read" },
-];
-
 function SettingsLayout() {
   const can = useCan();
-  const matchRoute = useMatchRoute();
 
   return (
-    <div className="flex flex-col gap-6 md:flex-row">
-      <nav aria-label="System settings" className="flex shrink-0 flex-col gap-1 md:w-48">
-        <h2 className="px-3 py-1 font-semibold">System settings</h2>
-        {sections
-          .filter((section) => can(section.permission))
-          .map((section) => (
-            <Button
-              key={section.to}
-              asChild
-              variant={matchRoute({ to: section.to, fuzzy: true }) ? "secondary" : "ghost"}
-              className="justify-start"
-            >
-              <Link to={section.to}>{section.label}</Link>
-            </Button>
-          ))}
-      </nav>
-      <div className="flex min-w-0 flex-1 flex-col gap-6">
-        {can("settings.read") && <BootstrapBanner />}
-        <Outlet />
-      </div>
-    </div>
+    <>
+      {can("settings.read") && <BootstrapBanner />}
+      <Outlet />
+    </>
   );
 }
 

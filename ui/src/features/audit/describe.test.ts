@@ -1,23 +1,28 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { AuditEntry } from "./api";
-import { describeDetails } from "./describe";
+import { describeDetails, formatValue } from "./describe";
 
-function entry(action: string, details: Record<string, unknown>): AuditEntry {
+function entry(action: string, details: AuditEntry["details"]): AuditEntry {
   return {
     id: 1,
     at: "2026-10-22T09:00:00Z",
-    actor: { label: "alice@example.test" },
+    actor: { kind: "user", id: "u-1", name: "Alice", email: "alice@example.test" },
     action,
-    target: { kind: "", id: "", name: "" },
+    resource: { kind: "", id: "", name: "" },
     details,
+    client: { ip: "", user_agent: "" },
   };
 }
 
 describe("describeDetails", () => {
   it("names the roles of a grant change", () => {
+    const changes = { role: { before: "maintainer", after: "admin" } };
+    expect(describeDetails(entry("grant.changed", { changes }))).toBe("From Maintainer to Admin");
     expect(
-      describeDetails(entry("grant.changed", { role: "admin", previous_role: "maintainer" })),
-    ).toBe("From Maintainer to Admin");
+      describeDetails(
+        entry("grant.removed", { changes: { role: { before: "admin", after: "" } } }),
+      ),
+    ).toBe("Removed Admin");
   });
 
   it("says how a sign-in matched the user", () => {
@@ -59,24 +64,34 @@ describe("describeDetails", () => {
     ).toBe("Back to revision 4, 0 added, 1 changed, 0 removed");
   });
 
-  it("names the blueprint and the fields of an entity change", () => {
-    expect(
-      describeDetails(
-        entry("entity.updated", { blueprint: "service", changed: ["title", "owner"] }),
-      ),
-    ).toBe("Blueprint service, changed title, owner");
-    expect(describeDetails(entry("entity.deleted", { blueprint: "service" }))).toBe(
-      "Blueprint service",
-    );
+  it("names the fields of an entity change", () => {
+    const changes = {
+      title: { before: "Payments", after: "Payments API" },
+      owner: { before: ["payments"], after: ["platform"] },
+    };
+    expect(describeDetails(entry("entity.updated", { changes }))).toBe("Changed title, owner");
   });
 
-  it("names the run of a sync and the integration of an ingest token", () => {
-    expect(describeDetails(entry("integration.synced", { run: 12 }))).toBe("Run 12");
-    expect(describeDetails(entry("ingest_token.revoked", { integration: "ci" }))).toBe("For ci");
+  it("names the run of a sync and the counts of a push", () => {
+    expect(describeDetails(entry("integration.synced", { run: 12, trigger: "schedule" }))).toBe(
+      "Run 12, schedule",
+    );
     expect(
       describeDetails(
-        entry("ingest_token.created", { integration: "ci", expires_at: "2026-11-24T09:00:00Z" }),
+        entry("integration.pushed", { run: 13, trigger: "push", upserted: 4, deleted: 1 }),
       ),
-    ).toMatch(/^For ci, expires Nov 24, 2026/);
+    ).toBe("Run 13, push, 4 upserted, 1 deleted");
+    expect(
+      describeDetails(entry("ingest_token.created", { expires_at: "2026-11-24T09:00:00Z" })),
+    ).toMatch(/^Expires Nov 24, 2026/);
+  });
+});
+
+describe("formatValue", () => {
+  it("shows strings as they are, lists joined and anything else as JSON", () => {
+    expect(formatValue("Payments")).toBe("Payments");
+    expect(formatValue(["a", "b"])).toBe("a, b");
+    expect(formatValue({ tier: 1 })).toBe('{"tier":1}');
+    expect(formatValue(null)).toBe("");
   });
 });

@@ -1,12 +1,21 @@
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { auditKeys, getAuditPage } from "./api";
+import { queryOptions, useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { type AuditQuery, auditKeys, auditQuery, getAuditFacets, getAuditPage } from "./api";
 
-export const auditPageQueryOptions = (page: number) =>
+export const auditPageQueryOptions = (query: number | AuditQuery) =>
   queryOptions({
-    queryKey: auditKeys.page(page),
-    queryFn: () => getAuditPage(page),
+    queryKey: auditKeys.page(auditQuery(query)),
+    queryFn: () => getAuditPage(query),
   });
 
-export function useAuditPage(page: number) {
-  return useSuspenseQuery(auditPageQueryOptions(page)).data;
+export const auditFacetsQueryOptions = queryOptions({
+  queryKey: auditKeys.facets,
+  queryFn: getAuditFacets,
+});
+
+export function useAuditPage(query: number | AuditQuery) {
+  return useSuspenseQuery(auditPageQueryOptions(query)).data;
+}
+
+export function useAuditFacets() {
+  return useQuery(auditFacetsQueryOptions).data;
 }

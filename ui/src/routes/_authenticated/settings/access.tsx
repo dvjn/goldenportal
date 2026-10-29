@@ -1,6 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useState } from "react";
+import { ListSkeleton } from "@/components/common/list-skeleton";
+import { PageHeader } from "@/components/common/page-header";
+import { TableFrame } from "@/components/common/table-frame";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,14 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   type Grant,
@@ -50,6 +46,7 @@ import {
 import { requirePermission, useCan } from "@/features/auth";
 import { scimQueryOptions, useScim } from "@/features/settings";
 import { formatRelative } from "@/lib/time";
+import { usePageTitle } from "@/lib/use-page-title";
 
 type AccessSearch = { user?: string };
 
@@ -66,13 +63,14 @@ export const Route = createFileRoute("/_authenticated/settings/access")({
       context.queryClient.ensureQueryData(scimQueryOptions),
       deps.user && context.queryClient.ensureQueryData(userCheckQueryOptions(deps.user)),
     ]),
-  staticData: { breadcrumb: "Access" },
+  pendingComponent: ListSkeleton,
   component: AccessPage,
 });
 
 type RoleFilter = "all" | GrantRole;
 
 function AccessPage() {
+  usePageTitle("Access");
   const grants = useGrants();
   const scim = useScim();
   const can = useCan();
@@ -88,12 +86,15 @@ function AccessPage() {
 
   return (
     <>
-      <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">Access</h1>
-        <p className="text-muted-foreground text-sm">
-          Who holds Admin or Maintainer. Everyone that SCIM provisions is a Member.
-        </p>
-      </header>
+      <PageHeader
+        title="Access"
+        description="Who holds Admin or Maintainer. Everyone that SCIM provisions is a Member."
+        actions={
+          can("access.write") && (
+            <Button onClick={() => setDialog({ open: true })}>Grant access</Button>
+          )
+        }
+      />
       <div className="flex flex-col gap-2 sm:flex-row">
         <InputGroup className="sm:max-w-xs">
           <InputGroupAddon>
@@ -116,18 +117,13 @@ function AccessPage() {
             <SelectItem value="maintainer">Maintainer</SelectItem>
           </SelectContent>
         </Select>
-        {can("access.write") && (
-          <Button className="sm:ml-auto" onClick={() => setDialog({ open: true })}>
-            Grant access
-          </Button>
-        )}
       </div>
       <p className="text-muted-foreground text-sm">
         Users and groups sync from SCIM,{" "}
         {scim.last_push_at ? `last push ${formatRelative(scim.last_push_at)}` : "no push yet"}.{" "}
         {grants.length === 1 ? "1 grant" : `${grants.length} grants`}.
       </p>
-      <Table>
+      <TableFrame>
         <TableHeader>
           <TableRow>
             <TableHead>Subject</TableHead>
@@ -156,7 +152,7 @@ function AccessPage() {
             </TableRow>
           )}
         </TableBody>
-      </Table>
+      </TableFrame>
       <CheckUserCard />
       <GrantDialog
         open={dialog.open}

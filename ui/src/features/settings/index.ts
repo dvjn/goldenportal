@@ -14,3 +14,4 @@ export {
   useScim,
   useSettings,
 } from "./queries";
+export { RelativeTime } from "./relative-time";
