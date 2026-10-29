@@ -17,7 +17,7 @@ afterEach(() => {
 describe("definitions history", () => {
   it("lists the revisions newest first", async () => {
     stubApi({ ...signedInAs(bob), ...historyApi });
-    renderRoute("/definitions/history");
+    renderRoute("/settings/catalog-setup/history");
 
     const newest = (await screen.findByRole("link", { name: "Revision 2" })).closest(
       "tr",
@@ -48,7 +48,7 @@ describe("definitions history", () => {
       "POST /api/v1/definitions/revisions/1/rollback": () =>
         Response.json({ data: { ...plan, rollback_of: 1 } }, { status: 201 }),
     });
-    renderRoute("/definitions/history/1");
+    renderRoute("/settings/catalog-setup/history/1");
 
     expect(await screen.findByRole("heading", { name: "Revision 1" })).toBeInTheDocument();
     expect(screen.getByText("Service")).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe("definitions history", () => {
 
   it("explains why the current revision cannot be rolled back to", async () => {
     stubApi({ ...signedInAs(bob), ...historyApi });
-    renderRoute("/definitions/history/2");
+    renderRoute("/settings/catalog-setup/history/2");
 
     expect(
       await screen.findByRole("button", { name: "Roll back to this revision" }),

@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { ListSkeleton } from "@/components/common/list-skeleton";
+import { StateCard } from "@/components/common/state-card";
+import { TableFrame } from "@/components/common/table-frame";
 import { CopyButton } from "@/components/copy-button";
 import { SecretDialog } from "@/components/secret-dialog";
 import {
@@ -32,72 +35,76 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  type CreatedIngestToken,
+  type IngestToken,
+  type IntegrationDetail,
+  useCreateIngestToken,
+  useIngestTokens,
+  useRevokeIngestToken,
+} from "@/features/integrations";
 import { formatDateTime, formatRelative } from "@/lib/time";
-import type { CreatedIngestToken, IngestToken, IntegrationDetail } from "./api";
-import { useCreateIngestToken, useIngestTokens, useRevokeIngestToken } from "./queries";
 
 export function IngestTokens({ integration }: { integration: IntegrationDetail }) {
   const tokens = useIngestTokens(integration.identifier);
 
   return (
-    <section aria-label="Ingest tokens" className="flex flex-col gap-2">
+    <section aria-label="Ingest tokens" className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-1">
-          <h2 className="font-semibold">Ingest tokens</h2>
+          <h3 className="text-sm font-medium">Ingest tokens</h3>
           <p className="text-muted-foreground text-sm">
-            The source pushes entities to {integration.title} with these tokens. A token works only
-            for this integration and expires within a year.
+            A token works only for this integration and expires within a year.
           </p>
         </div>
         <CreateIngestToken integration={integration} />
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Created by</TableHead>
-            <TableHead>Expires</TableHead>
-            <TableHead>Last used</TableHead>
-            <TableHead>
-              <span className="sr-only">Actions</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tokens.map((token) => (
-            <TableRow key={token.id}>
-              <TableCell className="font-medium">{token.name}</TableCell>
-              <TableCell>{token.created_by || "Unknown"}</TableCell>
-              <TableCell title={formatDateTime(token.expires_at)}>
-                {new Date(token.expires_at).getTime() < Date.now()
-                  ? "Expired"
-                  : formatRelative(token.expires_at)}
-              </TableCell>
-              <TableCell>
-                {token.last_used_at ? formatRelative(token.last_used_at) : "Never"}
-              </TableCell>
-              <TableCell className="text-right">
-                <RevokeIngestToken integration={integration} token={token} />
-              </TableCell>
-            </TableRow>
-          ))}
-          {tokens.length === 0 && (
+      {tokens.isError ? (
+        <StateCard title="Ingest tokens unavailable" message="We could not load the tokens." />
+      ) : tokens.data ? (
+        <TableFrame>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={5} className="text-muted-foreground text-center">
-                No ingest tokens yet.
-              </TableCell>
+              <TableHead>Name</TableHead>
+              <TableHead>Created by</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead>Last used</TableHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {tokens.data.map((token) => (
+              <TableRow key={token.id}>
+                <TableCell className="font-medium">{token.name}</TableCell>
+                <TableCell>{token.created_by || "Unknown"}</TableCell>
+                <TableCell title={formatDateTime(token.expires_at)}>
+                  {new Date(token.expires_at).getTime() < Date.now()
+                    ? "Expired"
+                    : formatRelative(token.expires_at)}
+                </TableCell>
+                <TableCell>
+                  {token.last_used_at ? formatRelative(token.last_used_at) : "Never"}
+                </TableCell>
+                <TableCell className="text-right">
+                  <RevokeIngestToken integration={integration} token={token} />
+                </TableCell>
+              </TableRow>
+            ))}
+            {tokens.data.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-muted-foreground h-16 text-center">
+                  No ingest tokens yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </TableFrame>
+      ) : (
+        <ListSkeleton />
+      )}
     </section>
   );
 }
@@ -200,7 +207,9 @@ function CreateIngestToken({ integration }: { integration: IntegrationDetail }) 
     <>
       <Dialog open={open} onOpenChange={reset}>
         <DialogTrigger asChild>
-          <Button>New ingest token</Button>
+          <Button size="sm" variant="outline">
+            New ingest token
+          </Button>
         </DialogTrigger>
         <DialogContent>
           <form onSubmit={submit} className="flex flex-col gap-6">

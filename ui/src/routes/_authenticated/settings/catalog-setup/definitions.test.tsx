@@ -3,7 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { discardAll } from "@/features/definitions";
 import { bob, cara, signedInAs, stubApi } from "@/test/api";
+import { catalogApi } from "@/test/catalog";
 import { definitionsApi, plan, teamYAML } from "@/test/definitions";
+import { integrationsApi } from "@/test/integrations";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -31,13 +33,12 @@ async function editTeam() {
 }
 
 describe("definitions editor", () => {
-  it("shows the forbidden page to a member", async () => {
-    stubApi(signedInAs(cara));
-    renderRoute("/definitions");
+  it("hides the definitions tab from a member", async () => {
+    stubApi({ ...signedInAs(cara), ...catalogApi, ...integrationsApi });
+    renderRoute("/settings/catalog-setup?tab=definitions");
 
-    expect(
-      await screen.findByRole("heading", { name: "You don't have access to this page." }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Data model" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Definitions" })).not.toBeInTheDocument();
   });
 
   it("plans the changed documents and applies the plan", async () => {
@@ -45,6 +46,8 @@ describe("definitions editor", () => {
     stubApi({
       ...signedInAs(bob),
       ...definitionsApi,
+      ...catalogApi,
+      ...integrationsApi,
       "POST /api/v1/definitions/plan": async (request) => {
         requests.plan = await request.json();
         return Response.json({ data: plan }, { status: 201 });
@@ -54,7 +57,7 @@ describe("definitions editor", () => {
         return Response.json({ data: { number: 2 } }, { status: 201 });
       },
     });
-    renderRoute("/definitions");
+    renderRoute("/settings/catalog-setup?tab=definitions");
 
     const user = await editTeam();
     await user.click(screen.getByRole("button", { name: /CI/ }));
@@ -98,6 +101,8 @@ describe("definitions editor", () => {
     stubApi({
       ...signedInAs(bob),
       ...definitionsApi,
+      ...catalogApi,
+      ...integrationsApi,
       "POST /api/v1/definitions/plan": () =>
         Response.json(
           {
@@ -125,7 +130,7 @@ describe("definitions editor", () => {
           { status: 422 },
         ),
     });
-    renderRoute("/definitions");
+    renderRoute("/settings/catalog-setup?tab=definitions");
 
     const user = await editTeam();
     await user.click(screen.getByRole("button", { name: "Plan" }));
@@ -147,12 +152,14 @@ describe("definitions editor", () => {
     stubApi({
       ...signedInAs(bob),
       ...definitionsApi,
+      ...catalogApi,
+      ...integrationsApi,
       "POST /api/v1/definitions/plan": async (request) => {
         body = await request.json();
         return Response.json({ data: plan }, { status: 201 });
       },
     });
-    renderRoute("/definitions");
+    renderRoute("/settings/catalog-setup?tab=definitions");
 
     await user.click(await screen.findByRole("button", { name: "Upload YAML" }));
     fireEvent.change(screen.getByLabelText("YAML"), { target: { value: teamYAML } });

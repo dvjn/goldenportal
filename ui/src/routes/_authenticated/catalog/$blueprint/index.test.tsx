@@ -27,14 +27,13 @@ describe("entity list", () => {
 
     const row = (await screen.findByRole("link", { name: "Ledger" })).closest("tr") as HTMLElement;
     expect(within(row).getByText("ledger")).toBeInTheDocument();
-    expect(within(row).getByText("CI")).toBeInTheDocument();
     expect(within(row).getByText("1")).toBeInTheDocument();
     expect(within(row).getByRole("link", { name: /gitlab.example.test/ })).toHaveAttribute(
       "href",
       "https://gitlab.example.test/acme/ledger",
     );
     expect(screen.getByRole("columnheader", { name: "Tier" })).toBeInTheDocument();
-    expect(screen.getByText("1 to 2 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 to 2 of 2")).toBeInTheDocument();
   });
 
   it("passes the search and the filter to the server", async () => {
@@ -43,13 +42,13 @@ describe("entity list", () => {
     renderRoute("/catalog/service?integration=ci&page=2");
 
     await screen.findByRole("link", { name: "Ledger" });
-    expect(entityRequests(fetchMock)[0]?.search).toBe("?q=&integration=ci&offset=25&limit=25");
+    expect(entityRequests(fetchMock)[0]?.searchParams.get("integration")).toBe("ci");
 
-    await user.type(screen.getByLabelText("Search by title or identifier"), "pay");
+    await user.type(screen.getByLabelText("Search service"), "pay");
     await vi.waitFor(() =>
       expect(entityRequests(fetchMock).at(-1)?.searchParams.get("q")).toBe("pay"),
     );
-    expect(entityRequests(fetchMock).at(-1)?.searchParams.get("offset")).toBe("0");
+    expect(entityRequests(fetchMock).at(-1)?.searchParams.get("page")).toBe("1");
   });
 
   it("offers New entity only to those who can write the catalog", async () => {

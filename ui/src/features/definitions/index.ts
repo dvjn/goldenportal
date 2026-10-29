@@ -10,6 +10,7 @@ export {
   type Problem,
   problemsOf,
   type Revision,
+  type RevisionPage,
   revisionPageSize,
 } from "./api";
 export {

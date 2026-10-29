@@ -24,7 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useCan } from "@/features/auth";
+import { requirePermission, useCan } from "@/features/auth";
 import {
   scimQueryOptions,
   settingsQueryOptions,
@@ -35,6 +35,7 @@ import {
 import { formatDuration, formatRelative, isOlderThan } from "@/lib/time";
 
 export const Route = createFileRoute("/_authenticated/settings/general")({
+  beforeLoad: ({ context }) => requirePermission(context.queryClient, "settings.read"),
   loader: ({ context }) =>
     Promise.all([
       context.queryClient.ensureQueryData(settingsQueryOptions),

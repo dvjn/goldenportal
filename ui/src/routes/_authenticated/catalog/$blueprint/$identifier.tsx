@@ -3,11 +3,8 @@ import { PageError } from "@/components/page-error";
 import { entityQueryOptions } from "@/features/catalog";
 
 export const Route = createFileRoute("/_authenticated/catalog/$blueprint/$identifier")({
-  loader: async ({ context, params }) => {
-    const entity = await context.queryClient.ensureQueryData(
-      entityQueryOptions(params.blueprint, params.identifier),
-    );
-    return { breadcrumb: entity.title };
+  loader: ({ context, params }) => {
+    void context.queryClient.prefetchQuery(entityQueryOptions(params.blueprint, params.identifier));
   },
   component: Outlet,
   errorComponent: PageError,

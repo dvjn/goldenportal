@@ -1,5 +1,6 @@
-import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { catalogKeys } from "@/features/catalog";
+import { integrationKeys } from "@/features/integrations";
 import {
   applyPlan,
   definitionKeys,
@@ -42,11 +43,11 @@ export const diffQueryOptions = (from: number, to: number) =>
   });
 
 export function useRevisions(page: number) {
-  return useSuspenseQuery(revisionsQueryOptions(page)).data;
+  return useQuery(revisionsQueryOptions(page));
 }
 
 export function useRevision(number: number) {
-  return useSuspenseQuery(revisionQueryOptions(number)).data;
+  return useQuery(revisionQueryOptions(number));
 }
 
 export function usePlanRollback() {
@@ -54,7 +55,7 @@ export function usePlanRollback() {
 }
 
 export function useDefinitions() {
-  return useSuspenseQuery(definitionsQueryOptions).data;
+  return useQuery(definitionsQueryOptions);
 }
 
 export function usePlanDefinitions() {
@@ -70,6 +71,7 @@ export function useApplyPlan() {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: definitionKeys.all }),
         queryClient.invalidateQueries({ queryKey: catalogKeys.all }),
+        queryClient.invalidateQueries({ queryKey: integrationKeys.all }),
       ]),
   });
 }

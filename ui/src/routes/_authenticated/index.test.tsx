@@ -18,21 +18,21 @@ describe("Home", () => {
     stubApi({ ...signedIn, ...catalogApi });
     renderRoute("/");
 
-    const service = await screen.findByRole("link", { name: /Service/ });
+    const service = await screen.findByRole("link", { name: /^Service/ });
     expect(service).toHaveAttribute("href", "/catalog/service");
     expect(service).toHaveTextContent("A deployable service");
-    expect(service).toHaveTextContent("1 entity");
-    expect(screen.getByRole("link", { name: /Team/ })).toHaveTextContent("2 entities");
+    expect(service).toHaveTextContent(/1\s*entity/);
+    expect(screen.getByRole("link", { name: /^Team/ })).toHaveTextContent(/2\s*entities/);
   });
 
   it("says when no blueprint is defined", async () => {
     stubApi(signedIn);
     renderRoute("/");
 
-    expect(await screen.findByText(/No blueprints are defined yet/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Define the first one" })).toHaveAttribute(
+    expect(await screen.findByText("The catalog is empty")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open the definitions" })).toHaveAttribute(
       "href",
-      "/definitions",
+      "/settings/catalog-setup?tab=definitions",
     );
   });
 });

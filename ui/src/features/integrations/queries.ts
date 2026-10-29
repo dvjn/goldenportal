@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createIngestToken,
   getIngestTokens,
@@ -16,6 +16,10 @@ const runningPollMs = 2000;
 export const integrationsQueryOptions = queryOptions({
   queryKey: integrationKeys.list,
   queryFn: getIntegrations,
+  refetchInterval: (query) =>
+    query.state.data?.some((integration) => integration.last_run?.status === "running")
+      ? runningPollMs
+      : false,
 });
 
 export const integrationQueryOptions = (identifier: string) =>
@@ -41,26 +45,26 @@ export const ingestTokensQueryOptions = (identifier: string) =>
   });
 
 export function useIntegrations() {
-  return useSuspenseQuery(integrationsQueryOptions).data;
+  return useQuery(integrationsQueryOptions);
 }
 
 export function useIntegration(identifier: string) {
-  return useSuspenseQuery(integrationQueryOptions(identifier)).data;
+  return useQuery(integrationQueryOptions(identifier));
 }
 
 export function useRuns(identifier: string) {
-  return useSuspenseQuery(runsQueryOptions(identifier)).data;
+  return useQuery(runsQueryOptions(identifier));
 }
 
 export function useIngestTokens(identifier: string) {
-  return useSuspenseQuery(ingestTokensQueryOptions(identifier)).data;
+  return useQuery(ingestTokensQueryOptions(identifier));
 }
 
 export function useSyncIntegration(identifier: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => syncIntegration(identifier),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: integrationKeys.all }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationKeys.all }),
   });
 }
 

@@ -1,14 +1,19 @@
 export {
   type Connector,
   type CreatedIngestToken,
+  type FieldMapping,
   type IngestToken,
   type IntegrationDetail,
+  type IntegrationIcon,
+  type IntegrationKind,
+  type IntegrationMapping,
+  type IntegrationSecret,
   type IntegrationSummary,
   integrationKeys,
   type Run,
   type RunStatus,
+  type RunTrigger,
 } from "./api";
-export { IngestTokens } from "./ingest-tokens";
 export {
   ingestTokensQueryOptions,
   integrationQueryOptions,
@@ -22,11 +27,11 @@ export {
   useRuns,
   useSyncIntegration,
 } from "./queries";
-export { RunHistory, RunStatusBadge, runCounts, runSource } from "./run-history";
 
 export const connectorLabels: Record<string, string> = {
   manual: "Built in",
   push: "Push",
   gitlab: "GitLab",
   sonarqube: "SonarQube",
+  static: "Static",
 };

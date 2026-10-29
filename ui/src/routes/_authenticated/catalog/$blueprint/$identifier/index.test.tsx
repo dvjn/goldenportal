@@ -24,14 +24,14 @@ describe("entity page", () => {
       "href",
       "/catalog/team/payments",
     );
-    expect(screen.getByText("Mar 2, 2026")).toBeInTheDocument();
-    expect(screen.getByText("No")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Service" })).toHaveAttribute(
+    expect(screen.getByRole("img", { name: "No" })).toBeInTheDocument();
+    for (const link of screen.getAllByRole("link", { name: "Service" })) {
+      expect(link).toHaveAttribute("href", "/catalog/service");
+    }
+    expect(screen.getByRole("link", { name: "CI" })).toHaveAttribute(
       "href",
-      "/catalog/service",
+      "/settings/catalog-setup?tab=integrations&integration=ci",
     );
-    expect(screen.getAllByText("Ledger")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: "CI" })).toHaveAttribute("href", "/integrations/ci");
   });
 
   it("shows a member no edit actions", async () => {

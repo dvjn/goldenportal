@@ -1,16 +1,29 @@
-import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
+import { integrationsQueryOptions } from "@/features/integrations/queries";
 import {
   catalogKeys,
   createEntity,
   deleteEntity,
   type EntityInput,
+  type EntityListQuery,
   type EntitySearch,
   getBlueprint,
   getBlueprints,
+  getChanges,
   getEntities,
   getEntity,
+  getEntityList,
+  maxEntityPageSize,
   updateEntity,
 } from "./api";
+import { sourceIcons } from "./sources";
 
 export const blueprintsQueryOptions = queryOptions({
   queryKey: catalogKeys.blueprints,
@@ -29,11 +42,36 @@ export const entitiesQueryOptions = (blueprint: string, search: EntitySearch) =>
     queryFn: () => getEntities(blueprint, search),
   });
 
+export const entityListQueryOptions = (blueprint: string, query: EntityListQuery) =>
+  queryOptions({
+    queryKey: catalogKeys.entityList(blueprint, query),
+    queryFn: () => getEntityList(blueprint, query),
+    placeholderData: keepPreviousData,
+  });
+
+export const changesQueryOptions = (limit = 10) =>
+  queryOptions({
+    queryKey: catalogKeys.changes(limit),
+    queryFn: () => getChanges(limit),
+  });
+
 export const entityQueryOptions = (blueprint: string, identifier: string) =>
   queryOptions({
     queryKey: catalogKeys.entity(blueprint, identifier),
     queryFn: () => getEntity(blueprint, identifier),
   });
+
+export function useSourceIcons() {
+  return useQuery({ ...integrationsQueryOptions, select: sourceIcons });
+}
+
+export function useEntityOptions(blueprint: string, q: string) {
+  return useQuery({
+    ...entityListQueryOptions(blueprint, { q: q || undefined, pageSize: maxEntityPageSize }),
+    select: (page) => page.entities,
+    staleTime: 60_000,
+  });
+}
 
 export function useBlueprints() {
   return useSuspenseQuery(blueprintsQueryOptions).data;

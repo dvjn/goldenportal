@@ -5,22 +5,23 @@ import { PageError } from "@/components/page-error";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { GrantDialog, grantsQueryOptions, subjectsQueryOptions } from "@/features/access";
-import { meQueryOptions, type Permission, requirePermission, useCan } from "@/features/auth";
+import { meQueryOptions, type Permission, useCan } from "@/features/auth";
 import { settingsQueryOptions, useSettings } from "@/features/settings";
 
 export const Route = createFileRoute("/_authenticated/settings")({
-  beforeLoad: ({ context }) => requirePermission(context.queryClient, "settings.read"),
   loader: async ({ context: { queryClient } }) => {
-    const me = await queryClient.ensureQueryData(meQueryOptions);
-    const grantDialogData = me.permissions.includes("access.write")
+    const { permissions } = await queryClient.ensureQueryData(meQueryOptions);
+    const settingsData = permissions.includes("settings.read")
+      ? [queryClient.ensureQueryData(settingsQueryOptions)]
+      : [];
+    const grantDialogData = permissions.includes("access.write")
       ? [
           queryClient.ensureQueryData(grantsQueryOptions),
           queryClient.ensureQueryData(subjectsQueryOptions),
         ]
       : [];
-    await Promise.all([queryClient.ensureQueryData(settingsQueryOptions), ...grantDialogData]);
+    await Promise.all([...settingsData, ...grantDialogData]);
   },
-  staticData: { breadcrumb: "System settings" },
   component: SettingsLayout,
   errorComponent: PageError,
 });
@@ -60,7 +61,7 @@ function SettingsLayout() {
           ))}
       </nav>
       <div className="flex min-w-0 flex-1 flex-col gap-6">
-        <BootstrapBanner />
+        {can("settings.read") && <BootstrapBanner />}
         <Outlet />
       </div>
     </div>

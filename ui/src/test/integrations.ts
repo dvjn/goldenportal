@@ -52,8 +52,10 @@ export const manual: IntegrationSummary = {
   title: "Manual",
   description: "Entities people create and edit in the portal",
   connector: "manual",
+  icon: "pencil",
   manual: true,
   pull: false,
+  kinds: [],
   entity_count: 4,
 };
 
@@ -62,13 +64,17 @@ export const ci: IntegrationDetail = {
   title: "CI",
   description: "Acme's pipelines push the services they deploy",
   connector: "push",
+  icon: "upload",
   manual: false,
   pull: false,
+  document: "Integration/ci",
   entity_count: 3,
   last_run: snapshotRun,
   entities: [{ blueprint: "service", title: "Service", count: 3 }],
   kinds: [{ kind: "service", blueprint: "service", blueprint_title: "Service", canonical: false }],
+  config: {},
   secrets: [],
+  mappings: [],
   ingest_url: "https://portal.example.test/api/v1/ingest/ci",
 };
 
@@ -76,8 +82,10 @@ export const gitlab: IntegrationDetail = {
   identifier: "gitlab",
   title: "GitLab",
   connector: "gitlab",
+  icon: "gitlab",
   manual: false,
   pull: true,
+  document: "Integration/gitlab",
   interval: "1h",
   entity_count: 0,
   last_run: failedSync,
@@ -86,7 +94,9 @@ export const gitlab: IntegrationDetail = {
   kinds: [
     { kind: "project", blueprint: "repository", blueprint_title: "Repository", canonical: false },
   ],
-  secrets: [{ name: "token", variable: "GITLAB_TOKEN" }],
+  config: { url: "https://gitlab.example.test", group: "acme" },
+  secrets: [{ name: "token", variable: "GITLAB_TOKEN", present: true }],
+  mappings: [],
 };
 
 export const pipelinesToken: IngestToken = {

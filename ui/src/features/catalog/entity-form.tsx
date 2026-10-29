@@ -1,7 +1,16 @@
 import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,6 +27,7 @@ import {
   fieldErrors,
   type PropertyView,
 } from "./api";
+import { EnumBadge, enumColor, enumLabel } from "./components/enum-badge";
 import { EntityPicker } from "./entity-picker";
 import { useSaveEntity } from "./queries";
 
@@ -165,76 +175,117 @@ export function EntityForm({ blueprint, entity, onSaved, onCancel }: EntityFormP
     );
   }
 
-  return (
-    <form noValidate onSubmit={submit} className="flex max-w-2xl flex-col gap-6">
-      <FieldGroup>
-        <Field data-invalid={Boolean(errors.title)}>
-          <FieldLabel htmlFor="entity-title">Title</FieldLabel>
-          <Input
-            id="entity-title"
-            aria-invalid={Boolean(errors.title)}
-            value={draft.title}
-            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-          />
-          <FieldError>{errors.title}</FieldError>
-        </Field>
-        <Field data-invalid={Boolean(errors.identifier)}>
-          <FieldLabel htmlFor="entity-identifier">Identifier</FieldLabel>
-          <Input
-            id="entity-identifier"
-            aria-invalid={Boolean(errors.identifier)}
-            disabled={entity !== undefined}
-            className="font-mono"
-            value={draft.identifier}
-            onChange={(event) => setDraft({ ...draft, identifier: event.target.value })}
-          />
-          <FieldDescription>
-            {entity
-              ? "The identifier never changes."
-              : "Letters, digits, dots, hyphens and underscores. It never changes."}
-          </FieldDescription>
-          <FieldError>{errors.identifier}</FieldError>
-        </Field>
-        {blueprint.properties.map((property) => (
-          <PropertyField
-            key={property.key}
-            property={property}
-            raw={draft.properties[property.key] ?? ""}
-            error={errors[`properties.${property.key}`]}
-            onChange={(raw) => setProperty(property.key, raw)}
-          />
-        ))}
-        {blueprint.relations.map((relation) => {
-          const error = errors[`relations.${relation.key}`];
-          return (
-            <Field key={relation.key} data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor={`relation-${relation.key}`}>{relation.title}</FieldLabel>
-              <EntityPicker
-                id={`relation-${relation.key}`}
-                relation={relation}
-                invalid={Boolean(error)}
-                value={draft.relations[relation.key] ?? []}
-                onChange={(targets) =>
-                  setDraft({ ...draft, relations: { ...draft.relations, [relation.key]: targets } })
-                }
-              />
-              {relation.description && <FieldDescription>{relation.description}</FieldDescription>}
-              <FieldError>{error}</FieldError>
-            </Field>
-          );
-        })}
-        {unexplained && <FieldError>{save.error?.message}</FieldError>}
-      </FieldGroup>
-      <div className="flex gap-2">
-        <Button type="submit" disabled={save.isPending}>
-          {entity ? "Save changes" : "Create entity"}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+  const propertyField = (property: PropertyView) => (
+    <PropertyField
+      key={property.key}
+      property={property}
+      raw={draft.properties[property.key] ?? ""}
+      error={errors[`properties.${property.key}`]}
+      onChange={(raw) => setProperty(property.key, raw)}
+    />
   );
+
+  return (
+    <Card className="w-full max-w-2xl">
+      <form noValidate onSubmit={submit} className="flex flex-col gap-6">
+        <CardContent className="flex flex-col gap-8">
+          <FieldGroup>
+            <Field data-invalid={Boolean(errors.title)}>
+              <FieldLabel htmlFor="entity-title">Title</FieldLabel>
+              <Input
+                id="entity-title"
+                aria-invalid={Boolean(errors.title)}
+                value={draft.title}
+                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+              />
+              <FieldError>{errors.title}</FieldError>
+            </Field>
+            <Field data-invalid={Boolean(errors.identifier)}>
+              <FieldLabel htmlFor="entity-identifier">Identifier</FieldLabel>
+              <Input
+                id="entity-identifier"
+                aria-invalid={Boolean(errors.identifier)}
+                disabled={entity !== undefined}
+                className="font-mono"
+                value={draft.identifier}
+                onChange={(event) => setDraft({ ...draft, identifier: event.target.value })}
+              />
+              <FieldDescription>
+                {entity
+                  ? "The identifier never changes."
+                  : "Any text up to 255 characters, such as a path. It never changes."}
+              </FieldDescription>
+              <FieldError>{errors.identifier}</FieldError>
+            </Field>
+          </FieldGroup>
+          {formSections(blueprint).map((section) => (
+            <FieldSet key={section.title}>
+              <FieldLegend>{section.title}</FieldLegend>
+              <FieldGroup>{section.properties.map(propertyField)}</FieldGroup>
+            </FieldSet>
+          ))}
+          {blueprint.relations.length > 0 ? (
+            <FieldSet>
+              <FieldLegend>Relations</FieldLegend>
+              <FieldGroup>
+                {blueprint.relations.map((relation) => {
+                  const error = errors[`relations.${relation.key}`];
+                  return (
+                    <Field key={relation.key} data-invalid={Boolean(error)}>
+                      <FieldLabel htmlFor={`relation-${relation.key}`}>{relation.title}</FieldLabel>
+                      <EntityPicker
+                        id={`relation-${relation.key}`}
+                        relation={relation}
+                        invalid={Boolean(error)}
+                        value={draft.relations[relation.key] ?? []}
+                        onChange={(targets) =>
+                          setDraft({
+                            ...draft,
+                            relations: { ...draft.relations, [relation.key]: targets },
+                          })
+                        }
+                      />
+                      {relation.description && (
+                        <FieldDescription>{relation.description}</FieldDescription>
+                      )}
+                      <FieldError>{error}</FieldError>
+                    </Field>
+                  );
+                })}
+              </FieldGroup>
+            </FieldSet>
+          ) : null}
+          {unexplained && <FieldError>{save.error?.message}</FieldError>}
+        </CardContent>
+        <CardFooter className="gap-2 border-t">
+          <Button type="submit" disabled={save.isPending}>
+            {entity ? "Save changes" : "Create entity"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  );
+}
+
+type FormSection = { title: string; properties: PropertyView[] };
+
+// formSections places each property in its display group, and the rest in
+// Details, the way the entity page shows them.
+function formSections(blueprint: Blueprint): FormSection[] {
+  const byKey = new Map(blueprint.properties.map((property) => [property.key, property]));
+  const groups = (blueprint.display.groups ?? []).map((group) => ({
+    title: group.title,
+    properties: group.properties.flatMap((key) => byKey.get(key) ?? []),
+  }));
+  const placed = new Set(groups.flatMap((group) => group.properties.map(({ key }) => key)));
+  const details = {
+    title: "Details",
+    properties: blueprint.properties.filter((property) => !placed.has(property.key)),
+  };
+  return [...groups, details].filter((section) => section.properties.length > 0);
 }
 
 type PropertyFieldProps = {
@@ -304,7 +355,7 @@ function PropertyInput({ id, property, raw, invalid, onChange }: PropertyInputPr
           <SelectItem value={notSet}>Not set</SelectItem>
           {property.enum.map((value) => (
             <SelectItem key={value} value={value}>
-              {value}
+              <EnumBadge label={enumLabel(property, value)} color={enumColor(property, value)} />
             </SelectItem>
           ))}
         </SelectContent>
