@@ -34,11 +34,17 @@ func NewStore(db container.DB) *Store {
 	return &Store{db: db}
 }
 
+// Author is who applied a revision. UserID is empty for a service token.
+type Author struct {
+	UserID string
+	Label  string
+}
+
 // Revision is one applied change to the definitions. Snapshot holds every
 // definition as it was after the change.
 type Revision struct {
 	Number     int
-	Author     audit.Actor
+	Author     Author
 	Message    string
 	RollbackOf int
 	CreatedAt  time.Time
@@ -140,7 +146,7 @@ func (s *Store) Apply(ctx context.Context, plan Plan, author audit.Actor, messag
 
 	revision := Revision{
 		Number:     current + 1,
-		Author:     author,
+		Author:     Author{UserID: author.UserID(), Label: author.Label()},
 		Message:    message,
 		RollbackOf: plan.RollbackOf,
 		Snapshot:   plan.Desired,
@@ -151,7 +157,7 @@ func (s *Store) Apply(ctx context.Context, plan Plan, author audit.Actor, messag
 	if err != nil {
 		return Revision{}, err
 	}
-	if err := tx.QueryRowContext(ctx, queryInsertRevision, revision.Number, author.UserID, author.Label, message,
+	if err := tx.QueryRowContext(ctx, queryInsertRevision, revision.Number, revision.Author.UserID, revision.Author.Label, message,
 		plan.RollbackOf, snapshot, changes, impact).Scan(&revision.CreatedAt); err != nil {
 		return Revision{}, err
 	}

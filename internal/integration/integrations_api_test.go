@@ -111,11 +111,14 @@ func TestIngestTokensAreCreatedListedAndRevokedPerIntegration(t *testing.T) {
 	expectStatus(t, h.do(http.MethodDelete, "/api/v1/integrations/ci/tokens/"+created.Token.ID, "bob", nil), http.StatusNoContent)
 	expectStatus(t, h.do(http.MethodDelete, "/api/v1/integrations/ci/tokens/"+created.Token.ID, "bob", nil), http.StatusNotFound)
 
-	bob := audit.Actor{UserID: "u-2", Label: "bob@example.test"}
-	target := audit.Target{Kind: "ingest_token", ID: created.Token.ID, Name: "deploys"}
+	bob := audit.Actor{Kind: audit.ActorUser, ID: "u-2", Name: "Bob Baker", Email: "bob@example.test"}
+	resource := audit.Resource{
+		Kind: audit.ResourceIngestToken, ID: created.Token.ID, Name: "deploys",
+		Parent: audit.Parent{Kind: audit.ResourceIntegration, ID: "ci", Name: "CI"},
+	}
 	want := []audit.Entry{
-		{Actor: bob, Action: audit.IngestTokenCreated, Target: target, Details: map[string]any{"integration": "ci", "expires_at": at.AddDate(0, 0, 30)}},
-		{Actor: bob, Action: audit.IngestTokenRevoked, Target: target, Details: map[string]any{"integration": "ci"}},
+		{Actor: bob, Action: audit.IngestTokenCreated, Resource: resource, Details: map[string]any{"expires_at": at.AddDate(0, 0, 30)}},
+		{Actor: bob, Action: audit.IngestTokenRevoked, Resource: resource},
 	}
 	if !reflect.DeepEqual(h.audit.entries, want) {
 		t.Fatalf("audit = %+v, want %+v", h.audit.entries, want)

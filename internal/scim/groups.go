@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 )
 
@@ -121,6 +122,9 @@ func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) error {
 	if err := s.directory.SetMembers(r.Context(), created.ID, memberIDs(body.Members)); err != nil {
 		return err
 	}
+	if err := s.recordGroupChange(r.Context(), audit.GroupProvisioned, groupState{}, created); err != nil {
+		return err
+	}
 
 	w.Header().Set("Location", groupLocation(created.ID))
 	return s.writeGroup(w, r, http.StatusCreated, created)
@@ -146,11 +150,18 @@ func (s *Server) replaceGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	replaced, err := s.directory.ReplaceGroup(r.Context(), r.PathValue("id"), group)
+	previous, err := s.storedGroupState(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	replaced, err := s.directory.ReplaceGroup(r.Context(), previous.group.ID, group)
 	if err != nil {
 		return err
 	}
 	if err := s.directory.SetMembers(r.Context(), replaced.ID, memberIDs(body.Members)); err != nil {
+		return err
+	}
+	if err := s.recordGroupChange(r.Context(), audit.GroupUpdated, previous, replaced); err != nil {
 		return err
 	}
 
@@ -162,10 +173,11 @@ func (s *Server) patchGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	group, err := s.directory.GroupByID(r.Context(), r.PathValue("id"))
+	previous, err := s.storedGroupState(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
+	group := previous.group
 	updates, err := s.patchGroupOperations(&group, operations)
 	if err != nil {
 		return err
@@ -180,15 +192,45 @@ func (s *Server) patchGroup(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	if err := s.recordGroupChange(r.Context(), audit.GroupUpdated, previous, patched); err != nil {
+		return err
+	}
 
 	return s.writeGroup(w, r, http.StatusOK, patched)
 }
 
 func (s *Server) deleteGroup(w http.ResponseWriter, r *http.Request) error {
-	if err := s.directory.DeleteGroup(r.Context(), r.PathValue("id")); err != nil {
+	previous, err := s.storedGroupState(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if err := s.directory.DeleteGroup(r.Context(), previous.group.ID); err != nil {
+		return err
+	}
+	if err := s.recordGroup(r.Context(), audit.GroupDeleted, previous, groupState{}); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
+}
+
+func (s *Server) storedGroupState(ctx context.Context, id string) (groupState, error) {
+	group, err := s.directory.GroupByID(ctx, id)
+	if err != nil {
+		return groupState{}, err
+	}
+
+	return s.groupState(ctx, group)
+}
+
+// recordGroupChange records the change from previous to the group as it is
+// stored now, with its members.
+func (s *Server) recordGroupChange(ctx context.Context, action audit.Action, previous groupState, group directory.Group) error {
+	current, err := s.groupState(ctx, group)
+	if err != nil {
+		return err
+	}
+
+	return s.recordGroup(ctx, action, previous, current)
 }

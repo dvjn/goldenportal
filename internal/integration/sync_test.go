@@ -293,10 +293,10 @@ func TestSyncNowStartsARunAndRecordsIt(t *testing.T) {
 		t.Fatalf("run = %+v, want it succeeded", run)
 	}
 	want := audit.Entry{
-		Actor:   audit.Actor{UserID: "u-2", Label: "bob@example.test"},
-		Action:  audit.IntegrationSynced,
-		Target:  audit.Target{Kind: "integration", ID: "gitlab", Name: "GitLab"},
-		Details: map[string]any{"run": int64(1)},
+		Actor:    audit.Actor{Kind: audit.ActorUser, ID: "u-2", Name: "Bob Baker", Email: "bob@example.test"},
+		Action:   audit.IntegrationSynced,
+		Resource: audit.Resource{Kind: audit.ResourceIntegration, ID: "gitlab", Name: "GitLab"},
+		Details:  map[string]any{"run": int64(1)},
 	}
 	if !reflect.DeepEqual(h.audit.entries, []audit.Entry{want}) {
 		t.Fatalf("audit = %+v, want %+v", h.audit.entries, want)

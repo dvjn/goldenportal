@@ -33,9 +33,9 @@ func TestOnlyModelersPlanAndApply(t *testing.T) {
 	}{
 		{"signed out", "", http.StatusUnauthorized, http.StatusUnauthorized},
 		{"member", "cara", http.StatusForbidden, http.StatusForbidden},
-		{"member api token", "gpt_viewer", http.StatusForbidden, http.StatusForbidden},
+		{"member API token", "gpt_viewer", http.StatusForbidden, http.StatusForbidden},
 		{"maintainer", "bob", http.StatusCreated, http.StatusNotFound},
-		{"maintainer api token", "gpt_ci", http.StatusCreated, http.StatusNotFound},
+		{"maintainer API token", "gpt_ci", http.StatusCreated, http.StatusNotFound},
 		{"admin", "alice", http.StatusCreated, http.StatusNotFound},
 	}
 	for _, tc := range cases {
@@ -88,7 +88,7 @@ func TestPlanThenApplyRecordsARevision(t *testing.T) {
 		t.Fatalf("revision = %+v", revision)
 	}
 	entry := h.audit.entries[0]
-	if entry.Action != audit.DefinitionsApplied || entry.Target.Name != "Revision 1" || entry.Details["added"] != 2 || entry.Details["deleted_entities"] != 2 {
+	if entry.Action != audit.DefinitionsApplied || entry.Resource.Kind != audit.ResourceRevision || entry.Resource.Name != "Revision 1" || entry.Details["added"] != 2 || entry.Details["deleted_entities"] != 2 {
 		t.Fatalf("audit entry = %+v", entry)
 	}
 	expectStatus(t, h.do(http.MethodPost, "/api/v1/definitions/apply", "bob", applyRequest{PlanID: plan.ID}), http.StatusNotFound)

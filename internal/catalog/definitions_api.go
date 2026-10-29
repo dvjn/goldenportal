@@ -21,7 +21,6 @@ const (
 	defaultRevisionLimit = 50
 	maxRevisionLimit     = 200
 	maxMessageLength     = 500
-	auditTargetRevision  = "definitions_revision"
 )
 
 var (
@@ -283,7 +282,9 @@ func revisionEntry(actor audit.Actor, revision Revision) audit.Entry {
 	entry := audit.Entry{
 		Actor:  actor,
 		Action: audit.DefinitionsApplied,
-		Target: audit.Target{Kind: auditTargetRevision, ID: strconv.Itoa(revision.Number), Name: fmt.Sprintf("Revision %d", revision.Number)},
+		Resource: audit.Resource{
+			Kind: audit.ResourceRevision, ID: strconv.Itoa(revision.Number), Name: fmt.Sprintf("Revision %d", revision.Number),
+		},
 		Details: map[string]any{
 			"message":          revision.Message,
 			"added":            summary.Added,

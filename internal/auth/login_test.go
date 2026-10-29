@@ -108,7 +108,9 @@ func TestLoginSignsAProvisionedUserInAndReturnsThem(t *testing.T) {
 		t.Fatalf("me = %+v", body.Data)
 	}
 	signedIn := portal.audit.entries
-	if len(signedIn) != 1 || signedIn[0].Action != audit.SignedIn || signedIn[0].Actor != (audit.Actor{UserID: "u-1", Label: "alice@example.test"}) {
+	wantActor := audit.Actor{Kind: audit.ActorUser, ID: "u-1", Name: "Alice", Email: "alice@example.test"}
+	wantResource := audit.Resource{Kind: audit.ResourceUser, ID: "u-1", Name: "alice@example.test"}
+	if len(signedIn) != 1 || signedIn[0].Action != audit.SignedIn || signedIn[0].Actor != wantActor || signedIn[0].Resource != wantResource {
 		t.Fatalf("audit = %+v, want one sign-in by alice", signedIn)
 	}
 }
@@ -181,7 +183,8 @@ func TestLoginSendsUnprovisionedUsersToTheNotProvisionedPage(t *testing.T) {
 				t.Fatalf("sessions = %v, want none", portal.sessions.userByToken)
 			}
 			refused := portal.audit.entries
-			if len(refused) != 1 || refused[0].Action != audit.SignInRefused || refused[0].Actor.Label != tc.identity.Email {
+			if len(refused) != 1 || refused[0].Action != audit.SignInRefused || refused[0].Actor.Label() != tc.identity.Email ||
+				refused[0].Actor.Kind != audit.ActorUser || refused[0].Actor.ID != "" {
 				t.Fatalf("audit = %+v, want one refused sign-in by %s", refused, tc.identity.Email)
 			}
 		})

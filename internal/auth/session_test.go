@@ -9,6 +9,10 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"gofr.dev/pkg/gofr/container"
+
+	"github.com/dvjn/goldport/internal/apitoken"
+	"github.com/dvjn/goldport/internal/audit"
+	"github.com/dvjn/goldport/internal/directory"
 )
 
 func newSessions(t *testing.T) (*Sessions, sqlmock.Sqlmock) {
@@ -102,5 +106,33 @@ func TestDeleteForUserRemovesEverySession(t *testing.T) {
 
 	if err := sessions.DeleteForUser(context.Background(), "u-1"); err != nil {
 		t.Fatalf("DeleteForUser() error = %v", err)
+	}
+}
+
+func TestPrincipalActorNamesTheTokenOrTheUser(t *testing.T) {
+	user := directory.User{ID: "u-1", UserName: "alice", Email: "alice@example.test", Name: "Alice"}
+	tests := []struct {
+		name      string
+		principal Principal
+		want      audit.Actor
+	}{
+		{"user", Principal{User: user}, audit.Actor{Kind: audit.ActorUser, ID: "u-1", Name: "Alice", Email: "alice@example.test"}},
+		{
+			"API token",
+			Principal{User: user, APIToken: apitoken.Token{ID: "t-1", Kind: apitoken.KindAPI, Name: "ci"}},
+			audit.Actor{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"},
+		},
+		{
+			"ingest token",
+			Principal{APIToken: apitoken.Token{ID: "t-2", Kind: apitoken.KindIngest, Name: "gitlab"}},
+			audit.Actor{Kind: audit.ActorIngestToken, ID: "t-2", Name: "gitlab"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.principal.Actor(); got != tt.want {
+				t.Fatalf("Actor() = %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }

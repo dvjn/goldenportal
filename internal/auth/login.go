@@ -71,7 +71,7 @@ func (s *Service) callback(ctx *gofr.Context) (any, error) {
 	if errors.Is(err, errNotProvisioned) {
 		ctx.Infof("login refused: user not provisioned sub=%s email=%s matched_by=%s", who.Subject, who.Email, matchedBy)
 		refused := audit.Entry{
-			Actor:   audit.Actor{Label: cmp.Or(who.Email, who.Subject)},
+			Actor:   audit.Actor{Kind: audit.ActorUser, Name: cmp.Or(who.Email, who.Subject), Email: who.Email},
 			Action:  audit.SignInRefused,
 			Details: map[string]any{"reason": "not provisioned", "subject": who.Subject, "matched_by": matchedBy},
 		}
@@ -93,9 +93,10 @@ func (s *Service) callback(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	signedIn := audit.Entry{
-		Actor:   Principal{User: user}.Actor(),
-		Action:  audit.SignedIn,
-		Details: map[string]any{"matched_by": matchedBy},
+		Actor:    Principal{User: user}.Actor(),
+		Action:   audit.SignedIn,
+		Resource: audit.Resource{Kind: audit.ResourceUser, ID: user.ID, Name: cmp.Or(user.Email, user.UserName)},
+		Details:  map[string]any{"matched_by": matchedBy},
 	}
 	if err := s.audit.Record(ctx, signedIn); err != nil {
 		return nil, err

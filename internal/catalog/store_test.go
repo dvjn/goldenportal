@@ -72,7 +72,7 @@ func TestApplyReplacesTheDefinitionsAndRecordsTheRevision(t *testing.T) {
 	to := setOf(t, teamYAML)
 	changes, _ := definition.Diff(from, to)
 	plan := Plan{Base: 3, Desired: to, Changes: changes, Effects: definition.EffectsOf(from, to)}
-	alice := audit.Actor{UserID: "u-1", Label: "alice@example.test"}
+	alice := audit.Actor{Kind: audit.ActorUser, ID: "u-1", Name: "Alice", Email: "alice@example.test"}
 
 	db.ExpectBegin()
 	db.ExpectExec(queryLockRevisions).WillReturnResult(sqlmock.NewResult(0, 0))
@@ -123,7 +123,7 @@ func TestApplyRemovesAnIntegrationsEntitiesTokensAndRuns(t *testing.T) {
 	db.ExpectQuery(queryInsertRevision).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(at))
 	db.ExpectCommit()
 
-	if _, err := store.Apply(context.Background(), plan, audit.Actor{Label: "alice@example.test"}, ""); err != nil {
+	if _, err := store.Apply(context.Background(), plan, audit.Actor{Kind: audit.ActorUser, Email: "alice@example.test"}, ""); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	if err := db.ExpectationsWereMet(); err != nil {
@@ -138,7 +138,7 @@ func TestApplyRefusesAPlanMadeOnAnotherRevision(t *testing.T) {
 	db.ExpectQuery(queryRevisionNumber).WillReturnRows(sqlmock.NewRows([]string{"number"}).AddRow(4))
 	db.ExpectRollback()
 
-	_, err := store.Apply(context.Background(), Plan{Base: 3}, audit.Actor{Label: "ci"}, "")
+	_, err := store.Apply(context.Background(), Plan{Base: 3}, audit.Actor{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"}, "")
 	if !errors.Is(err, ErrStale) {
 		t.Fatalf("Apply() error = %v, want ErrStale", err)
 	}
@@ -166,7 +166,7 @@ func TestApplyClearsOnlyTheValuesAChangedPropertyRefuses(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(at))
 	db.ExpectCommit()
 
-	revision, err := store.Apply(context.Background(), plan, audit.Actor{Label: "ci"}, "")
+	revision, err := store.Apply(context.Background(), plan, audit.Actor{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"}, "")
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}

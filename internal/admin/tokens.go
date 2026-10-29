@@ -37,8 +37,6 @@ var (
 	errInvalidBody   = httpx.Error{Code: http.StatusBadRequest, Message: "the request body is not valid JSON"}
 )
 
-const auditTargetToken = "api_token"
-
 type tokenResponse struct {
 	ID         string      `json:"id"`
 	Name       string      `json:"name"`
@@ -106,7 +104,7 @@ func (s *Service) createToken(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	principal, _ := auth.PrincipalFrom(ctx)
-	token, secret, err := s.tokens.Create(ctx, apitoken.NewToken{
+	created, secret, err := s.tokens.Create(ctx, apitoken.NewToken{
 		Kind:      apitoken.KindAPI,
 		Name:      strings.TrimSpace(request.Name),
 		Role:      request.Role,
@@ -117,19 +115,19 @@ func (s *Service) createToken(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:   principal.Actor(),
-		Action:  audit.APITokenCreated,
-		Target:  audit.Target{Kind: auditTargetToken, ID: token.ID, Name: token.Name},
-		Details: map[string]any{"role": token.Role, "expires_at": token.ExpiresAt},
+		Actor:    principal.Actor(),
+		Action:   audit.APITokenCreated,
+		Resource: audit.Resource{Kind: audit.ResourceAPIToken, ID: created.ID, Name: created.Name},
+		Details:  map[string]any{"role": created.Role, "expires_at": created.ExpiresAt},
 	}); err != nil {
 		return nil, err
 	}
 
-	return secretResponse[tokenResponse]{Token: newTokenResponse(token), Secret: secret}, nil
+	return secretResponse[tokenResponse]{Token: newTokenResponse(created), Secret: secret}, nil
 }
 
 func (s *Service) revokeToken(ctx *gofr.Context) (any, error) {
-	token, err := s.tokens.Revoke(ctx, apitoken.KindAPI, ctx.PathParam("id"))
+	revoked, err := s.tokens.Revoke(ctx, apitoken.KindAPI, ctx.PathParam("id"))
 	if errors.Is(err, apitoken.ErrNotFound) {
 		return nil, errTokenNotFound
 	}
@@ -138,9 +136,10 @@ func (s *Service) revokeToken(ctx *gofr.Context) (any, error) {
 	}
 	principal, _ := auth.PrincipalFrom(ctx)
 	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:  principal.Actor(),
-		Action: audit.APITokenRevoked,
-		Target: audit.Target{Kind: auditTargetToken, ID: token.ID, Name: token.Name},
+		Actor:    principal.Actor(),
+		Action:   audit.APITokenRevoked,
+		Resource: audit.Resource{Kind: audit.ResourceAPIToken, ID: revoked.ID, Name: revoked.Name},
+		Details:  map[string]any{"role": revoked.Role},
 	}); err != nil {
 		return nil, err
 	}

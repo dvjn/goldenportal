@@ -126,7 +126,7 @@ func (s *Service) pushRun(ctx *gofr.Context, integration *definition.Integration
 	return Run{
 		Integration: integration.Identifier,
 		Trigger:     TriggerPush,
-		Actor:       principal.Actor().Label,
+		Actor:       principal.Actor().Label(),
 		Kind:        mapping.Kind,
 		StartedAt:   s.now(),
 	}

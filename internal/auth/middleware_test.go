@@ -31,7 +31,7 @@ func aliceDirectory() *memoryDirectory {
 func TestMiddlewareFailsClosed(t *testing.T) {
 	whoAmI := func(ctx *gofr.Context) (any, error) {
 		principal, _ := PrincipalFrom(ctx)
-		return principal.Actor().Label, nil
+		return principal.Actor().Label(), nil
 	}
 	register := func(routes *httpx.Routes) {
 		routes.GET("/api/v1/open", httpx.Public(), whoAmI)
@@ -64,16 +64,16 @@ func TestMiddlewareFailsClosed(t *testing.T) {
 		{"permission route without a cookie", "/api/v1/grants", "", "", admin, nil, http.StatusUnauthorized, required},
 		{"permission route without the permission", "/api/v1/grants", "live", "", nil, nil, http.StatusForbidden, forbidden},
 		{"permission route with the permission", "/api/v1/grants", "live", "", admin, nil, http.StatusOK, alice},
-		{"api token", "/api/v1/catalog", "", "gpt_ci", nil, nil, http.StatusOK, `{"data":"ci"}`},
-		{"api token without the permission", "/api/v1/grants", "", "gpt_ci", nil, nil, http.StatusForbidden, forbidden},
-		{"unknown api token beside a live session", "/api/v1/private", "live", "gpt_forged", nil, nil, http.StatusUnauthorized, required},
+		{"API token", "/api/v1/catalog", "", "gpt_ci", nil, nil, http.StatusOK, `{"data":"ci"}`},
+		{"API token without the permission", "/api/v1/grants", "", "gpt_ci", nil, nil, http.StatusForbidden, forbidden},
+		{"unknown API token beside a live session", "/api/v1/private", "live", "gpt_forged", nil, nil, http.StatusUnauthorized, required},
 		{"undeclared api route", "/api/v1/missing", "live", "", nil, nil, http.StatusUnauthorized, required},
 		{"ingest token for its integration", "/api/v1/ingest/ci", "", "gpi_ci", nil, nil, http.StatusOK, `{"data":"pipelines"}`},
 		{
 			"ingest token for another integration", "/api/v1/ingest/gitlab", "", "gpi_ci", nil, nil,
 			http.StatusForbidden, `{"error":{"message":"this token ingests into the ci integration only"}}`,
 		},
-		{"api token on an ingest route", "/api/v1/ingest/ci", "", "gpt_ci", nil, nil, http.StatusUnauthorized, required},
+		{"API token on an ingest route", "/api/v1/ingest/ci", "", "gpt_ci", nil, nil, http.StatusUnauthorized, required},
 		{"session on an ingest route", "/api/v1/ingest/ci", "live", "", admin, nil, http.StatusUnauthorized, required},
 		{"ingest token on an api route", "/api/v1/private", "", "gpi_ci", nil, nil, http.StatusUnauthorized, required},
 		{
@@ -139,7 +139,7 @@ func TestMeReturnsTheUserAndTheirGroups(t *testing.T) {
 	}
 }
 
-func TestMeDescribesAnAPIToken(t *testing.T) {
+func TestMeDescribesAServiceToken(t *testing.T) {
 	users := aliceDirectory()
 	sessions := newMemorySessions(users)
 	service := NewService(Config{Cookies: testCookies}, nil, sessions, users, &memoryAudit{})

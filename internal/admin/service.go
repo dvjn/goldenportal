@@ -31,8 +31,8 @@ type userDirectory interface {
 }
 
 type tokenStore interface {
-	Create(ctx context.Context, token apitoken.NewToken) (apitoken.Token, string, error)
-	Rotate(ctx context.Context, token apitoken.NewToken) (apitoken.Token, string, error)
+	Create(ctx context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error)
+	Rotate(ctx context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error)
 	List(ctx context.Context, kind string) ([]apitoken.Token, error)
 	Revoke(ctx context.Context, kind, id string) (apitoken.Token, error)
 	LastUsed(ctx context.Context, kind string) (time.Time, error)
@@ -44,7 +44,8 @@ type sessionRevoker interface {
 
 type auditLog interface {
 	Record(ctx context.Context, entry audit.Entry) error
-	List(ctx context.Context, page audit.Page) ([]audit.Entry, int, error)
+	List(ctx context.Context, query audit.Query) ([]audit.Entry, int, error)
+	Facets(ctx context.Context) (audit.Facets, error)
 }
 
 // Settings are the read-only values the portal runs with.
@@ -89,4 +90,5 @@ func (s *Service) Register(routes *httpx.Routes) {
 	routes.DELETE("/api/v1/access/tokens/{id}", httpx.Requires(access.AccessWrite), s.revokeToken)
 
 	routes.GET("/api/v1/audit", httpx.Requires(access.AuditRead), s.listAudit)
+	routes.GET("/api/v1/audit/facets", httpx.Requires(access.AuditRead), s.auditFacets)
 }

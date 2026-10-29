@@ -127,14 +127,14 @@ type memoryTokens struct {
 	revoked []string
 }
 
-func (m *memoryTokens) Create(_ context.Context, token apitoken.NewToken) (apitoken.Token, string, error) {
-	m.created = append(m.created, token)
-	return apitoken.Token{ID: "t-9", Kind: token.Kind, Name: token.Name, Role: token.Role, ExpiresAt: token.ExpiresAt}, "gpt_new", nil
+func (m *memoryTokens) Create(_ context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error) {
+	m.created = append(m.created, newToken)
+	return apitoken.Token{ID: "t-9", Kind: newToken.Kind, Name: newToken.Name, Role: newToken.Role, ExpiresAt: newToken.ExpiresAt}, "gpt_new", nil
 }
 
-func (m *memoryTokens) Rotate(_ context.Context, token apitoken.NewToken) (apitoken.Token, string, error) {
-	m.rotated = append(m.rotated, token)
-	return apitoken.Token{ID: "t-8", Kind: token.Kind, Name: token.Name, CreatedAt: at}, "gpt_scim", nil
+func (m *memoryTokens) Rotate(_ context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error) {
+	m.rotated = append(m.rotated, newToken)
+	return apitoken.Token{ID: "t-8", Kind: newToken.Kind, Name: newToken.Name, CreatedAt: at}, "gpt_scim", nil
 }
 
 func (m *memoryTokens) List(context.Context, string) ([]apitoken.Token, error) { return nil, nil }
@@ -180,6 +180,8 @@ func (m *memorySessions) DeleteForUser(_ context.Context, userID string) error {
 
 type memoryAudit struct {
 	entries []audit.Entry
+	queries []audit.Query
+	facets  audit.Facets
 }
 
 func (m *memoryAudit) Record(_ context.Context, entry audit.Entry) error {
@@ -187,8 +189,13 @@ func (m *memoryAudit) Record(_ context.Context, entry audit.Entry) error {
 	return nil
 }
 
-func (m *memoryAudit) List(_ context.Context, page audit.Page) ([]audit.Entry, int, error) {
-	return m.entries, page.Limit, nil
+func (m *memoryAudit) List(_ context.Context, query audit.Query) ([]audit.Entry, int, error) {
+	m.queries = append(m.queries, query)
+	return m.entries, query.Limit, nil
+}
+
+func (m *memoryAudit) Facets(context.Context) (audit.Facets, error) {
+	return m.facets, nil
 }
 
 type harness struct {

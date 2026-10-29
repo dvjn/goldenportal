@@ -21,19 +21,21 @@ type scimClient struct {
 	server   *httptest.Server
 	store    *memoryDirectory
 	sessions *recordingSessions
+	audit    *memoryAudit
 }
 
 func newSCIMClient(t *testing.T) *scimClient {
 	t.Helper()
 	store := newMemoryDirectory()
 	sessions := &recordingSessions{}
-	scim := NewServer(store, sessions, staticTokens(testToken), logging.NewMockLogger(logging.ERROR))
+	log := &memoryAudit{}
+	scim := NewServer(store, sessions, staticTokens(testToken), log, logging.NewMockLogger(logging.ERROR))
 	server := httptest.NewServer(scim.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	})))
 	t.Cleanup(server.Close)
 
-	return &scimClient{t: t, server: server, store: store, sessions: sessions}
+	return &scimClient{t: t, server: server, store: store, sessions: sessions, audit: log}
 }
 
 // do sends a request the way Authentik's SCIM client does and decodes the

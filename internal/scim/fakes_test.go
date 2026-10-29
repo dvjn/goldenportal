@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 )
 
@@ -215,6 +216,26 @@ type recordingSessions struct {
 func (r *recordingSessions) DeleteForUser(_ context.Context, userID string) error {
 	r.revoked = append(r.revoked, userID)
 	return nil
+}
+
+type memoryAudit struct {
+	mutex   sync.Mutex
+	entries []audit.Entry
+}
+
+func (m *memoryAudit) Record(_ context.Context, entry audit.Entry) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.entries = append(m.entries, entry)
+
+	return nil
+}
+
+func (m *memoryAudit) recorded() []audit.Entry {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	return slices.Clone(m.entries)
 }
 
 type staticTokens string

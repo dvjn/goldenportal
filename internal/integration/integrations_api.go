@@ -15,8 +15,6 @@ import (
 	"gofr.dev/pkg/gofr"
 )
 
-const auditTargetIntegration = "integration"
-
 var errNoIntegration = httpx.Error{Code: http.StatusNotFound, Message: "no integration has that identifier"}
 
 type runView struct {
@@ -289,17 +287,17 @@ func (s *Service) syncNow(ctx *gofr.Context) (any, error) {
 	}
 	principal, _ := auth.PrincipalFrom(ctx)
 	run, perform, err := s.syncer.Start(ctx, syncStart{
-		set: set, integration: integration, trigger: TriggerManual, actor: principal.Actor().Label, due: always,
+		set: set, integration: integration, trigger: TriggerManual, actor: principal.Actor().Label(), due: always,
 	})
 	if err != nil {
 		return nil, err
 	}
 	go perform(context.WithoutCancel(ctx.Context))
 	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:   principal.Actor(),
-		Action:  audit.IntegrationSynced,
-		Target:  audit.Target{Kind: auditTargetIntegration, ID: integration.Identifier, Name: integration.Title},
-		Details: map[string]any{"run": run.ID},
+		Actor:    principal.Actor(),
+		Action:   audit.IntegrationSynced,
+		Resource: audit.Resource{Kind: audit.ResourceIntegration, ID: integration.Identifier, Name: integration.Title},
+		Details:  map[string]any{"run": run.ID},
 	}); err != nil {
 		return nil, err
 	}

@@ -115,16 +115,20 @@ func (s *Service) setGrant(ctx *gofr.Context) (any, error) {
 	if previous == access.NoRole {
 		action = audit.GrantCreated
 	}
-	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:   principal.Actor(),
-		Action:  action,
-		Target:  audit.Target{Kind: string(subject.Type), ID: subject.ID, Name: name},
-		Details: map[string]any{"role": request.Role, "previous_role": previous},
-	}); err != nil {
+	if err := s.audit.Record(ctx, grantEntry(principal.Actor(), action, subject, name, previous, request.Role)); err != nil {
 		return nil, err
 	}
 
 	return s.listGrants(ctx)
+}
+
+func grantEntry(actor audit.Actor, action audit.Action, subject access.Subject, name string, previous, role access.Role) audit.Entry {
+	return audit.Entry{
+		Actor:    actor,
+		Action:   action,
+		Resource: audit.Resource{Kind: audit.ResourceKind(subject.Type), ID: subject.ID, Name: name},
+		Details:  map[string]any{audit.ChangesKey: audit.Changes{"role": {Before: previous, After: role}}},
+	}
 }
 
 func (s *Service) removeGrant(ctx *gofr.Context) (any, error) {
@@ -137,12 +141,7 @@ func (s *Service) removeGrant(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, grantError(err)
 	}
-	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:   principal.Actor(),
-		Action:  audit.GrantRemoved,
-		Target:  audit.Target{Kind: string(subject.Type), ID: subject.ID, Name: name},
-		Details: map[string]any{"previous_role": previous},
-	}); err != nil {
+	if err := s.audit.Record(ctx, grantEntry(principal.Actor(), audit.GrantRemoved, subject, name, previous, access.NoRole)); err != nil {
 		return nil, err
 	}
 

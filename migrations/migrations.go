@@ -8,6 +8,7 @@ func All() map[int64]migration.Migrate {
 		202610230001: {UP: accessSchema},
 		202610240001: {UP: catalogSchema},
 		202610250001: {UP: integrationsSchema},
+		202610260001: {UP: auditDetail},
 	}
 }
 
@@ -170,6 +171,53 @@ func integrationsSchema(d migration.Datasource) error {
 			ADD COLUMN integration TEXT,
 			ADD CHECK (kind <> 'ingest' OR (integration IS NOT NULL AND expires_at IS NOT NULL))`,
 		`CREATE INDEX api_tokens_integration ON api_tokens (integration) WHERE integration IS NOT NULL`,
+	})
+}
+
+// auditDetail records each actor's kind, name and email, each resource's
+// parent, and the client of the request. Earlier entries are filled in from
+// what they kept: an entry without a user was a token's, except a refused
+// sign-in, and an entity's ID named its blueprint.
+func auditDetail(d migration.Datasource) error {
+	return execAll(d, []string{
+		`ALTER TABLE audit_log
+			ADD COLUMN actor_kind TEXT NOT NULL DEFAULT 'user',
+			ADD COLUMN actor_id TEXT NOT NULL DEFAULT '',
+			ADD COLUMN actor_name TEXT NOT NULL DEFAULT '',
+			ADD COLUMN actor_email TEXT NOT NULL DEFAULT '',
+			ADD COLUMN resource_parent_kind TEXT NOT NULL DEFAULT '',
+			ADD COLUMN resource_parent_id TEXT NOT NULL DEFAULT '',
+			ADD COLUMN resource_parent_name TEXT NOT NULL DEFAULT '',
+			ADD COLUMN ip_address TEXT NOT NULL DEFAULT '',
+			ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audit_log RENAME COLUMN target_kind TO resource_kind`,
+		`ALTER TABLE audit_log RENAME COLUMN target_id TO resource_id`,
+		`ALTER TABLE audit_log RENAME COLUMN target_name TO resource_name`,
+		`UPDATE audit_log a SET actor_id = u.id::text, actor_name = u.name, actor_email = u.email
+			FROM users u WHERE u.id = a.actor_user_id`,
+		`UPDATE audit_log SET actor_id = actor_user_id::text, actor_email = actor_label
+			WHERE actor_user_id IS NOT NULL AND actor_id = ''`,
+		`UPDATE audit_log SET actor_kind = 'api_token', actor_name = actor_label
+			WHERE actor_user_id IS NULL AND action <> 'auth.sign_in_refused'`,
+		`UPDATE audit_log SET actor_email = actor_label
+			WHERE action = 'auth.sign_in_refused' AND actor_label LIKE '%@%'`,
+		`UPDATE audit_log SET actor_name = actor_label
+			WHERE action = 'auth.sign_in_refused' AND actor_label NOT LIKE '%@%'`,
+		`UPDATE audit_log SET resource_parent_kind = 'blueprint',
+				resource_parent_id = split_part(resource_id, '/', 1),
+				resource_parent_name = split_part(resource_id, '/', 1),
+				resource_id = substr(resource_id, strpos(resource_id, '/') + 1)
+			WHERE resource_kind = 'entity' AND strpos(resource_id, '/') > 0`,
+		`UPDATE audit_log SET resource_parent_kind = 'integration',
+				resource_parent_id = details->>'integration',
+				resource_parent_name = details->>'integration'
+			WHERE resource_kind = 'ingest_token' AND details ? 'integration'`,
+		`DROP INDEX audit_log_actor`,
+		`ALTER TABLE audit_log DROP COLUMN actor_user_id, DROP COLUMN actor_label`,
+		`ALTER TABLE audit_log ALTER COLUMN actor_kind DROP DEFAULT`,
+		`ALTER TABLE audit_log ADD CHECK (actor_kind IN ('user', 'api_token', 'ingest_token', 'scim', 'system'))`,
+		`CREATE INDEX audit_log_actor ON audit_log (actor_kind, actor_id)`,
+		`CREATE INDEX audit_log_resource ON audit_log (resource_kind, resource_id)`,
 	})
 }
 

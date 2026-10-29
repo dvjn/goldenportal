@@ -22,7 +22,6 @@ const (
 	defaultEntityLimit = 25
 	maxEntityLimit     = 100
 	maxTitleLength     = 200
-	auditTargetEntity  = "entity"
 )
 
 var (
@@ -418,10 +417,10 @@ func (s *Service) recordEntity(ctx *gofr.Context, action audit.Action, entity En
 	}
 
 	return s.audit.Record(ctx, audit.Entry{
-		Actor:   principal.Actor(),
-		Action:  action,
-		Target:  audit.Target{Kind: auditTargetEntity, ID: entity.Blueprint + "/" + entity.Identifier, Name: entity.Title},
-		Details: details,
+		Actor:    principal.Actor(),
+		Action:   action,
+		Resource: audit.Resource{Kind: audit.ResourceEntity, ID: entity.Blueprint + "/" + entity.Identifier, Name: entity.Title},
+		Details:  details,
 	})
 }
 

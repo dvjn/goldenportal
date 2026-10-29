@@ -97,7 +97,7 @@ func TestCreateEntityLinksItAndRecordsIt(t *testing.T) {
 		t.Fatalf("relations = %+v", created.Relations)
 	}
 	entry := h.audit.entries[0]
-	if entry.Action != audit.EntityCreated || entry.Target.ID != "service/payments-api" || entry.Target.Name != "Payments API" {
+	if entry.Action != audit.EntityCreated || entry.Resource.ID != "service/payments-api" || entry.Resource.Name != "Payments API" {
 		t.Fatalf("audit entry = %+v", entry)
 	}
 
@@ -198,7 +198,7 @@ func TestUpdateAndDeleteAManualEntity(t *testing.T) {
 	}
 
 	expectStatus(t, h.do(http.MethodDelete, servicesPath+"/payments-api", "bob", nil), http.StatusNoContent)
-	if entry := h.audit.entries[2]; entry.Action != audit.EntityDeleted || entry.Target.Name != "Payments gateway" {
+	if entry := h.audit.entries[2]; entry.Action != audit.EntityDeleted || entry.Resource.Name != "Payments gateway" {
 		t.Fatalf("audit entry = %+v", entry)
 	}
 	expectStatus(t, h.do(http.MethodDelete, servicesPath+"/payments-api", "bob", nil), http.StatusNotFound)

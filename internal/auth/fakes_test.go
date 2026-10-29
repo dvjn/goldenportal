@@ -129,16 +129,16 @@ func (m *memoryAudit) actions() []audit.Action {
 	return actions
 }
 
-// memoryTokens holds the API tokens by secret.
+// memoryTokens holds the tokens by secret.
 type memoryTokens map[string]apitoken.Token
 
 func (m memoryTokens) Find(_ context.Context, kind, secret string) (apitoken.Token, error) {
-	token, ok := m[secret]
-	if !ok || token.Kind != kind {
+	found, ok := m[secret]
+	if !ok || found.Kind != kind {
 		return apitoken.Token{}, apitoken.ErrNotFound
 	}
 
-	return token, nil
+	return found, nil
 }
 
 var testTokens = memoryTokens{

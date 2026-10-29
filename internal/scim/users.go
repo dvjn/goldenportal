@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 )
 
@@ -141,6 +142,9 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.recordUser(r.Context(), audit.UserProvisioned, directory.User{}, created); err != nil {
+		return err
+	}
 
 	resource := newUserResource(created)
 	w.Header().Set("Location", resource.Meta.Location)
@@ -189,7 +193,14 @@ func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) error {
-	if err := s.directory.DeleteUser(r.Context(), r.PathValue("id")); err != nil {
+	user, err := s.directory.UserByID(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if err := s.directory.DeleteUser(r.Context(), user.ID); err != nil {
+		return err
+	}
+	if err := s.recordUser(r.Context(), audit.UserDeprovisioned, user, directory.User{}); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -200,7 +211,11 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) error {
 // saveUser replaces the user and ends their sessions when the user is no
 // longer active. Deleting a user ends them through the foreign key.
 func (s *Server) saveUser(w http.ResponseWriter, r *http.Request, user directory.User) error {
-	saved, err := s.directory.ReplaceUser(r.Context(), r.PathValue("id"), user)
+	previous, err := s.directory.UserByID(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	saved, err := s.directory.ReplaceUser(r.Context(), previous.ID, user)
 	if err != nil {
 		return err
 	}
@@ -208,6 +223,9 @@ func (s *Server) saveUser(w http.ResponseWriter, r *http.Request, user directory
 		if err := s.sessions.DeleteForUser(r.Context(), saved.ID); err != nil {
 			return err
 		}
+	}
+	if err := s.recordUser(r.Context(), audit.UserUpdated, previous, saved); err != nil {
+		return err
 	}
 	writeJSON(w, http.StatusOK, newUserResource(saved))
 

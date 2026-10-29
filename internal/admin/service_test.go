@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -33,7 +34,7 @@ func TestOnlyAdminsChangeAccess(t *testing.T) {
 		{"unknown session", "u-9", http.StatusUnauthorized},
 		{"member", "u-4", http.StatusForbidden},
 		{"maintainer through a group", "u-2", http.StatusForbidden},
-		{"maintainer api token", "gpt_ci", http.StatusForbidden},
+		{"maintainer API token", "gpt_ci", http.StatusForbidden},
 		{"admin through a group", "u-1", http.StatusOK},
 		{"bootstrap admin", "u-3", http.StatusOK},
 	}
@@ -67,8 +68,45 @@ func TestSetGrantRecordsWhoGrantedWhat(t *testing.T) {
 		t.Fatalf("sets = %+v, want %+v", h.grants.sets, want)
 	}
 	entry := h.audit.entries[0]
-	if entry.Action != audit.GrantChanged || entry.Target.Name != "payments-team" || entry.Actor.Label != "alice@example.test" ||
-		entry.Details["previous_role"] != access.Maintainer {
+	wantActor := audit.Actor{Kind: audit.ActorUser, ID: "u-1", Name: "Alice Archer", Email: "alice@example.test"}
+	wantResource := audit.Resource{Kind: audit.ResourceGroup, ID: "g-2", Name: "payments-team"}
+	wantChanges := audit.Changes{"role": {Before: access.Maintainer, After: access.Admin}}
+	if entry.Action != audit.GrantChanged || entry.Actor != wantActor || entry.Resource != wantResource ||
+		!reflect.DeepEqual(entry.Details[audit.ChangesKey], wantChanges) {
+		t.Fatalf("audit = %+v", entry)
+	}
+}
+
+func TestSetGrantRecordsACreatedGrantFromNoRole(t *testing.T) {
+	h := newHarness()
+
+	response := h.do(t, http.MethodPut, "/api/v1/access/grants/user/u-4", "u-1", `{"role":"maintainer"}`)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	entry := h.audit.entries[0]
+	wantResource := audit.Resource{Kind: audit.ResourceUser, ID: "u-4", Name: "Dan Dale"}
+	wantChanges := audit.Changes{"role": {Before: access.NoRole, After: access.Maintainer}}
+	if entry.Action != audit.GrantCreated || entry.Resource != wantResource ||
+		!reflect.DeepEqual(entry.Details[audit.ChangesKey], wantChanges) {
+		t.Fatalf("audit = %+v", entry)
+	}
+}
+
+func TestRemoveGrantRecordsTheRoleItHad(t *testing.T) {
+	h := newHarness()
+	h.grants.previous = access.Maintainer
+
+	response := h.do(t, http.MethodDelete, "/api/v1/access/grants/group/g-2", "u-1", "")
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	entry := h.audit.entries[0]
+	wantChanges := audit.Changes{"role": {Before: access.Maintainer, After: access.NoRole}}
+	if entry.Action != audit.GrantRemoved || entry.Resource.ID != "g-2" ||
+		!reflect.DeepEqual(entry.Details[audit.ChangesKey], wantChanges) {
 		t.Fatalf("audit = %+v", entry)
 	}
 }
@@ -150,7 +188,7 @@ func TestRevokeSessionsEndsTheUsersSessions(t *testing.T) {
 	if response.Code != http.StatusNoContent || len(h.sessions.revoked) != 1 || h.sessions.revoked[0] != "u-2" {
 		t.Fatalf("response = %d, revoked = %v", response.Code, h.sessions.revoked)
 	}
-	if entry := h.audit.entries[0]; entry.Action != audit.SessionsRevoked || entry.Target.ID != "u-2" {
+	if entry := h.audit.entries[0]; entry.Action != audit.SessionsRevoked || entry.Resource.Kind != audit.ResourceUser || entry.Resource.ID != "u-2" {
 		t.Fatalf("audit = %+v", entry)
 	}
 }
@@ -182,7 +220,7 @@ func TestCreateTokenValidatesTheRequest(t *testing.T) {
 			if created.Secret != "gpt_new" || created.Token.Name != "ci" || h.tokens.created[0].CreatedBy != "u-1" {
 				t.Fatalf("created = %+v, store saw %+v", created, h.tokens.created)
 			}
-			if entry := h.audit.entries[0]; entry.Action != audit.APITokenCreated || entry.Target.Name != "ci" {
+			if entry := h.audit.entries[0]; entry.Action != audit.APITokenCreated || entry.Resource.Kind != audit.ResourceAPIToken || entry.Resource.Name != "ci" {
 				t.Fatalf("audit = %+v", entry)
 			}
 		})
@@ -198,7 +236,7 @@ func TestRevokeTokenRecordsTheTokenName(t *testing.T) {
 	if response := h.do(t, http.MethodDelete, "/api/v1/access/tokens/t-2", "u-1", ""); response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for an unknown token", response.Code)
 	}
-	if len(h.audit.entries) != 1 || h.audit.entries[0].Target.Name != "ci" {
+	if len(h.audit.entries) != 1 || h.audit.entries[0].Resource.Name != "ci" {
 		t.Fatalf("audit = %+v", h.audit.entries)
 	}
 }

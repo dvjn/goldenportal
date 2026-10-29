@@ -101,9 +101,9 @@ func (s *Service) revokeSessions(ctx *gofr.Context) (any, error) {
 	}
 	principal, _ := auth.PrincipalFrom(ctx)
 	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:  principal.Actor(),
-		Action: audit.SessionsRevoked,
-		Target: audit.Target{Kind: string(access.SubjectUser), ID: user.ID, Name: cmp.Or(user.Email, user.UserName)},
+		Actor:    principal.Actor(),
+		Action:   audit.SessionsRevoked,
+		Resource: audit.Resource{Kind: audit.ResourceUser, ID: user.ID, Name: cmp.Or(user.Email, user.UserName)},
 	}); err != nil {
 		return nil, err
 	}

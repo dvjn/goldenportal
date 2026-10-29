@@ -18,7 +18,6 @@ import (
 const (
 	maxTokenNameLength = 100
 	maxTokenDays       = 365
-	auditTargetToken   = "ingest_token"
 )
 
 var (
@@ -129,10 +128,10 @@ func (s *Service) createToken(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:   principal.Actor(),
-		Action:  audit.IngestTokenCreated,
-		Target:  audit.Target{Kind: auditTargetToken, ID: token.ID, Name: token.Name},
-		Details: map[string]any{"integration": integration.Identifier, "expires_at": token.ExpiresAt},
+		Actor:    principal.Actor(),
+		Action:   audit.IngestTokenCreated,
+		Resource: ingestTokenResource(integration, token),
+		Details:  map[string]any{"expires_at": token.ExpiresAt},
 	}); err != nil {
 		return nil, err
 	}
@@ -155,9 +154,15 @@ func (s *Service) revokeToken(ctx *gofr.Context) (any, error) {
 	principal, _ := auth.PrincipalFrom(ctx)
 
 	return nil, s.audit.Record(ctx, audit.Entry{
-		Actor:   principal.Actor(),
-		Action:  audit.IngestTokenRevoked,
-		Target:  audit.Target{Kind: auditTargetToken, ID: token.ID, Name: token.Name},
-		Details: map[string]any{"integration": integration.Identifier},
+		Actor:    principal.Actor(),
+		Action:   audit.IngestTokenRevoked,
+		Resource: ingestTokenResource(integration, token),
 	})
+}
+
+func ingestTokenResource(integration *definition.Integration, ingest apitoken.Token) audit.Resource {
+	return audit.Resource{
+		Kind: audit.ResourceIngestToken, ID: ingest.ID, Name: ingest.Name,
+		Parent: audit.Parent{Kind: audit.ResourceIntegration, ID: integration.Identifier, Name: integration.Title},
+	}
 }

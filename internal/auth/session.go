@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -33,8 +32,17 @@ func (p Principal) Can(permission access.Permission) bool {
 	return p.Access.Role.Can(permission)
 }
 
+var tokenActorKinds = map[string]audit.ActorKind{
+	apitoken.KindAPI:    audit.ActorAPIToken,
+	apitoken.KindIngest: audit.ActorIngestToken,
+}
+
 func (p Principal) Actor() audit.Actor {
-	return audit.Actor{UserID: p.User.ID, Label: cmp.Or(p.User.Email, p.APIToken.Name)}
+	if kind, ok := tokenActorKinds[p.APIToken.Kind]; ok {
+		return audit.Actor{Kind: kind, ID: p.APIToken.ID, Name: p.APIToken.Name}
+	}
+
+	return audit.Actor{Kind: audit.ActorUser, ID: p.User.ID, Name: p.User.Name, Email: p.User.Email}
 }
 
 type Sessions struct {

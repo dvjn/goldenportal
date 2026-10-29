@@ -94,21 +94,21 @@ type scimTokenResponse struct {
 // the identity provider fails until it has the new token.
 func (s *Service) rotateSCIMToken(ctx *gofr.Context) (any, error) {
 	principal, _ := auth.PrincipalFrom(ctx)
-	token, secret, err := s.tokens.Rotate(ctx, apitoken.NewToken{
+	rotated, secret, err := s.tokens.Rotate(ctx, apitoken.NewToken{
 		Kind:      apitoken.KindSCIM,
-		Name:      "Rotated by " + principal.Actor().Label,
+		Name:      "Rotated by " + principal.Actor().Label(),
 		CreatedBy: principal.User.ID,
 	})
 	if err != nil {
 		return nil, err
 	}
 	if err := s.audit.Record(ctx, audit.Entry{
-		Actor:  principal.Actor(),
-		Action: audit.SCIMTokenRotated,
-		Target: audit.Target{Kind: "scim_token", ID: token.ID, Name: "SCIM token"},
+		Actor:    principal.Actor(),
+		Action:   audit.SCIMTokenRotated,
+		Resource: audit.Resource{Kind: audit.ResourceSCIMToken, ID: rotated.ID, Name: "SCIM token"},
 	}); err != nil {
 		return nil, err
 	}
 
-	return secretResponse[scimTokenResponse]{Token: scimTokenResponse{ID: token.ID, CreatedAt: token.CreatedAt}, Secret: secret}, nil
+	return secretResponse[scimTokenResponse]{Token: scimTokenResponse{ID: rotated.ID, CreatedAt: rotated.CreatedAt}, Secret: secret}, nil
 }

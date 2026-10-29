@@ -51,12 +51,13 @@ type Server struct {
 	directory directoryStore
 	sessions  sessionRevoker
 	tokens    tokenVerifier
+	audit     auditLog
 	logger    logging.Logger
 	mux       *http.ServeMux
 }
 
-func NewServer(store directoryStore, sessions sessionRevoker, tokens tokenVerifier, logger logging.Logger) *Server {
-	s := &Server{directory: store, sessions: sessions, tokens: tokens, logger: logger, mux: http.NewServeMux()}
+func NewServer(store directoryStore, sessions sessionRevoker, tokens tokenVerifier, log auditLog, logger logging.Logger) *Server {
+	s := &Server{directory: store, sessions: sessions, tokens: tokens, audit: log, logger: logger, mux: http.NewServeMux()}
 
 	s.handle("GET /ServiceProviderConfig", s.serviceProviderConfig)
 	s.handle("GET /ResourceTypes", s.resourceTypes)
@@ -117,12 +118,12 @@ func (s *Server) serveAuthorized(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authorized(r *http.Request) (bool, error) {
-	token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	secret, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !found {
 		return false, nil
 	}
 
-	return s.tokens.Verify(r.Context(), apitoken.KindSCIM, token)
+	return s.tokens.Verify(r.Context(), apitoken.KindSCIM, secret)
 }
 
 func (s *Server) handle(pattern string, handler func(http.ResponseWriter, *http.Request) error) {

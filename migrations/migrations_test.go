@@ -26,9 +26,9 @@ func (r *recordingSQL) Exec(query string, _ ...any) (sql.Result, error) {
 
 func TestAllRegistersEverySchemaInOrder(t *testing.T) {
 	all := All()
-	if len(all) != 4 || all[202610220001].UP == nil || all[202610230001].UP == nil || all[202610240001].UP == nil ||
-		all[202610250001].UP == nil {
-		t.Fatalf("All() = %v, want the identity, access, catalog and integrations schemas", all)
+	if len(all) != 5 || all[202610220001].UP == nil || all[202610230001].UP == nil || all[202610240001].UP == nil ||
+		all[202610250001].UP == nil || all[202610260001].UP == nil {
+		t.Fatalf("All() = %v, want the identity, access, catalog, integrations and audit detail schemas", all)
 	}
 }
 
@@ -114,6 +114,35 @@ func TestIntegrationsSchemaCreatesSyncRunsAndScopesIngestTokens(t *testing.T) {
 		"ON sync_runs (integration, started_at DESC, id DESC)",
 		"ADD COLUMN integration TEXT",
 		"kind <> 'ingest' OR (integration IS NOT NULL AND expires_at IS NOT NULL)",
+	} {
+		if !mentions(db.statements, fragment) {
+			t.Errorf("no statement mentions %q", fragment)
+		}
+	}
+}
+
+func TestAuditDetailSplitsActorsResourcesAndClients(t *testing.T) {
+	db := &recordingSQL{}
+	if err := auditDetail(migration.Datasource{SQL: db}); err != nil {
+		t.Fatalf("auditDetail() error = %v", err)
+	}
+
+	for _, fragment := range []string{
+		"ADD COLUMN actor_kind TEXT NOT NULL DEFAULT 'user'",
+		"ADD COLUMN actor_email TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN resource_parent_kind TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN ip_address TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''",
+		"RENAME COLUMN target_kind TO resource_kind",
+		"RENAME COLUMN target_id TO resource_id",
+		"RENAME COLUMN target_name TO resource_name",
+		"SET actor_kind = 'api_token'",
+		"resource_parent_kind = 'blueprint'",
+		"resource_parent_kind = 'integration'",
+		"DROP COLUMN actor_user_id, DROP COLUMN actor_label",
+		"CHECK (actor_kind IN ('user', 'api_token', 'ingest_token', 'scim', 'system'))",
+		"CREATE INDEX audit_log_actor ON audit_log (actor_kind, actor_id)",
+		"CREATE INDEX audit_log_resource ON audit_log (resource_kind, resource_id)",
 	} {
 		if !mentions(db.statements, fragment) {
 			t.Errorf("no statement mentions %q", fragment)

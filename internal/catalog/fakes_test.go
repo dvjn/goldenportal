@@ -105,7 +105,7 @@ func (m *memoryDefinitions) Apply(_ context.Context, plan Plan, author audit.Act
 		return Revision{}, ErrStale
 	}
 	revision := Revision{
-		Number: m.number() + 1, Author: author, Message: message, RollbackOf: plan.RollbackOf, CreatedAt: at,
+		Number: m.number() + 1, Author: Author{UserID: author.UserID(), Label: author.Label()}, Message: message, RollbackOf: plan.RollbackOf, CreatedAt: at,
 		Snapshot: plan.Desired, Changes: plan.Changes, Impact: plan.Impact,
 	}
 	m.revisions = append(m.revisions, revision)

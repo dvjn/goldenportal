@@ -60,7 +60,7 @@ func register(app *gofr.App) error {
 		httpx.ExposeRaw,
 		auth.CrossOriginProtection(),
 		auth.Middleware(routes, auth.NewAuthenticator(sessions, tokens, resolver, authConfig.Cookies)),
-		scim.NewServer(directoryStore, sessions, tokens, app.Logger()).Middleware(),
+		scim.NewServer(directoryStore, sessions, tokens, auditLog, app.Logger()).Middleware(),
 	)
 
 	routes.GET("/api/v1/config", httpx.Public(), configHandler(Config{Name: portalName}))
