@@ -138,7 +138,7 @@ func TestApplyRefusesAPlanMadeOnAnotherRevision(t *testing.T) {
 	db.ExpectQuery(queryRevisionNumber).WillReturnRows(sqlmock.NewRows([]string{"number"}).AddRow(4))
 	db.ExpectRollback()
 
-	_, err := store.Apply(context.Background(), Plan{Base: 3}, audit.Actor{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"}, "")
+	_, err := store.Apply(context.Background(), Plan{Base: 3}, audit.Actor{Kind: audit.ActorServiceToken, ID: "t-1", Name: "ci"}, "")
 	if !errors.Is(err, ErrStale) {
 		t.Fatalf("Apply() error = %v, want ErrStale", err)
 	}
@@ -166,7 +166,7 @@ func TestApplyClearsOnlyTheValuesAChangedPropertyRefuses(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(at))
 	db.ExpectCommit()
 
-	revision, err := store.Apply(context.Background(), plan, audit.Actor{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"}, "")
+	revision, err := store.Apply(context.Background(), plan, audit.Actor{Kind: audit.ActorServiceToken, ID: "t-1", Name: "ci"}, "")
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}

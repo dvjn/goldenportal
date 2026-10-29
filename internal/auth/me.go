@@ -48,7 +48,7 @@ func (s *Service) me(ctx *gofr.Context) (any, error) {
 	return response, nil
 }
 
-// groupsOf returns no groups for an API token, which is no user.
+// groupsOf returns no groups for a service token, which is no user.
 func (s *Service) groupsOf(ctx context.Context, principal Principal) ([]directory.Group, error) {
 	if principal.User.ID == "" {
 		return nil, nil

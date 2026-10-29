@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
+	"github.com/dvjn/goldport/internal/token"
 	gofrHTTP "gofr.dev/pkg/gofr/http"
 )
 
@@ -30,11 +30,11 @@ type accessResolver interface {
 }
 
 type tokenFinder interface {
-	Find(ctx context.Context, kind, secret string) (apitoken.Token, error)
+	Find(ctx context.Context, kind, secret string) (token.Token, error)
 }
 
 // Authenticator finds the principal behind a request and resolves its role:
-// an ingest token on an ingest route, an API token when the request has a
+// an ingest token on an ingest route, a service token when the request has a
 // bearer token, otherwise the user of the session cookie.
 type Authenticator struct {
 	sessions sessionFinder
@@ -51,23 +51,23 @@ func (a *Authenticator) Authenticate(r *http.Request, declared httpx.Access) (Pr
 	secret, bearer := bearerToken(r)
 	switch {
 	case declared.Ingest() && bearer:
-		return a.token(r.Context(), apitoken.KindIngest, secret)
+		return a.token(r.Context(), token.KindIngest, secret)
 	case declared.Ingest():
 		return Principal{}, ErrNoSession
 	case bearer:
-		return a.token(r.Context(), apitoken.KindAPI, secret)
+		return a.token(r.Context(), token.KindService, secret)
 	}
 
 	return a.session(r)
 }
 
 func (a *Authenticator) token(ctx context.Context, kind, secret string) (Principal, error) {
-	token, err := a.tokens.Find(ctx, kind, secret)
-	if errors.Is(err, apitoken.ErrNotFound) {
+	found, err := a.tokens.Find(ctx, kind, secret)
+	if errors.Is(err, token.ErrNotFound) {
 		return Principal{}, ErrNoSession
 	}
 
-	return Principal{User: directory.User{Name: token.Name}, APIToken: token, Access: access.Resolution{Role: token.Role}}, err
+	return Principal{User: directory.User{Name: found.Name}, Token: found, Access: access.Resolution{Role: found.Role}}, err
 }
 
 func (a *Authenticator) session(r *http.Request) (Principal, error) {
@@ -120,7 +120,7 @@ func Middleware(routes *httpx.Routes, authenticator *Authenticator) gofrHTTP.Mid
 					fmt.Sprintf("this needs the %s permission, ask an admin if you need access", permission))
 				return
 			}
-			if scope := principal.APIToken.Integration; declared.Ingest() && scope != gofrHTTP.NewRequest(r).PathParam(httpx.IntegrationParam) {
+			if scope := principal.Token.Integration; declared.Ingest() && scope != gofrHTTP.NewRequest(r).PathParam(httpx.IntegrationParam) {
 				httpx.WriteError(w, http.StatusForbidden, fmt.Sprintf("this token ingests into the %s integration only", scope))
 				return
 			}

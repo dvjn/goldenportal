@@ -9,6 +9,7 @@ func All() map[int64]migration.Migrate {
 		202610240001: {UP: catalogSchema},
 		202610250001: {UP: integrationsSchema},
 		202610260001: {UP: auditDetail},
+		202610270001: {UP: serviceTokens},
 	}
 }
 
@@ -218,6 +219,37 @@ func auditDetail(d migration.Datasource) error {
 		`ALTER TABLE audit_log ADD CHECK (actor_kind IN ('user', 'api_token', 'ingest_token', 'scim', 'system'))`,
 		`CREATE INDEX audit_log_actor ON audit_log (actor_kind, actor_id)`,
 		`CREATE INDEX audit_log_resource ON audit_log (resource_kind, resource_id)`,
+	})
+}
+
+// serviceTokens names the table after what it holds, tokens of every kind,
+// and renames the api kind, and the audit entries about it, to service.
+func serviceTokens(d migration.Datasource) error {
+	return execAll(d, []string{
+		`ALTER TABLE api_tokens RENAME TO tokens`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_pkey TO tokens_pkey`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_token_hash_key TO tokens_token_hash_key`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_role_check TO tokens_role_check`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_created_by_fkey TO tokens_created_by_fkey`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_id_not_null TO tokens_id_not_null`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_kind_not_null TO tokens_kind_not_null`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_name_not_null TO tokens_name_not_null`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_token_hash_not_null TO tokens_token_hash_not_null`,
+		`ALTER TABLE tokens RENAME CONSTRAINT api_tokens_created_at_not_null TO tokens_created_at_not_null`,
+		`ALTER INDEX api_tokens_integration RENAME TO tokens_integration`,
+		`ALTER TABLE tokens DROP CONSTRAINT api_tokens_check, DROP CONSTRAINT api_tokens_check1`,
+		`UPDATE tokens SET kind = 'service' WHERE kind = 'api'`,
+		`ALTER TABLE tokens
+			ADD CONSTRAINT tokens_service_check CHECK (kind <> 'service' OR (role IS NOT NULL AND expires_at IS NOT NULL)),
+			ADD CONSTRAINT tokens_ingest_check CHECK (kind <> 'ingest' OR (integration IS NOT NULL AND expires_at IS NOT NULL))`,
+		`ALTER TABLE audit_log DROP CONSTRAINT audit_log_actor_kind_check`,
+		`UPDATE audit_log SET action = 'service_token.' || substr(action, length('api_token.') + 1)
+			WHERE action LIKE 'api\_token.%'`,
+		`UPDATE audit_log SET actor_kind = 'service_token' WHERE actor_kind = 'api_token'`,
+		`UPDATE audit_log SET resource_kind = 'service_token' WHERE resource_kind = 'api_token'`,
+		`UPDATE audit_log SET resource_parent_kind = 'service_token' WHERE resource_parent_kind = 'api_token'`,
+		`ALTER TABLE audit_log ADD CONSTRAINT audit_log_actor_kind_check
+			CHECK (actor_kind IN ('user', 'service_token', 'ingest_token', 'scim', 'system'))`,
 	})
 }
 

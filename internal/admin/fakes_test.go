@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/httpx/httpxtest"
+	"github.com/dvjn/goldport/internal/token"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
 )
@@ -122,41 +122,41 @@ func (memoryDirectory) GroupsOfUser(_ context.Context, userID string) ([]directo
 func (memoryDirectory) LastSignIn(context.Context, string) (time.Time, error) { return at, nil }
 
 type memoryTokens struct {
-	created []apitoken.NewToken
-	rotated []apitoken.NewToken
+	created []token.NewToken
+	rotated []token.NewToken
 	revoked []string
 }
 
-func (m *memoryTokens) Create(_ context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error) {
+func (m *memoryTokens) Create(_ context.Context, newToken token.NewToken) (token.Token, string, error) {
 	m.created = append(m.created, newToken)
-	return apitoken.Token{ID: "t-9", Kind: newToken.Kind, Name: newToken.Name, Role: newToken.Role, ExpiresAt: newToken.ExpiresAt}, "gpt_new", nil
+	return token.Token{ID: "t-9", Kind: newToken.Kind, Name: newToken.Name, Role: newToken.Role, ExpiresAt: newToken.ExpiresAt}, "gpt_new", nil
 }
 
-func (m *memoryTokens) Rotate(_ context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error) {
+func (m *memoryTokens) Rotate(_ context.Context, newToken token.NewToken) (token.Token, string, error) {
 	m.rotated = append(m.rotated, newToken)
-	return apitoken.Token{ID: "t-8", Kind: newToken.Kind, Name: newToken.Name, CreatedAt: at}, "gpt_scim", nil
+	return token.Token{ID: "t-8", Kind: newToken.Kind, Name: newToken.Name, CreatedAt: at}, "gpt_scim", nil
 }
 
-func (m *memoryTokens) List(context.Context, string) ([]apitoken.Token, error) { return nil, nil }
+func (m *memoryTokens) List(context.Context, string) ([]token.Token, error) { return nil, nil }
 
-func (m *memoryTokens) Revoke(_ context.Context, _, id string) (apitoken.Token, error) {
+func (m *memoryTokens) Revoke(_ context.Context, _, id string) (token.Token, error) {
 	if id != "t-1" {
-		return apitoken.Token{}, apitoken.ErrNotFound
+		return token.Token{}, token.ErrNotFound
 	}
 	m.revoked = append(m.revoked, id)
 
-	return apitoken.Token{ID: id, Name: "ci"}, nil
+	return token.Token{ID: id, Name: "ci"}, nil
 }
 
 func (m *memoryTokens) LastUsed(context.Context, string) (time.Time, error) { return time.Time{}, nil }
 
 // Find serves the bearer token of the authenticator: gpt_ci is a Maintainer.
-func (m *memoryTokens) Find(_ context.Context, _, secret string) (apitoken.Token, error) {
+func (m *memoryTokens) Find(_ context.Context, _, secret string) (token.Token, error) {
 	if secret != "gpt_ci" {
-		return apitoken.Token{}, apitoken.ErrNotFound
+		return token.Token{}, token.ErrNotFound
 	}
 
-	return apitoken.Token{ID: "t-1", Kind: apitoken.KindAPI, Name: "ci", Role: access.Maintainer}, nil
+	return token.Token{ID: "t-1", Kind: token.KindService, Name: "ci", Role: access.Maintainer}, nil
 }
 
 type memorySessions struct {
@@ -239,7 +239,7 @@ func (h *harness) do(t *testing.T, method, path, as, body string) *httptest.Resp
 	t.Helper()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	if strings.HasPrefix(as, apitoken.Prefix) {
+	if strings.HasPrefix(as, token.Prefix) {
 		request.Header.Set("Authorization", "Bearer "+as)
 	} else {
 		request.AddCookie(&http.Cookie{Name: testCookies.Session, Value: as})

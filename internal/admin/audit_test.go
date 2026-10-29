@@ -52,14 +52,14 @@ func TestListAuditReadsTheFilters(t *testing.T) {
 	h := newHarness()
 
 	response := h.do(t, http.MethodGet,
-		"/api/v1/audit?actor=user:u-1,api_token:t-1&actor_kind=user&action=entity.updated,entity.created&resource_kind=entity&q=check&sort=asc&limit=10",
+		"/api/v1/audit?actor=user:u-1,service_token:t-1&actor_kind=user&action=entity.updated,entity.created&resource_kind=entity&q=check&sort=asc&limit=10",
 		"u-1", "")
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
 	}
 	query := h.audit.queries[0]
-	if !reflect.DeepEqual(query.Actors, []string{"user:u-1", "api_token:t-1"}) ||
+	if !reflect.DeepEqual(query.Actors, []string{"user:u-1", "service_token:t-1"}) ||
 		!reflect.DeepEqual(query.ActorKinds, []string{"user"}) ||
 		!reflect.DeepEqual(query.Actions, []string{"entity.updated", "entity.created"}) ||
 		!reflect.DeepEqual(query.ResourceKinds, []string{"entity"}) ||
@@ -71,8 +71,8 @@ func TestListAuditReadsTheFilters(t *testing.T) {
 func TestAuditFacetsListActorsAndKinds(t *testing.T) {
 	h := newHarness()
 	h.audit.facets = audit.Facets{
-		Actors:        []audit.Actor{{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"}},
-		ActorKinds:    []string{"api_token"},
+		Actors:        []audit.Actor{{Kind: audit.ActorServiceToken, ID: "t-1", Name: "ci"}},
+		ActorKinds:    []string{"service_token"},
 		Actions:       []string{"entity.updated"},
 		ResourceKinds: []string{"entity"},
 	}
@@ -84,8 +84,8 @@ func TestAuditFacetsListActorsAndKinds(t *testing.T) {
 	}
 	got := decode[auditFacetsResponse](t, response.Body.Bytes())
 	want := auditFacetsResponse{
-		Actors:        []auditActor{{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"}},
-		ActorKinds:    []string{"api_token"},
+		Actors:        []auditActor{{Kind: audit.ActorServiceToken, ID: "t-1", Name: "ci"}},
+		ActorKinds:    []string{"service_token"},
 		Actions:       []string{"entity.updated"},
 		ResourceKinds: []string{"entity"},
 	}

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/directory"
+	"github.com/dvjn/goldport/internal/token"
 	gofrHTTP "gofr.dev/pkg/gofr/http"
 	"gofr.dev/pkg/gofr/logging"
 )
@@ -123,7 +123,7 @@ func (s *Server) authorized(r *http.Request) (bool, error) {
 		return false, nil
 	}
 
-	return s.tokens.Verify(r.Context(), apitoken.KindSCIM, secret)
+	return s.tokens.Verify(r.Context(), token.KindSCIM, secret)
 }
 
 func (s *Server) handle(pattern string, handler func(http.ResponseWriter, *http.Request) error) {

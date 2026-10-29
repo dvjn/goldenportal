@@ -1,4 +1,4 @@
-package apitoken
+package token
 
 import (
 	"context"

@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/httpx/httpxtest"
+	"github.com/dvjn/goldport/internal/token"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
 )
@@ -130,20 +130,20 @@ func (m *memoryAudit) actions() []audit.Action {
 }
 
 // memoryTokens holds the tokens by secret.
-type memoryTokens map[string]apitoken.Token
+type memoryTokens map[string]token.Token
 
-func (m memoryTokens) Find(_ context.Context, kind, secret string) (apitoken.Token, error) {
+func (m memoryTokens) Find(_ context.Context, kind, secret string) (token.Token, error) {
 	found, ok := m[secret]
 	if !ok || found.Kind != kind {
-		return apitoken.Token{}, apitoken.ErrNotFound
+		return token.Token{}, token.ErrNotFound
 	}
 
 	return found, nil
 }
 
 var testTokens = memoryTokens{
-	"gpt_ci": {ID: "t-1", Kind: apitoken.KindAPI, Name: "ci", Role: access.Maintainer},
-	"gpi_ci": {ID: "t-2", Kind: apitoken.KindIngest, Name: "pipelines", Integration: "ci"},
+	"gpt_ci": {ID: "t-1", Kind: token.KindService, Name: "ci", Role: access.Maintainer},
+	"gpi_ci": {ID: "t-2", Kind: token.KindIngest, Name: "pipelines", Integration: "ci"},
 }
 
 // memoryGrants holds each user's grants by user ID.

@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/definition"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/httpx/httpxtest"
+	"github.com/dvjn/goldport/internal/token"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
 )
@@ -34,9 +34,9 @@ var (
 		"bob":   {directory.User{ID: "u-2", Email: "bob@example.test", Name: "Bob Baker", Active: true}, access.Maintainer},
 		"cara":  {directory.User{ID: "u-3", Email: "cara@example.test", Name: "Cara Cole", Active: true}, access.Member},
 	}
-	machines = map[string]apitoken.Token{
-		"gpt_ci":     {ID: "t-1", Kind: apitoken.KindAPI, Name: "ci", Role: access.Maintainer},
-		"gpt_viewer": {ID: "t-2", Kind: apitoken.KindAPI, Name: "viewer", Role: access.Member},
+	machines = map[string]token.Token{
+		"gpt_ci":     {ID: "t-1", Kind: token.KindService, Name: "ci", Role: access.Maintainer},
+		"gpt_viewer": {ID: "t-2", Kind: token.KindService, Name: "viewer", Role: access.Member},
 	}
 )
 
@@ -54,13 +54,13 @@ func (memorySessions) Lookup(_ context.Context, token string) (auth.Principal, e
 
 type memoryTokens struct{}
 
-func (memoryTokens) Find(_ context.Context, _, secret string) (apitoken.Token, error) {
-	token, ok := machines[secret]
+func (memoryTokens) Find(_ context.Context, _, secret string) (token.Token, error) {
+	found, ok := machines[secret]
 	if !ok {
-		return apitoken.Token{}, apitoken.ErrNotFound
+		return token.Token{}, token.ErrNotFound
 	}
 
-	return token, nil
+	return found, nil
 }
 
 type fixedRoles struct{}
@@ -302,7 +302,7 @@ func (h *harness) do(method, path, as string, body any) *httptest.ResponseRecord
 	}
 	request := httptest.NewRequest(method, path, strings.NewReader(string(encoded)))
 	request.Header.Set("Content-Type", "application/json")
-	if strings.HasPrefix(as, apitoken.Prefix) {
+	if strings.HasPrefix(as, token.Prefix) {
 		request.Header.Set("Authorization", "Bearer "+as)
 	} else {
 		request.AddCookie(&http.Cookie{Name: testCookies.Session, Value: as})

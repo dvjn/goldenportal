@@ -164,7 +164,7 @@ func TestActorUserIDAndLabel(t *testing.T) {
 	}{
 		{"user", Actor{Kind: ActorUser, ID: "u-1", Name: "Alice", Email: "alice@example.test"}, "u-1", "alice@example.test"},
 		{"user without email", Actor{Kind: ActorUser, ID: "u-1", Name: "Alice"}, "u-1", "Alice"},
-		{"API token", Actor{Kind: ActorAPIToken, ID: "t-1", Name: "ci"}, "", "ci"},
+		{"service token", Actor{Kind: ActorServiceToken, ID: "t-1", Name: "ci"}, "", "ci"},
 		{"scheduler", Scheduler, "", "Schedule"},
 		{"provisioner", SCIMProvisioner, "", "SCIM provisioning"},
 	}
@@ -189,8 +189,8 @@ func TestListReturnsAPageNewestFirst(t *testing.T) {
 		"resource_kind", "resource_id", "resource_name",
 		"resource_parent_kind", "resource_parent_id", "resource_parent_name",
 		"details", "ip_address", "user_agent",
-	}).AddRow(2, at, ActorAPIToken, "t-1", "ci", "", APITokenRevoked,
-		ResourceAPIToken, "t-1", "ci", "", "", "",
+	}).AddRow(2, at, ActorServiceToken, "t-1", "ci", "", ServiceTokenRevoked,
+		ResourceServiceToken, "t-1", "ci", "", "", "",
 		[]byte(`{"role":"member"}`), "203.0.113.7", "curl/8"))
 
 	entries, total, err := log.List(context.Background(), Query{Page: Page{Offset: 1, Limit: 1}})
@@ -198,8 +198,8 @@ func TestListReturnsAPageNewestFirst(t *testing.T) {
 		t.Fatalf("List() = %v, %d, %v", entries, total, err)
 	}
 	want := Entry{
-		ID: 2, At: at, Actor: Actor{Kind: ActorAPIToken, ID: "t-1", Name: "ci"}, Action: APITokenRevoked,
-		Resource: Resource{Kind: ResourceAPIToken, ID: "t-1", Name: "ci"},
+		ID: 2, At: at, Actor: Actor{Kind: ActorServiceToken, ID: "t-1", Name: "ci"}, Action: ServiceTokenRevoked,
+		Resource: Resource{Kind: ResourceServiceToken, ID: "t-1", Name: "ci"},
 		Details:  map[string]any{"role": "member"},
 		Client:   Client{IP: "203.0.113.7", UserAgent: "curl/8"},
 	}
@@ -213,10 +213,10 @@ func TestFacetsReturnsTheActorsAndTheKinds(t *testing.T) {
 	db.ExpectQuery(queryFacetActors).WillReturnRows(sqlmock.NewRows([]string{
 		"actor_kind", "actor_id", "actor_name", "actor_email",
 	}).
-		AddRow(ActorAPIToken, "t-1", "ci", "").
+		AddRow(ActorServiceToken, "t-1", "ci", "").
 		AddRow(ActorUser, "u-1", "Alice", "alice@example.test"))
 	db.ExpectQuery(queryFacets).WillReturnRows(sqlmock.NewRows([]string{"actor_kinds", "actions", "resource_kinds"}).
-		AddRow(`{api_token,user}`, `{auth.signed_in,grant.created}`, `{group,user}`))
+		AddRow(`{service_token,user}`, `{auth.signed_in,grant.created}`, `{group,user}`))
 
 	facets, err := log.Facets(context.Background())
 	if err != nil {
@@ -224,10 +224,10 @@ func TestFacetsReturnsTheActorsAndTheKinds(t *testing.T) {
 	}
 	want := Facets{
 		Actors: []Actor{
-			{Kind: ActorAPIToken, ID: "t-1", Name: "ci"},
+			{Kind: ActorServiceToken, ID: "t-1", Name: "ci"},
 			{Kind: ActorUser, ID: "u-1", Name: "Alice", Email: "alice@example.test"},
 		},
-		ActorKinds:    []string{"api_token", "user"},
+		ActorKinds:    []string{"service_token", "user"},
 		Actions:       []string{"auth.signed_in", "grant.created"},
 		ResourceKinds: []string{"group", "user"},
 	}

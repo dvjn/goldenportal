@@ -23,16 +23,16 @@ import (
 type Action string
 
 const (
-	SignedIn         Action = "auth.signed_in"
-	SignedOut        Action = "auth.signed_out"
-	SignInRefused    Action = "auth.sign_in_refused"
-	GrantCreated     Action = "grant.created"
-	GrantChanged     Action = "grant.changed"
-	GrantRemoved     Action = "grant.removed"
-	SessionsRevoked  Action = "sessions.revoked"
-	SCIMTokenRotated Action = "scim_token.rotated"
-	APITokenCreated  Action = "api_token.created"
-	APITokenRevoked  Action = "api_token.revoked"
+	SignedIn            Action = "auth.signed_in"
+	SignedOut           Action = "auth.signed_out"
+	SignInRefused       Action = "auth.sign_in_refused"
+	GrantCreated        Action = "grant.created"
+	GrantChanged        Action = "grant.changed"
+	GrantRemoved        Action = "grant.removed"
+	SessionsRevoked     Action = "sessions.revoked"
+	SCIMTokenRotated    Action = "scim_token.rotated"
+	ServiceTokenCreated Action = "service_token.created"
+	ServiceTokenRevoked Action = "service_token.revoked"
 
 	UserProvisioned   Action = "user.provisioned"
 	UserUpdated       Action = "user.updated"
@@ -56,11 +56,11 @@ const (
 type ActorKind string
 
 const (
-	ActorUser        ActorKind = "user"
-	ActorAPIToken    ActorKind = "api_token"
-	ActorIngestToken ActorKind = "ingest_token"
-	ActorSCIM        ActorKind = "scim"
-	ActorSystem      ActorKind = "system"
+	ActorUser         ActorKind = "user"
+	ActorServiceToken ActorKind = "service_token"
+	ActorIngestToken  ActorKind = "ingest_token"
+	ActorSCIM         ActorKind = "scim"
+	ActorSystem       ActorKind = "system"
 )
 
 // Actor is who did it, as they were at the time: a user, a token, the SCIM
@@ -96,15 +96,15 @@ func (a Actor) Label() string {
 type ResourceKind string
 
 const (
-	ResourceUser        ResourceKind = "user"
-	ResourceGroup       ResourceKind = "group"
-	ResourceAPIToken    ResourceKind = "api_token"
-	ResourceSCIMToken   ResourceKind = "scim_token"
-	ResourceRevision    ResourceKind = "definitions_revision"
-	ResourceBlueprint   ResourceKind = "blueprint"
-	ResourceEntity      ResourceKind = "entity"
-	ResourceIntegration ResourceKind = "integration"
-	ResourceIngestToken ResourceKind = "ingest_token"
+	ResourceUser         ResourceKind = "user"
+	ResourceGroup        ResourceKind = "group"
+	ResourceServiceToken ResourceKind = "service_token"
+	ResourceSCIMToken    ResourceKind = "scim_token"
+	ResourceRevision     ResourceKind = "definitions_revision"
+	ResourceBlueprint    ResourceKind = "blueprint"
+	ResourceEntity       ResourceKind = "entity"
+	ResourceIntegration  ResourceKind = "integration"
+	ResourceIngestToken  ResourceKind = "ingest_token"
 )
 
 // Resource is what it was done to, with the resource it belongs to when it

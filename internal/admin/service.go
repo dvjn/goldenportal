@@ -1,5 +1,5 @@
 // Package admin is the API behind the system settings: the portal's
-// identity settings, who holds which role, API tokens, the SCIM token and the
+// identity settings, who holds which role, service tokens, the SCIM token and the
 // audit log.
 package admin
 
@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
+	"github.com/dvjn/goldport/internal/token"
 )
 
 type grantStore interface {
@@ -31,10 +31,10 @@ type userDirectory interface {
 }
 
 type tokenStore interface {
-	Create(ctx context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error)
-	Rotate(ctx context.Context, newToken apitoken.NewToken) (apitoken.Token, string, error)
-	List(ctx context.Context, kind string) ([]apitoken.Token, error)
-	Revoke(ctx context.Context, kind, id string) (apitoken.Token, error)
+	Create(ctx context.Context, newToken token.NewToken) (token.Token, string, error)
+	Rotate(ctx context.Context, newToken token.NewToken) (token.Token, string, error)
+	List(ctx context.Context, kind string) ([]token.Token, error)
+	Revoke(ctx context.Context, kind, id string) (token.Token, error)
 	LastUsed(ctx context.Context, kind string) (time.Time, error)
 }
 
@@ -85,9 +85,9 @@ func (s *Service) Register(routes *httpx.Routes) {
 	routes.GET("/api/v1/access/users/{id}", httpx.Requires(access.AccessRead), s.checkUser)
 	routes.DELETE("/api/v1/access/users/{id}/sessions", httpx.Requires(access.AccessWrite), s.revokeSessions)
 
-	routes.GET("/api/v1/access/tokens", httpx.Requires(access.AccessRead), s.listTokens)
-	routes.POST("/api/v1/access/tokens", httpx.Requires(access.AccessWrite), s.createToken)
-	routes.DELETE("/api/v1/access/tokens/{id}", httpx.Requires(access.AccessWrite), s.revokeToken)
+	routes.GET("/api/v1/access/service-tokens", httpx.Requires(access.AccessRead), s.listServiceTokens)
+	routes.POST("/api/v1/access/service-tokens", httpx.Requires(access.AccessWrite), s.createServiceToken)
+	routes.DELETE("/api/v1/access/service-tokens/{id}", httpx.Requires(access.AccessWrite), s.revokeServiceToken)
 
 	routes.GET("/api/v1/audit", httpx.Requires(access.AuditRead), s.listAudit)
 	routes.GET("/api/v1/audit/facets", httpx.Requires(access.AuditRead), s.auditFacets)

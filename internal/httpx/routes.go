@@ -30,7 +30,7 @@ func Authenticated() Access { return Access{session: true} }
 func Requires(permission Permission) Access { return Access{session: true, permission: permission} }
 
 // Ingest lets in only an ingest token, and only for the integration the
-// route's IntegrationParam names. No session and no API token is an ingest
+// route's IntegrationParam names. No session and no bearer token is an ingest
 // identity.
 func Ingest() Access { return Access{session: true, ingest: true} }
 

@@ -1,6 +1,6 @@
-// Package apitoken stores the bearer tokens that machines call the portal
+// Package token stores the bearer tokens that machines call the portal
 // with. Only a token's SHA-256 hash is stored.
-package apitoken
+package token
 
 import (
 	"context"
@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	KindSCIM   = "scim"
-	KindAPI    = "api"
-	KindIngest = "ingest"
+	KindSCIM    = "scim"
+	KindService = "service"
+	KindIngest  = "ingest"
 )
 
 // Prefix starts every token the portal generates, and IngestPrefix every
@@ -29,9 +29,9 @@ const (
 )
 
 var prefixes = map[string]string{
-	KindSCIM:   Prefix,
-	KindAPI:    Prefix,
-	KindIngest: IngestPrefix,
+	KindSCIM:    Prefix,
+	KindService: Prefix,
+	KindIngest:  IngestPrefix,
 }
 
 var ErrNotFound = errors.New("token not found")
@@ -74,29 +74,29 @@ const tokenColumns = `t.id, t.kind, t.name, COALESCE(t.role, ''), COALESCE(t.int
 
 const (
 	queryFindToken = `WITH used AS (
-			UPDATE api_tokens SET last_used_at = NOW()
+			UPDATE tokens SET last_used_at = NOW()
 			WHERE kind = $1 AND token_hash = $2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())
 			RETURNING *
 		)
 		SELECT ` + tokenColumns + ` FROM used t LEFT JOIN users u ON u.id = t.created_by`
-	querySeedToken = `INSERT INTO api_tokens (kind, name, token_hash)
-		SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM api_tokens WHERE kind = $1)`
+	querySeedToken = `INSERT INTO tokens (kind, name, token_hash)
+		SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM tokens WHERE kind = $1)`
 	queryCreateToken = `WITH created AS (
-			INSERT INTO api_tokens (kind, name, token_hash, role, created_by, expires_at, integration)
+			INSERT INTO tokens (kind, name, token_hash, role, created_by, expires_at, integration)
 			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, '')::uuid, $6, NULLIF($7, ''))
 			RETURNING *
 		)
 		SELECT ` + tokenColumns + ` FROM created t LEFT JOIN users u ON u.id = t.created_by`
-	queryListTokens = `SELECT ` + tokenColumns + ` FROM api_tokens t LEFT JOIN users u ON u.id = t.created_by
+	queryListTokens = `SELECT ` + tokenColumns + ` FROM tokens t LEFT JOIN users u ON u.id = t.created_by
 		WHERE t.kind = $1 AND COALESCE(t.integration, '') = $2 AND t.revoked_at IS NULL ORDER BY t.created_at DESC`
 	queryRevokeToken = `WITH revoked AS (
-			UPDATE api_tokens SET revoked_at = NOW()
+			UPDATE tokens SET revoked_at = NOW()
 			WHERE kind = $1 AND id::text = $2 AND COALESCE(integration, '') = $3 AND revoked_at IS NULL
 			RETURNING *
 		)
 		SELECT ` + tokenColumns + ` FROM revoked t LEFT JOIN users u ON u.id = t.created_by`
-	queryRevokeOthers = `UPDATE api_tokens SET revoked_at = NOW() WHERE kind = $1 AND id <> $2 AND revoked_at IS NULL`
-	queryLastUsed     = `SELECT MAX(last_used_at) FROM api_tokens WHERE kind = $1`
+	queryRevokeOthers = `UPDATE tokens SET revoked_at = NOW() WHERE kind = $1 AND id <> $2 AND revoked_at IS NULL`
+	queryLastUsed     = `SELECT MAX(last_used_at) FROM tokens WHERE kind = $1`
 )
 
 // Find returns the live token of the kind with the secret, and records its

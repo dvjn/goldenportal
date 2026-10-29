@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/definition"
 	"github.com/dvjn/goldport/internal/httpx"
+	"github.com/dvjn/goldport/internal/token"
 	"gofr.dev/pkg/gofr"
 )
 
@@ -38,14 +38,14 @@ type tokenView struct {
 	LastUsedAt time.Time `json:"last_used_at,omitzero"`
 }
 
-func newTokenView(token apitoken.Token) tokenView {
+func newTokenView(ingest token.Token) tokenView {
 	return tokenView{
-		ID:         token.ID,
-		Name:       token.Name,
-		CreatedBy:  token.CreatedByEmail,
-		CreatedAt:  token.CreatedAt,
-		ExpiresAt:  token.ExpiresAt,
-		LastUsedAt: token.LastUsedAt,
+		ID:         ingest.ID,
+		Name:       ingest.Name,
+		CreatedBy:  ingest.CreatedByEmail,
+		CreatedAt:  ingest.CreatedAt,
+		ExpiresAt:  ingest.ExpiresAt,
+		LastUsedAt: ingest.LastUsedAt,
 	}
 }
 
@@ -117,8 +117,8 @@ func (s *Service) createToken(ctx *gofr.Context) (any, error) {
 		return nil, errTokenExpiry
 	}
 	principal, _ := auth.PrincipalFrom(ctx)
-	token, secret, err := s.tokens.Create(ctx, apitoken.NewToken{
-		Kind:        apitoken.KindIngest,
+	created, secret, err := s.tokens.Create(ctx, token.NewToken{
+		Kind:        token.KindIngest,
 		Name:        name,
 		Integration: integration.Identifier,
 		CreatedBy:   principal.User.ID,
@@ -130,13 +130,13 @@ func (s *Service) createToken(ctx *gofr.Context) (any, error) {
 	if err := s.audit.Record(ctx, audit.Entry{
 		Actor:    principal.Actor(),
 		Action:   audit.IngestTokenCreated,
-		Resource: ingestTokenResource(integration, token),
-		Details:  map[string]any{"expires_at": token.ExpiresAt},
+		Resource: ingestTokenResource(integration, created),
+		Details:  map[string]any{"expires_at": created.ExpiresAt},
 	}); err != nil {
 		return nil, err
 	}
 
-	return createdToken{Token: newTokenView(token), Secret: secret, IngestURL: s.ingestURL(integration)}, nil
+	return createdToken{Token: newTokenView(created), Secret: secret, IngestURL: s.ingestURL(integration)}, nil
 }
 
 func (s *Service) revokeToken(ctx *gofr.Context) (any, error) {
@@ -144,8 +144,8 @@ func (s *Service) revokeToken(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	token, err := s.tokens.RevokeIngest(ctx, integration.Identifier, ctx.PathParam("id"))
-	if errors.Is(err, apitoken.ErrNotFound) {
+	revoked, err := s.tokens.RevokeIngest(ctx, integration.Identifier, ctx.PathParam("id"))
+	if errors.Is(err, token.ErrNotFound) {
 		return nil, errTokenNotFound
 	}
 	if err != nil {
@@ -156,11 +156,11 @@ func (s *Service) revokeToken(ctx *gofr.Context) (any, error) {
 	return nil, s.audit.Record(ctx, audit.Entry{
 		Actor:    principal.Actor(),
 		Action:   audit.IngestTokenRevoked,
-		Resource: ingestTokenResource(integration, token),
+		Resource: ingestTokenResource(integration, revoked),
 	})
 }
 
-func ingestTokenResource(integration *definition.Integration, ingest apitoken.Token) audit.Resource {
+func ingestTokenResource(integration *definition.Integration, ingest token.Token) audit.Resource {
 	return audit.Resource{
 		Kind: audit.ResourceIngestToken, ID: ingest.ID, Name: ingest.Name,
 		Parent: audit.Parent{Kind: audit.ResourceIntegration, ID: integration.Identifier, Name: integration.Title},

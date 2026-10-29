@@ -22,7 +22,7 @@ type client struct {
 func newClient(getenv func(string) string) (*client, error) {
 	base, token := getenv("GOLDPORT_URL"), getenv("GOLDPORT_TOKEN")
 	if base == "" || token == "" {
-		return nil, errors.New("set GOLDPORT_URL to the portal's address and GOLDPORT_TOKEN to an API token")
+		return nil, errors.New("set GOLDPORT_URL to the portal's address and GOLDPORT_TOKEN to a service token")
 	}
 
 	return &client{base: strings.TrimSuffix(base, "/") + "/api/v1/", token: token, http: &http.Client{Timeout: time.Minute}}, nil

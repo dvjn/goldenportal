@@ -6,7 +6,6 @@ import (
 
 	"github.com/dvjn/goldport/internal/access"
 	"github.com/dvjn/goldport/internal/admin"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/catalog"
@@ -15,6 +14,7 @@ import (
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/integration"
 	"github.com/dvjn/goldport/internal/scim"
+	"github.com/dvjn/goldport/internal/token"
 	"github.com/dvjn/goldport/internal/web"
 	"github.com/dvjn/goldport/migrations"
 	"gofr.dev/pkg/gofr"
@@ -36,7 +36,7 @@ func register(app *gofr.App) error {
 	if err != nil {
 		return err
 	}
-	scimToken, err := apitoken.SCIMToken(app.Config)
+	scimToken, err := token.SCIMToken(app.Config)
 	if err != nil {
 		return err
 	}
@@ -46,13 +46,13 @@ func register(app *gofr.App) error {
 	}
 	directoryStore := directory.NewStore(app.GetSQL())
 	sessions := auth.NewSessions(app.GetSQL(), authConfig)
-	tokens := apitoken.NewStore(app.GetSQL())
+	tokens := token.NewStore(app.GetSQL())
 	grants := access.NewGrants(app.GetSQL())
 	resolver := access.NewResolver(grants, authConfig.BootstrapAdmins)
 	auditLog := audit.NewLog(app.GetSQL())
 	portalName := app.Config.GetOrDefault("GOLDPORT_NAME", "GoldPort")
 
-	app.OnStart(apitoken.SeedSCIMToken(tokens, scimToken))
+	app.OnStart(token.SeedSCIMToken(tokens, scimToken))
 
 	routes := httpx.NewRoutes(app)
 	app.UseMiddleware(

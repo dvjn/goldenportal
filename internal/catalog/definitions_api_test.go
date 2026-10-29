@@ -33,9 +33,9 @@ func TestOnlyModelersPlanAndApply(t *testing.T) {
 	}{
 		{"signed out", "", http.StatusUnauthorized, http.StatusUnauthorized},
 		{"member", "cara", http.StatusForbidden, http.StatusForbidden},
-		{"member API token", "gpt_viewer", http.StatusForbidden, http.StatusForbidden},
+		{"member service token", "gpt_viewer", http.StatusForbidden, http.StatusForbidden},
 		{"maintainer", "bob", http.StatusCreated, http.StatusNotFound},
-		{"maintainer API token", "gpt_ci", http.StatusCreated, http.StatusNotFound},
+		{"maintainer service token", "gpt_ci", http.StatusCreated, http.StatusNotFound},
 		{"admin", "alice", http.StatusCreated, http.StatusNotFound},
 	}
 	for _, tc := range cases {

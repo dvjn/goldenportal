@@ -56,8 +56,8 @@ var rolePermissions = map[Role][]Permission{
 // GrantRoles are the roles a grant can give. Member needs no grant.
 var GrantRoles = []Role{Maintainer, Admin}
 
-// TokenRoles are the roles an API token can hold. No machine is an Admin.
-var TokenRoles = []Role{Member, Maintainer}
+// ServiceTokenRoles are the roles a service token can hold. No machine is an Admin.
+var ServiceTokenRoles = []Role{Member, Maintainer}
 
 func (r Role) Permissions() []Permission {
 	return append([]Permission{}, rolePermissions[r]...)

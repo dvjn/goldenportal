@@ -11,20 +11,20 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
+	"github.com/dvjn/goldport/internal/token"
 	"gofr.dev/pkg/gofr/container"
 )
 
 var ErrNoSession = errors.New("no session")
 
 // Principal is who is behind a request and the role they hold: a signed-in
-// user with a session, or an API token, whose name stands in User.Name.
+// user with a session, or a service token, whose name stands in User.Name.
 type Principal struct {
 	User      directory.User
 	SessionID string
-	APIToken  apitoken.Token
+	Token     token.Token
 	Access    access.Resolution
 }
 
@@ -33,13 +33,13 @@ func (p Principal) Can(permission access.Permission) bool {
 }
 
 var tokenActorKinds = map[string]audit.ActorKind{
-	apitoken.KindAPI:    audit.ActorAPIToken,
-	apitoken.KindIngest: audit.ActorIngestToken,
+	token.KindService: audit.ActorServiceToken,
+	token.KindIngest:  audit.ActorIngestToken,
 }
 
 func (p Principal) Actor() audit.Actor {
-	if kind, ok := tokenActorKinds[p.APIToken.Kind]; ok {
-		return audit.Actor{Kind: kind, ID: p.APIToken.ID, Name: p.APIToken.Name}
+	if kind, ok := tokenActorKinds[p.Token.Kind]; ok {
+		return audit.Actor{Kind: kind, ID: p.Token.ID, Name: p.Token.Name}
 	}
 
 	return audit.Actor{Kind: audit.ActorUser, ID: p.User.ID, Name: p.User.Name, Email: p.User.Email}

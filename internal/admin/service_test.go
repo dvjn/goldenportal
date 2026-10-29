@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
+	"github.com/dvjn/goldport/internal/token"
 )
 
 func decode[T any](t *testing.T, body []byte) T {
@@ -34,7 +34,7 @@ func TestOnlyAdminsChangeAccess(t *testing.T) {
 		{"unknown session", "u-9", http.StatusUnauthorized},
 		{"member", "u-4", http.StatusForbidden},
 		{"maintainer through a group", "u-2", http.StatusForbidden},
-		{"maintainer API token", "gpt_ci", http.StatusForbidden},
+		{"maintainer service token", "gpt_ci", http.StatusForbidden},
 		{"admin through a group", "u-1", http.StatusOK},
 		{"bootstrap admin", "u-3", http.StatusOK},
 	}
@@ -208,7 +208,7 @@ func TestCreateTokenValidatesTheRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness()
 
-			response := h.do(t, http.MethodPost, "/api/v1/access/tokens", "u-1", tc.body)
+			response := h.do(t, http.MethodPost, "/api/v1/access/service-tokens", "u-1", tc.body)
 
 			if response.Code != tc.status {
 				t.Fatalf("status = %d, want %d: %s", response.Code, tc.status, response.Body.String())
@@ -216,11 +216,11 @@ func TestCreateTokenValidatesTheRequest(t *testing.T) {
 			if tc.status != http.StatusCreated {
 				return
 			}
-			created := decode[secretResponse[tokenResponse]](t, response.Body.Bytes())
+			created := decode[secretResponse[serviceTokenResponse]](t, response.Body.Bytes())
 			if created.Secret != "gpt_new" || created.Token.Name != "ci" || h.tokens.created[0].CreatedBy != "u-1" {
 				t.Fatalf("created = %+v, store saw %+v", created, h.tokens.created)
 			}
-			if entry := h.audit.entries[0]; entry.Action != audit.APITokenCreated || entry.Resource.Kind != audit.ResourceAPIToken || entry.Resource.Name != "ci" {
+			if entry := h.audit.entries[0]; entry.Action != audit.ServiceTokenCreated || entry.Resource.Kind != audit.ResourceServiceToken || entry.Resource.Name != "ci" {
 				t.Fatalf("audit = %+v", entry)
 			}
 		})
@@ -230,10 +230,10 @@ func TestCreateTokenValidatesTheRequest(t *testing.T) {
 func TestRevokeTokenRecordsTheTokenName(t *testing.T) {
 	h := newHarness()
 
-	if response := h.do(t, http.MethodDelete, "/api/v1/access/tokens/t-1", "u-1", ""); response.Code != http.StatusNoContent {
+	if response := h.do(t, http.MethodDelete, "/api/v1/access/service-tokens/t-1", "u-1", ""); response.Code != http.StatusNoContent {
 		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
 	}
-	if response := h.do(t, http.MethodDelete, "/api/v1/access/tokens/t-2", "u-1", ""); response.Code != http.StatusNotFound {
+	if response := h.do(t, http.MethodDelete, "/api/v1/access/service-tokens/t-2", "u-1", ""); response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for an unknown token", response.Code)
 	}
 	if len(h.audit.entries) != 1 || h.audit.entries[0].Resource.Name != "ci" {
@@ -250,7 +250,7 @@ func TestRotateSCIMTokenReturnsTheSecretOnce(t *testing.T) {
 		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
 	}
 	rotated := decode[secretResponse[scimTokenResponse]](t, response.Body.Bytes())
-	if rotated.Secret != "gpt_scim" || h.tokens.rotated[0].Kind != apitoken.KindSCIM {
+	if rotated.Secret != "gpt_scim" || h.tokens.rotated[0].Kind != token.KindSCIM {
 		t.Fatalf("rotated = %+v, store saw %+v", rotated, h.tokens.rotated)
 	}
 	if h.audit.entries[0].Action != audit.SCIMTokenRotated {

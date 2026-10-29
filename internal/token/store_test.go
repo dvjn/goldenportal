@@ -1,4 +1,4 @@
-package apitoken
+package token
 
 import (
 	"context"
@@ -31,7 +31,7 @@ func tokenRows() *sqlmock.Rows {
 
 func ciToken() Token {
 	return Token{
-		ID: "t-1", Kind: KindAPI, Name: "ci", Role: access.Maintainer, CreatedBy: "u-1", CreatedByEmail: "alice@example.test",
+		ID: "t-1", Kind: KindService, Name: "ci", Role: access.Maintainer, CreatedBy: "u-1", CreatedByEmail: "alice@example.test",
 		CreatedAt: createdAt, ExpiresAt: createdAt.AddDate(0, 3, 0),
 	}
 }
@@ -58,13 +58,13 @@ func TestVerifyAcceptsOnlyLiveTokensOfTheKind(t *testing.T) {
 
 func TestFindReturnsTheTokenWithItsRole(t *testing.T) {
 	store, db := newStore(t)
-	db.ExpectQuery(queryFindToken).WithArgs(KindAPI, hash("gpt_live")).WillReturnRows(addToken(tokenRows(), ciToken()))
-	db.ExpectQuery(queryFindToken).WithArgs(KindAPI, hash("gpt_expired")).WillReturnRows(tokenRows())
+	db.ExpectQuery(queryFindToken).WithArgs(KindService, hash("gpt_live")).WillReturnRows(addToken(tokenRows(), ciToken()))
+	db.ExpectQuery(queryFindToken).WithArgs(KindService, hash("gpt_expired")).WillReturnRows(tokenRows())
 
-	if token, err := store.Find(context.Background(), KindAPI, "gpt_live"); err != nil || token != ciToken() {
+	if token, err := store.Find(context.Background(), KindService, "gpt_live"); err != nil || token != ciToken() {
 		t.Fatalf("Find(live) = %+v, %v, want %+v", token, err, ciToken())
 	}
-	if _, err := store.Find(context.Background(), KindAPI, "gpt_expired"); !errors.Is(err, ErrNotFound) {
+	if _, err := store.Find(context.Background(), KindService, "gpt_expired"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Find(expired) error = %v, want ErrNotFound", err)
 	}
 }
@@ -73,11 +73,11 @@ func TestCreateStoresOnlyTheHashOfAPrefixedSecret(t *testing.T) {
 	store, db := newStore(t)
 	want := ciToken()
 	db.ExpectQuery(queryCreateToken).
-		WithArgs(KindAPI, "ci", sqlmock.AnyArg(), access.Maintainer, "u-1", sql.NullTime{Time: want.ExpiresAt, Valid: true}, "").
+		WithArgs(KindService, "ci", sqlmock.AnyArg(), access.Maintainer, "u-1", sql.NullTime{Time: want.ExpiresAt, Valid: true}, "").
 		WillReturnRows(addToken(tokenRows(), want))
 
 	token, secret, err := store.Create(context.Background(), NewToken{
-		Kind: KindAPI, Name: "ci", Role: access.Maintainer, CreatedBy: "u-1", ExpiresAt: want.ExpiresAt,
+		Kind: KindService, Name: "ci", Role: access.Maintainer, CreatedBy: "u-1", ExpiresAt: want.ExpiresAt,
 	})
 	if err != nil || token != want {
 		t.Fatalf("Create() = %+v, %v, want %+v", token, err, want)
@@ -105,17 +105,17 @@ func TestRotateCreatesATokenAndRevokesTheOthers(t *testing.T) {
 
 func TestListAndRevoke(t *testing.T) {
 	store, db := newStore(t)
-	db.ExpectQuery(queryListTokens).WithArgs(KindAPI, "").WillReturnRows(addToken(tokenRows(), ciToken()))
-	db.ExpectQuery(queryRevokeToken).WithArgs(KindAPI, "t-1", "").WillReturnRows(addToken(tokenRows(), ciToken()))
-	db.ExpectQuery(queryRevokeToken).WithArgs(KindAPI, "t-1", "").WillReturnRows(tokenRows())
+	db.ExpectQuery(queryListTokens).WithArgs(KindService, "").WillReturnRows(addToken(tokenRows(), ciToken()))
+	db.ExpectQuery(queryRevokeToken).WithArgs(KindService, "t-1", "").WillReturnRows(addToken(tokenRows(), ciToken()))
+	db.ExpectQuery(queryRevokeToken).WithArgs(KindService, "t-1", "").WillReturnRows(tokenRows())
 
-	if tokens, err := store.List(context.Background(), KindAPI); err != nil || len(tokens) != 1 || tokens[0] != ciToken() {
+	if tokens, err := store.List(context.Background(), KindService); err != nil || len(tokens) != 1 || tokens[0] != ciToken() {
 		t.Fatalf("List() = %+v, %v", tokens, err)
 	}
-	if token, err := store.Revoke(context.Background(), KindAPI, "t-1"); err != nil || token.Name != "ci" {
+	if token, err := store.Revoke(context.Background(), KindService, "t-1"); err != nil || token.Name != "ci" {
 		t.Fatalf("Revoke() = %+v, %v", token, err)
 	}
-	if _, err := store.Revoke(context.Background(), KindAPI, "t-1"); !errors.Is(err, ErrNotFound) {
+	if _, err := store.Revoke(context.Background(), KindService, "t-1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second Revoke() error = %v, want ErrNotFound", err)
 	}
 }

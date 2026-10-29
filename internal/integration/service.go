@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/catalog"
 	"github.com/dvjn/goldport/internal/definition"
 	"github.com/dvjn/goldport/internal/httpx"
+	"github.com/dvjn/goldport/internal/token"
 )
 
 type definitionReader interface {
@@ -37,9 +37,9 @@ type entityCounter interface {
 }
 
 type tokenStore interface {
-	Create(ctx context.Context, token apitoken.NewToken) (apitoken.Token, string, error)
-	ListIngest(ctx context.Context, integration string) ([]apitoken.Token, error)
-	RevokeIngest(ctx context.Context, integration, id string) (apitoken.Token, error)
+	Create(ctx context.Context, token token.NewToken) (token.Token, string, error)
+	ListIngest(ctx context.Context, integration string) ([]token.Token, error)
+	RevokeIngest(ctx context.Context, integration, id string) (token.Token, error)
 }
 
 type auditLog interface {

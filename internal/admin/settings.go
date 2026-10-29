@@ -3,10 +3,10 @@ package admin
 import (
 	"time"
 
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/directory"
+	"github.com/dvjn/goldport/internal/token"
 	"gofr.dev/pkg/gofr"
 )
 
@@ -58,7 +58,7 @@ type scimResponse struct {
 }
 
 func (s *Service) getSCIM(ctx *gofr.Context) (any, error) {
-	lastPush, err := s.tokens.LastUsed(ctx, apitoken.KindSCIM)
+	lastPush, err := s.tokens.LastUsed(ctx, token.KindSCIM)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +94,8 @@ type scimTokenResponse struct {
 // the identity provider fails until it has the new token.
 func (s *Service) rotateSCIMToken(ctx *gofr.Context) (any, error) {
 	principal, _ := auth.PrincipalFrom(ctx)
-	rotated, secret, err := s.tokens.Rotate(ctx, apitoken.NewToken{
-		Kind:      apitoken.KindSCIM,
+	rotated, secret, err := s.tokens.Rotate(ctx, token.NewToken{
+		Kind:      token.KindSCIM,
 		Name:      "Rotated by " + principal.Actor().Label(),
 		CreatedBy: principal.User.ID,
 	})

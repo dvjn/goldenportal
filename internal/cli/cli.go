@@ -22,7 +22,7 @@ const usage = `Usage:
   goldport export -o <file>                      write the portal's definitions to a file, - for stdout
   goldport apply -f <file or directory> [--yes]  plan the files as the whole set of definitions, then apply
 
-export and apply call the portal at GOLDPORT_URL with the API token in
+export and apply call the portal at GOLDPORT_URL with the service token in
 GOLDPORT_TOKEN. apply needs a Maintainer token.
 `
 

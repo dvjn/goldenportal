@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/dvjn/goldport/internal/access"
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/auth"
 	"github.com/dvjn/goldport/internal/catalog"
@@ -23,6 +22,7 @@ import (
 	"github.com/dvjn/goldport/internal/directory"
 	"github.com/dvjn/goldport/internal/httpx"
 	"github.com/dvjn/goldport/internal/httpx/httpxtest"
+	"github.com/dvjn/goldport/internal/token"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
 )
@@ -66,48 +66,48 @@ func (fixedRoles) Resolve(_ context.Context, user directory.User) (access.Resolu
 }
 
 // memoryTokens holds tokens by secret.
-type memoryTokens map[string]apitoken.Token
+type memoryTokens map[string]token.Token
 
-func (m memoryTokens) Find(_ context.Context, kind, secret string) (apitoken.Token, error) {
-	token, ok := m[secret]
-	if !ok || token.Kind != kind {
-		return apitoken.Token{}, apitoken.ErrNotFound
+func (m memoryTokens) Find(_ context.Context, kind, secret string) (token.Token, error) {
+	found, ok := m[secret]
+	if !ok || found.Kind != kind {
+		return token.Token{}, token.ErrNotFound
 	}
 
-	return token, nil
+	return found, nil
 }
 
-func (m memoryTokens) Create(_ context.Context, token apitoken.NewToken) (apitoken.Token, string, error) {
-	created := apitoken.Token{
-		ID: fmt.Sprintf("t-%d", len(m)+1), Kind: token.Kind, Name: token.Name, Integration: token.Integration,
-		CreatedBy: token.CreatedBy, CreatedByEmail: "bob@example.test", CreatedAt: at, ExpiresAt: token.ExpiresAt,
+func (m memoryTokens) Create(_ context.Context, newToken token.NewToken) (token.Token, string, error) {
+	created := token.Token{
+		ID: fmt.Sprintf("t-%d", len(m)+1), Kind: newToken.Kind, Name: newToken.Name, Integration: newToken.Integration,
+		CreatedBy: newToken.CreatedBy, CreatedByEmail: "bob@example.test", CreatedAt: at, ExpiresAt: newToken.ExpiresAt,
 	}
-	secret := apitoken.IngestPrefix + created.ID
+	secret := token.IngestPrefix + created.ID
 	m[secret] = created
 
 	return created, secret, nil
 }
 
-func (m memoryTokens) ListIngest(_ context.Context, integration string) ([]apitoken.Token, error) {
-	var tokens []apitoken.Token
+func (m memoryTokens) ListIngest(_ context.Context, integration string) ([]token.Token, error) {
+	var tokens []token.Token
 	for _, secret := range slices.Sorted(maps.Keys(m)) {
-		if token := m[secret]; token.Kind == apitoken.KindIngest && token.Integration == integration {
-			tokens = append(tokens, token)
+		if ingest := m[secret]; ingest.Kind == token.KindIngest && ingest.Integration == integration {
+			tokens = append(tokens, ingest)
 		}
 	}
 
 	return tokens, nil
 }
 
-func (m memoryTokens) RevokeIngest(_ context.Context, integration, id string) (apitoken.Token, error) {
-	for secret, token := range m {
-		if token.Kind == apitoken.KindIngest && token.Integration == integration && token.ID == id {
+func (m memoryTokens) RevokeIngest(_ context.Context, integration, id string) (token.Token, error) {
+	for secret, ingest := range m {
+		if ingest.Kind == token.KindIngest && ingest.Integration == integration && ingest.ID == id {
 			delete(m, secret)
-			return token, nil
+			return ingest, nil
 		}
 	}
 
-	return apitoken.Token{}, apitoken.ErrNotFound
+	return token.Token{}, token.ErrNotFound
 }
 
 type memoryDefinitions struct {
@@ -328,9 +328,9 @@ func newHarness(t *testing.T) *harness {
 		writer:      &recordingWriter{owned: map[string]bool{}},
 		runs:        &memoryRuns{},
 		tokens: memoryTokens{
-			"gpi_ci":     {ID: "t-1", Kind: apitoken.KindIngest, Name: "pipelines", Integration: "ci"},
-			"gpi_gitlab": {ID: "t-2", Kind: apitoken.KindIngest, Name: "stale", Integration: "gitlab"},
-			"gpt_ci":     {ID: "t-3", Kind: apitoken.KindAPI, Name: "ci", Role: access.Maintainer},
+			"gpi_ci":     {ID: "t-1", Kind: token.KindIngest, Name: "pipelines", Integration: "ci"},
+			"gpi_gitlab": {ID: "t-2", Kind: token.KindIngest, Name: "stale", Integration: "gitlab"},
+			"gpt_ci":     {ID: "t-3", Kind: token.KindService, Name: "ci", Role: access.Maintainer},
 		},
 		audit:  &memoryAudit{},
 		gitlab: &fakeConnector{records: connector.Records{}},
@@ -382,7 +382,7 @@ func (h *harness) do(method, path, as string, body any) *httptest.ResponseRecord
 	}
 	request := httptest.NewRequest(method, path, strings.NewReader(text))
 	request.Header.Set("Content-Type", "application/json")
-	if strings.HasPrefix(as, apitoken.Prefix) || strings.HasPrefix(as, apitoken.IngestPrefix) {
+	if strings.HasPrefix(as, token.Prefix) || strings.HasPrefix(as, token.IngestPrefix) {
 		request.Header.Set("Authorization", "Bearer "+as)
 	} else {
 		request.AddCookie(&http.Cookie{Name: testCookies.Session, Value: as})

@@ -10,9 +10,9 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"gofr.dev/pkg/gofr/container"
 
-	"github.com/dvjn/goldport/internal/apitoken"
 	"github.com/dvjn/goldport/internal/audit"
 	"github.com/dvjn/goldport/internal/directory"
+	"github.com/dvjn/goldport/internal/token"
 )
 
 func newSessions(t *testing.T) (*Sessions, sqlmock.Sqlmock) {
@@ -118,13 +118,13 @@ func TestPrincipalActorNamesTheTokenOrTheUser(t *testing.T) {
 	}{
 		{"user", Principal{User: user}, audit.Actor{Kind: audit.ActorUser, ID: "u-1", Name: "Alice", Email: "alice@example.test"}},
 		{
-			"API token",
-			Principal{User: user, APIToken: apitoken.Token{ID: "t-1", Kind: apitoken.KindAPI, Name: "ci"}},
-			audit.Actor{Kind: audit.ActorAPIToken, ID: "t-1", Name: "ci"},
+			"service token",
+			Principal{User: user, Token: token.Token{ID: "t-1", Kind: token.KindService, Name: "ci"}},
+			audit.Actor{Kind: audit.ActorServiceToken, ID: "t-1", Name: "ci"},
 		},
 		{
 			"ingest token",
-			Principal{APIToken: apitoken.Token{ID: "t-2", Kind: apitoken.KindIngest, Name: "gitlab"}},
+			Principal{Token: token.Token{ID: "t-2", Kind: token.KindIngest, Name: "gitlab"}},
 			audit.Actor{Kind: audit.ActorIngestToken, ID: "t-2", Name: "gitlab"},
 		},
 	}
