@@ -9,7 +9,11 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
+
+const maxIdentifierLength = 255
 
 // OwnedWrite is what one integration writes in one transaction: entities by
 // blueprint, and with Sweep the integration's other entities of those
@@ -432,9 +436,14 @@ func (s *Store) OwnedCounts(ctx context.Context) ([]OwnedCount, error) {
 	return counts, rows.Err()
 }
 
-// ValidIdentifier reports whether an entity can have the identifier.
+// ValidIdentifier reports whether an entity can have the identifier. The
+// integration that owns an entity picks its identifier, so any text up to
+// the length limit goes, as long as it has no control characters.
 func ValidIdentifier(identifier string) bool {
-	return entityIdentifierPattern.MatchString(identifier)
+	return identifier != "" &&
+		utf8.ValidString(identifier) &&
+		utf8.RuneCountInString(identifier) <= maxIdentifierLength &&
+		!strings.ContainsFunc(identifier, unicode.IsControl)
 }
 
 // ValidTitle reports whether an entity can have the title.

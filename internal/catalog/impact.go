@@ -71,7 +71,7 @@ const (
 
 	queryDeleteBlueprintEntities   = `DELETE FROM entities WHERE blueprint = $1`
 	queryDeleteIntegrationEntities = `DELETE FROM entities WHERE integration = $1`
-	queryRevokeIngestTokens        = `UPDATE api_tokens SET revoked_at = NOW()
+	queryRevokeIngestTokens        = `UPDATE tokens SET revoked_at = NOW()
 		WHERE kind = 'ingest' AND integration = $1 AND revoked_at IS NULL`
 	queryDeleteSyncRuns = `DELETE FROM sync_runs WHERE integration = $1`
 	queryClearProperty  = `UPDATE entities SET properties = properties - $2::text, updated_at = NOW()

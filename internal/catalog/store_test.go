@@ -95,6 +95,9 @@ func TestApplyReplacesTheDefinitionsAndRecordsTheRevision(t *testing.T) {
 		{Blueprint: "service", Identifier: "payments-api", Title: "Payments API"},
 		{Blueprint: "service", Identifier: "ledger", Title: "Ledger"},
 	}}}
+	if revision.Author != (Author{UserID: "u-1", Label: "alice@example.test"}) {
+		t.Fatalf("Apply() author = %+v, want alice", revision.Author)
+	}
 	if revision.Number != 4 || !revision.CreatedAt.Equal(at) || !reflect.DeepEqual(revision.Impact.DeletedEntities, want) {
 		t.Fatalf("Apply() = %+v, want revision 4 that deleted both services", revision)
 	}
@@ -169,6 +172,9 @@ func TestApplyClearsOnlyTheValuesAChangedPropertyRefuses(t *testing.T) {
 	revision, err := store.Apply(context.Background(), plan, audit.Actor{Kind: audit.ActorServiceToken, ID: "t-1", Name: "ci"}, "")
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
+	}
+	if revision.Author != (Author{Label: "ci"}) {
+		t.Fatalf("Apply() author = %+v, want the token without a user ID", revision.Author)
 	}
 
 	want := []FieldImpact{{Field: definition.Field{Blueprint: "service", Name: "tier"}, Count: 1, Examples: []EntityName{
@@ -253,8 +259,11 @@ func TestCreateEntityRefusesAnIdentifierInUse(t *testing.T) {
 
 func TestEntitiesEscapesTheSearch(t *testing.T) {
 	store, db := newStore(t)
-	db.ExpectQuery(queryCountMatches).WithArgs("service", `%50\%%`, "").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	db.ExpectQuery(queryEntities).WithArgs("service", `%50\%%`, "", 0, 20).WillReturnRows(sqlmock.NewRows([]string{
+	db.ExpectQuery(`SELECT COUNT(*) FROM entities e WHERE e.blueprint = $1 AND (e.title ILIKE $2 OR e.identifier ILIKE $2)`).
+		WithArgs("service", `%50\%%`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	db.ExpectQuery(`SELECT e.blueprint, e.identifier, e.title, e.properties, e.integration, e.created_at, e.updated_at
+		FROM entities e WHERE e.blueprint = $1 AND (e.title ILIKE $2 OR e.identifier ILIKE $2) ORDER BY e.title ASC NULLS LAST, e.title ASC, e.identifier ASC OFFSET $3 LIMIT $4`).
+		WithArgs("service", `%50\%%`, 0, 20).WillReturnRows(sqlmock.NewRows([]string{
 		"blueprint", "identifier", "title", "properties", "integration", "created_at", "updated_at",
 	}))
 

@@ -35,25 +35,13 @@ type Link struct {
 	Target   EntityName
 }
 
-// EntityFilter selects entities of a blueprint. Search matches the title or
-// the identifier; an empty field matches every entity.
-type EntityFilter struct {
-	Blueprint   string
-	Search      string
-	Integration string
-}
-
 type IntegrationCount struct {
 	Integration string
 	Count       int
 }
 
 const (
-	entityColumns     = `blueprint, identifier, title, properties, integration, created_at, updated_at`
-	entityFilter      = `WHERE blueprint = $1 AND (title ILIKE $2 OR identifier ILIKE $2) AND ($3 = '' OR integration = $3)`
-	queryCountMatches = `SELECT COUNT(*) FROM entities ` + entityFilter
-	queryEntities     = `SELECT ` + entityColumns + ` FROM entities ` + entityFilter + `
-		ORDER BY title, identifier OFFSET $4 LIMIT $5`
+	entityColumns          = `blueprint, identifier, title, properties, integration, created_at, updated_at`
 	queryEntity            = `SELECT ` + entityColumns + ` FROM entities WHERE blueprint = $1 AND identifier = $2`
 	queryBlueprintCounts   = `SELECT blueprint, COUNT(*) FROM entities GROUP BY blueprint`
 	queryIntegrationCounts = `SELECT integration, COUNT(*) FROM entities WHERE blueprint = $1
@@ -85,32 +73,6 @@ const (
 		(source_blueprint, source_identifier, relation, target_blueprint, target_identifier)
 		VALUES ($1, $2, $3, $4, $5)`
 )
-
-// Entities returns a page of the entities that match the filter, by title,
-// and how many match.
-func (s *Store) Entities(ctx context.Context, filter EntityFilter, page Page) ([]Entity, int, error) {
-	search := "%" + escapeLike(filter.Search) + "%"
-	var total int
-	if err := s.db.QueryRowContext(ctx, queryCountMatches, filter.Blueprint, search, filter.Integration).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-	rows, err := s.db.QueryContext(ctx, queryEntities, filter.Blueprint, search, filter.Integration, page.Offset, page.Limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	entities := []Entity{}
-	for rows.Next() {
-		entity, err := scanEntity(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		entities = append(entities, entity)
-	}
-
-	return entities, total, rows.Err()
-}
 
 func escapeLike(text string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text)

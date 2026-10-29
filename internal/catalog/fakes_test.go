@@ -166,6 +166,30 @@ func (m *memoryEntities) Entity(_ context.Context, blueprint, identifier string)
 	return entity, nil
 }
 
+func (m *memoryEntities) LinksFrom(_ context.Context, blueprint string, identifiers []string) ([]Link, error) {
+	var links []Link
+	for _, identifier := range identifiers {
+		entity := m.byName[key(blueprint, identifier)]
+		for _, link := range entity.Links {
+			link.Source = entity.Name()
+			link.Target.Title = m.byName[key(link.Target.Blueprint, link.Target.Identifier)].Title
+			links = append(links, link)
+		}
+	}
+
+	return links, nil
+}
+
+func (m *memoryEntities) Reach(context.Context, string, []string, definition.Path) (map[string][]Reached, error) {
+	return map[string][]Reached{}, nil
+}
+
+func (m *memoryEntities) Changes(_ context.Context, limit int) ([]Entity, error) {
+	entities := slices.SortedFunc(maps.Values(m.byName), func(a, b Entity) int { return b.UpdatedAt.Compare(a.UpdatedAt) })
+
+	return entities[:min(limit, len(entities))], nil
+}
+
 func (m *memoryEntities) Incoming(_ context.Context, target EntityName) ([]Link, error) {
 	var links []Link
 	for _, entity := range m.byName {

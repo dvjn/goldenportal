@@ -22,6 +22,9 @@ type entityStore interface {
 	Entities(ctx context.Context, filter EntityFilter, page Page) ([]Entity, int, error)
 	Entity(ctx context.Context, blueprint, identifier string) (Entity, error)
 	Incoming(ctx context.Context, entity EntityName) ([]Link, error)
+	LinksFrom(ctx context.Context, blueprint string, identifiers []string) ([]Link, error)
+	Reach(ctx context.Context, blueprint string, identifiers []string, path definition.Path) (map[string][]Reached, error)
+	Changes(ctx context.Context, limit int) ([]Entity, error)
 	BlueprintCounts(ctx context.Context) (map[string]int, error)
 	IntegrationCounts(ctx context.Context, blueprint string) ([]IntegrationCount, error)
 	Missing(ctx context.Context, blueprint string, identifiers []string) ([]string, error)
@@ -58,10 +61,15 @@ func (s *Service) Register(routes *httpx.Routes) {
 	routes.POST("/api/v1/definitions/apply", httpx.Requires(access.CatalogModel), s.apply)
 
 	routes.GET("/api/v1/catalog/blueprints", httpx.Requires(access.CatalogRead), s.listBlueprints)
+	routes.GET("/api/v1/catalog/changes", httpx.Requires(access.CatalogRead), s.listChanges)
 	routes.GET("/api/v1/catalog/blueprints/{blueprint}", httpx.Requires(access.CatalogRead), s.getBlueprint)
 	routes.GET("/api/v1/catalog/blueprints/{blueprint}/entities", httpx.Requires(access.CatalogRead), s.listEntities)
 	routes.POST("/api/v1/catalog/blueprints/{blueprint}/entities", httpx.Requires(access.CatalogWrite), s.createEntity)
-	routes.GET("/api/v1/catalog/blueprints/{blueprint}/entities/{identifier}", httpx.Requires(access.CatalogRead), s.getEntity)
-	routes.PUT("/api/v1/catalog/blueprints/{blueprint}/entities/{identifier}", httpx.Requires(access.CatalogWrite), s.updateEntity)
-	routes.DELETE("/api/v1/catalog/blueprints/{blueprint}/entities/{identifier}", httpx.Requires(access.CatalogWrite), s.deleteEntity)
+	routes.GET(entityRoute, httpx.Requires(access.CatalogRead), s.getEntity)
+	routes.PUT(entityRoute, httpx.Requires(access.CatalogWrite), s.updateEntity)
+	routes.DELETE(entityRoute, httpx.Requires(access.CatalogWrite), s.deleteEntity)
 }
+
+// entityRoute matches the identifier across slashes: the router matches the
+// decoded path, so an identifier sent with %2F arrives as several segments.
+const entityRoute = "/api/v1/catalog/blueprints/{blueprint}/entities/{identifier:.+}"

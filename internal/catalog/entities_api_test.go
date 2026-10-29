@@ -50,9 +50,9 @@ func TestEntityWritesNeedCatalogWrite(t *testing.T) {
 	}{
 		{"signed out", "", http.StatusUnauthorized},
 		{"member", "cara", http.StatusForbidden},
-		{"member api token", "gpt_viewer", http.StatusForbidden},
+		{"member service token", "gpt_viewer", http.StatusForbidden},
 		{"maintainer", "bob", http.StatusCreated},
-		{"maintainer api token", "gpt_ci", http.StatusCreated},
+		{"maintainer service token", "gpt_ci", http.StatusCreated},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -97,7 +97,18 @@ func TestCreateEntityLinksItAndRecordsIt(t *testing.T) {
 		t.Fatalf("relations = %+v", created.Relations)
 	}
 	entry := h.audit.entries[0]
-	if entry.Action != audit.EntityCreated || entry.Resource.ID != "service/payments-api" || entry.Resource.Name != "Payments API" {
+	wantResource := audit.Resource{
+		Kind: audit.ResourceEntity, ID: "payments-api", Name: "Payments API",
+		Parent: audit.Parent{Kind: audit.ResourceBlueprint, ID: "service", Name: "Service"},
+	}
+	wantActor := audit.Actor{Kind: audit.ActorUser, ID: "u-2", Name: "Bob Baker", Email: "bob@example.test"}
+	wantChanges := audit.Changes{
+		"title": {Before: "", After: "Payments API"},
+		"tier":  {Before: nil, After: "2"},
+		"owner": {Before: []string(nil), After: []string{"payments"}},
+	}
+	if entry.Action != audit.EntityCreated || entry.Actor != wantActor || entry.Resource != wantResource ||
+		!reflect.DeepEqual(entry.Details[audit.ChangesKey], wantChanges) {
 		t.Fatalf("audit entry = %+v", entry)
 	}
 
@@ -112,7 +123,7 @@ func TestCreateEntityReportsInvalidFields(t *testing.T) {
 	h := newCatalog(t)
 
 	response := h.do(http.MethodPost, servicesPath, "bob", entityRequest{
-		Identifier: "payments api",
+		Identifier: "payments\tapi",
 		Title:      " ",
 		Properties: map[string]any{"tier": "9", "homepage": "https://example.test"},
 		Relations:  map[string][]string{"owner": {"payments", "platform"}, "team": {"payments"}},
@@ -193,15 +204,64 @@ func TestUpdateAndDeleteAManualEntity(t *testing.T) {
 	if updated.Identifier != "payments-api" || updated.Title != "Payments gateway" {
 		t.Fatalf("updated = %+v", updated)
 	}
-	if entry := h.audit.entries[1]; entry.Action != audit.EntityUpdated || !reflect.DeepEqual(entry.Details["changed"], []string{"title", "owner"}) {
+	wantUpdate := audit.Changes{
+		"title": {Before: "Payments API", After: "Payments gateway"},
+		"owner": {Before: []string{"payments"}, After: []string{"platform"}},
+	}
+	if entry := h.audit.entries[1]; entry.Action != audit.EntityUpdated || entry.Resource.ID != "payments-api" ||
+		entry.Resource.Name != "Payments gateway" || entry.Resource.Parent.ID != "service" ||
+		!reflect.DeepEqual(entry.Details[audit.ChangesKey], wantUpdate) {
 		t.Fatalf("audit entry = %+v", entry)
 	}
 
 	expectStatus(t, h.do(http.MethodDelete, servicesPath+"/payments-api", "bob", nil), http.StatusNoContent)
-	if entry := h.audit.entries[2]; entry.Action != audit.EntityDeleted || entry.Resource.Name != "Payments gateway" {
+	wantDelete := audit.Changes{
+		"title": {Before: "Payments gateway", After: ""},
+		"tier":  {Before: "2", After: nil},
+		"owner": {Before: []string{"platform"}, After: []string(nil)},
+	}
+	if entry := h.audit.entries[2]; entry.Action != audit.EntityDeleted || entry.Resource.ID != "payments-api" ||
+		entry.Resource.Name != "Payments gateway" || !reflect.DeepEqual(entry.Details[audit.ChangesKey], wantDelete) {
 		t.Fatalf("audit entry = %+v", entry)
 	}
 	expectStatus(t, h.do(http.MethodDelete, servicesPath+"/payments-api", "bob", nil), http.StatusNotFound)
+}
+
+func TestEntityChangesListOnlyWhatDiffers(t *testing.T) {
+	link := func(relation, identifier string) Link {
+		return Link{Relation: relation, Target: EntityName{Blueprint: "team", Identifier: identifier}}
+	}
+	previous := Entity{
+		Title:      "Payments API",
+		Properties: map[string]any{"tier": "2", "lang": "go"},
+		Links:      []Link{link("owner", "payments"), link("reviewers", "b"), link("reviewers", "a")},
+	}
+	current := Entity{
+		Title:      "Payments API",
+		Properties: map[string]any{"tier": "1", "lang": "go"},
+		Links:      []Link{link("owner", "payments"), link("reviewers", "a"), link("reviewers", "b")},
+	}
+
+	got := entityChanges(previous, current)
+
+	want := audit.Changes{"tier": {Before: "2", After: "1"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entityChanges() = %+v, want %+v", got, want)
+	}
+	if got := entityChanges(current, current); len(got) != 0 {
+		t.Fatalf("entityChanges() of an unchanged entity = %+v, want none", got)
+	}
+}
+
+func TestEntityWriteByAServiceTokenRecordsTheTokenAsActor(t *testing.T) {
+	h := newCatalog(t)
+
+	expectStatus(t, h.do(http.MethodPost, servicesPath, "gpt_ci", paymentsAPI()), http.StatusCreated)
+
+	actor := h.audit.entries[0].Actor
+	if actor.Kind != audit.ActorServiceToken || actor.UserID() != "" || actor.Label() == "" {
+		t.Fatalf("actor = %+v, want a service token", actor)
+	}
 }
 
 func TestListEntitiesSearchesAndCountsIntegrations(t *testing.T) {

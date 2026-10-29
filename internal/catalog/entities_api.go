@@ -1,12 +1,11 @@
 package catalog
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"maps"
-	"math"
 	"net/http"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -25,8 +24,6 @@ const (
 )
 
 var (
-	entityIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-
 	errEntityMissing = httpx.Error{Code: http.StatusNotFound, Message: "no entity of this blueprint has that identifier"}
 	errEntityExists  = httpx.Error{
 		Code:    http.StatusConflict,
@@ -55,63 +52,6 @@ func managedError(integration integrationView) httpx.Error {
 	}
 }
 
-type entitySummary struct {
-	Identifier  string          `json:"identifier"`
-	Title       string          `json:"title"`
-	Integration integrationView `json:"integration"`
-	Properties  map[string]any  `json:"properties"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-}
-
-type integrationCount struct {
-	integrationView
-	Count int `json:"count"`
-}
-
-type entitiesResponse struct {
-	Entities     []entitySummary    `json:"entities"`
-	Offset       int                `json:"offset"`
-	Limit        int                `json:"limit"`
-	Total        int                `json:"total"`
-	Integrations []integrationCount `json:"integrations"`
-}
-
-func (s *Service) listEntities(ctx *gofr.Context) (any, error) {
-	set, blueprint, err := s.blueprint(ctx)
-	if err != nil {
-		return nil, err
-	}
-	page := Page{
-		Offset: clamp(ctx.Param("offset"), 0, 0, math.MaxInt),
-		Limit:  clamp(ctx.Param("limit"), defaultEntityLimit, 1, maxEntityLimit),
-	}
-	filter := EntityFilter{Blueprint: blueprint.Identifier, Search: strings.TrimSpace(ctx.Param("q")), Integration: ctx.Param("integration")}
-	entities, total, err := s.entities.Entities(ctx, filter, page)
-	if err != nil {
-		return nil, err
-	}
-	counts, err := s.entities.IntegrationCounts(ctx, blueprint.Identifier)
-	if err != nil {
-		return nil, err
-	}
-
-	response := entitiesResponse{Entities: []entitySummary{}, Offset: page.Offset, Limit: page.Limit, Total: total, Integrations: []integrationCount{}}
-	for _, entity := range entities {
-		response.Entities = append(response.Entities, entitySummary{
-			Identifier:  entity.Identifier,
-			Title:       entity.Title,
-			Integration: integrationOf(set, entity.Integration),
-			Properties:  entity.Properties,
-			UpdatedAt:   entity.UpdatedAt,
-		})
-	}
-	for _, count := range counts {
-		response.Integrations = append(response.Integrations, integrationCount{integrationView: integrationOf(set, count.Integration), Count: count.Count})
-	}
-
-	return response, nil
-}
-
 type linkGroup struct {
 	Key      string       `json:"key"`
 	Title    string       `json:"title"`
@@ -126,15 +66,16 @@ type inverseGroup struct {
 }
 
 type entityResponse struct {
-	Blueprint   string          `json:"blueprint"`
-	Identifier  string          `json:"identifier"`
-	Title       string          `json:"title"`
-	Properties  map[string]any  `json:"properties"`
-	Integration integrationView `json:"integration"`
-	Relations   []linkGroup     `json:"relations"`
-	Incoming    []inverseGroup  `json:"incoming"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	Blueprint   string               `json:"blueprint"`
+	Identifier  string               `json:"identifier"`
+	Title       string               `json:"title"`
+	Properties  map[string]any       `json:"properties"`
+	Integration integrationView      `json:"integration"`
+	Relations   []linkGroup          `json:"relations"`
+	Incoming    []inverseGroup       `json:"incoming"`
+	Derived     map[string][]Reached `json:"derived"`
+	CreatedAt   time.Time            `json:"created_at"`
+	UpdatedAt   time.Time            `json:"updated_at"`
 }
 
 func (s *Service) getEntity(ctx *gofr.Context) (any, error) {
@@ -146,15 +87,19 @@ func (s *Service) getEntity(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	incoming, err := s.entities.Incoming(ctx, entity.Name())
-	if err != nil {
-		return nil, err
-	}
 
-	return s.entityResponse(set, blueprint, entity, incoming), nil
+	return s.entityResponse(ctx, set, blueprint, entity)
 }
 
-func (s *Service) entityResponse(set definition.Set, blueprint *definition.Blueprint, entity Entity, incoming []Link) entityResponse {
+func (s *Service) entityResponse(ctx *gofr.Context, set definition.Set, blueprint *definition.Blueprint, entity Entity) (entityResponse, error) {
+	incoming, err := s.entities.Incoming(ctx, entity.Name())
+	if err != nil {
+		return entityResponse{}, err
+	}
+	derived, err := s.derivedValues(ctx, set, blueprint, []string{entity.Identifier})
+	if err != nil {
+		return entityResponse{}, err
+	}
 	view := newBlueprintView(set, blueprint, 0)
 	response := entityResponse{
 		Blueprint:   entity.Blueprint,
@@ -164,6 +109,7 @@ func (s *Service) entityResponse(set definition.Set, blueprint *definition.Bluep
 		Integration: integrationOf(set, entity.Integration),
 		Relations:   []linkGroup{},
 		Incoming:    []inverseGroup{},
+		Derived:     derived[entity.Identifier],
 		CreatedAt:   entity.CreatedAt,
 		UpdatedAt:   entity.UpdatedAt,
 	}
@@ -188,7 +134,7 @@ func (s *Service) entityResponse(set definition.Set, blueprint *definition.Bluep
 		}
 	}
 
-	return response
+	return response, nil
 }
 
 func (s *Service) entity(ctx *gofr.Context, blueprint *definition.Blueprint) (Entity, error) {
@@ -229,7 +175,7 @@ func (s *Service) createEntity(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := s.recordEntity(ctx, audit.EntityCreated, created, nil); err != nil {
+	if err := s.recordEntity(ctx, audit.EntityCreated, blueprint, Entity{}, created); err != nil {
 		return nil, err
 	}
 
@@ -261,7 +207,7 @@ func (s *Service) updateEntity(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := s.recordEntity(ctx, audit.EntityUpdated, updated, changedFields(previous, updated)); err != nil {
+	if err := s.recordEntity(ctx, audit.EntityUpdated, blueprint, previous, updated); err != nil {
 		return nil, err
 	}
 
@@ -285,7 +231,7 @@ func (s *Service) deleteEntity(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	return nil, s.recordEntity(ctx, audit.EntityDeleted, entity, nil)
+	return nil, s.recordEntity(ctx, audit.EntityDeleted, blueprint, entity, Entity{})
 }
 
 // manualEntity returns the entity the path names, refusing one that an
@@ -308,20 +254,16 @@ func (s *Service) written(ctx *gofr.Context, set definition.Set, blueprint *defi
 	if err != nil {
 		return nil, err
 	}
-	incoming, err := s.entities.Incoming(ctx, entity.Name())
-	if err != nil {
-		return nil, err
-	}
 
-	return s.entityResponse(set, blueprint, entity, incoming), nil
+	return s.entityResponse(ctx, set, blueprint, entity)
 }
 
 // validEntity checks the request against the blueprint and returns the
 // manual entity it describes, with every link's target title.
 func (s *Service) validEntity(ctx *gofr.Context, set definition.Set, blueprint *definition.Blueprint, request entityRequest) (Entity, error) {
 	fields := map[string]string{}
-	if !entityIdentifierPattern.MatchString(request.Identifier) {
-		fields["identifier"] = "use letters, digits, dots, hyphens and underscores, starting with a letter or digit, at most 128"
+	if !ValidIdentifier(request.Identifier) {
+		fields["identifier"] = "give an identifier of at most 255 characters, without control characters"
 	}
 	title := strings.TrimSpace(request.Title)
 	if title == "" || len(title) > maxTitleLength {
@@ -409,41 +351,45 @@ func (s *Service) linkProblem(ctx *gofr.Context, blueprint *definition.Blueprint
 	return "", err
 }
 
-func (s *Service) recordEntity(ctx *gofr.Context, action audit.Action, entity Entity, changed []string) error {
+// recordEntity records a change from one state of an entity to another. A
+// created entity changes from the zero entity and a deleted one to it, so
+// the entry keeps every value it was created or deleted with.
+func (s *Service) recordEntity(ctx *gofr.Context, action audit.Action, blueprint *definition.Blueprint, previous, current Entity) error {
 	principal, _ := auth.PrincipalFrom(ctx)
-	details := map[string]any{"blueprint": entity.Blueprint}
-	if changed != nil {
-		details["changed"] = changed
-	}
+	identifier := cmp.Or(current.Identifier, previous.Identifier)
+	title := cmp.Or(current.Title, previous.Title)
 
 	return s.audit.Record(ctx, audit.Entry{
-		Actor:    principal.Actor(),
-		Action:   action,
-		Resource: audit.Resource{Kind: audit.ResourceEntity, ID: entity.Blueprint + "/" + entity.Identifier, Name: entity.Title},
-		Details:  details,
+		Actor:  principal.Actor(),
+		Action: action,
+		Resource: audit.Resource{
+			Kind: audit.ResourceEntity, ID: identifier, Name: title,
+			Parent: audit.Parent{Kind: audit.ResourceBlueprint, ID: blueprint.Identifier, Name: blueprint.Title},
+		},
+		Details: map[string]any{audit.ChangesKey: entityChanges(previous, current)},
 	})
 }
 
-// changedFields names the fields an update changed: title, a property key
-// or a relation key.
-func changedFields(previous, updated Entity) []string {
-	changed := []string{}
-	if previous.Title != updated.Title {
-		changed = append(changed, "title")
+// entityChanges holds the fields that differ between two states of an
+// entity: the title, a property key or a relation key.
+func entityChanges(previous, current Entity) audit.Changes {
+	changes := audit.Changes{}
+	if previous.Title != current.Title {
+		changes["title"] = audit.Change{Before: previous.Title, After: current.Title}
 	}
-	for _, key := range unionKeys(previous.Properties, updated.Properties) {
-		if fmt.Sprint(previous.Properties[key]) != fmt.Sprint(updated.Properties[key]) {
-			changed = append(changed, key)
+	for _, key := range unionKeys(previous.Properties, current.Properties) {
+		if before, after := previous.Properties[key], current.Properties[key]; fmt.Sprint(before) != fmt.Sprint(after) {
+			changes[key] = audit.Change{Before: before, After: after}
 		}
 	}
-	before, after := targetsByRelation(previous), targetsByRelation(updated)
+	before, after := targetsByRelation(previous), targetsByRelation(current)
 	for _, key := range unionKeys(before, after) {
 		if !slices.Equal(before[key], after[key]) {
-			changed = append(changed, key)
+			changes[key] = audit.Change{Before: before[key], After: after[key]}
 		}
 	}
 
-	return changed
+	return changes
 }
 
 func targetsByRelation(entity Entity) map[string][]string {
