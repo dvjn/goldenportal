@@ -14,7 +14,13 @@ type PropertyValueProps = {
   value: unknown;
   // links are the related entities, for relations.
   links?: Link[];
+  // compact fits the value on one table row: long text is cut short, with the
+  // whole value on hover, and lists show their first few items.
+  compact?: boolean;
 };
+
+// compactItems is how many list items and relations a compact value shows.
+const compactItems = 3;
 
 // displayAs is how a property's values look: as its display says, or as its
 // type suggests.
@@ -65,12 +71,14 @@ export function formatNumber(value: number, unit?: string) {
 }
 
 // PropertyValue shows one value the way its property's display says.
-export function PropertyValue({ property, value, links }: PropertyValueProps) {
+export function PropertyValue({ property, value, links, compact = false }: PropertyValueProps) {
+  const cut = compact ? "block max-w-64 truncate" : "";
   if (property.relation) {
     if (!links || links.length === 0) return <Empty />;
+    const shown = compact ? links.slice(0, compactItems) : links;
     return (
       <span className="flex flex-wrap gap-x-2 gap-y-1">
-        {links.map((link) =>
+        {shown.map((link) =>
           link.title ? (
             <EntityLink
               key={link.identifier}
@@ -89,6 +97,7 @@ export function PropertyValue({ property, value, links }: PropertyValueProps) {
             </span>
           ),
         )}
+        <More hidden={links.slice(shown.length).map((link) => link.title || link.identifier)} />
       </span>
     );
   }
@@ -102,12 +111,21 @@ export function PropertyValue({ property, value, links }: PropertyValueProps) {
     const items = value.map((item) =>
       typeof item === "object" ? JSON.stringify(item) : String(item),
     );
-    if (as === "list") return <span className="break-words">{items.join(", ")}</span>;
+    if (as === "list") {
+      const joined = items.join(", ");
+      return (
+        <span className={cn("break-words", cut)} title={compact ? joined : undefined}>
+          {joined}
+        </span>
+      );
+    }
+    const shown = compact ? items.slice(0, compactItems) : items;
     return (
       <span className="flex flex-wrap gap-1">
-        {items.map((item) => (
+        {shown.map((item) => (
           <ValueBadge key={item} value={item} color={colors?.[item]} variant="outline" />
         ))}
+        <More hidden={items.slice(shown.length)} />
       </span>
     );
   }
@@ -156,11 +174,19 @@ export function PropertyValue({ property, value, links }: PropertyValueProps) {
           {text}
         </a>
       ) : isWebUrl(text) ? (
-        <a href={text} target="_blank" rel="noreferrer" className="break-all hover:underline">
+        <a
+          href={text}
+          target="_blank"
+          rel="noreferrer"
+          className={cn("break-all hover:underline", cut)}
+          title={compact ? text : undefined}
+        >
           {text.replace(/^https?:\/\//, "")}
         </a>
       ) : (
-        <span className="break-all">{text}</span>
+        <span className={cn("break-all", cut)} title={compact ? text : undefined}>
+          {text}
+        </span>
       );
     case "relative":
       return (
@@ -173,10 +199,36 @@ export function PropertyValue({ property, value, links }: PropertyValueProps) {
     case "badge":
       return <ValueBadge value={text} color={colors?.[text]} />;
     case "code":
-      return <code className="font-mono text-xs break-all">{text}</code>;
+      return (
+        <code className={cn("font-mono text-xs break-all", cut)} title={compact ? text : undefined}>
+          {text}
+        </code>
+      );
   }
-  if (property.format === "markdown") return <Markdown>{text}</Markdown>;
-  return <span className="break-words">{text}</span>;
+  if (property.format === "markdown") {
+    return compact ? (
+      <div className="line-clamp-2 max-w-80">
+        <Markdown>{text}</Markdown>
+      </div>
+    ) : (
+      <Markdown>{text}</Markdown>
+    );
+  }
+  return (
+    <span className={cn("break-words", cut)} title={compact ? text : undefined}>
+      {text}
+    </span>
+  );
+}
+
+// More counts the items a compact value leaves out, and names them on hover.
+function More({ hidden }: Readonly<{ hidden: string[] }>) {
+  if (hidden.length === 0) return null;
+  return (
+    <span className="text-xs text-muted-foreground" title={hidden.join(", ")}>
+      +{hidden.length}
+    </span>
+  );
 }
 
 // ValueBadge shows a value as a badge, in its color if it has one.
