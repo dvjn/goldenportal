@@ -4,7 +4,7 @@ import { LayoutGrid, Search } from "lucide-react";
 import { useState } from "react";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Empty,
   EmptyDescription,
@@ -70,28 +70,34 @@ function CatalogPage() {
       ) : shown.length === 0 ? (
         <p className="text-sm text-muted-foreground">No blueprint matches "{query}".</p>
       ) : (
+        // Cards share their rows, so titles and counts line up across a row.
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((entry) => (
-            <li key={entry.identifier}>
+            <li key={entry.identifier} className="row-span-3 grid grid-rows-subgrid">
               <Link
                 to="/catalog/$blueprint"
                 params={{ blueprint: entry.identifier }}
-                className="block h-full rounded-xl focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="row-span-3 grid grid-rows-subgrid rounded-xl focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
               >
-                <Card className="h-full transition-colors hover:bg-accent/50">
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-3">
-                      <IconTile icon={entry.icon} />
-                      <span
-                        className="text-2xl font-semibold tabular-nums"
-                        title={`${entry.entities} entities`}
-                      >
-                        {count.format(entry.entities)}
-                      </span>
-                    </div>
-                    <CardTitle className="pt-2">{entry.title}</CardTitle>
-                    {entry.description && <CardDescription>{entry.description}</CardDescription>}
+                <Card className="row-span-3 grid grid-rows-subgrid gap-y-2 shadow-xs transition-colors hover:bg-accent/50">
+                  <CardHeader className="mb-1 flex items-center gap-3">
+                    <IconTile icon={entry.icon} />
+                    <CardTitle className="line-clamp-2 min-w-0 flex-1 text-base">
+                      {entry.title}
+                    </CardTitle>
                   </CardHeader>
+                  <p className="px-4 text-sm text-muted-foreground">{entry.description}</p>
+                  <p
+                    className="flex items-baseline gap-1.5 px-4"
+                    title={`${entry.entities} entities`}
+                  >
+                    <span className="text-2xl font-semibold tabular-nums">
+                      {count.format(entry.entities)}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {entry.entities === 1 ? "entity" : "entities"}
+                    </span>
+                  </p>
                 </Card>
               </Link>
             </li>

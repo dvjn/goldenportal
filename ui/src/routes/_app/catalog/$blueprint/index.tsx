@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Columns3, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
+import { Columns3, FileCode, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
 import { BlueprintIcon, IconTile } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
@@ -18,6 +18,7 @@ import {
 } from "@/components/data-table";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageError } from "@/components/page-error";
+import { PageHeader } from "@/components/page-header";
 import { ScorecardCell } from "@/components/scorecards/scorecard-cell";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/empty";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
+import { hasRole, useMe } from "@/features/auth";
 import { type BlueprintSpec, blueprints, type Property } from "@/features/blueprints";
 import {
   catalogQueryOptions,
@@ -203,6 +205,7 @@ function BlueprintCatalogPage() {
   const { data: doc } = useSuspenseQuery(blueprints.queries.detail(blueprint));
   const spec = doc.published?.spec;
   usePageTitle(spec?.title ?? doc.title);
+  const builder = hasRole(useMe().role, "builder");
   const { data: scorecards = [] } = useQuery(scorecardColumnsQueryOptions(blueprint));
   const page = useQuery({
     ...entitiesQueryOptions(queryFrom(blueprint, search)),
@@ -325,22 +328,32 @@ function BlueprintCatalogPage() {
       : views[0].identifier;
 
   const header = (
-    <div className="grid gap-3">
-      <PageBreadcrumbs page={spec.title}>
-        <Link to="/catalog">Catalog</Link>
-      </PageBreadcrumbs>
-      <div className="flex items-center gap-3">
-        <IconTile icon={spec.icon} size="lg" />
-        <div className="grid">
-          <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
-          <p className="text-sm text-muted-foreground">
-            {spec.description}
-            {spec.description && count !== undefined && " · "}
-            {count !== undefined && countText(count, matching)}
-          </p>
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title={spec.title}
+      icon={<IconTile icon={spec.icon} size="lg" />}
+      breadcrumbs={
+        <PageBreadcrumbs page={spec.title}>
+          <Link to="/catalog">Catalog</Link>
+        </PageBreadcrumbs>
+      }
+      description={
+        <>
+          {spec.description}
+          {spec.description && count !== undefined && " · "}
+          {count !== undefined && countText(count, matching)}
+        </>
+      }
+      actions={
+        builder && (
+          <Button variant="outline" asChild>
+            <Link to="/blueprints/$identifier" params={{ identifier: blueprint }}>
+              <FileCode />
+              View Blueprint
+            </Link>
+          </Button>
+        )
+      }
+    />
   );
 
   const table = (
