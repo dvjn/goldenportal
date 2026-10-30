@@ -373,6 +373,68 @@ spec:
             filter: {property: status, op: eq, value: failed}
             columns: [service, environment, version, startedAt]
             sort: -startedAt
+$yaml$),
+  ('github-repository', $yaml$kind: Blueprint
+metadata: {name: github-repository, title: GitHub Repository, icon: folder-git-2}
+spec:
+  properties:
+    url: {type: string, format: uri}
+    private: {type: boolean}
+$yaml$),
+  ('github-branch', $yaml$kind: Blueprint
+metadata: {name: github-branch, title: GitHub Branch, icon: git-branch}
+spec:
+  properties:
+    repository: {relation: github-repository}
+    protected: {type: boolean}
+$yaml$),
+  ('github-run', $yaml$kind: Blueprint
+metadata: {name: github-run, title: GitHub Workflow Run, icon: workflow}
+spec:
+  properties:
+    repository: {relation: github-repository}
+    status: {type: string}
+    conclusion: {type: string}
+    url: {type: string, format: uri}
+$yaml$),
+  ('github-job', $yaml$kind: Blueprint
+metadata: {name: github-job, title: GitHub Job, icon: list-checks}
+spec:
+  properties:
+    run: {relation: github-run}
+    status: {type: string}
+    conclusion: {type: string}
+$yaml$),
+  ('gitlab-project', $yaml$kind: Blueprint
+metadata: {name: gitlab-project, title: GitLab Project, icon: folder-git-2}
+spec:
+  properties:
+    url: {type: string, format: uri}
+    visibility: {type: string}
+$yaml$),
+  ('gitlab-branch', $yaml$kind: Blueprint
+metadata: {name: gitlab-branch, title: GitLab Branch, icon: git-branch}
+spec:
+  properties:
+    project: {relation: gitlab-project}
+    protected: {type: boolean}
+$yaml$),
+  ('gitlab-pipeline', $yaml$kind: Blueprint
+metadata: {name: gitlab-pipeline, title: GitLab Pipeline, icon: workflow}
+spec:
+  properties:
+    project: {relation: gitlab-project}
+    status: {type: string}
+    duration: {type: number}
+    url: {type: string, format: uri}
+$yaml$),
+  ('gitlab-job', $yaml$kind: Blueprint
+metadata: {name: gitlab-job, title: GitLab Job, icon: list-checks}
+spec:
+  properties:
+    pipeline: {relation: gitlab-pipeline}
+    status: {type: string}
+    stage: {type: string}
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -385,7 +447,8 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 
 -- Example integrations: two push integrations, where each mapping is jq over
 -- the JSON its system sends; the Portal, which syncs the portal's own objects;
--- and an http integration pulling from the mock deploy tracker.
+-- an http integration pulling from the mock deploy tracker; and github and
+-- gitlab integrations pulling from deps/mock-scm with the tokens it expects.
 WITH example (identifier, source) AS (VALUES
   ('team-directory', $yaml$kind: Integration
 metadata:
@@ -511,6 +574,108 @@ spec:
           status: .status
           startedAt: .startedAt
           finishedAt: .finishedAt
+$yaml$),
+  ('github-source', $yaml$kind: Integration
+metadata:
+  name: github-source
+  title: GitHub
+  description: Repositories, branches and CI from the mock GitHub API in deps/mock-scm.
+spec:
+  connector:
+    type: github
+    config:
+      apiURL: http://localhost:47802/github
+      organizations: [acme]
+      token: {env: GP_SECRET_MOCK_GITHUB}
+      maxRuns: 20
+  sync: {interval: 5m}
+  mappings:
+    - resource: repositories
+      blueprint: github-repository
+      entity:
+        identifier: .full_name
+        title: .name
+        properties:
+          url: .html_url
+          private: .private
+    - resource: branches
+      blueprint: github-branch
+      entity:
+        identifier: ._gp.repository + "/" + .name
+        title: .name
+        properties:
+          repository: ._gp.repository
+          protected: .protected
+    - resource: workflow_runs
+      blueprint: github-run
+      entity:
+        identifier: .id | tostring
+        title: .display_title // .name
+        properties:
+          repository: ._gp.repository
+          status: .status
+          conclusion: .conclusion
+          url: .html_url
+    - resource: jobs
+      blueprint: github-job
+      entity:
+        identifier: .id | tostring
+        title: .name
+        properties:
+          run: ._gp.run_id | tostring
+          status: .status
+          conclusion: .conclusion
+$yaml$),
+  ('gitlab-source', $yaml$kind: Integration
+metadata:
+  name: gitlab-source
+  title: GitLab
+  description: Repositories, branches and CI from the mock GitLab API in deps/mock-scm.
+spec:
+  connector:
+    type: gitlab
+    config:
+      apiURL: http://localhost:47802/gitlab/api/v4
+      groups: [acme]
+      token: {env: GP_SECRET_MOCK_GITLAB}
+      maxRuns: 20
+  sync: {interval: 5m}
+  mappings:
+    - resource: projects
+      blueprint: gitlab-project
+      entity:
+        identifier: .id | tostring
+        title: .path_with_namespace
+        properties:
+          url: .web_url
+          visibility: .visibility
+    - resource: branches
+      blueprint: gitlab-branch
+      entity:
+        identifier: (._gp.project_id | tostring) + "/" + .name
+        title: .name
+        properties:
+          project: ._gp.project_id | tostring
+          protected: .protected
+    - resource: pipelines
+      blueprint: gitlab-pipeline
+      entity:
+        identifier: .id | tostring
+        title: .name // ("Pipeline " + (.id | tostring))
+        properties:
+          project: ._gp.project_id | tostring
+          status: .status
+          duration: .duration
+          url: .web_url
+    - resource: jobs
+      blueprint: gitlab-job
+      entity:
+        identifier: .id | tostring
+        title: .name
+        properties:
+          pipeline: ._gp.pipeline_id | tostring
+          status: .status
+          stage: .stage
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)

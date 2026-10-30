@@ -9,7 +9,7 @@ pnpm = "12.15.0"
 
 [tasks.dev]
 description = "Run the development servers and load the seed data"
-depends = ["api:dev", "ui:dev", "dev:seed"]
+depends = ["api:dev", "ui:dev", "mock:scm", "dev:seed"]
 
 [tasks."dev:fresh"]
 description = "Delete the local database, then run the development servers on a fresh, seeded one"
@@ -57,8 +57,14 @@ fi
 [tasks."api:dev"]
 description = "Run the API with hot reload"
 depends = ["deps:up"]
-env = { _.file = "configs/.dev.env" }
+# The untracked .env, when present, adds or overrides secrets such as real provider tokens.
+env = { _.file = ["configs/.dev.env", ".env"] }
 run = "air --build.cmd 'go build -o .local/tmp/goldenportal ./cmd/goldenportal' --build.bin .local/tmp/goldenportal -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,.local' --misc.clean_on_exit true"
+
+[tasks."mock:scm"]
+description = "Serve the mock GitHub and GitLab APIs the seeded github and gitlab integrations sync from"
+env = { _.file = "configs/.dev.env" }
+run = "go run ./deps/mock-scm"
 
 [tasks.build]
 description = "Build the UI, then the goldenportal binary that embeds it"
