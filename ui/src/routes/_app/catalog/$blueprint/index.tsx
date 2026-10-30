@@ -7,8 +7,11 @@ import { PropertyValue } from "@/components/catalog/property-value";
 import {
   DataTable,
   DataTableColumnHeader,
+  DataTableDateFilter,
   DataTableFacetedFilter,
+  type DateRange,
   dataTableColumns,
+  dateRangeBounds,
   type TableSearch,
   validateTableSearch,
 } from "@/components/data-table";
@@ -53,7 +56,13 @@ type Filters = Record<string, (string | number | boolean)[]>;
 // CatalogSearch is the page's state in the URL: view is the open tab, a
 // dashboard or "entities", and the rest is the table's; cols lists the
 // shown columns.
-type CatalogSearch = TableSearch & { view?: string; f?: Filters; cols?: string };
+type CatalogSearch = TableSearch & {
+  view?: string;
+  f?: Filters;
+  // d maps a date property, or $updatedAt, to the range of days it's filtered to.
+  d?: Record<string, DateRange>;
+  cols?: string;
+};
 
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : undefined);
 
@@ -62,6 +71,7 @@ function validateCatalogSearch(search: Record<string, unknown>): CatalogSearch {
     ...validateTableSearch(search),
     view: text(search.view),
     f: validFilters(search.f),
+    d: validDates(search.d),
     cols: text(search.cols),
   };
 }
@@ -81,14 +91,40 @@ function validFilters(f: unknown): Filters | undefined {
   return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
+const day = /^\d{4}-\d{2}-\d{2}$/;
+
+function validDates(d: unknown): Record<string, DateRange> | undefined {
+  if (typeof d !== "object" || d === null || Array.isArray(d)) return undefined;
+  const dates: Record<string, DateRange> = {};
+  for (const [key, range] of Object.entries(d)) {
+    if (typeof range !== "object" || range === null) continue;
+    const { from, to } = range as Record<string, unknown>;
+    const valid: DateRange = {
+      from: typeof from === "string" && day.test(from) ? from : undefined,
+      to: typeof to === "string" && day.test(to) ? to : undefined,
+    };
+    if (valid.from || valid.to) dates[key] = valid;
+  }
+  return Object.keys(dates).length > 0 ? dates : undefined;
+}
+
 // toFilter turns the picked values into the server's filter: each property
-// matches any of its values, and every property must match.
-function toFilter(filters: Filters | undefined): Filter | undefined {
-  const conditions = Object.entries(filters ?? {}).map(([property, values]) => ({
+// matches any of its values, dates fall in their ranges, and every property
+// must match.
+function toFilter(
+  filters: Filters | undefined,
+  dates: Record<string, DateRange> | undefined,
+): Filter | undefined {
+  const conditions: Filter[] = Object.entries(filters ?? {}).map(([property, values]) => ({
     property,
     op: "in",
     values,
   }));
+  for (const [property, range] of Object.entries(dates ?? {})) {
+    const { from, before } = dateRangeBounds(range);
+    if (from) conditions.push({ property, op: "gte", value: from });
+    if (before) conditions.push({ property, op: "lt", value: before });
+  }
   return conditions.length > 0 ? { and: conditions } : undefined;
 }
 
@@ -96,7 +132,7 @@ function queryFrom(blueprint: string, search: CatalogSearch): EntityQuery {
   return {
     blueprint,
     q: search.q,
-    filter: toFilter(search.f),
+    filter: toFilter(search.f, search.d),
     sort: search.sort,
     page: search.page,
     size: search.size,
@@ -136,6 +172,12 @@ function filterable(property: Property) {
     property.type === "boolean" ||
     (property.type === "array" && property.items?.type === "string")
   );
+}
+
+// dateFilterable properties get a date range filter unless their display says otherwise.
+function dateFilterable(property: Property) {
+  if (property.lookup || property.display?.filter === false) return false;
+  return property.format === "date" || property.format === "date-time";
 }
 
 // defaultColumns are the properties whose display asks for a column, or
@@ -250,7 +292,10 @@ function BlueprintCatalogPage() {
     }),
   ];
 
-  const filtered = Object.keys(filters).length > 0;
+  const dates = search.d ?? {};
+  const filtered = Object.keys(filters).length > 0 || Object.keys(dates).length > 0;
+  const setDates = (key: string, range: DateRange) =>
+    setSearch({ d: validDates({ ...dates, [key]: range }), page: undefined });
   // The header counts every entity, and how many match while the table is narrowed.
   const count =
     catalog?.find((entry) => entry.identifier === blueprint)?.entities ?? page.data?.total;
@@ -332,10 +377,23 @@ function BlueprintCatalogPage() {
               }
             />
           ))}
+          {spec.properties.filter(dateFilterable).map((property) => (
+            <DataTableDateFilter
+              key={property.identifier}
+              title={property.title}
+              value={dates[property.identifier] ?? {}}
+              onChange={(range) => setDates(property.identifier, range)}
+            />
+          ))}
+          <DataTableDateFilter
+            title="Updated"
+            value={dates.$updatedAt ?? {}}
+            onChange={(range) => setDates("$updatedAt", range)}
+          />
         </>
       }
       filtered={filtered}
-      onClearFilters={() => setSearch({ f: undefined, page: undefined })}
+      onClearFilters={() => setSearch({ f: undefined, d: undefined, page: undefined })}
       actions={
         <ColumnsMenu
           spec={spec}
