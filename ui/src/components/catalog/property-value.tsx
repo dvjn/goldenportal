@@ -47,6 +47,17 @@ export function displayAs(property: Property): NonNullable<Display["as"]> {
 const numbers = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
 
 // formatNumber writes a number with its unit, if any.
+// isWebUrl reports whether text is an http(s) URL. Values come from sources,
+// so anything else, such as a javascript: URL, mustn't become a link.
+export function isWebUrl(text: string) {
+  try {
+    const { protocol } = new URL(text);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function formatNumber(value: number, unit?: string) {
   const text = numbers.format(value);
   if (!unit) return text;
@@ -144,10 +155,12 @@ export function PropertyValue({ property, value, links }: PropertyValueProps) {
         <a href={`mailto:${text}`} className="hover:underline">
           {text}
         </a>
-      ) : (
+      ) : isWebUrl(text) ? (
         <a href={text} target="_blank" rel="noreferrer" className="break-all hover:underline">
           {text.replace(/^https?:\/\//, "")}
         </a>
+      ) : (
+        <span className="break-all">{text}</span>
       );
     case "relative":
       return (
