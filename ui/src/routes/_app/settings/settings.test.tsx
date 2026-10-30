@@ -91,13 +91,17 @@ describe("settings", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
-  it("opens on the server configuration tab from the user menu", async () => {
+  it("opens each settings section from the user menu", async () => {
     const user = userEvent.setup();
     stubApi({ ...signedInAdmin, "GET settings/configuration": ok(serverConfiguration) });
     const { router } = renderRoute("/");
 
     await user.click(await screen.findByRole("button", { name: "Open user menu" }));
-    await user.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect(screen.getByRole("menuitem", { name: "Access" })).toHaveAttribute(
+      "href",
+      "/settings/access",
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Server Configuration" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings/configuration"));
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
@@ -113,7 +117,8 @@ describe("settings", () => {
 
     await user.click(await screen.findByRole("button", { name: "Open user menu" }));
 
-    expect(screen.queryByRole("menuitem", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Access" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
   });
 
   it("switches tabs through links", async () => {
