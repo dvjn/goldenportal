@@ -191,11 +191,16 @@ function BlueprintCatalogPage() {
         <EntityLink
           blueprint={blueprint}
           identifier={row.original.identifier}
-          className="grid hover:underline"
+          className="grid max-w-72 hover:underline"
         >
-          <span className="font-medium">{row.original.title}</span>
+          <span className="truncate font-medium" title={row.original.title}>
+            {row.original.title}
+          </span>
           {row.original.title !== row.original.identifier && (
-            <code className="font-mono text-xs text-muted-foreground">
+            <code
+              className="truncate font-mono text-xs text-muted-foreground"
+              title={row.original.identifier}
+            >
               {row.original.identifier}
             </code>
           )}
@@ -214,6 +219,7 @@ function BlueprintCatalogPage() {
               property={property}
               value={row.original.properties[property.identifier]}
               links={row.original.related[property.identifier]}
+              compact
             />
           ),
         }),
