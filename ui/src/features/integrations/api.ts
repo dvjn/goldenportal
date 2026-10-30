@@ -65,6 +65,8 @@ export type Run = {
   deleted: number;
   failed: number;
   errors: RunError[];
+  // error is why a pull sync fetched nothing, which left its entities as they were.
+  error?: string;
 };
 
 export const integrations = configDocs<IntegrationSpec>("integrations");

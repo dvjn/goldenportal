@@ -64,7 +64,12 @@ export function RecentRuns({ identifier }: Readonly<{ identifier: string }>) {
             <TableCell className="pl-4" title={formatAbsolute(run.startedAt)}>
               {formatRelative(run.startedAt)}
             </TableCell>
-            <TableCell className="text-muted-foreground">{triggerLabel(run)}</TableCell>
+            <TableCell
+              className={run.error ? "font-medium text-destructive" : "text-muted-foreground"}
+            >
+              {triggerLabel(run)}
+              {run.error && " · Failed"}
+            </TableCell>
             {counts.map((count) => (
               <TableCell
                 key={count.key}
@@ -78,7 +83,7 @@ export function RecentRuns({ identifier }: Readonly<{ identifier: string }>) {
               </TableCell>
             ))}
             <TableCell className="pr-4 text-right">
-              {run.errors.length > 0 && <RunErrors run={run} />}
+              {(run.error || run.errors.length > 0) && <RunErrors run={run} />}
             </TableCell>
           </TableRow>
         ))}
@@ -99,10 +104,16 @@ function RunErrors({ run }: Readonly<{ run: Run }>) {
         <DialogHeader>
           <DialogTitle>Failures</DialogTitle>
           <DialogDescription>
-            {run.failed} of {run.received} items weren't written
-            {run.failed > run.errors.length && `; the first ${run.errors.length} are shown`}.
+            {run.error
+              ? "The sync fetched nothing, so its entities were left as they were."
+              : `${run.failed} of ${run.received} items weren't written` +
+                (run.failed > run.errors.length
+                  ? `; the first ${run.errors.length} are shown`
+                  : "") +
+                "."}
           </DialogDescription>
         </DialogHeader>
+        {run.error && <p className="font-mono text-sm break-words">{run.error}</p>}
         <ul className="grid max-h-[60vh] gap-3 overflow-y-auto">
           {run.errors.map((error) => (
             <li key={error.index} className="grid gap-1 text-sm">
