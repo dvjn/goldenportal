@@ -102,6 +102,9 @@ describe("catalog", () => {
     await user.click(screen.getByRole("button", { name: "Columns" }));
     await user.click(await screen.findByRole("menuitemcheckbox", { name: "Readiness" }));
     expect(screen.queryByRole("columnheader", { name: "Readiness" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("menuitem", { name: "Reset to defaults" }));
+    expect(await screen.findByRole("columnheader", { name: /Readiness/ })).toBeInTheDocument();
   });
 
   it("lists blueprints with their entity counts", async () => {
