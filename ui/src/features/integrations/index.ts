@@ -6,6 +6,7 @@ export {
   type IngestionToken,
   type Integration,
   type IntegrationSpec,
+  type IntegrationStatus,
   type IntegrationSummary,
   ingestUrl,
   integrationKeys,
@@ -19,6 +20,7 @@ export {
 export {
   connectorsQueryOptions,
   runsQueryOptions,
+  statusQueryOptions,
   tokensQueryOptions,
   useIntegration,
   useIntegrations,
