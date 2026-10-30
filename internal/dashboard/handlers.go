@@ -22,7 +22,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
-func Register(app *gofr.App) {
+func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
 	app.GET("/api/v1/home", home)
 	app.GET("/api/v1/dashboards/{identifier}/view", dashboardView)

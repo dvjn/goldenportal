@@ -11,6 +11,7 @@ import (
 
 const (
 	sessionCookie = "gp_session"
+	MCPPath       = "/api/v1/mcp"
 	// csrfHeader must be present on every state-changing API request signed in
 	// by cookie. Browsers cannot send a custom header cross-site without a CORS
 	// preflight, so requiring it stops cross-site requests from riding on the
@@ -90,11 +91,11 @@ func tokenAuth(r *http.Request, resolver principalResolver, header string) (auth
 		return authInfo{}, http.StatusUnauthorized, "the API token is invalid, expired or revoked"
 	case err != nil:
 		return authInfo{}, http.StatusInternalServerError, "could not check the API token"
-	case readOnly && !isSafeMethod(r.Method):
+	case readOnly && !isSafeMethod(r.Method) && !(r.URL.Path == MCPPath && r.Method == http.MethodPost):
 		return authInfo{}, http.StatusForbidden, "this API token is read-only"
 	}
 
-	return authInfo{principal: p, viaToken: true}, 0, ""
+	return authInfo{principal: p, viaToken: true, readOnly: readOnly}, 0, ""
 }
 
 func cookieAuth(r *http.Request, resolver principalResolver) (authInfo, int, string) {

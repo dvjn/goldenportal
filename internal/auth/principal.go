@@ -70,6 +70,7 @@ type authInfo struct {
 	principal   Principal
 	sessionHash []byte
 	viaToken    bool
+	readOnly    bool
 }
 
 func withAuth(ctx context.Context, info authInfo) context.Context {
@@ -86,3 +87,6 @@ func FromContext(ctx context.Context) (Principal, bool) {
 	info, ok := authFromContext(ctx)
 	return info.principal, ok
 }
+
+// ReadOnly applies to tool calls as well as HTTP requests: MCP uses POST even for reads.
+func ReadOnly(ctx context.Context) bool { info, _ := authFromContext(ctx); return info.readOnly }

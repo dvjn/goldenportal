@@ -10,8 +10,6 @@ import (
 
 	"github.com/lib/pq"
 
-	"gofr.dev/pkg/gofr"
-
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
@@ -42,7 +40,7 @@ var Kind = configdoc.Kind[Spec]{
 // blueprints and scorecards they show, which this package can't import.
 type PagesChecker func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error)
 
-func Register(app *gofr.App, checkPages PagesChecker) {
+func Register(app httpx.Routes, checkPages PagesChecker) {
 	kind := Kind
 	kind.Check = func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error) {
 		issues, err := Kind.Check(ctx, db, spec)
