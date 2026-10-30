@@ -49,7 +49,7 @@ describe("audit log", () => {
     expect(await screen.findByText("Granted access")).toBeInTheDocument();
     expect(screen.getByText("Role: Builder")).toBeInTheDocument();
     expect(screen.getByText("Signed in")).toBeInTheDocument();
-    expect(screen.getByText("2 rows")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 to 2 of 2")).toBeInTheDocument();
   });
 
   it("asks the server for the next page", async () => {
