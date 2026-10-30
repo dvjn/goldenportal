@@ -32,6 +32,7 @@ func Register(app httpx.Routes) {
 	app.POST("/api/v1/integrations/{identifier}/sync", syncNow)
 	app.AddCronJob(SyncSchedule, "sync-pull-integrations", syncAll)
 	app.GET("/api/v1/blueprints/{identifier}/usage", blueprintUsage)
+	app.GET("/api/v1/integration-status", listStatus)
 	app.POST(auth.IngestPrefix+"{integration}", ingest)
 	app.DELETE(auth.IngestPrefix+"{integration}/entities/{blueprint}/{identifier:.+}", deleteEntity)
 }
