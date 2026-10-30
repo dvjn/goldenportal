@@ -122,6 +122,7 @@ function Cell({
         property={property}
         value={entity.properties[column]}
         links={entity.related[column]}
+        compact
       />
     );
   }

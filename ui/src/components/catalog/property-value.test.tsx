@@ -21,4 +21,22 @@ describe("PropertyValue", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("javascript:alert(1)")).toBeVisible();
   });
+
+  it("shows the first few tags of a compact value and counts the rest", () => {
+    const tags: Property = { identifier: "tags", title: "Tags", type: "array" };
+    render(<PropertyValue property={tags} value={["a", "b", "c", "d", "e"]} compact />);
+
+    expect(screen.getByText("c")).toBeVisible();
+    expect(screen.queryByText("d")).not.toBeInTheDocument();
+    expect(screen.getByText("+2")).toHaveAttribute("title", "d, e");
+  });
+
+  it("cuts long compact text short and keeps it on hover", () => {
+    const notes: Property = { identifier: "notes", title: "Notes", type: "string" };
+    const long = "a long note ".repeat(20).trim();
+    render(<PropertyValue property={notes} value={long} compact />);
+
+    expect(screen.getByText(long)).toHaveAttribute("title", long);
+    expect(screen.getByText(long)).toHaveClass("truncate");
+  });
 });
