@@ -1,11 +1,17 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  type ErrorComponentProps,
+  Link,
+  useNavigate,
+} from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Plug } from "lucide-react";
 import { stringify } from "yaml";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
+import { PageError } from "@/components/page-error";
 import {
   ScorecardChip,
   ScorecardResult,
@@ -39,6 +45,7 @@ export const Route = createFileRoute("/_app/catalog/$blueprint/$")({
       ),
     ]),
   component: EntityPage,
+  errorComponent: EntityError,
 });
 
 function EntityPage() {
@@ -338,5 +345,19 @@ function Relations({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Ent
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function EntityError(props: ErrorComponentProps) {
+  const { blueprint } = Route.useParams();
+  return (
+    <PageError
+      {...props}
+      back={
+        <Link to="/catalog/$blueprint" params={{ blueprint }}>
+          Back to the list
+        </Link>
+      }
+    />
   );
 }

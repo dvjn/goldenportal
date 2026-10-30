@@ -1,12 +1,12 @@
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createRouter, RouterProvider } from "@tanstack/react-router";
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { ThemeProvider } from "./components/theme-provider";
 import { authKeys } from "./features/auth";
 import { isUnauthorized } from "./lib/api";
-import { routeTree } from "./routeTree.gen";
+import { createAppRouter } from "./router";
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -20,10 +20,7 @@ const queryClient = new QueryClient({
   }),
 });
 
-const router = createRouter({
-  routeTree,
-  context: { queryClient },
-});
+const router = createAppRouter(queryClient);
 
 declare module "@tanstack/react-router" {
   interface Register {

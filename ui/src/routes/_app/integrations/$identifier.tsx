@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
 import { IntegrationOverview } from "@/components/integrations/integration-overview";
+import { PageError } from "@/components/page-error";
 import { integrations, useIntegration } from "@/features/integrations";
 
 export const Route = createFileRoute("/_app/integrations/$identifier")({
@@ -11,6 +12,9 @@ export const Route = createFileRoute("/_app/integrations/$identifier")({
       context.queryClient.ensureQueryData(integrations.queries.versions(params.identifier)),
     ]),
   component: IntegrationPage,
+  errorComponent: (props) => (
+    <PageError {...props} back={<Link to="/integrations">Back to Integrations</Link>} />
+  ),
 });
 
 function IntegrationPage() {

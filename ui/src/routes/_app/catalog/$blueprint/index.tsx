@@ -13,6 +13,7 @@ import {
   validateTableSearch,
 } from "@/components/data-table";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
+import { PageError } from "@/components/page-error";
 import { ScorecardCell } from "@/components/scorecards/scorecard-cell";
 import { Button } from "@/components/ui/button";
 import {
@@ -108,6 +109,9 @@ export const Route = createFileRoute("/_app/catalog/$blueprint/")({
       context.queryClient.ensureQueryData(entitiesQueryOptions(queryFrom(params.blueprint, deps))),
     ]),
   component: BlueprintCatalogPage,
+  errorComponent: (props) => (
+    <PageError {...props} back={<Link to="/catalog">Back to Catalog</Link>} />
+  ),
 });
 
 // Lookups follow relations at read time, and objects and lists don't order,
@@ -274,6 +278,9 @@ function BlueprintCatalogPage() {
       searchLabel={`Search ${spec.title.toLowerCase()}`}
       rowCount={page.data?.total ?? 0}
       loading={page.isPlaceholderData}
+      pending={page.isPending}
+      error={page.error}
+      onRetry={() => void page.refetch()}
       filters={
         <>
           {spec.properties.filter(filterable).map((property) => (

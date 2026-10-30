@@ -141,7 +141,7 @@ const actionOptions = Object.entries(auditActions).map(([value, label]) => ({ va
 function AuditPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const { data, isFetching } = useAuditEvents(filtersFrom(search));
+  const { data, isFetching, isPending, error, refetch } = useAuditEvents(filtersFrom(search));
   const actions = search.action?.split(",") ?? [];
   const filtered = actions.length > 0 || Boolean(search.from || search.to);
 
@@ -163,6 +163,9 @@ function AuditPage() {
         data={data?.events ?? []}
         rowCount={data?.total ?? 0}
         loading={isFetching}
+        pending={isPending}
+        error={error}
+        onRetry={() => void refetch()}
         columns={columns}
         getRowId={(event) => String(event.id)}
         search={search}
