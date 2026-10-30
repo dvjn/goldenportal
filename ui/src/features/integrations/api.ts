@@ -69,12 +69,21 @@ export type Run = {
   error?: string;
 };
 
+// IntegrationStatus is how a published integration is doing: its latest run
+// and the blueprints it feeds, with how many of their entities it wrote.
+export type IntegrationStatus = {
+  integration: string;
+  lastRun: Run | null;
+  feeds: { blueprint: string; title: string; entities: number }[];
+};
+
 export const integrations = configDocs<IntegrationSpec>("integrations");
 
 const path = (identifier: string) => `integrations/${encodeURIComponent(identifier)}`;
 
 export const integrationKeys = {
   connectors: ["connectors"] as const,
+  status: ["integration-status"] as const,
   tokens: (identifier: string) => [...integrations.keys.detail(identifier), "tokens"] as const,
   runs: (identifier: string) => [...integrations.keys.detail(identifier), "runs"] as const,
 };
@@ -106,6 +115,10 @@ export async function revokeToken(identifier: string, id: string): Promise<void>
 // syncIntegration syncs a pull integration now.
 export async function syncIntegration(identifier: string): Promise<Run> {
   return (await api.post(`${path(identifier)}/sync`).json<ApiDataResponse<Run>>()).data;
+}
+
+export async function listStatus(): Promise<IntegrationStatus[]> {
+  return (await api.get("integration-status").json<ApiDataResponse<IntegrationStatus[]>>()).data;
 }
 
 export async function listRuns(identifier: string): Promise<Run[]> {

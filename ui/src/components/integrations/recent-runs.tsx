@@ -1,6 +1,9 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
+import { useState } from "react";
 import { IconButton } from "@/components/icon-button";
+import { RunStatus } from "@/components/integrations/run-status";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +21,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { type Run, runsQueryOptions } from "@/features/integrations";
-import { formatAbsolute, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatDuration, formatRelative } from "@/lib/format";
+
+// runsShown is how many runs show before "Show older runs".
+const runsShown = 10;
 
 const counts = [
   { key: "received", label: "Received" },
@@ -39,56 +45,76 @@ function triggerLabel(run: Run) {
 // RecentRuns lists the latest runs and what each one did.
 export function RecentRuns({ identifier }: Readonly<{ identifier: string }>) {
   const { data: runs } = useSuspenseQuery(runsQueryOptions(identifier));
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? runs : runs.slice(0, runsShown);
 
   if (runs.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">Nothing has run yet.</p>;
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="pl-4">When</TableHead>
-          <TableHead>Trigger</TableHead>
-          {counts.map((count) => (
-            <TableHead key={count.key} className="text-right">
-              {count.label}
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-0 pl-4">
+              <span className="sr-only">Status</span>
             </TableHead>
-          ))}
-          <TableHead className="pr-4" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {runs.map((run) => (
-          <TableRow key={run.id}>
-            <TableCell className="pl-4" title={formatAbsolute(run.startedAt)}>
-              {formatRelative(run.startedAt)}
-            </TableCell>
-            <TableCell
-              className={run.error ? "font-medium text-destructive" : "text-muted-foreground"}
-            >
-              {triggerLabel(run)}
-              {run.error && " · Failed"}
-            </TableCell>
+            <TableHead>When</TableHead>
+            <TableHead>Trigger</TableHead>
+            <TableHead className="text-right">Took</TableHead>
             {counts.map((count) => (
-              <TableCell
-                key={count.key}
-                className={
-                  count.key === "failed" && run.failed > 0
-                    ? "text-right font-medium text-destructive tabular-nums"
-                    : "text-right text-muted-foreground tabular-nums"
-                }
-              >
-                {run[count.key]}
-              </TableCell>
+              <TableHead key={count.key} className="text-right">
+                {count.label}
+              </TableHead>
             ))}
-            <TableCell className="pr-4 text-right">
-              {(run.error || run.errors.length > 0) && <RunErrors run={run} />}
-            </TableCell>
+            <TableHead className="pr-4" />
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {shown.map((run) => (
+            <TableRow key={run.id}>
+              <TableCell className="pl-4">
+                <RunStatus run={run} />
+              </TableCell>
+              <TableCell title={formatAbsolute(run.startedAt)}>
+                {formatRelative(run.startedAt)}
+              </TableCell>
+              <TableCell
+                className={run.error ? "font-medium text-destructive" : "text-muted-foreground"}
+              >
+                {triggerLabel(run)}
+              </TableCell>
+              <TableCell className="text-right text-muted-foreground tabular-nums">
+                {formatDuration(run.startedAt, run.finishedAt)}
+              </TableCell>
+              {counts.map((count) => (
+                <TableCell
+                  key={count.key}
+                  className={
+                    count.key === "failed" && run.failed > 0
+                      ? "text-right font-medium text-destructive tabular-nums"
+                      : "text-right text-muted-foreground tabular-nums"
+                  }
+                >
+                  {run[count.key]}
+                </TableCell>
+              ))}
+              <TableCell className="pr-4 text-right">
+                {(run.error || run.errors.length > 0) && <RunErrors run={run} />}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {runs.length > shown.length && (
+        <div className="border-t p-2 text-center">
+          <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}>
+            Show {runs.length - shown.length} older runs
+          </Button>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -1,5 +1,12 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { integrationKeys, integrations, listConnectors, listRuns, listTokens } from "./api";
+import {
+  integrationKeys,
+  integrations,
+  listConnectors,
+  listRuns,
+  listStatus,
+  listTokens,
+} from "./api";
 
 export const connectorsQueryOptions = queryOptions({
   queryKey: integrationKeys.connectors,
@@ -12,6 +19,11 @@ export const tokensQueryOptions = (identifier: string) =>
     queryKey: integrationKeys.tokens(identifier),
     queryFn: () => listTokens(identifier),
   });
+
+export const statusQueryOptions = queryOptions({
+  queryKey: integrationKeys.status,
+  queryFn: listStatus,
+});
 
 export const runsQueryOptions = (identifier: string) =>
   queryOptions({ queryKey: integrationKeys.runs(identifier), queryFn: () => listRuns(identifier) });

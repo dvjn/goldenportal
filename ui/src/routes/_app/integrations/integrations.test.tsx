@@ -51,6 +51,13 @@ const routes = {
     { id: "push", title: "Push", description: "Other systems send entities.", mode: "push" },
   ]),
   "GET integrations/inventory/tokens": ok([]),
+  "GET integration-status": ok([
+    {
+      integration: "inventory",
+      lastRun: null,
+      feeds: [{ blueprint: "service", title: "Service", entities: 12 }],
+    },
+  ]),
   "GET integrations/inventory/runs": ok([
     {
       id: 1,
@@ -83,9 +90,68 @@ describe("integrations", () => {
     expect(screen.getByText(/\/api\/v1\/ingest\/inventory$/)).toBeInTheDocument();
     expect(await screen.findByText("Push Connector")).toBeInTheDocument();
 
+    const feeds = (await screen.findByText("Feeds")).closest("[data-slot=card]") as HTMLElement;
+    expect(within(feeds).getByRole("link", { name: "Service" })).toHaveAttribute(
+      "href",
+      "/catalog/service",
+    );
+    expect(within(feeds).getByText("12 entities")).toBeInTheDocument();
+    expect(screen.getByLabelText("Succeeded with warnings")).toBeInTheDocument();
+    expect(screen.getByText("1s")).toBeInTheDocument();
+
     await user.click(await screen.findByRole("button", { name: "View failures" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("tier is required")).toBeInTheDocument();
+  });
+
+  it("lists integrations with how their last run went", async () => {
+    const run = {
+      id: 2,
+      startedAt: "2026-10-24T10:00:00Z",
+      finishedAt: "2026-10-24T10:00:00Z",
+      trigger: "schedule",
+      received: 0,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      deleted: 0,
+      failed: 0,
+      errors: [],
+      error: "gitlab API answered 401 Unauthorized",
+    };
+    stubApi({
+      ...routes,
+      "GET integrations": ok([
+        {
+          identifier: "inventory",
+          title: "Inventory",
+          publishedVersion: 1,
+          hasDraft: false,
+          updatedAt: "2026-10-24T10:00:00Z",
+          stats: {},
+        },
+        {
+          identifier: "fresh",
+          title: "Fresh",
+          publishedVersion: 1,
+          hasDraft: false,
+          updatedAt: "2026-10-24T10:00:00Z",
+          stats: {},
+        },
+      ]),
+      "GET integration-status": ok([
+        { integration: "inventory", lastRun: run, feeds: [] },
+        { integration: "fresh", lastRun: null, feeds: [] },
+      ]),
+    });
+    renderRoute("/integrations");
+
+    const failed = (await screen.findByRole("link", { name: /Inventory/ })).closest(
+      "tr",
+    ) as HTMLElement;
+    expect(await within(failed).findByLabelText("Failed")).toBeInTheDocument();
+    const fresh = screen.getByRole("link", { name: /Fresh/ }).closest("tr") as HTMLElement;
+    expect(within(fresh).getByText("Never run")).toBeInTheDocument();
   });
 
   it("shows a new ingestion token's secret once", async () => {
