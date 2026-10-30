@@ -29,6 +29,9 @@ const (
 // a sync, as a cron expression.
 const SyncSchedule = "* * * * *"
 
+// pullTimeout bounds how long one sync may spend fetching from a provider.
+const pullTimeout = 10 * time.Minute
+
 var (
 	ErrSyncing  = errors.New("a sync of this integration is already running")
 	ErrNotPull  = errors.New("only integrations that pull their data can sync")
@@ -72,6 +75,8 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Take the lock before fetching so overlapping syncs fail fast instead of
+	// each spending a full provider fetch.
 	var locked bool
 	if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtext('integration-sync:' || $1))`,
 		id).Scan(&locked); err != nil {
@@ -87,17 +92,22 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 			resources = append(resources, m.Resource)
 		}
 	}
-	pulled, err := pull(ctx, tx, spec, resources)
-	if err != nil {
-		return nil, fmt.Errorf("pull %s: %w", identifier, err)
+	// The fetch runs inside the transaction, so bound it to keep a slow
+	// provider from holding a connection indefinitely.
+	pullCtx, cancel := context.WithTimeout(ctx, pullTimeout)
+	pulled, err := pull(pullCtx, tx, spec, resources)
+	cancel()
+	var items []Item
+	if err == nil {
+		var data any
+		if data, err = toJSONValue(pulled); err == nil {
+			items, err = spec.Map(data)
+		}
 	}
-	data, err := toJSONValue(pulled)
 	if err != nil {
-		return nil, err
-	}
-	items, err := spec.Map(data)
-	if err != nil {
-		return nil, err
+		_ = tx.Rollback()
+		return nil, recordFailure(ctx, db, id, &Run{StartedAt: started, Trigger: trigger, Errors: []RunError{}},
+			fmt.Errorf("pull %s: %w", identifier, err))
 	}
 
 	run := &Run{StartedAt: started, Trigger: trigger, Received: len(items), Errors: []RunError{}}
@@ -127,6 +137,18 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 	}
 
 	return run, tx.Commit()
+}
+
+// recordFailure records a sync that fetched nothing as a run, so the failure
+// shows with the integration's runs and the scheduler waits out the interval
+// instead of retrying, and burning provider rate limits, every minute.
+func recordFailure(ctx context.Context, db configdoc.DB, integrationID string, run *Run, err error) error {
+	run.Error = err.Error()
+	if recordErr := NewStore(db).RecordRun(context.WithoutCancel(ctx), integrationID, "", run); recordErr != nil {
+		return errors.Join(err, recordErr)
+	}
+
+	return err
 }
 
 // syncAll syncs the published pull integrations whose interval has passed
