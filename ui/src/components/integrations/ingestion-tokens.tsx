@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { Check, Copy, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmIconButton } from "@/components/confirm-icon-button";
+import { SecretReveal } from "@/components/secret-reveal";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -112,7 +113,15 @@ function CreateIngestionTokenDialog({ identifier }: Readonly<{ identifier: strin
       </DialogTrigger>
       <DialogContent>
         {created ? (
-          <TokenSecret created={created} onDone={() => onOpenChange(false)} />
+          <SecretReveal
+            secret={created.secret}
+            label="New ingestion token"
+            onDone={() => onOpenChange(false)}
+          >
+            This is the only time "{created.name}" is shown. Store it with the system that pushes,
+            which sends it as <code className="font-mono">Authorization: Bearer &lt;token&gt;</code>
+            .
+          </SecretReveal>
         ) : (
           <form onSubmit={submit} className="grid gap-6">
             <DialogHeader>
@@ -141,47 +150,5 @@ function CreateIngestionTokenDialog({ identifier }: Readonly<{ identifier: strin
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function TokenSecret({
-  created,
-  onDone,
-}: Readonly<{ created: CreatedIngestionToken; onDone: () => void }>) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    await navigator.clipboard.writeText(created.secret);
-    setCopied(true);
-  }
-
-  return (
-    <div className="grid gap-6">
-      <DialogHeader>
-        <DialogTitle>Copy your new token</DialogTitle>
-        <DialogDescription>
-          This is the only time "{created.name}" is shown. Store it with the system that pushes,
-          which sends it as <code className="font-mono">Authorization: Bearer &lt;token&gt;</code>.
-        </DialogDescription>
-      </DialogHeader>
-      <Field orientation="horizontal">
-        <Input
-          readOnly
-          value={created.secret}
-          aria-label="New ingestion token"
-          className="font-mono"
-          onFocus={(event) => event.currentTarget.select()}
-        />
-        <Button type="button" variant="outline" onClick={copy}>
-          {copied ? <Check /> : <Copy />}
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      </Field>
-      <DialogFooter>
-        <Button type="button" onClick={onDone}>
-          Done
-        </Button>
-      </DialogFooter>
-    </div>
   );
 }

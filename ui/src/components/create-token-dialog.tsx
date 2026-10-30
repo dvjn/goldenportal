@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useState } from "react";
+import { SecretReveal } from "@/components/secret-reveal";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -73,7 +74,14 @@ export function CreateTokenDialog() {
       </DialogTrigger>
       <DialogContent>
         {created ? (
-          <TokenSecret created={created} onDone={() => handleOpenChange(false)} />
+          <SecretReveal
+            secret={created.secret}
+            label="New API token"
+            onDone={() => handleOpenChange(false)}
+          >
+            This is the only time "{created.token.name}" is shown. Store it somewhere safe, then
+            send it as <code className="font-mono">Authorization: Bearer &lt;token&gt;</code>.
+          </SecretReveal>
         ) : (
           <form onSubmit={handleSubmit} className="grid gap-6">
             <DialogHeader>
@@ -139,44 +147,5 @@ export function CreateTokenDialog() {
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function TokenSecret({ created, onDone }: Readonly<{ created: CreatedToken; onDone: () => void }>) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    await navigator.clipboard.writeText(created.secret);
-    setCopied(true);
-  }
-
-  return (
-    <div className="grid gap-6">
-      <DialogHeader>
-        <DialogTitle>Copy your new token</DialogTitle>
-        <DialogDescription>
-          This is the only time "{created.token.name}" is shown. Store it somewhere safe, then send
-          it as <code className="font-mono">Authorization: Bearer &lt;token&gt;</code>.
-        </DialogDescription>
-      </DialogHeader>
-      <Field orientation="horizontal">
-        <Input
-          readOnly
-          value={created.secret}
-          aria-label="New API token"
-          className="font-mono"
-          onFocus={(event) => event.currentTarget.select()}
-        />
-        <Button type="button" variant="outline" onClick={copy}>
-          {copied ? <Check /> : <Copy />}
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      </Field>
-      <DialogFooter>
-        <Button type="button" onClick={onDone}>
-          Done
-        </Button>
-      </DialogFooter>
-    </div>
   );
 }
