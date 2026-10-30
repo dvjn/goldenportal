@@ -18,7 +18,7 @@ import (
 // expression, so results follow entity changes and time-based checks.
 const EvaluateSchedule = "* * * * *"
 
-func Register(app *gofr.App) {
+func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
 	app.GET("/api/v1/scorecards/{identifier}/summary", summary)
 	app.GET("/api/v1/scorecards/{identifier}/results", listResults)

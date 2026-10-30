@@ -85,6 +85,7 @@ func TestMiddleware(t *testing.T) {
 		{name: "an API token signs the request in", method: http.MethodGet, path: "/api/v1/me", bearer: "gpp_rw", wantStatus: http.StatusOK, wantUser: "alice"},
 		{name: "token writes need no CSRF header", method: http.MethodPost, path: "/api/v1/things", bearer: "gpp_rw", wantStatus: http.StatusOK, wantUser: "alice"},
 		{name: "read-only tokens can read", method: http.MethodGet, path: "/api/v1/me", bearer: "gpp_ro", wantStatus: http.StatusOK, wantUser: "alice"},
+		{name: "read-only tokens can use MCP POST transport", method: http.MethodPost, path: MCPPath, bearer: "gpp_ro", wantStatus: http.StatusOK, wantUser: "alice"},
 		{name: "read-only tokens can't write", method: http.MethodPost, path: "/api/v1/things", bearer: "gpp_ro", wantStatus: http.StatusForbidden},
 		{name: "an unknown token is rejected even on public paths", method: http.MethodGet, path: "/api/v1/config", bearer: "gpp_nope", wantStatus: http.StatusUnauthorized},
 		{name: "a token wins over a session cookie", method: http.MethodGet, path: "/api/v1/me", bearer: "gpp_nope", cookie: "alice-session", wantStatus: http.StatusUnauthorized},

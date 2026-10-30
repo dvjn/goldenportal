@@ -6,8 +6,11 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/mux v1.8.1
 	github.com/itchyny/gojq v0.12.19
 	github.com/lib/pq v1.12.3
+	github.com/modelcontextprotocol/go-sdk v1.8.0
+	go.uber.org/mock v0.6.0
 	go.yaml.in/yaml/v3 v3.0.5
 	gofr.dev v1.62.0
 	golang.org/x/oauth2 v0.37.0
@@ -37,10 +40,10 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.10 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.22 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.1 // indirect
-	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/graphql-go/graphql v0.8.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4 // indirect
@@ -63,12 +66,15 @@ require (
 	github.com/redis/go-redis/extra/redisotel/v9 v9.22.0 // indirect
 	github.com/redis/go-redis/v9 v9.22.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/segmentio/kafka-go v0.4.51 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.58 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect
@@ -87,7 +93,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
