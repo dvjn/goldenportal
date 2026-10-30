@@ -2,7 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LayoutGrid, Search } from "lucide-react";
 import { useState } from "react";
-import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
+import { IconTile } from "@/components/catalog/blueprint-icon";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -81,9 +81,7 @@ function CatalogPage() {
                 <Card className="h-full transition-colors hover:bg-accent/50">
                   <CardHeader>
                     <div className="flex items-start justify-between gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <BlueprintIcon icon={entry.icon} className="size-4.5" />
-                      </span>
+                      <IconTile icon={entry.icon} />
                       <span
                         className="text-2xl font-semibold tabular-nums"
                         title={`${entry.entities} entities`}

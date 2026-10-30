@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Columns3, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
-import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
+import { BlueprintIcon, IconTile } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
 import { SplitTitle } from "@/components/catalog/split-title";
@@ -330,9 +330,7 @@ function BlueprintCatalogPage() {
         <Link to="/catalog">Catalog</Link>
       </PageBreadcrumbs>
       <div className="flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <BlueprintIcon icon={spec.icon} className="size-5" />
-        </span>
+        <IconTile icon={spec.icon} size="lg" />
         <div className="grid">
           <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
           <p className="text-sm text-muted-foreground">
