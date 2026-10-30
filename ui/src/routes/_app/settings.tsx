@@ -1,13 +1,8 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation } from "@tanstack/react-router";
 import { PageHeader } from "@/components/page-header";
+import { settingsSections } from "@/components/settings-sections";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { meQueryOptions } from "@/features/auth";
-
-const sections = [
-  { to: "/settings/configuration", label: "Server Configuration" },
-  { to: "/settings/access", label: "Access" },
-  { to: "/settings/audit", label: "Audit Log" },
-] as const;
 
 export const Route = createFileRoute("/_app/settings")({
   beforeLoad: async ({ context }) => {
@@ -21,14 +16,14 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsLayout() {
   const { pathname } = useLocation();
-  const active = sections.find((section) => pathname.startsWith(section.to))?.to;
+  const active = settingsSections.find((section) => pathname.startsWith(section.to))?.to;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Settings" description="How the portal is set up, and who can do what." />
       <Tabs value={active}>
         <TabsList variant="line" aria-label="Settings">
-          {sections.map((section) => (
+          {settingsSections.map((section) => (
             <TabsTrigger
               key={section.to}
               value={section.to}
