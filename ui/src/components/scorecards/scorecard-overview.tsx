@@ -310,6 +310,9 @@ function EntitiesTable({
       searchLabel="Search entities"
       rowCount={page.data?.total ?? 0}
       loading={page.isPlaceholderData}
+      pending={page.isPending}
+      error={page.error}
+      onRetry={() => void page.refetch()}
       filters={
         <DataTableFacetedFilter
           title="Tier"

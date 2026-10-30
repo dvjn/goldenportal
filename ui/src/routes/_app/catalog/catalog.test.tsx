@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Blueprint } from "@/features/blueprints";
 import type { EntityDetail, EntityPage } from "@/features/catalog";
-import { acmeConfig, ada, ok, stubApi } from "@/test/api";
+import { acmeConfig, ada, fail, ok, stubApi } from "@/test/api";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -118,6 +118,35 @@ describe("catalog", () => {
     expect(card).toHaveAttribute("href", "/catalog/service");
     expect(within(card).getByText("1.2K")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Catalog" })).toBeInTheDocument();
+  });
+
+  it("keeps the navigation when a blueprint doesn't exist", async () => {
+    stubApi({ ...signedInMember, "GET blueprints/gone": fail(404, "blueprint not found") });
+    renderRoute("/catalog/gone");
+
+    expect(await screen.findByText("Not found")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Back to Catalog" })).toHaveAttribute(
+      "href",
+      "/catalog",
+    );
+    expect(screen.getByRole("link", { name: "Scorecards" })).toBeInTheDocument();
+  });
+
+  it("shows a failed page of entities in the table and tries again", async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET entities": () =>
+        ++calls === 1 ? fail(400, "the filter names an unknown property")() : ok(page)(),
+      "GET entities/facets": ok([]),
+    });
+    renderRoute("/catalog/service");
+
+    expect(await screen.findByText("the filter names an unknown property")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("link", { name: /Ledger/ })).toBeVisible();
   });
 
   it("filters a blueprint's entities on the server", async () => {
