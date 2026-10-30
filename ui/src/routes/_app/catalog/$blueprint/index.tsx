@@ -43,6 +43,7 @@ import {
 } from "@/features/catalog";
 import { type ScorecardColumn, scorecardColumnsQueryOptions } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
+import { usePageTitle } from "@/lib/page-title";
 
 // Filters maps a property to the values it's filtered to.
 type Filters = Record<string, (string | number | boolean)[]>;
@@ -156,6 +157,7 @@ function BlueprintCatalogPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const { data: doc } = useSuspenseQuery(blueprints.queries.detail(blueprint));
   const spec = doc.published?.spec;
+  usePageTitle(spec?.title ?? doc.title);
   const { data: scorecards = [] } = useQuery(scorecardColumnsQueryOptions(blueprint));
   const page = useQuery({
     ...entitiesQueryOptions(queryFrom(blueprint, search)),
