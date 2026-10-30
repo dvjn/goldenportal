@@ -131,7 +131,7 @@ function AuthenticationCard({
     <Card>
       <ConfigCardHeader icon={KeyRound} title="Authentication">
         {!oidc.configured && (
-          <Badge variant="outline" className="text-warning">
+          <Badge variant="warning">
             <CircleAlert aria-hidden />
             Not configured
           </Badge>
@@ -306,13 +306,7 @@ function NotSet() {
 }
 
 function SetBadge({ set }: Readonly<{ set: boolean }>) {
-  return set ? (
-    <Badge variant="secondary">Set</Badge>
-  ) : (
-    <Badge variant="outline" className="text-muted-foreground">
-      Not set
-    </Badge>
-  );
+  return set ? <Badge variant="success">Set</Badge> : <Badge variant="muted">Not set</Badge>;
 }
 
 function hours(n: number) {
