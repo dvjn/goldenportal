@@ -169,6 +169,42 @@ spec:
 	}
 }
 
+func TestParseEntityLayout(t *testing.T) {
+	source := `
+kind: Blueprint
+metadata: {name: service, title: Service}
+spec:
+  properties:
+    summary: {type: string}
+    lifecycle: {type: string, enum: [production, retired]}
+    url: {type: string, format: uri}
+    owner: {relation: team, display: {empty: No owner}}
+    oncall: {type: string}
+  entity:
+    header: {subtitle: summary, badges: [lifecycle], link: url}
+    sections:
+      - title: Ownership
+        properties: [owner, oncall]
+`
+	spec := mustParse(t, source)
+	header := spec.Entity.Header
+	if header.Subtitle != "summary" || len(header.Badges) != 1 || header.Badges[0] != "lifecycle" || header.Link != "url" {
+		t.Errorf("header = %+v", header)
+	}
+	if len(spec.Entity.Sections) != 1 || spec.Entity.Sections[0].Title != "Ownership" || len(spec.Entity.Sections[0].Properties) != 2 {
+		t.Errorf("sections = %+v", spec.Entity.Sections)
+	}
+	if spec.Properties[3].Display.Empty != "No owner" {
+		t.Errorf("owner display = %+v", spec.Properties[3].Display)
+	}
+
+	next := mustParse(t, strings.Replace(source, "badges: [lifecycle]", "badges: [lifecycle, oncall]", 1))
+	changes := Diff(spec, next)
+	if len(changes) != 1 || changes[0].Section != "entity" || configdoc.Breaking(changes) {
+		t.Errorf("Diff() = %+v", changes)
+	}
+}
+
 func TestParseAcceptsJSON(t *testing.T) {
 	spec := mustParse(t, `{"kind": "Blueprint", "metadata": {"name": "team", "title": "Team"},
 		"spec": {"properties": {"slack": {"type": "string"}}}}`)
@@ -209,6 +245,11 @@ func TestParseReportsProblemsWithLines(t *testing.T) {
 		{"display color", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {x: navy}", "spec.properties.a.display.colors.x", "color must be one of", 9},
 		{"display color value", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {y: red}", "spec.properties.a.display.colors.y", "isn't one of the property's enum values", 9},
 		{"compute type", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      compute: .a", "spec.properties.c.type", "type must be one of", 5},
+		{"unknown header property", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    header: {subtitle: b}", "spec.entity.header.subtitle", `s has no property "b"`, 7},
+		{"link without uri", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    header: {link: a}", "spec.entity.header.link", "format: uri", 7},
+		{"section without title", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    sections:\n      - properties: [a]", "spec.entity.sections[0].title", "add a title", 8},
+		{"property in two sections", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    sections:\n      - {title: One, properties: [a]}\n      - {title: Two, properties: [a]}", "spec.entity.sections[1].properties[0]", "already in a section", 9},
+		{"catalog header", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  catalog:\n    header: {}", "spec.catalog.header", `unknown field "header"`, 5},
 	}
 
 	for _, test := range tests {

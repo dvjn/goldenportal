@@ -30,9 +30,12 @@ type Spec struct {
 	Entity  *Page `json:"entity,omitempty"`
 }
 
-// Page is the tabs a blueprint adds to one of its pages.
+// Page is the tabs a blueprint adds to one of its pages. Entity pages also
+// take a header and sections for their properties.
 type Page struct {
-	Tabs []widget.Tab `json:"tabs"`
+	Header   *Header      `json:"header,omitempty"`
+	Sections []Section    `json:"sections,omitempty"`
+	Tabs     []widget.Tab `json:"tabs"`
 }
 
 // Tabs every page has. An entity tab named overview replaces the built-in one.
@@ -150,7 +153,7 @@ func Parse(source string) (Spec, []Issue) {
 			spec.Properties = append(spec.Properties, p.property(id, "spec.properties."+id, key, value))
 		})
 		spec.Catalog = p.page(fields["catalog"], "spec.catalog", widget.Scope{Blueprint: spec.Identifier}, CatalogTabs)
-		spec.Entity = p.page(fields["entity"], "spec.entity", widget.Scope{Blueprint: spec.Identifier, Entity: true}, EntityTabs)
+		spec.Entity = p.entityPage(fields["entity"], "spec.entity", spec)
 	}
 	if spec.Entity != nil {
 		for _, tab := range spec.Entity.Tabs {
@@ -372,6 +375,26 @@ func (p *parser) page(node *yaml.Node, path string, scope widget.Scope, reserved
 	}
 
 	return &Page{Tabs: widget.ParseTabs(&p.Reader, fields["tabs"], path+".tabs", scope, reserved...)}
+}
+
+func (p *parser) entityPage(node *yaml.Node, path string, spec Spec) *Page {
+	if node == nil {
+		return nil
+	}
+	fields, ok := p.Fields(node, path, "header", "sections", "tabs")
+	if !ok {
+		return nil
+	}
+	page := &Page{Tabs: widget.ParseTabs(&p.Reader, fields["tabs"], path+".tabs",
+		widget.Scope{Blueprint: spec.Identifier, Entity: true}, EntityTabs...)}
+	if n := fields["header"]; n != nil {
+		page.Header = p.header(n, path+".header", spec)
+	}
+	if n := fields["sections"]; n != nil {
+		page.Sections = p.sections(n, path+".sections", spec)
+	}
+
+	return page
 }
 
 // CompileExpression checks a jq expression compiles.

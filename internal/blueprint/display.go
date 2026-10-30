@@ -26,6 +26,8 @@ type Display struct {
 	Filter *bool `json:"filter,omitempty"`
 	// Hidden leaves the property off entity pages; it's still in the data.
 	Hidden bool `json:"hidden,omitempty"`
+	// Empty is shown when an entity has no value, such as "No owner".
+	Empty string `json:"empty,omitempty"`
 }
 
 // displays lists how each type can look; the first is the default.
@@ -41,7 +43,7 @@ var displays = map[string][]string{
 
 func (p *parser) display(node *yaml.Node, path string, prop Property) *Display {
 	d := &Display{}
-	fields, ok := p.Fields(node, path, "as", "unit", "colors", "column", "filter", "hidden")
+	fields, ok := p.Fields(node, path, "as", "unit", "colors", "column", "filter", "hidden", "empty")
 	if !ok {
 		return d
 	}
@@ -88,6 +90,7 @@ func (p *parser) display(node *yaml.Node, path string, prop Property) *Display {
 		}
 	}
 	d.Hidden = p.Bool(fields["hidden"], path+".hidden")
+	d.Empty = p.Text(fields["empty"], path+".empty")
 
 	return d
 }

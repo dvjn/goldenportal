@@ -209,6 +209,58 @@ describe("catalog", () => {
     });
   });
 
+  it("lays out an entity page with the blueprint's header and sections", async () => {
+    const spec = service.published?.spec;
+    if (!spec) throw new Error("service is published");
+    const laidOut: Blueprint = {
+      ...service,
+      published: {
+        ...service.published,
+        spec: {
+          ...spec,
+          properties: [
+            ...spec.properties,
+            { identifier: "summary", title: "Summary", type: "string" },
+            { identifier: "url", title: "URL", type: "string", format: "uri" },
+            { identifier: "pager", title: "Pager", type: "string", display: { empty: "No pager" } },
+          ],
+          entity: {
+            header: { subtitle: "summary", badges: ["tier"], link: "url" },
+            sections: [{ title: "Ownership", properties: ["owner", "pager"] }],
+            tabs: [],
+          },
+        },
+      } as Blueprint["published"],
+    };
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(laidOut),
+      "GET entities/service/ledger": ok({
+        ...ledger,
+        properties: {
+          ...ledger.properties,
+          summary: "Moves money",
+          url: "https://ledger.example.com/x",
+        },
+      }),
+      "GET entity-scorecards": ok([]),
+    });
+    renderRoute("/catalog/service/ledger");
+
+    expect(await screen.findByText("Moves money")).toBeVisible();
+    expect(screen.getByRole("link", { name: /Open on ledger.example.com/ })).toHaveAttribute(
+      "href",
+      "https://ledger.example.com/x",
+    );
+    const ownership = screen.getByText("Ownership").closest("[data-slot=card]") as HTMLElement;
+    expect(within(ownership).getByRole("link", { name: "Payments" })).toBeInTheDocument();
+    expect(within(ownership).getByText("No pager")).toBeInTheDocument();
+    const other = screen.getByText("Other").closest("[data-slot=card]") as HTMLElement;
+    expect(within(other).getByText("Owner Slack")).toBeInTheDocument();
+    expect(within(other).queryByText("Tier")).not.toBeInTheDocument();
+    expect(within(other).queryByText("Summary")).not.toBeInTheDocument();
+  });
+
   it("shows an entity with its relations both ways", async () => {
     const user = userEvent.setup();
     stubApi({
