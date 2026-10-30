@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
 import { type BlueprintSpec, blueprints, type Property } from "@/features/blueprints";
 import {
+  catalogQueryOptions,
   type Entity,
   type EntityQuery,
   entitiesQueryOptions,
@@ -163,6 +164,7 @@ function BlueprintCatalogPage() {
     ...entitiesQueryOptions(queryFrom(blueprint, search)),
     placeholderData: keepPreviousData,
   });
+  const { data: catalog } = useQuery(catalogQueryOptions);
 
   if (!spec) {
     return (
@@ -248,6 +250,10 @@ function BlueprintCatalogPage() {
   ];
 
   const filtered = Object.keys(filters).length > 0;
+  // The header counts every entity, and how many match while the table is narrowed.
+  const count =
+    catalog?.find((entry) => entry.identifier === blueprint)?.entities ?? page.data?.total;
+  const matching = filtered || search.q ? page.data?.total : undefined;
   // The blueprint's own tabs come first, then the entities table every catalog page has.
   const views = spec.catalog?.tabs ?? [];
   const view = views.some((v) => v.identifier === search.view)
@@ -269,8 +275,8 @@ function BlueprintCatalogPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
           <p className="text-sm text-muted-foreground">
             {spec.description}
-            {spec.description && page.data && " · "}
-            {page.data && `${page.data.total} ${page.data.total === 1 ? "entity" : "entities"}`}
+            {spec.description && count !== undefined && " · "}
+            {count !== undefined && countText(count, matching)}
           </p>
         </div>
       </div>
@@ -486,4 +492,9 @@ function ColumnsMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+function countText(count: number, matching: number | undefined) {
+  if (matching !== undefined) return `${matching} of ${count} match`;
+  return `${count} ${count === 1 ? "entity" : "entities"}`;
 }

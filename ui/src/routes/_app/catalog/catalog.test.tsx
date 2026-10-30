@@ -156,8 +156,10 @@ describe("catalog", () => {
       "GET blueprints/service": ok(service),
       "GET entities": ok(page),
       "GET entities/facets": ok([{ value: "payments", title: "Payments", count: 1 }]),
+      "GET catalog": ok([{ identifier: "service", title: "Service", entities: 3 }]),
     });
     renderRoute("/catalog/service");
+    expect(await screen.findByText(/3 entities/)).toBeInTheDocument();
 
     const row = (await screen.findByRole("link", { name: /Ledger/ })).closest("tr") as HTMLElement;
     expect(within(row).getByText("critical")).toBeInTheDocument();
@@ -177,6 +179,7 @@ describe("catalog", () => {
         and: [{ property: "tier", op: "in", values: ["critical"] }],
       });
     });
+    expect(await screen.findByText(/1 of 3 match/)).toBeInTheDocument();
   });
 
   it("shows an entity with its relations both ways", async () => {
