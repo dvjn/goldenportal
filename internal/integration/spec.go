@@ -29,6 +29,7 @@ type Spec struct {
 	// blueprints the integration can write.
 	Mappings []Mapping `json:"mappings"`
 	http     *HTTPConfig
+	scm      *SCMConfig
 }
 
 // ConnectorSpec picks the connector and configures it.
@@ -149,6 +150,11 @@ func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) Co
 	}
 	n := fields["config"]
 	switch {
+	case c.ID == "github" || c.ID == "gitlab":
+		spec.scm = parseSCMConfig(r, n, "spec.connector.config", c.ID)
+		if n != nil {
+			_ = n.Decode(&spec.Connector.Config)
+		}
 	case c.ID == "http" && n == nil:
 		r.Errorf(node, "spec.connector.config", "add the resources to fetch, under config.resources")
 	case c.ID == "http":

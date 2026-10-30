@@ -1,0 +1,42 @@
+{
+  "groups/acme": {"id": 61, "name": "Acme", "path": "acme", "full_path": "acme", "visibility": "private", "web_url": "https://gitlab.com/groups/acme"},
+  "groups/acme/projects": [
+    {"id": 81, "name": "ledger", "path_with_namespace": "acme/ledger", "visibility": "private", "default_branch": "main", "archived": false, "web_url": "https://gitlab.com/acme/ledger"}
+  ],
+  "groups/acme/projects?page=2": [
+    {"id": 82, "name": "search-api", "path_with_namespace": "acme/search-api", "visibility": "internal", "default_branch": "main", "archived": false, "merge_requests_access_level": "disabled", "web_url": "https://gitlab.com/acme/search-api"}
+  ],
+  "projects/81": {"id": 81, "name": "ledger", "path_with_namespace": "acme/ledger", "visibility": "private", "default_branch": "main", "archived": false, "web_url": "https://gitlab.com/acme/ledger"},
+
+  "projects/81/repository/branches": [
+    {"name": "main", "protected": true, "default": true, "commit": {"id": "c0ffee12ab34"}},
+    {"name": "fix/rounding", "protected": false, "default": false, "commit": {"id": "beef5678cd90"}}
+  ],
+  "projects/81/merge_requests": [
+    {"id": 4101, "iid": 12, "title": "Round half to even", "state": "opened", "draft": false, "source_branch": "fix/rounding", "target_branch": "main", "author": {"username": "ada"}, "web_url": "https://gitlab.com/acme/ledger/-/merge_requests/12"}
+  ],
+  "projects/81/pipelines": [
+    {"id": 5102, "iid": 2, "status": "running", "ref": "fix/rounding", "sha": "beef5678cd90", "web_url": "https://gitlab.com/acme/ledger/-/pipelines/5102"},
+    {"id": 5101, "iid": 1, "status": "success", "ref": "main", "sha": "c0ffee12ab34", "web_url": "https://gitlab.com/acme/ledger/-/pipelines/5101"}
+  ],
+  "projects/81/pipelines/5102": {"id": 5102, "iid": 2, "name": "Round half to even", "status": "running", "ref": "fix/rounding", "sha": "beef5678cd90", "duration": null, "created_at": "2026-10-28T10:02:00Z", "web_url": "https://gitlab.com/acme/ledger/-/pipelines/5102"},
+  "projects/81/pipelines/5101": {"id": 5101, "iid": 1, "name": null, "status": "success", "ref": "main", "sha": "c0ffee12ab34", "duration": 312, "created_at": "2026-10-27T14:30:00Z", "web_url": "https://gitlab.com/acme/ledger/-/pipelines/5101"},
+  "projects/81/pipelines/5102/jobs": [
+    {"id": 6201, "name": "test", "stage": "test", "status": "running", "pipeline": {"id": 5102}, "web_url": "https://gitlab.com/acme/ledger/-/jobs/6201"}
+  ],
+  "projects/81/pipelines/5101/jobs": [
+    {"id": 6102, "name": "test", "stage": "test", "status": "success", "pipeline": {"id": 5101}, "web_url": "https://gitlab.com/acme/ledger/-/jobs/6102"},
+    {"id": 6101, "name": "build", "stage": "build", "status": "success", "pipeline": {"id": 5101}, "web_url": "https://gitlab.com/acme/ledger/-/jobs/6101"}
+  ],
+
+  "projects/82/repository/branches": [
+    {"name": "main", "protected": true, "default": true, "commit": {"id": "0ddba11fee00"}}
+  ],
+  "projects/82/pipelines": [
+    {"id": 5201, "iid": 1, "status": "failed", "ref": "main", "sha": "0ddba11fee00", "web_url": "https://gitlab.com/acme/search-api/-/pipelines/5201"}
+  ],
+  "projects/82/pipelines/5201": {"id": 5201, "iid": 1, "name": "Reindex nightly", "status": "failed", "ref": "main", "sha": "0ddba11fee00", "duration": 95, "created_at": "2026-10-28T02:00:00Z", "web_url": "https://gitlab.com/acme/search-api/-/pipelines/5201"},
+  "projects/82/pipelines/5201/jobs": [
+    {"id": 6301, "name": "reindex", "stage": "deploy", "status": "failed", "pipeline": {"id": 5201}, "web_url": "https://gitlab.com/acme/search-api/-/jobs/6301"}
+  ]
+}

@@ -29,6 +29,10 @@ func (c Connector) pull() puller {
 		return portalSnapshot
 	case "http":
 		return httpPull
+	case "github":
+		return githubPull
+	case "gitlab":
+		return gitlabPull
 	}
 
 	return nil
@@ -60,6 +64,8 @@ var Connectors = []Connector{
 		Description: "JSON fetched from URLs on a schedule, following pages if there are several.",
 		Mode:        ModePull,
 	},
+	{ID: "github", Title: "GitHub", Description: "Read organizations, repositories, branches, workflows, recent workflow runs and jobs, and pull requests.", Mode: ModePull, Resources: []string{"organizations", "repositories", "branches", "workflows", "workflow_runs", "jobs", "pull_requests"}},
+	{ID: "gitlab", Title: "GitLab", Description: "Read groups, projects, branches, recent pipelines and jobs, and merge requests.", Mode: ModePull, Resources: []string{"groups", "projects", "branches", "pipelines", "jobs", "merge_requests"}},
 }
 
 func connector(id string) (Connector, bool) {
