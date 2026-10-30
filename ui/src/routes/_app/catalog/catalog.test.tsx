@@ -261,6 +261,30 @@ describe("catalog", () => {
     expect(within(other).queryByText("Summary")).not.toBeInTheDocument();
   });
 
+  it("lists the first few related entities of a group and shows the rest on request", async () => {
+    const user = userEvent.setup();
+    const teams = Array.from({ length: 8 }, (_, i) => ({
+      identifier: `t${i}`,
+      title: `platform/team-${i}`,
+    }));
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET entities/service/ledger": ok({ ...ledger, related: { owner: teams } }),
+      "GET entity-scorecards": ok([]),
+    });
+    renderRoute("/catalog/service/ledger?tab=relations");
+
+    const owners = (await screen.findByRole("heading", { name: /Owner/ })).closest(
+      "section",
+    ) as HTMLElement;
+    expect(within(owners).getByText("8")).toBeInTheDocument();
+    expect(within(owners).getAllByRole("link")).toHaveLength(6);
+    await user.click(within(owners).getByRole("button", { name: "Show 2 more" }));
+    expect(within(owners).getAllByRole("link")).toHaveLength(8);
+    expect(within(owners).getAllByText("platform/")[0]).toHaveClass("text-muted-foreground");
+  });
+
   it("shows an entity with its relations both ways", async () => {
     const user = userEvent.setup();
     stubApi({

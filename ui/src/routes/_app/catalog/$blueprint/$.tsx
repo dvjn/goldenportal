@@ -6,10 +6,13 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, ExternalLink, Plug } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { stringify } from "yaml";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
+import { PropertyLabel } from "@/components/catalog/property-label";
 import { isWebUrl, PropertyValue } from "@/components/catalog/property-value";
+import { SplitTitle } from "@/components/catalog/split-title";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageError } from "@/components/page-error";
 import {
@@ -23,7 +26,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
 import { type BlueprintSpec, blueprints } from "@/features/blueprints";
-import { type EntityDetail, entityQueryOptions, type Incoming } from "@/features/catalog";
+import {
+  type Link as CatalogLink,
+  type EntityDetail,
+  entityQueryOptions,
+  type Incoming,
+} from "@/features/catalog";
 import { entityScorecardsQueryOptions } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 import { usePageTitle } from "@/lib/page-title";
@@ -93,7 +101,9 @@ function EntityPage() {
           </span>
           <div className="grid min-w-0 flex-1 gap-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-2xl font-semibold tracking-tight">{entity.title}</h1>
+              <h1 className="truncate text-2xl font-semibold tracking-tight">
+                <SplitTitle title={entity.title} />
+              </h1>
               <Badge variant="secondary">{spec.title}</Badge>
               {badges.map((property) => (
                 <PropertyValue
@@ -281,8 +291,8 @@ function Overview({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Enti
                 <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[minmax(8rem,auto)_minmax(0,1fr)]">
                   {section.properties.map((property) => (
                     <div key={property.identifier} className="contents">
-                      <dt className="text-muted-foreground" title={property.description}>
-                        {property.title}
+                      <dt className="text-muted-foreground">
+                        <PropertyLabel property={property} />
                       </dt>
                       <dd className="min-w-0">
                         <PropertyValue
@@ -336,7 +346,7 @@ function IncomingLink({
   incoming,
   identifier,
   children,
-}: Readonly<{ incoming: Incoming; identifier: string; children: React.ReactNode }>) {
+}: Readonly<{ incoming: Incoming; identifier: string; children: ReactNode }>) {
   return (
     <Link
       to="/catalog/$blueprint"
@@ -365,18 +375,19 @@ function Relations({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Ent
           {outgoing.length === 0 ? (
             <p className="text-sm text-muted-foreground">{spec.title} has no relations.</p>
           ) : (
-            outgoing.map((property) => (
-              <section key={property.identifier} className="grid gap-1.5">
-                <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  {property.title}
-                </h3>
-                <PropertyValue
-                  property={property}
-                  value={entity.properties[property.identifier]}
-                  links={entity.related[property.identifier]}
-                />
-              </section>
-            ))
+            outgoing.map((property) => {
+              const links = entity.related[property.identifier] ?? [];
+              return (
+                <section key={property.identifier} className="grid gap-1.5">
+                  <RelationHeading count={links.length}>{property.title}</RelationHeading>
+                  {links.length === 0 ? (
+                    <PropertyValue property={property} value={undefined} links={links} />
+                  ) : (
+                    <RelationLinks blueprint={property.relation ?? ""} links={links} />
+                  )}
+                </section>
+              );
+            })
           )}
         </CardContent>
       </Card>
@@ -393,20 +404,10 @@ function Relations({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Ent
           ) : (
             entity.incoming.map((incoming) => (
               <section key={`${incoming.blueprint}.${incoming.property}`} className="grid gap-1.5">
-                <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                <RelationHeading count={incoming.total}>
                   {incoming.blueprintTitle} via {incoming.propertyTitle}
-                </h3>
-                <span className="flex flex-wrap gap-x-2 gap-y-1 text-sm">
-                  {incoming.entities.map((link) => (
-                    <EntityLink
-                      key={link.identifier}
-                      blueprint={incoming.blueprint}
-                      identifier={link.identifier}
-                    >
-                      {link.title || link.identifier}
-                    </EntityLink>
-                  ))}
-                </span>
+                </RelationHeading>
+                <RelationLinks blueprint={incoming.blueprint} links={incoming.entities} />
                 {incoming.total > incoming.entities.length && (
                   <IncomingLink incoming={incoming} identifier={entity.identifier}>
                     See all {incoming.total}
@@ -418,6 +419,50 @@ function Relations({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Ent
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function RelationHeading({ count, children }: Readonly<{ count: number; children: ReactNode }>) {
+  return (
+    <h3 className="flex items-center gap-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      {children}
+      <span className="tabular-nums normal-case">{count}</span>
+    </h3>
+  );
+}
+
+// relationsShown is how many related entities a group lists before "Show more".
+const relationsShown = 6;
+
+function RelationLinks({
+  blueprint,
+  links,
+}: Readonly<{ blueprint: string; links: CatalogLink[] }>) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? links : links.slice(0, relationsShown);
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      {shown.map((link) =>
+        link.title ? (
+          <EntityLink key={link.identifier} blueprint={blueprint} identifier={link.identifier}>
+            <SplitTitle title={link.title} />
+          </EntityLink>
+        ) : (
+          <span
+            key={link.identifier}
+            className="font-mono text-xs text-muted-foreground"
+            title="Not ingested yet"
+          >
+            {link.identifier}
+          </span>
+        ),
+      )}
+      {links.length > shown.length && (
+        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setExpanded(true)}>
+          Show {links.length - shown.length} more
+        </Button>
+      )}
+    </span>
   );
 }
 
