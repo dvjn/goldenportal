@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { AuthPage } from "@/components/auth-page";
 import { LoginForm } from "@/components/login-form";
 import { meQueryOptions, safeRedirect } from "@/features/auth";
+import { usePageTitle } from "@/lib/page-title";
 
 type SignInSearch = {
   redirect?: string;
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/sign-in")({
 
 function SignInPage() {
   const { redirect, error } = Route.useSearch();
+  usePageTitle("Sign in");
 
   return (
     <AuthPage>

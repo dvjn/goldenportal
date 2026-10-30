@@ -6,10 +6,10 @@ import {
   Outlet,
   useRouter,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { configQueryOptions, useConfig } from "@/features/config";
+import { PageTitleProvider } from "@/lib/page-title";
 
 type RouterContext = {
   queryClient: QueryClient;
@@ -25,15 +25,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 function RootLayout() {
   const portalName = useConfig().name;
 
-  useEffect(() => {
-    document.title = portalName;
-  }, [portalName]);
-
   return (
-    <>
+    <PageTitleProvider portal={portalName}>
       <Outlet />
       <Toaster />
-    </>
+    </PageTitleProvider>
   );
 }
 

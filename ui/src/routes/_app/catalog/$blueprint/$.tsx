@@ -25,6 +25,7 @@ import { type BlueprintSpec, blueprints } from "@/features/blueprints";
 import { type EntityDetail, entityQueryOptions, type Incoming } from "@/features/catalog";
 import { entityScorecardsQueryOptions } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
+import { usePageTitle } from "@/lib/page-title";
 
 // The blueprint's entity tabs and each scorecard that scores the entity get
 // a tab, between Overview and the system tabs. A blueprint tab named
@@ -55,6 +56,7 @@ function EntityPage() {
   const { data: doc } = useSuspenseQuery(blueprints.queries.detail(blueprint));
   const { data: entity } = useSuspenseQuery(entityQueryOptions(blueprint, identifier));
   const { data: results } = useSuspenseQuery(entityScorecardsQueryOptions(blueprint, identifier));
+  usePageTitle(entity.title);
   const spec = doc.published?.spec;
   if (!spec) return null;
   const tabs = spec.entity?.tabs ?? [];

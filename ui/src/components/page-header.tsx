@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { usePageTitle } from "@/lib/page-title";
 
 type PageHeaderProps = {
   title: string;
@@ -10,6 +11,7 @@ type PageHeaderProps = {
 
 // PageHeader is the title row every page starts with, so titles look the same everywhere.
 export function PageHeader({ title, description, actions, breadcrumbs }: PageHeaderProps) {
+  usePageTitle(title);
   const header = (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div className="grid gap-1">
