@@ -15,6 +15,7 @@ import {
   ingestUrl,
   integrationKeys,
   type Mapping,
+  statusQueryOptions,
   syncIntegration,
 } from "@/features/integrations";
 
@@ -52,6 +53,7 @@ export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }
       </div>
       <div className="grid gap-4">
         <ConnectorCard connector={spec.connector.type} description={spec.description} />
+        <FeedsCard identifier={spec.identifier} />
         {spec.connector.type === "http" && <ResourcesCard config={spec.connector.config} />}
         {pulls ? (
           <SyncCard identifier={spec.identifier} interval={spec.sync?.interval ?? "15m"} />
@@ -60,6 +62,44 @@ export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }
         )}
       </div>
     </div>
+  );
+}
+
+// FeedsCard lists the blueprints an integration writes, with how many of
+// their entities it wrote.
+function FeedsCard({ identifier }: Readonly<{ identifier: string }>) {
+  const { data } = useQuery(statusQueryOptions);
+  const status = data?.find((s) => s.integration === identifier);
+  if (!status) return null;
+
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>Feeds</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {status.feeds.length === 0 ? (
+          <p className="text-sm text-muted-foreground">It doesn't write any blueprint yet.</p>
+        ) : (
+          <ul className="grid gap-2 text-sm">
+            {status.feeds.map((feed) => (
+              <li key={feed.blueprint} className="flex items-center justify-between gap-3">
+                <Link
+                  to="/catalog/$blueprint"
+                  params={{ blueprint: feed.blueprint }}
+                  className="truncate hover:underline"
+                >
+                  {feed.title}
+                </Link>
+                <span className="text-muted-foreground tabular-nums">
+                  {feed.entities} {feed.entities === 1 ? "entity" : "entities"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -149,8 +189,13 @@ function SyncCard({ identifier, interval }: Readonly<{ identifier: string; inter
   const queryClient = useQueryClient();
   const sync = useMutation({
     mutationFn: () => syncIntegration(identifier),
-    onSuccess: async (run) => {
-      await queryClient.invalidateQueries({ queryKey: integrationKeys.runs(identifier) });
+    // A failed sync is recorded as a run too, so both outcomes refresh the runs.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: integrationKeys.runs(identifier) }),
+        queryClient.invalidateQueries({ queryKey: integrationKeys.status }),
+      ]),
+    onSuccess: (run) => {
       toast.success(
         `Synced: ${run.created} created, ${run.updated} updated, ${run.deleted} deleted` +
           (run.failed > 0 ? `, ${run.failed} failed` : ""),

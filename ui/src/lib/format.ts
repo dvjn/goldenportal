@@ -30,3 +30,13 @@ const dates = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UT
 export function formatDate(value: string | Date) {
   return dates.format(new Date(value));
 }
+
+// formatDuration says how long something took between two timestamps, such as "850ms" or "2m 5s".
+export function formatDuration(start: string | Date, end: string | Date) {
+  const ms = Math.max(new Date(end).getTime() - new Date(start).getTime(), 0);
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return seconds % 60 === 0 ? `${minutes}m` : `${minutes}m ${seconds % 60}s`;
+}
