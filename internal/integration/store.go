@@ -103,6 +103,8 @@ type Run struct {
 	Deleted   int        `json:"deleted"`
 	Failed    int        `json:"failed"`
 	Errors    []RunError `json:"errors"`
+	// Error is why a pull sync fetched nothing, which left its entities as they were.
+	Error string `json:"error,omitempty"`
 }
 
 // RunError is why an item wasn't written.
@@ -121,18 +123,18 @@ func (s Store) RecordRun(ctx context.Context, integrationID, tokenID string, run
 
 	return s.db.QueryRowContext(ctx, `
 		INSERT INTO ingestion_runs (integration_id, token_id, trigger, started_at, received, created, updated,
-			unchanged, deleted, failed, errors)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			unchanged, deleted, failed, errors, error)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, finished_at`,
 		integrationID, nullable(tokenID), run.Trigger, run.StartedAt, run.Received, run.Created, run.Updated,
-		run.Unchanged, run.Deleted, run.Failed, errorsJSON).Scan(&run.ID, &run.FinishedAt)
+		run.Unchanged, run.Deleted, run.Failed, errorsJSON, run.Error).Scan(&run.ID, &run.FinishedAt)
 }
 
 // Runs lists an integration's latest runs, newest first.
 func (s Store) Runs(ctx context.Context, integrationID string, limit int) ([]Run, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.id, r.started_at, r.finished_at, r.trigger, coalesce(t.name, ''), r.received, r.created, r.updated,
-			r.unchanged, r.deleted, r.failed, r.errors
+			r.unchanged, r.deleted, r.failed, r.errors, r.error
 		FROM ingestion_runs r LEFT JOIN ingestion_tokens t ON t.id = r.token_id
 		WHERE r.integration_id = $1
 		ORDER BY r.id DESC LIMIT $2`, integrationID, limit)
@@ -148,7 +150,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, limit int) ([]Run
 			errors []byte
 		)
 		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.Received, &r.Created, &r.Updated,
-			&r.Unchanged, &r.Deleted, &r.Failed, &errors); err != nil {
+			&r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(errors, &r.Errors); err != nil {
