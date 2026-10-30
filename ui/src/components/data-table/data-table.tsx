@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type RowData, useTable } from "@tanstack/react-table";
-import { Search, X } from "lucide-react";
+import { FilterX, Search } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -56,6 +56,9 @@ type DataTableProps<TData extends RowData> = {
 };
 
 const pendingRows = 5;
+
+// Cells keep a wider gutter at the table's edges than between columns.
+const cellClass = "px-3 first:pl-5 last:pr-5";
 
 const searchDelay = 250;
 
@@ -147,37 +150,39 @@ export function DataTable<TData extends RowData>({
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="relative w-full max-w-72">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={searchLabel}
-              aria-label={searchLabel}
-              className="pl-8"
-            />
-          </div>
+        <div className="relative w-full max-w-72">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={searchLabel}
+            aria-label={searchLabel}
+            className="pl-8"
+          />
+        </div>
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </div>
+      {(filters || searching) && (
+        <div className="flex flex-wrap items-center gap-2">
           {filters}
           {searching && (
             <Button variant="ghost" onClick={clearAll}>
+              <FilterX />
               Reset
-              <X />
             </Button>
           )}
         </div>
-        {actions}
-      </div>
-      <Card className="py-0" aria-busy={loading || pending || undefined}>
+      )}
+      <Card className="gap-0 py-0 shadow-xs" aria-busy={loading || pending || undefined}>
         <Table className={loading ? "opacity-60 transition-opacity" : undefined}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="first:pl-4 last:pr-4">
+                  <TableHead key={header.id} className={cellClass}>
                     {header.isPlaceholder ? null : <table.FlexRender header={header} />}
                   </TableHead>
                 ))}
@@ -191,7 +196,7 @@ export function DataTable<TData extends RowData>({
                 <TableRow key={row}>
                   {columns.map((_, cell) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: placeholder cells have no identity.
-                    <TableCell key={cell} className="first:pl-4 last:pr-4">
+                    <TableCell key={cell} className={cellClass}>
                       <Skeleton className="h-4 w-full max-w-40" />
                     </TableCell>
                   ))}
@@ -223,7 +228,7 @@ export function DataTable<TData extends RowData>({
               rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getAllCells().map((cell) => (
-                    <TableCell key={cell.id} className="first:pl-4 last:pr-4">
+                    <TableCell key={cell.id} className={cellClass}>
                       <table.FlexRender cell={cell} />
                     </TableCell>
                   ))}
@@ -232,8 +237,12 @@ export function DataTable<TData extends RowData>({
             )}
           </TableBody>
         </Table>
+        {settled && (
+          <div className="border-t px-5 py-3">
+            <DataTablePagination table={table} pagination={pagination} total={total} />
+          </div>
+        )}
       </Card>
-      {settled && <DataTablePagination table={table} pagination={pagination} total={total} />}
     </div>
   );
 }
