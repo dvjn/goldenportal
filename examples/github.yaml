@@ -1,0 +1,82 @@
+# Replace example/repository with an accessible owner/repository.
+# For private sources, add token: {env: GP_SECRET_GITHUB} under config.
+# Without a token GitHub allows 60 requests an hour. Each sync of this example
+# makes about 3 + maxRuns requests per repository (one jobs list per run), so
+# the hourly interval fits one repository; add a token before syncing more often.
+kind: Blueprint
+metadata: {name: github-repository, title: GitHub Repository}
+spec:
+  properties:
+    url: {type: string, format: uri}
+    private: {type: boolean}
+---
+kind: Blueprint
+metadata: {name: github-branch, title: GitHub Branch}
+spec:
+  properties:
+    repository: {relation: github-repository}
+    protected: {type: boolean}
+---
+kind: Blueprint
+metadata: {name: github-run, title: GitHub Workflow Run}
+spec:
+  properties:
+    repository: {relation: github-repository}
+    status: {type: string}
+    conclusion: {type: string}
+    url: {type: string, format: uri}
+---
+kind: Blueprint
+metadata: {name: github-job, title: GitHub Job}
+spec:
+  properties:
+    run: {relation: github-run}
+    status: {type: string}
+    conclusion: {type: string}
+---
+kind: Integration
+metadata: {name: github-source, title: GitHub}
+spec:
+  connector:
+    type: github
+    config:
+      repositories: [example/repository]
+      # organizations: [example] # Discover every accessible repository in an organization.
+      maxRuns: 20
+  sync: {interval: 1h}
+  mappings:
+    - resource: repositories
+      blueprint: github-repository
+      entity:
+        identifier: .full_name
+        title: .name
+        properties:
+          url: .html_url
+          private: .private
+    - resource: branches
+      blueprint: github-branch
+      entity:
+        identifier: ._gp.repository + "/" + .name
+        title: .name
+        properties:
+          repository: ._gp.repository
+          protected: .protected
+    - resource: workflow_runs
+      blueprint: github-run
+      entity:
+        identifier: .id | tostring
+        title: .display_title // .name
+        properties:
+          repository: ._gp.repository
+          status: .status
+          conclusion: .conclusion
+          url: .html_url
+    - resource: jobs
+      blueprint: github-job
+      entity:
+        identifier: .id | tostring
+        title: .name
+        properties:
+          run: ._gp.run_id | tostring
+          status: .status
+          conclusion: .conclusion

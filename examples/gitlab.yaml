@@ -1,0 +1,79 @@
+# Replace example/project with an accessible project path or numeric ID.
+# For private sources, add token: {env: GP_SECRET_GITLAB} under config.
+kind: Blueprint
+metadata: {name: gitlab-project, title: GitLab Project}
+spec:
+  properties:
+    url: {type: string, format: uri}
+    visibility: {type: string}
+---
+kind: Blueprint
+metadata: {name: gitlab-branch, title: GitLab Branch}
+spec:
+  properties:
+    project: {relation: gitlab-project}
+    protected: {type: boolean}
+---
+kind: Blueprint
+metadata: {name: gitlab-pipeline, title: GitLab Pipeline}
+spec:
+  properties:
+    project: {relation: gitlab-project}
+    status: {type: string}
+    duration: {type: number}
+    url: {type: string, format: uri}
+---
+kind: Blueprint
+metadata: {name: gitlab-job, title: GitLab Job}
+spec:
+  properties:
+    pipeline: {relation: gitlab-pipeline}
+    status: {type: string}
+    stage: {type: string}
+---
+kind: Integration
+metadata: {name: gitlab-source, title: GitLab}
+spec:
+  connector:
+    type: gitlab
+    config:
+      projects: [example/project]
+      # groups: [example/subgroup] # Includes subgroup projects, excludes shared projects.
+      maxRuns: 20
+  sync: {interval: 15m}
+  mappings:
+    - resource: projects
+      blueprint: gitlab-project
+      entity:
+        identifier: .id | tostring
+        title: .path_with_namespace
+        properties:
+          url: .web_url
+          visibility: .visibility
+    - resource: branches
+      blueprint: gitlab-branch
+      entity:
+        identifier: (._gp.project_id | tostring) + "/" + .name
+        title: .name
+        properties:
+          project: ._gp.project_id | tostring
+          protected: .protected
+    - resource: pipelines
+      blueprint: gitlab-pipeline
+      entity:
+        identifier: .id | tostring
+        title: .name // ("Pipeline " + (.id | tostring))
+        properties:
+          project: ._gp.project_id | tostring
+          status: .status
+          duration: .duration
+          url: .web_url
+    - resource: jobs
+      blueprint: gitlab-job
+      entity:
+        identifier: .id | tostring
+        title: .name
+        properties:
+          pipeline: ._gp.pipeline_id | tostring
+          status: .status
+          stage: .stage

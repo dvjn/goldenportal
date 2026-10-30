@@ -1,0 +1,52 @@
+{
+  "orgs/acme": {"id": 5001, "login": "acme", "name": "Acme", "description": "Acme engineering", "html_url": "https://github.com/acme"},
+  "orgs/acme/repos": [
+    {"id": 7001, "name": "payments-api", "full_name": "acme/payments-api", "private": true, "html_url": "https://github.com/acme/payments-api", "default_branch": "main", "language": "Go", "archived": false, "owner": {"login": "acme"}}
+  ],
+  "orgs/acme/repos?page=2": [
+    {"id": 7002, "name": "checkout-web", "full_name": "acme/checkout-web", "private": false, "html_url": "https://github.com/acme/checkout-web", "default_branch": "main", "language": "TypeScript", "archived": false, "owner": {"login": "acme"}}
+  ],
+  "repos/acme/payments-api": {"id": 7001, "name": "payments-api", "full_name": "acme/payments-api", "private": true, "html_url": "https://github.com/acme/payments-api", "default_branch": "main", "language": "Go", "archived": false, "owner": {"login": "acme"}},
+
+  "repos/acme/payments-api/branches": [
+    {"name": "main", "protected": true, "commit": {"sha": "4f2c1d0e9b8a"}},
+    {"name": "feature/refunds", "protected": false, "commit": {"sha": "a1b2c3d4e5f6"}}
+  ],
+  "repos/acme/payments-api/actions/workflows": {"total_count": 1, "workflows": [
+    {"id": 8001, "name": "CI", "path": ".github/workflows/ci.yaml", "state": "active", "html_url": "https://github.com/acme/payments-api/blob/main/.github/workflows/ci.yaml"}
+  ]},
+  "repos/acme/payments-api/actions/runs": {"total_count": 3, "workflow_runs": [
+    {"id": 9003, "name": "CI", "display_title": "Add partial refunds", "run_number": 3, "head_branch": "feature/refunds", "event": "pull_request", "status": "in_progress", "conclusion": null, "workflow_id": 8001, "html_url": "https://github.com/acme/payments-api/actions/runs/9003", "created_at": "2026-10-28T09:40:00Z"},
+    {"id": 9002, "name": "CI", "display_title": "Bump ledger client", "run_number": 2, "head_branch": "main", "event": "push", "status": "completed", "conclusion": "failure", "workflow_id": 8001, "html_url": "https://github.com/acme/payments-api/actions/runs/9002", "created_at": "2026-10-27T16:05:00Z"},
+    {"id": 9001, "name": "CI", "display_title": "Retry card captures", "run_number": 1, "head_branch": "main", "event": "push", "status": "completed", "conclusion": "success", "workflow_id": 8001, "html_url": "https://github.com/acme/payments-api/actions/runs/9001", "created_at": "2026-10-26T11:20:00Z"}
+  ]},
+  "repos/acme/payments-api/actions/runs/9003/jobs": {"total_count": 1, "jobs": [
+    {"id": 10031, "run_id": 9003, "name": "test", "status": "in_progress", "conclusion": null, "started_at": "2026-10-28T09:40:20Z", "completed_at": null}
+  ]},
+  "repos/acme/payments-api/actions/runs/9002/jobs": {"total_count": 2, "jobs": [
+    {"id": 10021, "run_id": 9002, "name": "lint", "status": "completed", "conclusion": "success", "started_at": "2026-10-27T16:05:20Z", "completed_at": "2026-10-27T16:06:10Z"},
+    {"id": 10022, "run_id": 9002, "name": "test", "status": "completed", "conclusion": "failure", "started_at": "2026-10-27T16:05:20Z", "completed_at": "2026-10-27T16:09:45Z"}
+  ]},
+  "repos/acme/payments-api/actions/runs/9001/jobs": {"total_count": 1, "jobs": [
+    {"id": 10011, "run_id": 9001, "name": "test", "status": "completed", "conclusion": "success", "started_at": "2026-10-26T11:20:15Z", "completed_at": "2026-10-26T11:24:02Z"}
+  ]},
+  "repos/acme/payments-api/pulls": [
+    {"id": 11001, "number": 42, "title": "Add partial refunds", "state": "open", "draft": false, "html_url": "https://github.com/acme/payments-api/pull/42", "user": {"login": "ada"}, "head": {"ref": "feature/refunds"}, "base": {"ref": "main"}}
+  ],
+
+  "repos/acme/checkout-web/branches": [
+    {"name": "main", "protected": true, "commit": {"sha": "9e8d7c6b5a40"}}
+  ],
+  "repos/acme/checkout-web/actions/workflows": {"total_count": 1, "workflows": [
+    {"id": 8101, "name": "Build", "path": ".github/workflows/build.yaml", "state": "active", "html_url": "https://github.com/acme/checkout-web/blob/main/.github/workflows/build.yaml"}
+  ]},
+  "repos/acme/checkout-web/actions/runs": {"total_count": 1, "workflow_runs": [
+    {"id": 9101, "name": "Build", "display_title": "Show saved cards first", "run_number": 1, "head_branch": "main", "event": "push", "status": "completed", "conclusion": "success", "workflow_id": 8101, "html_url": "https://github.com/acme/checkout-web/actions/runs/9101", "created_at": "2026-10-28T08:12:00Z"}
+  ]},
+  "repos/acme/checkout-web/actions/runs/9101/jobs": {"total_count": 1, "jobs": [
+    {"id": 11011, "run_id": 9101, "name": "build", "status": "completed", "conclusion": "success", "started_at": "2026-10-28T08:12:10Z", "completed_at": "2026-10-28T08:15:30Z"}
+  ]},
+  "repos/acme/checkout-web/pulls": [
+    {"id": 11101, "number": 7, "title": "Drop the legacy cart", "state": "closed", "draft": false, "html_url": "https://github.com/acme/checkout-web/pull/7", "user": {"login": "grace"}, "head": {"ref": "remove-legacy-cart"}, "base": {"ref": "main"}}
+  ]
+}
