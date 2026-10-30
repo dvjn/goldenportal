@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Columns3, LayoutGrid, Rows3 } from "lucide-react";
+import { Columns3, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
@@ -20,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -341,6 +342,7 @@ function BlueprintCatalogPage() {
           scorecards={scorecards}
           shown={shown}
           onChange={(cols) => setSearch({ cols: cols.join(",") })}
+          onReset={search.cols === undefined ? undefined : () => setSearch({ cols: undefined })}
         />
       }
       empty={
@@ -452,11 +454,14 @@ function ColumnsMenu({
   scorecards,
   shown,
   onChange,
+  onReset,
 }: Readonly<{
   spec: BlueprintSpec;
   scorecards: ScorecardColumn[];
   shown: string[];
   onChange: (cols: string[]) => void;
+  // onReset goes back to the blueprint's default columns, once others are chosen.
+  onReset?: () => void;
 }>) {
   const options = [
     ...spec.properties,
@@ -489,6 +494,15 @@ function ColumnsMenu({
             {property.title}
           </DropdownMenuCheckboxItem>
         ))}
+        {onReset && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onReset}>
+              <RotateCcw />
+              Reset to defaults
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
