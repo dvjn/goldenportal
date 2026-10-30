@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 
 export type Theme = "dark" | "light" | "system";
 
@@ -14,7 +14,7 @@ type ThemeProviderState = {
 };
 
 const initialState: ThemeProviderState = {
-  theme: "dark",
+  theme: "system",
   setTheme: () => null,
 };
 
@@ -22,7 +22,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
 export function ThemeProvider({
   children,
-  defaultTheme = "dark",
+  defaultTheme = "system",
   storageKey = "gp-ui-theme",
   ...props
 }: ThemeProviderProps) {
@@ -30,22 +30,14 @@ export function ThemeProvider({
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
   );
 
+  const systemDark = useSyncExternalStore(subscribeToSystemTheme, prefersDark);
+  const resolved = theme === "system" ? (systemDark ? "dark" : "light") : theme;
+
   useEffect(() => {
     const root = window.document.documentElement;
-
     root.classList.remove("light", "dark");
-
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-
-      root.classList.add(systemTheme);
-      return;
-    }
-
-    root.classList.add(theme);
-  }, [theme]);
+    root.classList.add(resolved);
+  }, [resolved]);
 
   const value = {
     theme,
@@ -60,6 +52,20 @@ export function ThemeProvider({
       {children}
     </ThemeProviderContext.Provider>
   );
+}
+
+const darkQuery = "(prefers-color-scheme: dark)";
+
+function prefersDark() {
+  return window.matchMedia(darkQuery).matches;
+}
+
+// subscribeToSystemTheme follows the operating system's light/dark setting as
+// it changes, for people who chose System.
+function subscribeToSystemTheme(onChange: () => void) {
+  const query = window.matchMedia(darkQuery);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
 }
 
 export const useTheme = () => {
