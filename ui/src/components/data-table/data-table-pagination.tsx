@@ -27,7 +27,9 @@ export function DataTablePagination<TData extends RowData>({
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
       <span className="text-muted-foreground tabular-nums">
-        {rows} {rows === 1 ? "row" : "rows"}
+        {rows === 0
+          ? "No rows"
+          : `Showing ${pageIndex * pageSize + 1} to ${Math.min((pageIndex + 1) * pageSize, rows)} of ${rows}`}
       </span>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div className="flex items-center gap-2">

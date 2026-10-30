@@ -122,12 +122,19 @@ export function DataTable<TData extends RowData>({
   const searching = Boolean(search.q) || filtered;
   const total = server ? rowCount : table.getFilteredRowModel().rows.length;
 
+  // A page past the end, after rows went away or a bookmark aged, goes back to the last one.
+  const lastPage = Math.max(Math.ceil(total / pagination.pageSize), 1);
+  const settled = !pending && !error;
+  const pastEnd = settled && !loading && pagination.pageIndex + 1 > lastPage;
+  useEffect(() => {
+    if (pastEnd) setSearch({ page: lastPage > 1 ? lastPage : undefined });
+  });
+
   function clearAll() {
     setQuery("");
     onClearFilters?.();
   }
 
-  const settled = !pending && !error;
   if (settled && total === 0 && !searching && (server || data.length === 0)) {
     return (
       <div className="flex flex-col gap-4">

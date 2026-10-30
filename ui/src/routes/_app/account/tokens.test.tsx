@@ -164,7 +164,15 @@ describe("API tokens page", () => {
     await user.type(screen.getByRole("searchbox", { name: "Search tokens" }), "deploy");
     await waitFor(() => expect(router.state.location.search).toMatchObject({ q: "deploy" }));
     expect(screen.getAllByRole("row")).toHaveLength(2);
-    expect(screen.getByText("1 row")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 to 1 of 1")).toBeInTheDocument();
+  });
+
+  it("goes back to the last page from one past the end", async () => {
+    stubApi({ ...signedIn, "GET me/tokens": ok([ciToken]) });
+    const { router } = renderRoute("/account/tokens?page=4");
+
+    await waitFor(() => expect(router.state.location.search).not.toHaveProperty("page"));
+    expect(await screen.findByText("Showing 1 to 1 of 1")).toBeInTheDocument();
   });
 
   it("restores the table state from the URL", async () => {
