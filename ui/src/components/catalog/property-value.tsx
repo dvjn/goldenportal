@@ -74,7 +74,7 @@ export function formatNumber(value: number, unit?: string) {
 export function PropertyValue({ property, value, links, compact = false }: PropertyValueProps) {
   const cut = compact ? "block max-w-64 truncate" : "";
   if (property.relation) {
-    if (!links || links.length === 0) return <Empty />;
+    if (!links || links.length === 0) return <Empty label={property.display?.empty} />;
     const shown = compact ? links.slice(0, compactItems) : links;
     return (
       <span className="flex flex-wrap gap-x-2 gap-y-1">
@@ -101,13 +101,14 @@ export function PropertyValue({ property, value, links, compact = false }: Prope
       </span>
     );
   }
-  if (value === undefined || value === null || value === "") return <Empty />;
+  if (value === undefined || value === null || value === "")
+    return <Empty label={property.display?.empty} />;
 
   const as = displayAs(property);
   const colors = property.display?.colors;
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return <Empty />;
+    if (value.length === 0) return <Empty label={property.display?.empty} />;
     const items = value.map((item) =>
       typeof item === "object" ? JSON.stringify(item) : String(item),
     );
@@ -245,6 +246,8 @@ export function ValueBadge({
   );
 }
 
-function Empty() {
+// Empty marks a missing value, in the words the property's display gives.
+function Empty({ label }: Readonly<{ label?: string }>) {
+  if (label) return <span className="text-muted-foreground">{label}</span>;
   return <Minus className="size-3.5 text-muted-foreground/60" aria-label="None" />;
 }

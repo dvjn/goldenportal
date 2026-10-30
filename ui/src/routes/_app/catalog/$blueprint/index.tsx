@@ -228,6 +228,10 @@ function BlueprintCatalogPage() {
   const setSearch = (patch: Partial<CatalogSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
 
+  // The subtitle the entity page shows also stands under each title.
+  const subtitle = spec.properties.find(
+    (property) => property.identifier === spec.entity?.header?.subtitle,
+  );
   const columns = [
     column.accessor("title", {
       id: "$title",
@@ -241,13 +245,24 @@ function BlueprintCatalogPage() {
           <span className="truncate font-medium" title={row.original.title}>
             {row.original.title}
           </span>
-          {row.original.title !== row.original.identifier && (
-            <code
-              className="truncate font-mono text-xs text-muted-foreground"
-              title={row.original.identifier}
-            >
-              {row.original.identifier}
-            </code>
+          {subtitle ? (
+            <span className="truncate text-xs text-muted-foreground">
+              <PropertyValue
+                property={subtitle}
+                value={row.original.properties[subtitle.identifier]}
+                links={row.original.related[subtitle.identifier]}
+                compact
+              />
+            </span>
+          ) : (
+            row.original.title !== row.original.identifier && (
+              <code
+                className="truncate font-mono text-xs text-muted-foreground"
+                title={row.original.identifier}
+              >
+                {row.original.identifier}
+              </code>
+            )
           )}
         </EntityLink>
       ),

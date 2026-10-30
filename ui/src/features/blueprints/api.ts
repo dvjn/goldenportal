@@ -55,7 +55,20 @@ export type Display = {
   // filter offers its values as a catalog filter.
   filter?: boolean;
   hidden?: boolean;
+  // empty is shown when an entity has no value, such as "No owner".
+  empty?: string;
 };
+
+// EntityHeader names the properties an entity page shows beside its title.
+export type EntityHeader = {
+  subtitle?: string;
+  badges?: string[];
+  // link is a URL property the page offers to open.
+  link?: string;
+};
+
+// PropertySection groups properties under a title on the entity page.
+export type PropertySection = { title: string; properties: string[] };
 
 export type BlueprintSpec = {
   identifier: string;
@@ -66,7 +79,7 @@ export type BlueprintSpec = {
   // catalog and entity are the tabs the blueprint adds to its catalog page
   // and its entities' pages.
   catalog?: { tabs: Tab[] };
-  entity?: { tabs: Tab[] };
+  entity?: { header?: EntityHeader; sections?: PropertySection[]; tabs: Tab[] };
 };
 
 export type Blueprint = ConfigDoc<BlueprintSpec>;

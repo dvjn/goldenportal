@@ -5,11 +5,11 @@ import {
   Link,
   useNavigate,
 } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Plug } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, Plug } from "lucide-react";
 import { stringify } from "yaml";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
-import { PropertyValue } from "@/components/catalog/property-value";
+import { isWebUrl, PropertyValue } from "@/components/catalog/property-value";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageError } from "@/components/page-error";
 import {
@@ -18,6 +18,7 @@ import {
   ScorecardTab,
 } from "@/components/scorecards/entity-scorecards";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
@@ -59,6 +60,11 @@ function EntityPage() {
   usePageTitle(entity.title);
   const spec = doc.published?.spec;
   if (!spec) return null;
+  const header = spec.entity?.header;
+  const subtitle = header?.subtitle ? propertyByID(spec, header.subtitle) : undefined;
+  const badges = (header?.badges ?? []).flatMap((id) => propertyByID(spec, id) ?? []);
+  const linkValue = header?.link ? entity.properties[header.link] : undefined;
+  const link = typeof linkValue === "string" && isWebUrl(linkValue) ? linkValue : undefined;
   const tabs = spec.entity?.tabs ?? [];
   const overview = tabs.find((t) => t.identifier === "overview");
   const views = tabs.filter((t) => t.identifier !== "overview");
@@ -85,14 +91,32 @@ function EntityPage() {
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
             <BlueprintIcon icon={spec.icon} className="size-5" />
           </span>
-          <div className="grid min-w-0 gap-1">
+          <div className="grid min-w-0 flex-1 gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-2xl font-semibold tracking-tight">{entity.title}</h1>
               <Badge variant="secondary">{spec.title}</Badge>
+              {badges.map((property) => (
+                <PropertyValue
+                  key={property.identifier}
+                  property={property}
+                  value={entity.properties[property.identifier]}
+                  links={entity.related[property.identifier]}
+                  compact
+                />
+              ))}
               {results.map((result) => (
                 <ScorecardChip key={result.scorecard} result={result} />
               ))}
             </div>
+            {subtitle && (
+              <div className="text-muted-foreground">
+                <PropertyValue
+                  property={subtitle}
+                  value={entity.properties[subtitle.identifier]}
+                  links={entity.related[subtitle.identifier]}
+                />
+              </div>
+            )}
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               <code className="font-mono">{entity.identifier}</code>
               <span className="flex items-center gap-1">
@@ -110,6 +134,14 @@ function EntityPage() {
               </span>
             </p>
           </div>
+          {link && (
+            <Button variant="outline" asChild className="shrink-0">
+              <a href={link} target="_blank" rel="noreferrer">
+                <ExternalLink />
+                Open on {new URL(link).host}
+              </a>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -189,6 +221,37 @@ function EntityPage() {
   );
 }
 
+function propertyByID(spec: BlueprintSpec, id: string) {
+  return spec.properties.find((property) => property.identifier === id);
+}
+
+// overviewSections groups the shown properties as the blueprint's sections
+// say, leaving out those in the header; the rest follow in their own card.
+function overviewSections(spec: BlueprintSpec) {
+  const header = spec.entity?.header;
+  const inHeader = new Set([header?.subtitle, header?.link, ...(header?.badges ?? [])]);
+  const shown = spec.properties.filter(
+    (property) => !property.display?.hidden && !inHeader.has(property.identifier),
+  );
+  const sections = (spec.entity?.sections ?? [])
+    .map((section) => ({
+      title: section.title,
+      properties: section.properties.flatMap(
+        (id) => shown.find((property) => property.identifier === id) ?? [],
+      ),
+    }))
+    .filter((section) => section.properties.length > 0);
+  const placed = new Set(
+    sections.flatMap((section) => section.properties.map((p) => p.identifier)),
+  );
+  const rest = shown.filter((property) => !placed.has(property.identifier));
+  if (rest.length > 0) {
+    sections.push({ title: sections.length > 0 ? "Other" : "Properties", properties: rest });
+  }
+
+  return sections;
+}
+
 function relationCount(spec: BlueprintSpec, entity: EntityDetail) {
   const outgoing = spec.properties.reduce(
     (sum, property) => sum + (entity.related[property.identifier]?.length ?? 0),
@@ -198,36 +261,44 @@ function relationCount(spec: BlueprintSpec, entity: EntityDetail) {
 }
 
 function Overview({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: EntityDetail }>) {
-  const shown = spec.properties.filter((property) => !property.display?.hidden);
+  const sections = overviewSections(spec);
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Properties</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {shown.length === 0 ? (
-            <p className="text-sm text-muted-foreground">This blueprint has no properties.</p>
-          ) : (
-            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[minmax(8rem,auto)_minmax(0,1fr)]">
-              {shown.map((property) => (
-                <div key={property.identifier} className="contents">
-                  <dt className="text-muted-foreground" title={property.description}>
-                    {property.title}
-                  </dt>
-                  <dd className="min-w-0">
-                    <PropertyValue
-                      property={property}
-                      value={entity.properties[property.identifier]}
-                      links={entity.related[property.identifier]}
-                    />
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-4">
+        {sections.length === 0 ? (
+          <Card>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">This blueprint has no properties.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          sections.map((section) => (
+            <Card key={section.title}>
+              <CardHeader className="border-b">
+                <CardTitle>{section.title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[minmax(8rem,auto)_minmax(0,1fr)]">
+                  {section.properties.map((property) => (
+                    <div key={property.identifier} className="contents">
+                      <dt className="text-muted-foreground" title={property.description}>
+                        {property.title}
+                      </dt>
+                      <dd className="min-w-0">
+                        <PropertyValue
+                          property={property}
+                          value={entity.properties[property.identifier]}
+                          links={entity.related[property.identifier]}
+                        />
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Pointed At By</CardTitle>
