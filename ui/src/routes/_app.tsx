@@ -19,9 +19,9 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   return (
-    <div className="flex min-h-svh flex-col [--header-height:calc(--spacing(14))]">
+    <div className="flex min-h-svh flex-col [--header-height:calc(--spacing(16))]">
       <SiteHeader />
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4">
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-4 pb-10 sm:px-6 sm:pt-6 lg:pb-12">
         <Outlet />
       </main>
     </div>

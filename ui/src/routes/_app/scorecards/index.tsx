@@ -1,7 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Plus, Trophy } from "lucide-react";
-import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
+import { IconTile } from "@/components/catalog/blueprint-icon";
 import { PageHeader } from "@/components/page-header";
 import { TierDistribution } from "@/components/scorecards/tier-distribution";
 import { Button } from "@/components/ui/button";
@@ -85,9 +85,7 @@ function ScorecardCard({ scorecard }: Readonly<{ scorecard: ScorecardSummary }>)
       <Card className="h-full transition-colors hover:bg-accent/50">
         <CardHeader>
           <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-              <BlueprintIcon icon={scorecard.icon} className="size-4.5" />
-            </span>
+            <IconTile icon={scorecard.icon} />
             <div className="grid min-w-0 gap-1">
               <CardTitle className="truncate">{scorecard.title}</CardTitle>
               {scorecard.description && (

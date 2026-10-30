@@ -24,8 +24,8 @@ export function SiteHeader() {
   const items = navItems.filter((item) => hasRole(me.role, item.role));
 
   return (
-    <header className="sticky top-0 z-50 flex w-full items-center border-b bg-background">
-      <div className="mx-auto flex h-(--header-height) w-full max-w-6xl items-center gap-6 px-4">
+    <header className="sticky top-0 z-50 flex w-full items-center border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+      <div className="mx-auto flex h-(--header-height) w-full max-w-6xl items-center gap-6 px-4 sm:px-6">
         <Link to="/" className="flex min-w-0 items-center gap-2 font-semibold">
           {logoUrl && <img src={logoUrl} alt="" className="size-7 shrink-0 object-contain" />}
           <span className="truncate">{name}</span>

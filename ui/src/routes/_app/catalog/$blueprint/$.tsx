@@ -8,7 +8,7 @@ import {
 import { ArrowLeft, ArrowRight, ExternalLink, Plug } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { stringify } from "yaml";
-import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
+import { IconTile } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyLabel } from "@/components/catalog/property-label";
 import { isWebUrl, PropertyValue } from "@/components/catalog/property-value";
@@ -96,9 +96,7 @@ function EntityPage() {
           </Link>
         </PageBreadcrumbs>
         <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <BlueprintIcon icon={spec.icon} className="size-5" />
-          </span>
+          <IconTile icon={spec.icon} size="lg" />
           <div className="grid min-w-0 flex-1 gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-2xl font-semibold tracking-tight">

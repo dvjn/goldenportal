@@ -1,7 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LayoutDashboard, Plus } from "lucide-react";
-import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
+import { IconTile } from "@/components/catalog/blueprint-icon";
 import { StatusBadges } from "@/components/config-docs/status-badges";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -78,9 +78,7 @@ function DashboardCard({ dashboard }: Readonly<{ dashboard: DashboardSummary }>)
       <Card className="h-full transition-colors hover:bg-accent/50">
         <CardHeader>
           <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-              <BlueprintIcon icon={dashboard.icon} className="size-4.5" />
-            </span>
+            <IconTile icon={dashboard.icon} />
             <div className="grid min-w-0 gap-1">
               <CardTitle className="truncate">{dashboard.title}</CardTitle>
               <code className="truncate font-mono text-xs text-muted-foreground">
