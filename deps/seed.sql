@@ -109,6 +109,7 @@ spec:
         column: true
     tier:
       title: Tier
+      description: How much depends on the service; critical services page on-call.
       type: string
       enum: [critical, standard, experimental]
       required: true
@@ -145,6 +146,8 @@ spec:
     ownerSlack:
       title: Owner Slack
       lookup: owner.slackChannel
+      display:
+        empty: No channel
     ownerOncall:
       title: Owner On-call
       lookup: owner.oncall
@@ -181,6 +184,14 @@ spec:
             columns: [owner, language, lastDeployedAt]
             sort: -lastDeployedAt
   entity:
+    header:
+      badges: [tier]
+      link: repository
+    sections:
+      - title: Ownership
+        properties: [owner, ownerSlack, ownerOncall]
+      - title: Delivery
+        properties: [language, lastDeployedAt, dependsOn]
     tabs:
       deployments:
         title: Deployments
