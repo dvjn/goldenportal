@@ -185,6 +185,30 @@ describe("catalog", () => {
     expect(await screen.findByText(/1 of 3 match/)).toBeInTheDocument();
   });
 
+  it("filters entities by when they were updated", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET entities": ok(page),
+      "GET entities/facets": ok([]),
+    });
+    renderRoute("/catalog/service");
+
+    // The filter comes before the column header of the same name.
+    await user.click((await screen.findAllByRole("button", { name: "Updated" }))[0]);
+    await user.click(await screen.findByRole("button", { name: "Older than 90 days" }));
+
+    await vi.waitFor(() => {
+      const filter = JSON.parse(
+        new URL(requests["GET entities"].url).searchParams.get("filter") ?? "null",
+      );
+      expect(filter.and).toEqual([
+        { property: "$updatedAt", op: "lt", value: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+      ]);
+    });
+  });
+
   it("shows an entity with its relations both ways", async () => {
     const user = userEvent.setup();
     stubApi({
