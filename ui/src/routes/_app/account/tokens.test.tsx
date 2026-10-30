@@ -77,6 +77,9 @@ describe("API tokens page", () => {
     expect(await screen.findByLabelText("New API token")).toHaveValue(
       "gpp_AbCdEfGh-the-whole-secret",
     );
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
+    expect(await navigator.clipboard.readText()).toBe("gpp_AbCdEfGh-the-whole-secret");
     expect(await requests["POST me/tokens"]?.json()).toEqual({
       name: "CI pipeline",
       readOnly: true,
