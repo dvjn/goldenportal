@@ -190,6 +190,7 @@ describe("catalog", () => {
     renderRoute("/catalog/service/ledger");
 
     expect(await screen.findByRole("heading", { name: "Ledger" })).toBeInTheDocument();
+    await vi.waitFor(() => expect(document.title).toBe("Ledger | Acme"));
     expect(screen.getByRole("link", { name: "registry" })).toHaveAttribute(
       "href",
       "/integrations/registry",
