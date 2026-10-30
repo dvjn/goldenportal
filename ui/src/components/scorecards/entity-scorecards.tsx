@@ -280,7 +280,7 @@ function TierSection({
       <div className="flex items-center justify-between gap-3">
         <TierBadge tiers={spec.tiers} name={tier.name} />
         {met ? (
-          <Badge variant="secondary">Met</Badge>
+          <Badge variant="success">Met</Badge>
         ) : (
           <span className="text-xs text-muted-foreground tabular-nums">
             {outstanding.length === 0 ? "All passing" : `${passing} of ${applicable} passing`}
