@@ -44,6 +44,9 @@ func Diff(previous, next Spec) []Change {
 	}{{"catalog", previous.Catalog, next.Catalog}, {"entity", previous.Entity, next.Entity}} {
 		changes = append(changes, diffTabs(page.name, page.previous, page.next)...)
 	}
+	if layout(previous.Entity) != layout(next.Entity) {
+		changes = append(changes, Change{Section: "entity", Change: ChangeChanged, Detail: "changes the header or sections"})
+	}
 
 	changes = append(changes, diffList(previous.Properties, next.Properties, "properties",
 		func(p Property) string { return p.ID }, propertyChange,
@@ -243,6 +246,19 @@ func diffTabs(section string, previous, next *Page) []Change {
 	}
 
 	return changes
+}
+
+// layout encodes an entity page's header and sections, to compare them.
+func layout(page *Page) string {
+	if page == nil || (page.Header == nil && len(page.Sections) == 0) {
+		return ""
+	}
+	encoded, _ := json.Marshal(struct {
+		Header   *Header
+		Sections []Section
+	}{page.Header, page.Sections})
+
+	return string(encoded)
 }
 
 // encode compares tabs by what they show, not where they're written.
