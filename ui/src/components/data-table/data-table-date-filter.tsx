@@ -1,4 +1,5 @@
 import { CalendarRange } from "lucide-react";
+import { useId } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -26,11 +27,28 @@ function daysAgo(days: number) {
   return isoDate(date);
 }
 
-const presets = [
-  { label: "Today", days: 0 },
-  { label: "Last 7 days", days: 6 },
-  { label: "Last 30 days", days: 29 },
+const presets: { label: string; range: () => DateRange }[] = [
+  { label: "Today", range: () => ({ from: isoDate(new Date()), to: isoDate(new Date()) }) },
+  { label: "Last 7 days", range: () => ({ from: daysAgo(6), to: isoDate(new Date()) }) },
+  { label: "Last 30 days", range: () => ({ from: daysAgo(29), to: isoDate(new Date()) }) },
+  { label: "Last 90 days", range: () => ({ from: daysAgo(89), to: isoDate(new Date()) }) },
+  { label: "Older than 90 days", range: () => ({ to: daysAgo(90) }) },
 ];
+
+// dateRangeBounds turns a range of days into the instants it starts and
+// ends: from is the start of its day, and before is the start of the day after to.
+export function dateRangeBounds({ from, to }: DateRange): { from?: string; before?: string } {
+  const start = (date: string) => new Date(`${date}T00:00:00`);
+  const dayAfter = (date: string) => {
+    const next = start(date);
+    next.setDate(next.getDate() + 1);
+    return next;
+  };
+  return {
+    from: from ? start(from).toISOString() : undefined,
+    before: to ? dayAfter(to).toISOString() : undefined,
+  };
+}
 
 const shortDate = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" });
 
@@ -45,6 +63,7 @@ function describe({ from, to }: DateRange) {
 // DataTableDateFilter limits a table to a range of days, with quick presets.
 export function DataTableDateFilter({ title, value, onChange }: DataTableDateFilterProps) {
   const summary = describe(value);
+  const id = useId();
 
   return (
     <Popover>
@@ -67,7 +86,7 @@ export function DataTableDateFilter({ title, value, onChange }: DataTableDateFil
               key={preset.label}
               variant="secondary"
               size="sm"
-              onClick={() => onChange({ from: daysAgo(preset.days), to: isoDate(new Date()) })}
+              onClick={() => onChange(preset.range())}
             >
               {preset.label}
             </Button>
@@ -75,9 +94,9 @@ export function DataTableDateFilter({ title, value, onChange }: DataTableDateFil
         </div>
         <FieldGroup className="grid grid-cols-2 gap-3">
           <Field>
-            <FieldLabel htmlFor="date-from">From</FieldLabel>
+            <FieldLabel htmlFor={`${id}-from`}>From</FieldLabel>
             <Input
-              id="date-from"
+              id={`${id}-from`}
               type="date"
               value={value.from ?? ""}
               max={value.to}
@@ -85,9 +104,9 @@ export function DataTableDateFilter({ title, value, onChange }: DataTableDateFil
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="date-to">To</FieldLabel>
+            <FieldLabel htmlFor={`${id}-to`}>To</FieldLabel>
             <Input
-              id="date-to"
+              id={`${id}-to`}
               type="date"
               value={value.to ?? ""}
               min={value.from}
