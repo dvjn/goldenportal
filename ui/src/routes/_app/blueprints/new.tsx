@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { BlueprintPreview } from "@/components/blueprints/blueprint-preview";
 import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { blueprints } from "@/features/blueprints";
@@ -27,6 +27,7 @@ function NewBlueprintPage() {
     <NewDocPage
       docs={blueprints}
       title="New Blueprint"
+      parent={<Link to="/blueprints">Blueprints</Link>}
       template={template}
       onCreated={(identifier) =>
         navigate({

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { type DashboardSpec, dashboards } from "@/features/dashboards";
 
@@ -33,6 +33,7 @@ function NewDashboardPage() {
     <NewDocPage
       docs={dashboards}
       title="New Dashboard"
+      parent={<Link to="/dashboards">Dashboards</Link>}
       template={template}
       onCreated={(identifier) =>
         navigate({

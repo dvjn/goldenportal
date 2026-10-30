@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import { hasRole, meQueryOptions } from "@/features/auth";
@@ -38,6 +38,7 @@ function NewScorecardPage() {
     <NewDocPage
       docs={scorecards}
       title="New Scorecard"
+      parent={<Link to="/scorecards">Scorecards</Link>}
       template={template}
       onCreated={(identifier) =>
         navigate({

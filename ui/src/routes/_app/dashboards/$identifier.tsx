@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
 import { DashboardPreview } from "@/components/widgets/dashboard-preview";
 import { dashboards } from "@/features/dashboards";
@@ -24,6 +24,7 @@ function DashboardPage() {
     <DocPage
       docs={dashboards}
       doc={dashboard}
+      parent={<Link to="/dashboards">Dashboards</Link>}
       noun="Dashboard"
       deleteDescription="This deletes the dashboard, its versions and draft. What it shows isn't touched."
       onDeleted={() => navigate({ to: "/dashboards" })}

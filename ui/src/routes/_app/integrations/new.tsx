@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { IntegrationPreview } from "@/components/integrations/integration-preview";
 import { integrations } from "@/features/integrations";
@@ -33,6 +33,7 @@ function NewIntegrationPage() {
     <NewDocPage
       docs={integrations}
       title="New Integration"
+      parent={<Link to="/integrations">Integrations</Link>}
       template={template}
       onCreated={(identifier) =>
         navigate({

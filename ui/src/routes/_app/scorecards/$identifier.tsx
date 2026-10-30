@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DocPage, type DocTab, validateDocSearch } from "@/components/config-docs/doc-page";
 import { validateTableSearch } from "@/components/data-table";
 import {
@@ -40,6 +40,7 @@ function ScorecardPage() {
     <DocPage
       docs={scorecards}
       doc={scorecard}
+      parent={<Link to="/scorecards">Scorecards</Link>}
       noun="Scorecard"
       deleteDescription="This deletes the scorecard, its versions and draft, and every result it holds. Entities aren't touched."
       onDeleted={() => navigate({ to: "/scorecards" })}

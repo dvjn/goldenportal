@@ -3,6 +3,7 @@ import { Loader2, Save } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { DocEditor, useLiveValidation } from "@/components/config-docs/doc-editor";
+import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,8 @@ import type { ConfigDocs } from "@/features/config-docs";
 type NewDocPageProps<S extends { identifier: string }> = {
   docs: ConfigDocs<S>;
   title: string;
+  // parent links to the list the document will join, for the breadcrumbs.
+  parent: ReactNode;
   template: string;
   onCreated: (identifier: string) => Promise<void> | void;
   // preview renders the parsed document beside the editor while it's valid.
@@ -21,6 +24,7 @@ type NewDocPageProps<S extends { identifier: string }> = {
 export function NewDocPage<S extends { identifier: string }>({
   docs,
   title,
+  parent,
   template,
   onCreated,
   preview,
@@ -49,6 +53,7 @@ export function NewDocPage<S extends { identifier: string }>({
     <div className="flex flex-col gap-6">
       <PageHeader
         title={title}
+        breadcrumbs={<PageBreadcrumbs page={title}>{parent}</PageBreadcrumbs>}
         description="Write it in YAML. It's saved as a draft until you publish it."
       />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">

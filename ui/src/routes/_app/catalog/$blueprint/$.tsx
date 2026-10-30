@@ -5,20 +5,13 @@ import { stringify } from "yaml";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
+import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import {
   ScorecardChip,
   ScorecardResult,
   ScorecardTab,
 } from "@/components/scorecards/entity-scorecards";
 import { Badge } from "@/components/ui/badge";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
@@ -73,27 +66,12 @@ function EntityPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-3">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/catalog">Catalog</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/catalog/$blueprint" params={{ blueprint }}>
-                  {spec.title}
-                </Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage className="max-w-64 truncate">{entity.title}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+        <PageBreadcrumbs page={entity.title}>
+          <Link to="/catalog">Catalog</Link>
+          <Link to="/catalog/$blueprint" params={{ blueprint }}>
+            {spec.title}
+          </Link>
+        </PageBreadcrumbs>
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
             <BlueprintIcon icon={spec.icon} className="size-5" />

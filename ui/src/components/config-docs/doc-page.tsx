@@ -8,6 +8,7 @@ import { PublishDialog } from "@/components/config-docs/publish-dialog";
 import { StatusBadges } from "@/components/config-docs/status-badges";
 import { VersionsList } from "@/components/config-docs/versions-list";
 import { ConfirmIconButton } from "@/components/confirm-icon-button";
+import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,8 @@ type DocPageProps<S> = {
   doc: ConfigDoc<S>;
   // noun names the kind in titles and buttons, e.g. "Blueprint".
   noun: string;
+  // parent links to the list the document belongs to, for the breadcrumbs.
+  parent: ReactNode;
   deleteDescription: string;
   onDeleted: () => Promise<void> | void;
   tab: DocTab | undefined;
@@ -56,7 +59,11 @@ export function DocPage<S>(props: DocPageProps<S>) {
     const shown = doc.published?.spec;
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader title={doc.title} description={doc.description} />
+        <PageHeader
+          title={doc.title}
+          description={doc.description}
+          breadcrumbs={<PageBreadcrumbs page={doc.title}>{props.parent}</PageBreadcrumbs>}
+        />
         {shown && props.overview(shown, doc)}
       </div>
     );
@@ -71,6 +78,7 @@ function DocWorkspace<S>({
   docs,
   doc,
   noun,
+  parent,
   deleteDescription,
   onDeleted,
   tab,
@@ -116,6 +124,7 @@ function DocWorkspace<S>({
     <div className="flex flex-col gap-6">
       <PageHeader
         title={doc.title}
+        breadcrumbs={<PageBreadcrumbs page={doc.title}>{parent}</PageBreadcrumbs>}
         description={
           <span className="flex flex-wrap items-center gap-2">
             <code className="font-mono">{identifier}</code>

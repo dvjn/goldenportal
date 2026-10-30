@@ -12,15 +12,8 @@ import {
   type TableSearch,
   validateTableSearch,
 } from "@/components/data-table";
+import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { ScorecardCell } from "@/components/scorecards/scorecard-cell";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -253,19 +246,9 @@ function BlueprintCatalogPage() {
 
   const header = (
     <div className="grid gap-3">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <Link to="/catalog">Catalog</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{spec.title}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      <PageBreadcrumbs page={spec.title}>
+        <Link to="/catalog">Catalog</Link>
+      </PageBreadcrumbs>
       <div className="flex items-center gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
           <BlueprintIcon icon={spec.icon} className="size-5" />
