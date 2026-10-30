@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Check, Copy, Loader2, RefreshCw } from "lucide-react";
-import { Suspense, useState } from "react";
+import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
+import { Suspense } from "react";
 import { toast } from "sonner";
-import { IconButton } from "@/components/icon-button";
+import { CopyIconButton } from "@/components/copy-button";
 import { IngestionTokens } from "@/components/integrations/ingestion-tokens";
 import { RecentRuns } from "@/components/integrations/recent-runs";
 import { Badge } from "@/components/ui/badge";
@@ -268,20 +268,10 @@ function Expression({
 }
 
 function CopyField({ value, label }: Readonly<{ value: string; label: string }>) {
-  const [copied, setCopied] = useState(false);
-
   return (
     <div className="flex min-w-0 items-center gap-1 rounded-md bg-muted py-1 pr-1 pl-2">
       <code className="min-w-0 flex-1 truncate font-mono text-xs">{value}</code>
-      <IconButton
-        label={copied ? "Copied" : `Copy ${label.toLowerCase()}`}
-        onClick={async () => {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-        }}
-      >
-        {copied ? <Check /> : <Copy />}
-      </IconButton>
+      <CopyIconButton value={value} label={label.toLowerCase()} />
     </div>
   );
 }
