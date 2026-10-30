@@ -4,6 +4,7 @@ import { Columns3, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { PropertyValue } from "@/components/catalog/property-value";
+import { SplitTitle } from "@/components/catalog/split-title";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -243,7 +244,7 @@ function BlueprintCatalogPage() {
           className="grid max-w-72 hover:underline"
         >
           <span className="truncate font-medium" title={row.original.title}>
-            {row.original.title}
+            <SplitTitle title={row.original.title} />
           </span>
           {subtitle ? (
             <span className="truncate text-xs text-muted-foreground">
