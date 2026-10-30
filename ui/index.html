@@ -1,10 +1,22 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" href="/favicon.ico" />
         <title></title>
+        <script>
+            // Apply the saved or system theme before the app loads, so pages don't flash.
+            try {
+                const theme = localStorage.getItem("gp-ui-theme");
+                const dark =
+                    theme === "dark" ||
+                    (theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+                document.documentElement.classList.add(dark ? "dark" : "light");
+            } catch {
+                document.documentElement.classList.add("dark");
+            }
+        </script>
     </head>
     <body>
         <div id="root"></div>
