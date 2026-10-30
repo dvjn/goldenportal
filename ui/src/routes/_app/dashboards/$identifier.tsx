@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
+import { PageError } from "@/components/page-error";
 import { DashboardPreview } from "@/components/widgets/dashboard-preview";
 import { dashboards } from "@/features/dashboards";
 
@@ -12,6 +13,9 @@ export const Route = createFileRoute("/_app/dashboards/$identifier")({
       context.queryClient.ensureQueryData(dashboards.queries.versions(params.identifier)),
     ]),
   component: DashboardPage,
+  errorComponent: (props) => (
+    <PageError {...props} back={<Link to="/dashboards">Back to Dashboards</Link>} />
+  ),
 });
 
 function DashboardPage() {

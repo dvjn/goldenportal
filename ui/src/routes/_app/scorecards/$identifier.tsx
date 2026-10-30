@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DocPage, type DocTab, validateDocSearch } from "@/components/config-docs/doc-page";
 import { validateTableSearch } from "@/components/data-table";
+import { PageError } from "@/components/page-error";
 import {
   ScorecardOverview,
   type ScorecardSearch,
@@ -26,6 +27,9 @@ export const Route = createFileRoute("/_app/scorecards/$identifier")({
       context.queryClient.ensureQueryData(scorecards.queries.versions(params.identifier)),
     ]),
   component: ScorecardPage,
+  errorComponent: (props) => (
+    <PageError {...props} back={<Link to="/scorecards">Back to Scorecards</Link>} />
+  ),
 });
 
 function ScorecardPage() {

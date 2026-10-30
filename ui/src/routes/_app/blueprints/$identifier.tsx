@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { BlueprintOverview } from "@/components/blueprints/blueprint-overview";
 import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
+import { PageError } from "@/components/page-error";
 import { blueprints, useBlueprint } from "@/features/blueprints";
 
 export const Route = createFileRoute("/_app/blueprints/$identifier")({
@@ -11,6 +12,9 @@ export const Route = createFileRoute("/_app/blueprints/$identifier")({
       context.queryClient.ensureQueryData(blueprints.queries.versions(params.identifier)),
     ]),
   component: BlueprintPage,
+  errorComponent: (props) => (
+    <PageError {...props} back={<Link to="/blueprints">Back to Blueprints</Link>} />
+  ),
 });
 
 function BlueprintPage() {

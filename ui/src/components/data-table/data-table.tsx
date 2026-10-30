@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -46,7 +47,15 @@ type DataTableProps<TData extends RowData> = {
   rowCount?: number;
   // loading dims the rows while a new page is on its way.
   loading?: boolean;
+  // pending shows placeholder rows until the first page arrives, so the table
+  // doesn't claim to be empty while it loads.
+  pending?: boolean;
+  // error replaces the rows when the page couldn't be loaded.
+  error?: Error | null;
+  onRetry?: () => void;
 };
+
+const pendingRows = 5;
 
 const searchDelay = 250;
 
@@ -64,6 +73,9 @@ export function DataTable<TData extends RowData>({
   empty,
   rowCount,
   loading = false,
+  pending = false,
+  error,
+  onRetry,
 }: DataTableProps<TData>) {
   const navigate = useNavigate();
   const server = rowCount !== undefined;
@@ -115,7 +127,8 @@ export function DataTable<TData extends RowData>({
     onClearFilters?.();
   }
 
-  if (total === 0 && !searching && (server || data.length === 0)) {
+  const settled = !pending && !error;
+  if (settled && total === 0 && !searching && (server || data.length === 0)) {
     return (
       <div className="flex flex-col gap-4">
         {actions && <div className="flex justify-end">{actions}</div>}
@@ -151,7 +164,7 @@ export function DataTable<TData extends RowData>({
         </div>
         {actions}
       </div>
-      <Card className="py-0" aria-busy={loading || undefined}>
+      <Card className="py-0" aria-busy={loading || pending || undefined}>
         <Table className={loading ? "opacity-60 transition-opacity" : undefined}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -165,7 +178,30 @@ export function DataTable<TData extends RowData>({
             ))}
           </TableHeader>
           <TableBody>
-            {rows.length === 0 ? (
+            {pending ? (
+              Array.from({ length: pendingRows }, (_, row) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: placeholder rows have no identity.
+                <TableRow key={row}>
+                  {columns.map((_, cell) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: placeholder cells have no identity.
+                    <TableCell key={cell} className="first:pl-4 last:pr-4">
+                      <Skeleton className="h-4 w-full max-w-40" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : error ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24 text-center">
+                  <span className="text-muted-foreground">{error.message} </span>
+                  {onRetry && (
+                    <Button variant="link" className="h-auto p-0" onClick={onRetry}>
+                      Try again
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center">
                   <span className="text-muted-foreground">
@@ -190,7 +226,7 @@ export function DataTable<TData extends RowData>({
           </TableBody>
         </Table>
       </Card>
-      <DataTablePagination table={table} pagination={pagination} total={total} />
+      {settled && <DataTablePagination table={table} pagination={pagination} total={total} />}
     </div>
   );
 }
