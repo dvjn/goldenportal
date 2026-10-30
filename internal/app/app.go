@@ -12,6 +12,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
+	portalmcp "github.com/dvjn/goldenportal/internal/mcp"
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/web"
@@ -22,6 +23,7 @@ import (
 
 func New() *gofr.App {
 	app := gofr.New()
+	api := newAPIRoutes(app)
 	app.Migrate(migrations.All())
 
 	secureCookies := app.Config.GetOrDefault("GP_COOKIE_SECURE", "true") != "false"
@@ -50,7 +52,10 @@ func New() *gofr.App {
 	app.UseMiddleware(favicon, web.SPA(web.Dist()), httpx.WithQuery)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
-		return scimServer.Routes(c.SQL)(auth.Middleware(store)(oidc.Routes(store)(next)))
+		backend := oidc.Routes(store)(next)
+		// Tools re-enter the API authentication and query middleware for each operation.
+		tools := portalmcp.Middleware(httpx.WithQuery(auth.Middleware(store)(api.handler(c))), app.Config.Get("GP_BASE_URL"))(backend)
+		return scimServer.Routes(c.SQL)(auth.Middleware(store)(tools))
 	})
 
 	app.GET("/api/v1/config", configHandler(Config{
@@ -59,12 +64,12 @@ func New() *gofr.App {
 	}))
 	auth.NewHandlers(secureCookies).Register(app)
 	access.Register(app)
-	blueprint.Register(app, dashboard.CheckPages)
-	entity.Register(app)
-	integration.Register(app)
-	scorecard.Register(app)
-	dashboard.Register(app)
-	configdoc.RegisterBulk(app)
+	blueprint.Register(api, dashboard.CheckPages)
+	entity.Register(api)
+	integration.Register(api)
+	scorecard.Register(api)
+	dashboard.Register(api)
+	configdoc.RegisterBulk(api)
 	registerSettings(app, oidc, scimServer)
 
 	return app
