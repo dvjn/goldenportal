@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import type { Dashboard, DashboardInput, DashboardSpec } from "@/features/dashboards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
-import { AudienceValue } from "./audience-value";
+import { AudienceValue, Everyone } from "./audience-value";
 
 // DashboardOverview shows a dashboard read-only: where it sits on Home and
 // who sees it there, the inputs it asks for and the widgets it shows. The
@@ -46,7 +46,7 @@ function AboutCard({ spec, dashboard }: Readonly<{ spec: DashboardSpec; dashboar
             <span className="font-medium tabular-nums">{spec.order}</span>
           </Detail>
           <Detail label="Audience">
-            <AudienceValue audience={spec.visibility} none="Everyone" />
+            <AudienceValue audience={spec.visibility} none={<Everyone />} />
           </Detail>
           <Detail label="Default For">
             <AudienceValue audience={spec.defaultFor} none={<EmptyValue />} />

@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { LayoutDashboard, Plus } from "lucide-react";
 import { EmptyValue } from "@/components/catalog/property-value";
 import { docColumns } from "@/components/config-docs/doc-columns";
-import { AudienceValue } from "@/components/dashboards/audience-value";
+import { AudienceValue, Everyone } from "@/components/dashboards/audience-value";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -36,7 +36,7 @@ const columns = [
     id: "audience",
     header: () => "Audience",
     cell: ({ row }) => (
-      <AudienceValue audience={row.original.facts?.visibility} none={<span>Everyone</span>} />
+      <AudienceValue audience={row.original.facts?.visibility} none={<Everyone />} />
     ),
   }),
   column.display({

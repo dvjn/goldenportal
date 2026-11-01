@@ -1,10 +1,15 @@
-import { KeyRound, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { Audience } from "@/features/dashboards";
 
-// AudienceValue lists an audience's roles and groups, each marked as which
-// it is, or none when there's no audience.
+// Everyone is an audience of all, as a chip like the roles and groups.
+export function Everyone() {
+  return <Badge variant="outline">Everyone</Badge>;
+}
+
+// AudienceValue lists an audience's roles and groups, groups marked with
+// their icon, or none when there's no audience.
 export function AudienceValue({
   audience,
   none,
@@ -16,7 +21,6 @@ export function AudienceValue({
     <span className="flex flex-wrap gap-1">
       {roles.map((role) => (
         <Badge key={`role:${role}`} variant="outline" title="Role">
-          <KeyRound />
           {role}
         </Badge>
       ))}
