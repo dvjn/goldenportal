@@ -2,16 +2,9 @@ import { type ErrorComponentProps, Link, useRouter } from "@tanstack/react-route
 import { HTTPError } from "ky";
 import { CircleAlert, FileQuestion, Lock } from "lucide-react";
 import type { ReactNode } from "react";
+import { EmptyCard } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { ForbiddenError } from "@/features/auth";
 
 type PageErrorProps = ErrorComponentProps & {
   // back links to the page above, for when this one doesn't exist.
@@ -22,11 +15,12 @@ type PageErrorProps = ErrorComponentProps & {
 // so the navigation stays usable.
 export function PageError({ error, back }: PageErrorProps) {
   const router = useRouter();
-  const status = error instanceof HTTPError ? error.response.status : undefined;
+  let status = error instanceof HTTPError ? error.response.status : undefined;
+  if (error instanceof ForbiddenError) status = 403;
 
   if (status === 404) {
     return (
-      <StateCard
+      <EmptyCard
         icon={<FileQuestion />}
         title="Not found"
         description="It may have been renamed or deleted."
@@ -34,12 +28,12 @@ export function PageError({ error, back }: PageErrorProps) {
         <Button variant="outline" asChild>
           {back ?? <Link to="/">Go to Home</Link>}
         </Button>
-      </StateCard>
+      </EmptyCard>
     );
   }
   if (status === 403) {
     return (
-      <StateCard
+      <EmptyCard
         icon={<Lock />}
         title="You don't have access to this page"
         description="Ask an admin if you need it."
@@ -47,11 +41,11 @@ export function PageError({ error, back }: PageErrorProps) {
         <Button variant="outline" asChild>
           <Link to="/">Go to Home</Link>
         </Button>
-      </StateCard>
+      </EmptyCard>
     );
   }
   return (
-    <StateCard
+    <EmptyCard
       icon={<CircleAlert />}
       title="Something went wrong"
       description={error instanceof Error ? error.message : String(error)}
@@ -59,29 +53,6 @@ export function PageError({ error, back }: PageErrorProps) {
       <Button variant="outline" onClick={() => router.invalidate()}>
         Try again
       </Button>
-    </StateCard>
-  );
-}
-
-type StateCardProps = {
-  icon: ReactNode;
-  title: string;
-  description: ReactNode;
-  children?: ReactNode;
-};
-
-// StateCard explains why a page or section shows no content.
-export function StateCard({ icon, title, description, children }: StateCardProps) {
-  return (
-    <Card className="py-0">
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">{icon}</EmptyMedia>
-          <EmptyTitle>{title}</EmptyTitle>
-          <EmptyDescription>{description}</EmptyDescription>
-        </EmptyHeader>
-        {children && <EmptyContent>{children}</EmptyContent>}
-      </Empty>
-    </Card>
+    </EmptyCard>
   );
 }

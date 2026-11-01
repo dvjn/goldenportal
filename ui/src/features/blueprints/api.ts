@@ -9,7 +9,8 @@ export type PropertyType =
   | "boolean"
   | "array"
   | "object"
-  | "relation";
+  | "relation"
+  | "scorecard";
 
 export type Property = {
   identifier: string;
@@ -30,6 +31,8 @@ export type Property = {
   many?: boolean;
   lookup?: string;
   compute?: string;
+  // scorecard names the scorecard whose result a scorecard property holds.
+  scorecard?: string;
   display?: Display;
 };
 
@@ -50,8 +53,6 @@ export type Display = {
     | "json";
   unit?: string;
   colors?: Record<string, string>;
-  // column shows it in the catalog table until someone picks columns.
-  column?: boolean;
   // filter offers its values as a catalog filter.
   filter?: boolean;
   hidden?: boolean;
@@ -75,10 +76,12 @@ export type BlueprintSpec = {
   title: string;
   description?: string;
   icon?: string;
+  color?: string;
   properties: Property[];
   // catalog and entity are the tabs the blueprint adds to its catalog page
   // and its entities' pages.
-  catalog?: { tabs: Tab[] };
+  // catalog.columns are its table's columns until someone picks their own.
+  catalog?: { columns?: string[]; tabs: Tab[] };
   entity?: { header?: EntityHeader; sections?: PropertySection[]; tabs: Tab[] };
 };
 
@@ -124,6 +127,7 @@ export async function getUsage(identifier: string): Promise<Usage> {
 // propertySource says where a property's value comes from.
 export function propertySource(property: Property) {
   if (property.relation) return "relation";
+  if (property.scorecard) return "scorecard";
   if (property.lookup) return "lookup";
   if (property.compute) return "compute";
   return "stored";

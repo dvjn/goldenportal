@@ -5,26 +5,34 @@ import {
   Link,
   useNavigate,
 } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, ExternalLink, Plug } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { ArrowLeft, ExternalLink, Plug } from "lucide-react";
+import type { ReactNode } from "react";
 import { stringify } from "yaml";
+import { CardSection, CardTitleBar } from "@/components/card-sections";
 import { IconTile } from "@/components/catalog/blueprint-icon";
+import { BlueprintLabel } from "@/components/catalog/blueprint-label";
 import { EntityLink } from "@/components/catalog/entity-link";
+import { ListValue } from "@/components/catalog/list-value";
 import { PropertyLabel } from "@/components/catalog/property-label";
-import { isWebUrl, PropertyValue } from "@/components/catalog/property-value";
+import {
+  CatalogViewAll,
+  EmptyValue,
+  isWebUrl,
+  PropertyValue,
+} from "@/components/catalog/property-value";
 import { SplitTitle } from "@/components/catalog/split-title";
+import { UnpublishedBlueprint } from "@/components/catalog/unpublished-blueprint";
+import { Detail, DetailList } from "@/components/detail-list";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageError } from "@/components/page-error";
-import {
-  ScorecardChip,
-  ScorecardResult,
-  ScorecardTab,
-} from "@/components/scorecards/entity-scorecards";
-import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
+import { PageTab } from "@/components/page-tabs";
+import { ScorecardResult, ScorecardTab } from "@/components/scorecards/entity-scorecards";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
+import { hasRole, useMe } from "@/features/auth";
 import { type BlueprintSpec, blueprints } from "@/features/blueprints";
 import {
   type Link as CatalogLink,
@@ -33,8 +41,8 @@ import {
   type Incoming,
 } from "@/features/catalog";
 import { entityScorecardsQueryOptions } from "@/features/scorecards";
+import { useUiState } from "@/hooks/use-ui-state";
 import { formatAbsolute, formatRelative } from "@/lib/format";
-import { usePageTitle } from "@/lib/page-title";
 
 // The blueprint's entity tabs and each scorecard that scores the entity get
 // a tab, between Overview and the system tabs. A blueprint tab named
@@ -58,16 +66,23 @@ export const Route = createFileRoute("/_app/catalog/$blueprint/$")({
   errorComponent: EntityError,
 });
 
+const noTabs: Record<string, string> = {};
+
 function EntityPage() {
   const { blueprint, _splat: identifier = "" } = Route.useParams();
-  const { tab = "overview" } = Route.useSearch();
+  // Without a tab in the URL, the page opens the one last opened for its
+  // blueprint.
+  const [lastTabs, setLastTabs] = useUiState("entityTabs", noTabs);
+  const { tab = lastTabs[blueprint] ?? "overview" } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const builder = hasRole(useMe().role, "builder");
   const { data: doc } = useSuspenseQuery(blueprints.queries.detail(blueprint));
   const { data: entity } = useSuspenseQuery(entityQueryOptions(blueprint, identifier));
   const { data: results } = useSuspenseQuery(entityScorecardsQueryOptions(blueprint, identifier));
-  usePageTitle(entity.title);
   const spec = doc.published?.spec;
-  if (!spec) return null;
+  if (!spec) {
+    return <UnpublishedBlueprint blueprint={blueprint} title={doc.title} page={entity.title} />;
+  }
   const header = spec.entity?.header;
   const subtitle = header?.subtitle ? propertyByID(spec, header.subtitle) : undefined;
   const badges = (header?.badges ?? []).flatMap((id) => propertyByID(spec, id) ?? []);
@@ -83,149 +98,149 @@ function EntityPage() {
     ...systemTabs,
   ];
   const active = known.includes(tab) ? tab : "overview";
-  const tabClass =
-    "focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="grid gap-3">
-        <PageBreadcrumbs page={entity.title}>
-          <Link to="/catalog">Catalog</Link>
-          <Link to="/catalog/$blueprint" params={{ blueprint }}>
-            {spec.title}
-          </Link>
-        </PageBreadcrumbs>
-        <div className="flex items-start gap-3">
-          <IconTile icon={spec.icon} size="lg" />
-          <div className="grid min-w-0 flex-1 gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-2xl font-semibold tracking-tight">
-                <SplitTitle title={entity.title} />
-              </h1>
-              <Badge variant="secondary">{spec.title}</Badge>
-              {badges.map((property) => (
-                <PropertyValue
-                  key={property.identifier}
-                  property={property}
-                  value={entity.properties[property.identifier]}
-                  links={entity.related[property.identifier]}
-                  compact
-                />
-              ))}
-              {results.map((result) => (
-                <ScorecardChip key={result.scorecard} result={result} />
-              ))}
-            </div>
+    <Tabs
+      value={active}
+      onValueChange={(next) => {
+        setLastTabs({ ...lastTabs, [blueprint]: next });
+        void navigate({ search: { tab: next }, replace: true });
+      }}
+    >
+      <PageHeader
+        title={entity.title}
+        heading={<SplitTitle title={entity.title} />}
+        icon={<IconTile icon={spec.icon} color={spec.color} size="lg" />}
+        breadcrumbs={
+          <PageBreadcrumbs page={entity.title}>
+            <Link to="/catalog">Catalog</Link>
+            <Link to="/catalog/$blueprint" params={{ blueprint }}>
+              {spec.title}
+            </Link>
+          </PageBreadcrumbs>
+        }
+        badges={badges.map((property) => (
+          <PropertyValue
+            key={property.identifier}
+            property={property}
+            value={entity.properties[property.identifier]}
+            links={entity.related[property.identifier]}
+            entity={entity}
+            compact
+          />
+        ))}
+        description={
+          <div className="grid gap-1">
             {subtitle && (
-              <div className="text-muted-foreground">
+              <div>
                 <PropertyValue
                   property={subtitle}
                   value={entity.properties[subtitle.identifier]}
                   links={entity.related[subtitle.identifier]}
+                  entity={entity}
                 />
               </div>
             )}
-            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <code className="font-mono">{entity.identifier}</code>
               <span className="flex items-center gap-1">
                 <Plug className="size-3.5" aria-hidden />
-                <Link
-                  to="/integrations/$identifier"
-                  params={{ identifier: entity.integration }}
-                  className="hover:underline"
-                >
-                  {entity.integration}
-                </Link>
+                {/* Integration pages are for builders, so members see only its name. */}
+                {builder ? (
+                  <Link
+                    to="/integrations/$identifier"
+                    params={{ identifier: entity.integration }}
+                    className="hover:underline"
+                  >
+                    {entity.integration}
+                  </Link>
+                ) : (
+                  entity.integration
+                )}
               </span>
               <span title={formatAbsolute(entity.updatedAt)}>
                 Updated {formatRelative(entity.updatedAt)}
               </span>
             </p>
           </div>
-          {link && (
-            <Button variant="outline" asChild className="shrink-0">
-              <a href={link} target="_blank" rel="noreferrer">
+        }
+        actions={
+          link && (
+            <Button variant="outline" asChild>
+              <a href={link} target="_blank" rel="noreferrer" title={link}>
                 <ExternalLink />
-                Open on {new URL(link).host}
+                Open
               </a>
             </Button>
-          )}
-        </div>
-      </div>
-
-      <Tabs
-        value={active}
-        onValueChange={(next) => navigate({ search: { tab: next }, replace: true })}
-      >
-        <TabsList variant="line" aria-label="Entity">
-          <TabsTrigger value="overview" className={tabClass}>
-            {overview?.title ?? "Overview"}
-          </TabsTrigger>
-          {views.map((v) => (
-            <TabsTrigger key={v.identifier} value={v.identifier} className={tabClass}>
-              {v.title}
-            </TabsTrigger>
-          ))}
-          {results.map((result) => (
-            <TabsTrigger key={result.scorecard} value={result.scorecard} className={tabClass}>
-              <ScorecardTab result={result} />
-            </TabsTrigger>
-          ))}
-          <TabsTrigger value="relations" className={tabClass}>
-            Relations
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {relationCount(spec, entity)}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="yaml" className={tabClass}>
-            YAML
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview" className="pt-2">
-          {overview ? (
-            <WidgetGrid
-              widgets={overview.widgets}
-              source={{ blueprint, page: "entity", tab: overview.identifier }}
-              context={{ entity: identifier, entityData: entity }}
-            />
-          ) : (
-            <Overview spec={spec} entity={entity} />
-          )}
+          )
+        }
+        tabs={
+          <TabsList variant="line" aria-label="Entity">
+            <PageTab value="overview">{overview?.title ?? "Overview"}</PageTab>
+            {views.map((v) => (
+              <PageTab key={v.identifier} value={v.identifier}>
+                {v.title}
+              </PageTab>
+            ))}
+            {results.map((result) => (
+              <PageTab key={result.scorecard} value={result.scorecard}>
+                <ScorecardTab result={result} />
+              </PageTab>
+            ))}
+            <PageTab value="relations">
+              Relations
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {relationCount(spec, entity)}
+              </span>
+            </PageTab>
+            <PageTab value="yaml">YAML</PageTab>
+          </TabsList>
+        }
+      />
+      <TabsContent value="overview" className="pt-2">
+        {overview ? (
+          <WidgetGrid
+            widgets={overview.widgets}
+            source={{ blueprint, page: "entity", tab: overview.identifier }}
+            context={{ entity: identifier }}
+          />
+        ) : (
+          <Overview spec={spec} entity={entity} />
+        )}
+      </TabsContent>
+      {views.map((v) => (
+        <TabsContent key={v.identifier} value={v.identifier} className="pt-2">
+          <WidgetGrid
+            widgets={v.widgets}
+            source={{ blueprint, page: "entity", tab: v.identifier }}
+            context={{ entity: identifier }}
+          />
         </TabsContent>
-        {views.map((v) => (
-          <TabsContent key={v.identifier} value={v.identifier} className="pt-2">
-            <WidgetGrid
-              widgets={v.widgets}
-              source={{ blueprint, page: "entity", tab: v.identifier }}
-              context={{ entity: identifier, entityData: entity }}
-            />
-          </TabsContent>
-        ))}
-        {results.map((result) => (
-          <TabsContent key={result.scorecard} value={result.scorecard} className="pt-2">
-            <ScorecardResult result={result} />
-          </TabsContent>
-        ))}
-        <TabsContent value="relations" className="pt-2">
-          <Relations spec={spec} entity={entity} />
+      ))}
+      {results.map((result) => (
+        <TabsContent key={result.scorecard} value={result.scorecard} className="pt-2">
+          <ScorecardResult result={result} />
         </TabsContent>
-        <TabsContent value="yaml" className="pt-2">
-          <Card className="py-0">
-            <pre className="overflow-x-auto p-4 font-mono text-xs leading-5">
-              {stringify({
-                blueprint: entity.blueprint,
-                identifier: entity.identifier,
-                title: entity.title,
-                properties: entity.properties,
-                integration: entity.integration,
-                createdAt: entity.createdAt,
-                updatedAt: entity.updatedAt,
-              })}
-            </pre>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+      ))}
+      <TabsContent value="relations" className="pt-2">
+        <Relations spec={spec} entity={entity} />
+      </TabsContent>
+      <TabsContent value="yaml" className="pt-2">
+        <Card className="py-0">
+          <pre className="overflow-x-auto p-4 font-mono text-xs leading-5">
+            {stringify({
+              blueprint: entity.blueprint,
+              identifier: entity.identifier,
+              title: entity.title,
+              properties: entity.properties,
+              integration: entity.integration,
+              createdAt: entity.createdAt,
+              updatedAt: entity.updatedAt,
+            })}
+          </pre>
+        </Card>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -282,58 +297,26 @@ function Overview({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Enti
         ) : (
           sections.map((section) => (
             <Card key={section.title}>
-              <CardHeader className="border-b">
-                <CardTitle>{section.title}</CardTitle>
-              </CardHeader>
+              <CardTitleBar title={section.title} />
               <CardContent>
-                <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[minmax(8rem,auto)_minmax(0,1fr)]">
+                <DetailList>
                   {section.properties.map((property) => (
-                    <div key={property.identifier} className="contents">
-                      <dt className="text-muted-foreground">
-                        <PropertyLabel property={property} />
-                      </dt>
-                      <dd className="min-w-0">
-                        <PropertyValue
-                          property={property}
-                          value={entity.properties[property.identifier]}
-                          links={entity.related[property.identifier]}
-                        />
-                      </dd>
-                    </div>
+                    <Detail key={property.identifier} label={<PropertyLabel property={property} />}>
+                      <PropertyValue
+                        property={property}
+                        value={entity.properties[property.identifier]}
+                        links={entity.related[property.identifier]}
+                        entity={entity}
+                      />
+                    </Detail>
                   ))}
-                </dl>
+                </DetailList>
               </CardContent>
             </Card>
           ))
         )}
       </div>
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Pointed At By</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {entity.incoming.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing relates to this entity.</p>
-          ) : (
-            <ul className="grid gap-2 text-sm">
-              {entity.incoming.map((incoming) => (
-                <li
-                  key={`${incoming.blueprint}.${incoming.property}`}
-                  className="flex items-center justify-between gap-3"
-                >
-                  <span className="truncate">
-                    {incoming.blueprintTitle}{" "}
-                    <span className="text-muted-foreground">via {incoming.propertyTitle}</span>
-                  </span>
-                  <IncomingLink incoming={incoming} identifier={entity.identifier}>
-                    {incoming.total}
-                  </IncomingLink>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <RelationsSummary spec={spec} entity={entity} />
     </div>
   );
 }
@@ -357,110 +340,175 @@ function IncomingLink({
   );
 }
 
+// RelationRow is one relation of an entity's: a relation property of its
+// own, or one of another blueprint's that points at it.
+type RelationRow = {
+  key: string;
+  title: string;
+  incoming: boolean;
+  links: CatalogLink[];
+  total: number;
+  // viewAll opens every related entity in the catalog.
+  viewAll: ReactNode;
+};
+
+type RelationGroup = { blueprint: string; rows: RelationRow[] };
+
+// relationGroups gathers an entity's relations by the blueprint they reach,
+// in the order its properties name them, then those pointing at it.
+function relationGroups(spec: BlueprintSpec, entity: EntityDetail): RelationGroup[] {
+  const groups: RelationGroup[] = [];
+  const group = (blueprint: string) => {
+    let found = groups.find((g) => g.blueprint === blueprint);
+    if (!found) {
+      found = { blueprint, rows: [] };
+      groups.push(found);
+    }
+    return found;
+  };
+  for (const property of spec.properties) {
+    if (!property.relation || property.lookup) continue;
+    const links = entity.related[property.identifier] ?? [];
+    group(property.relation).rows.push({
+      key: property.identifier,
+      title: property.title,
+      incoming: false,
+      links,
+      total: links.length,
+      viewAll: (
+        <CatalogViewAll
+          blueprint={property.relation}
+          identifiers={links.map((link) => link.identifier)}
+        />
+      ),
+    });
+  }
+  for (const incoming of entity.incoming) {
+    group(incoming.blueprint).rows.push({
+      key: `${incoming.blueprint}.${incoming.property}`,
+      title: incoming.propertyTitle,
+      incoming: true,
+      links: incoming.entities,
+      total: incoming.total,
+      viewAll: (
+        <IncomingLink incoming={incoming} identifier={entity.identifier}>
+          View all
+        </IncomingLink>
+      ),
+    });
+  }
+  return groups;
+}
+
+// RowTitle names a relation, with ← for one that points here from the
+// group's blueprint.
+function RowTitle({ row }: Readonly<{ row: RelationRow }>) {
+  return (
+    <span className="flex items-center gap-1 text-muted-foreground">
+      {row.incoming && <ArrowLeft className="size-3.5" aria-label="Pointing here by" />}
+      {row.title}
+    </span>
+  );
+}
+
 function Relations({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: EntityDetail }>) {
-  const outgoing = spec.properties.filter((property) => property.relation);
-
-  return (
-    <div className="grid items-start gap-4 lg:grid-cols-2">
+  const groups = relationGroups(spec, entity);
+  if (groups.length === 0) {
+    return (
       <Card>
-        <CardHeader className="border-b">
-          <CardTitle className="flex items-center gap-2">
-            <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
-            Points To
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          {outgoing.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{spec.title} has no relations.</p>
-          ) : (
-            outgoing.map((property) => {
-              const links = entity.related[property.identifier] ?? [];
-              return (
-                <section key={property.identifier} className="grid gap-1.5">
-                  <RelationHeading count={links.length}>{property.title}</RelationHeading>
-                  {links.length === 0 ? (
-                    <PropertyValue property={property} value={undefined} links={links} />
-                  ) : (
-                    <RelationLinks blueprint={property.relation ?? ""} links={links} />
-                  )}
-                </section>
-              );
-            })
-          )}
+        <CardContent>
+          <p className="text-sm text-muted-foreground">Nothing relates to this entity.</p>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle className="flex items-center gap-2">
-            <ArrowLeft className="size-4 text-muted-foreground" aria-hidden />
-            Pointed At By
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          {entity.incoming.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing relates to this entity.</p>
-          ) : (
-            entity.incoming.map((incoming) => (
-              <section key={`${incoming.blueprint}.${incoming.property}`} className="grid gap-1.5">
-                <RelationHeading count={incoming.total}>
-                  {incoming.blueprintTitle} via {incoming.propertyTitle}
-                </RelationHeading>
-                <RelationLinks blueprint={incoming.blueprint} links={incoming.entities} />
-                {incoming.total > incoming.entities.length && (
-                  <IncomingLink incoming={incoming} identifier={entity.identifier}>
-                    See all {incoming.total}
-                  </IncomingLink>
+    );
+  }
+  return (
+    <Card className="gap-0 py-0">
+      {groups.map((g) => (
+        <CardSection key={g.blueprint} heading={<BlueprintLabel blueprint={g.blueprint} />}>
+          <DetailList>
+            {g.rows.map((row) => (
+              <Detail key={row.key} label={<RowTitle row={row} />}>
+                {row.total === 0 ? (
+                  <EmptyValue />
+                ) : (
+                  <RelationLinks
+                    blueprint={g.blueprint}
+                    links={row.links}
+                    total={row.total}
+                    viewAll={row.viewAll}
+                  />
                 )}
-              </section>
-            ))
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              </Detail>
+            ))}
+          </DetailList>
+        </CardSection>
+      ))}
+    </Card>
   );
 }
 
-function RelationHeading({ count, children }: Readonly<{ count: number; children: ReactNode }>) {
+// RelationsSummary counts an entity's relations by blueprint, each count
+// opening the Relations tab.
+function RelationsSummary({
+  spec,
+  entity,
+}: Readonly<{ spec: BlueprintSpec; entity: EntityDetail }>) {
+  const groups = relationGroups(spec, entity);
   return (
-    <h3 className="flex items-center gap-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-      {children}
-      <span className="tabular-nums normal-case">{count}</span>
-    </h3>
+    <Card className="gap-0 pb-0">
+      <CardTitleBar title="Relations" />
+      <CardContent className="grid px-0 text-sm">
+        {groups.length === 0 ? (
+          <p className="px-4 py-3 text-muted-foreground">Nothing relates to this entity.</p>
+        ) : (
+          groups.map((g) => (
+            <CardSection key={g.blueprint} heading={<BlueprintLabel blueprint={g.blueprint} />}>
+              <ul className="grid gap-1">
+                {g.rows.map((row) => (
+                  <li key={row.key} className="flex items-center justify-between gap-3">
+                    <RowTitle row={row} />
+                    <Link
+                      to="."
+                      search={{ tab: "relations" }}
+                      className="font-medium tabular-nums hover:underline"
+                    >
+                      {row.total}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </CardSection>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }
-
-// relationsShown is how many related entities a group lists before "Show more".
-const relationsShown = 6;
 
 function RelationLinks({
   blueprint,
   links,
-}: Readonly<{ blueprint: string; links: CatalogLink[] }>) {
-  const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? links : links.slice(0, relationsShown);
+  total,
+  viewAll,
+}: Readonly<{ blueprint: string; links: CatalogLink[]; total?: number; viewAll: ReactNode }>) {
   return (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-      {shown.map((link) =>
-        link.title ? (
-          <EntityLink key={link.identifier} blueprint={blueprint} identifier={link.identifier}>
+    <ListValue
+      total={total}
+      viewAll={viewAll}
+      items={links.map((link) => ({
+        key: link.identifier,
+        node: link.title ? (
+          <EntityLink blueprint={blueprint} identifier={link.identifier}>
             <SplitTitle title={link.title} />
           </EntityLink>
         ) : (
-          <span
-            key={link.identifier}
-            className="font-mono text-xs text-muted-foreground"
-            title="Not ingested yet"
-          >
+          <span className="font-mono text-xs text-muted-foreground" title="Not ingested yet">
             {link.identifier}
           </span>
         ),
-      )}
-      {links.length > shown.length && (
-        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setExpanded(true)}>
-          Show {links.length - shown.length} more
-        </Button>
-      )}
-    </span>
+      }))}
+    />
   );
 }
 

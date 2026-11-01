@@ -2,11 +2,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { CardTitleBar } from "@/components/card-sections";
 import { DocEditor, useLiveValidation } from "@/components/config-docs/doc-editor";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import type { ConfigDocs } from "@/features/config-docs";
 
 type NewDocPageProps<S extends { identifier: string }> = {
@@ -58,9 +59,7 @@ export function NewDocPage<S extends { identifier: string }>({
       />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Definition</CardTitle>
-          </CardHeader>
+          <CardTitleBar title="Definition" />
           <CardContent>
             <DocEditor
               value={source}
@@ -77,9 +76,7 @@ export function NewDocPage<S extends { identifier: string }>({
           </CardFooter>
         </Card>
         <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Preview</CardTitle>
-          </CardHeader>
+          <CardTitleBar title="Preview" />
           <CardContent>
             {valid && live.validation ? (
               preview(live.validation.spec)

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { cn } from "cn";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,13 +9,19 @@ import {
   Link2,
   Lock,
   type LucideIcon,
-  Plug,
   Repeat2,
+  ShieldCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { PropertyType } from "@/components/blueprints/property-type";
+import { CardSection, CardTitleBar } from "@/components/card-sections";
+import { IconTile } from "@/components/catalog/blueprint-icon";
+import { EmptyValue } from "@/components/catalog/property-value";
+import { Code } from "@/components/code";
+import { tableCellClass } from "@/components/data-table";
+import { Detail, DetailList } from "@/components/detail-list";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -32,6 +39,7 @@ import {
   type Usage,
   usageQueryOptions,
 } from "@/features/blueprints";
+import { type IntegrationSummary, integrations } from "@/features/integrations";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
 const sources: Record<ReturnType<typeof propertySource>, { label: string; icon: LucideIcon }> = {
@@ -39,6 +47,7 @@ const sources: Record<ReturnType<typeof propertySource>, { label: string; icon: 
   relation: { label: "Relation", icon: Link2 },
   lookup: { label: "Lookup", icon: Repeat2 },
   compute: { label: "Computed", icon: Calculator },
+  scorecard: { label: "Scorecard", icon: ShieldCheck },
 };
 
 // BlueprintOverview shows a blueprint read-only: what each property holds,
@@ -53,9 +62,7 @@ export function BlueprintOverview({
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <Card className="gap-0 pb-0">
-        <CardHeader className="border-b">
-          <CardTitle>Properties</CardTitle>
-        </CardHeader>
+        <CardTitleBar title="Properties" />
         <CardContent className="px-0">
           <PropertiesTable properties={spec.properties} />
         </CardContent>
@@ -75,32 +82,30 @@ function PropertiesTable({ properties }: Readonly<{ properties: Property[] }>) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="pl-4">Property</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Rules</TableHead>
-          <TableHead className="pr-4">Source</TableHead>
+          <TableHead className={tableCellClass}>Property</TableHead>
+          <TableHead className={tableCellClass}>Type</TableHead>
+          <TableHead className={tableCellClass}>Rules</TableHead>
+          <TableHead className={tableCellClass}>Source</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {builtIns.map((builtIn) => (
           <TableRow key={builtIn.identifier} className="align-top text-muted-foreground">
-            <TableCell className="pl-4 whitespace-normal">
+            <TableCell className={cn(tableCellClass, "whitespace-normal")}>
               <div className="grid gap-0.5">
                 <span className="font-medium">{builtIn.title}</span>
                 <code className="font-mono text-xs">{builtIn.identifier}</code>
               </div>
             </TableCell>
-            <TableCell>
+            <TableCell className={tableCellClass}>
               <Badge variant="secondary" className="font-mono">
-                string
+                {builtIn.type}
               </Badge>
             </TableCell>
-            <TableCell className="whitespace-normal">
-              {builtIn.identifier === "$identifier"
-                ? "Unique, required"
-                : "Defaults to the identifier"}
+            <TableCell className={cn(tableCellClass, "whitespace-normal")}>
+              {builtIn.rule}
             </TableCell>
-            <TableCell className="pr-4">
+            <TableCell className={tableCellClass}>
               <span className="flex items-center gap-1.5 text-xs">
                 <Lock className="size-3.5" aria-hidden />
                 Built-in
@@ -110,7 +115,7 @@ function PropertiesTable({ properties }: Readonly<{ properties: Property[] }>) {
         ))}
         {properties.map((property) => (
           <TableRow key={property.identifier} className="align-top">
-            <TableCell className="pl-4 whitespace-normal">
+            <TableCell className={cn(tableCellClass, "whitespace-normal")}>
               <div className="grid gap-0.5">
                 <span className="font-medium">{property.title}</span>
                 <code className="font-mono text-xs text-muted-foreground">
@@ -121,13 +126,13 @@ function PropertiesTable({ properties }: Readonly<{ properties: Property[] }>) {
                 )}
               </div>
             </TableCell>
-            <TableCell>
+            <TableCell className={tableCellClass}>
               <PropertyType property={property} />
             </TableCell>
-            <TableCell className="whitespace-normal">
+            <TableCell className={cn(tableCellClass, "whitespace-normal")}>
               <Rules property={property} />
             </TableCell>
-            <TableCell className="pr-4 whitespace-normal">
+            <TableCell className={cn(tableCellClass, "whitespace-normal")}>
               <Source property={property} />
             </TableCell>
           </TableRow>
@@ -137,10 +142,15 @@ function PropertiesTable({ properties }: Readonly<{ properties: Property[] }>) {
   );
 }
 
-// Every entity has these, whatever its blueprint says.
+// Every entity has these, whatever its blueprint says, so no property can
+// take their names. Paths, filters and jq read them like properties.
 const builtIns = [
-  { identifier: "$identifier", title: "Identifier" },
-  { identifier: "$title", title: "Title" },
+  { identifier: "identifier", title: "Identifier", type: "string", rule: "Unique, required" },
+  { identifier: "title", title: "Title", type: "string", rule: "Defaults to the identifier" },
+  { identifier: "blueprint", title: "Blueprint", type: "string", rule: "This blueprint" },
+  { identifier: "integration", title: "Integration", type: "string", rule: "Its writer" },
+  { identifier: "createdAt", title: "Created", type: "date-time", rule: "Set when written" },
+  { identifier: "updatedAt", title: "Updated", type: "date-time", rule: "Set when changed" },
 ];
 
 function Rules({ property }: Readonly<{ property: Property }>) {
@@ -161,7 +171,7 @@ function Rules({ property }: Readonly<{ property: Property }>) {
     );
   }
   const range = (min?: number, max?: number, unit = "") => {
-    if (min !== undefined && max !== undefined) return `${min}–${max}${unit}`;
+    if (min !== undefined && max !== undefined) return `${min}-${max}${unit}`;
     if (min !== undefined) return `≥ ${min}${unit}`;
     if (max !== undefined) return `≤ ${max}${unit}`;
   };
@@ -170,14 +180,10 @@ function Rules({ property }: Readonly<{ property: Property }>) {
   const bounds = range(property.minimum, property.maximum);
   if (bounds) rules.push(<RuleText key="bounds">{bounds}</RuleText>);
   if (property.pattern) {
-    rules.push(
-      <code key="pattern" className="rounded bg-muted px-1 font-mono text-xs">
-        /{property.pattern}/
-      </code>,
-    );
+    rules.push(<Code key="pattern">/{property.pattern}/</Code>);
   }
 
-  if (rules.length === 0) return <span className="text-muted-foreground">—</span>;
+  if (rules.length === 0) return <EmptyValue />;
   return <div className="flex flex-wrap items-center gap-1">{rules}</div>;
 }
 
@@ -199,9 +205,7 @@ function Source({ property }: Readonly<{ property: Property }>) {
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <code className="block max-w-56 truncate rounded bg-muted px-1 font-mono text-xs">
-                {detail}
-              </code>
+              <Code className="block max-w-56 truncate break-normal">{detail}</Code>
             </TooltipTrigger>
             <TooltipContent className="max-w-sm font-mono">{detail}</TooltipContent>
           </Tooltip>
@@ -220,32 +224,27 @@ function AboutCard({
 
   return (
     <Card>
-      <CardHeader className="border-b">
-        <CardTitle>About</CardTitle>
-      </CardHeader>
+      <CardTitleBar title="About" />
       <CardContent className="grid gap-4 text-sm">
         {spec.description && <p className="text-muted-foreground">{spec.description}</p>}
-        <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2">
-          <dt className="text-muted-foreground">Entities</dt>
-          <dd className="font-medium tabular-nums">{usage?.entities ?? "–"}</dd>
+        <DetailList>
+          <Detail label="Entities">
+            <span className="font-medium tabular-nums">{usage?.entities ?? "-"}</span>
+          </Detail>
           {published && (
             <>
-              <dt className="text-muted-foreground">Published</dt>
-              <dd>
-                Version {published.version},{" "}
+              <Detail label="Version">
+                <span className="font-medium tabular-nums">{published.version}</span>
+              </Detail>
+              <Detail label="Published">
                 <span title={formatAbsolute(published.publishedAt)}>
                   {formatRelative(published.publishedAt)}
                 </span>
-              </dd>
-              {published.publishedBy && (
-                <>
-                  <dt className="text-muted-foreground">By</dt>
-                  <dd className="truncate">{published.publishedBy}</dd>
-                </>
-              )}
+              </Detail>
+              {published.publishedBy && <Detail label="By">{published.publishedBy}</Detail>}
             </>
           )}
-        </dl>
+        </DetailList>
       </CardContent>
     </Card>
   );
@@ -253,14 +252,22 @@ function AboutCard({
 
 // WritersCard lists the integrations that write the blueprint's entities.
 // Each entity has exactly one writer, so this is where its data comes from.
+// WriterIcon shows an integration's tile, its connector's icon.
+function WriterIcon({ integration }: Readonly<{ integration?: IntegrationSummary }>) {
+  return (
+    <span className="mt-0.5">
+      <IconTile icon={integration?.icon} color={integration?.color} size="sm" />
+    </span>
+  );
+}
+
 function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Usage }>) {
   const writers = usage?.writers ?? [];
+  const { data: integrationList } = useQuery(integrations.queries.list);
 
   return (
     <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Written By</CardTitle>
-      </CardHeader>
+      <CardTitleBar title="Written By" />
       <CardContent>
         {writers.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -272,8 +279,10 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
         ) : (
           <ul className="grid gap-3">
             {writers.map((writer) => (
-              <li key={writer.integration} className="flex items-start gap-2 text-sm">
-                <Plug className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <li key={writer.integration} className="flex items-start gap-3 text-sm">
+                <WriterIcon
+                  integration={integrationList?.find((i) => i.identifier === writer.integration)}
+                />
                 <div className="grid min-w-0 flex-1">
                   <Link
                     to="/integrations/$identifier"
@@ -282,18 +291,19 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
                   >
                     {writer.title}
                   </Link>
-                  <span className="text-xs text-muted-foreground">
-                    {writer.entities} {writer.entities === 1 ? "entity" : "entities"}
-                    {writer.lastRunAt ? (
-                      <span title={formatAbsolute(writer.lastRunAt)}>
-                        {" "}
-                        · pushed {formatRelative(writer.lastRunAt)}
-                      </span>
-                    ) : (
-                      " · never pushed"
-                    )}
+                  <span
+                    className="text-xs text-muted-foreground"
+                    title={writer.lastRunAt ? formatAbsolute(writer.lastRunAt) : undefined}
+                  >
+                    {writer.lastRunAt ? formatRelative(writer.lastRunAt) : "Never pushed"}
                   </span>
                 </div>
+                <span
+                  className="font-medium tabular-nums"
+                  title={`${writer.entities} ${writer.entities === 1 ? "entity" : "entities"}`}
+                >
+                  {writer.entities}
+                </span>
                 {!writer.mapped && (
                   <Badge variant="outline" title="Its mappings no longer write this blueprint">
                     Unmapped
@@ -326,15 +336,10 @@ function PagesCard({ spec, published }: Readonly<{ spec: BlueprintSpec; publishe
   );
 
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Pages</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4 text-sm">
-        <section className="grid gap-1.5">
-          <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Catalog Page
-          </h3>
+    <Card className="gap-0 pb-0">
+      <CardTitleBar title="Pages" />
+      <CardContent className="grid px-0 text-sm">
+        <CardSection title="Catalog Page">
           <ul className="grid gap-1">
             {catalog.map((t) => (
               <li key={t.identifier}>
@@ -354,11 +359,8 @@ function PagesCard({ spec, published }: Readonly<{ spec: BlueprintSpec; publishe
             ))}
             <li className="text-muted-foreground">Entities</li>
           </ul>
-        </section>
-        <section className="grid gap-1.5">
-          <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Entity Pages
-          </h3>
+        </CardSection>
+        <CardSection title="Entity Pages">
           <ul className="grid gap-1">
             {!entity.some((t) => t.identifier === "overview") && (
               <li className="text-muted-foreground">Overview</li>
@@ -368,7 +370,7 @@ function PagesCard({ spec, published }: Readonly<{ spec: BlueprintSpec; publishe
             ))}
             <li className="text-muted-foreground">Scorecards, Relations, YAML</li>
           </ul>
-        </section>
+        </CardSection>
       </CardContent>
     </Card>
   );
@@ -379,11 +381,9 @@ function RelationsCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: 
   const incoming = usage?.references ?? [];
 
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Relations</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4">
+    <Card className="gap-0 pb-0">
+      <CardTitleBar title="Relations" />
+      <CardContent className="grid px-0">
         <RelationList title="Points To" empty="No relations to other blueprints.">
           {outgoing.map((property) => (
             <RelationRow
@@ -417,14 +417,13 @@ function RelationList({
   children,
 }: Readonly<{ title: string; empty: string; children: ReactNode[] }>) {
   return (
-    <section className="grid gap-2">
-      <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+    <CardSection title={title}>
       {children.length === 0 ? (
         <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
         <ul className="grid gap-2">{children}</ul>
       )}
-    </section>
+    </CardSection>
   );
 }
 

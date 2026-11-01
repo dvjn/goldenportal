@@ -1,7 +1,11 @@
+import { Link as RouterLink } from "@tanstack/react-router";
 import { cn } from "cn";
-import { Check, Minus, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { EntityLink } from "@/components/catalog/entity-link";
+import { ListValue } from "@/components/catalog/list-value";
+import { useLookupTarget } from "@/components/catalog/lookup-target";
 import { Markdown } from "@/components/markdown";
+import { ScorecardValue } from "@/components/scorecards/scorecard-value";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { Display, Property } from "@/features/blueprints";
@@ -14,13 +18,13 @@ type PropertyValueProps = {
   value: unknown;
   // links are the related entities, for relations.
   links?: Link[];
+  // entity is whose value it is, which a scorecard value links to its
+  // result on.
+  entity?: { blueprint: string; identifier: string };
   // compact fits the value on one table row: long text is cut short, with the
-  // whole value on hover, and lists show their first few items.
+  // whole value on hover, and lists show their first item.
   compact?: boolean;
 };
-
-// compactItems is how many list items and relations a compact value shows.
-const compactItems = 3;
 
 // displayAs is how a property's values look: as its display says, or as its
 // type suggests.
@@ -65,50 +69,78 @@ export function isWebUrl(text: string) {
 }
 
 export function formatNumber(value: number, unit?: string) {
+  // Percents are whole, as scores are, so a share reads 67%, not 66.67%.
+  if (unit === "%") return `${numbers.format(Math.round(value))}%`;
   const text = numbers.format(value);
-  if (!unit) return text;
-  return unit === "%" ? `${text}%` : `${text} ${unit}`;
+  return unit ? `${text} ${unit}` : text;
 }
 
 // PropertyValue shows one value the way its property's display says.
-export function PropertyValue({ property, value, links, compact = false }: PropertyValueProps) {
+export function PropertyValue({
+  property,
+  value,
+  links,
+  entity,
+  compact = false,
+}: PropertyValueProps) {
   const cut = compact ? "block max-w-64 truncate" : "";
-  if (property.relation) {
-    if (!links || links.length === 0) return <Empty label={property.display?.empty} />;
-    const shown = compact ? links.slice(0, compactItems) : links;
+  if (property.lookup && entity) {
     return (
-      <span className="flex flex-wrap gap-x-2 gap-y-1">
-        {shown.map((link) =>
-          link.title ? (
-            <EntityLink
-              key={link.identifier}
-              blueprint={property.relation ?? ""}
-              identifier={link.identifier}
-            >
+      <LookupValue
+        property={property}
+        value={value}
+        links={links}
+        entity={entity}
+        compact={compact}
+      />
+    );
+  }
+  if (property.scorecard) {
+    return (
+      <ScorecardValue
+        scorecard={property.scorecard}
+        value={value}
+        entity={entity}
+        empty={property.display?.empty}
+      />
+    );
+  }
+  if (property.relation) {
+    if (!links || links.length === 0) return <EmptyValue label={property.display?.empty} />;
+    const target = property.relation;
+    return (
+      <ListValue
+        compact={compact}
+        items={links.map((link) => ({
+          key: link.identifier,
+          node: link.title ? (
+            <EntityLink blueprint={target} identifier={link.identifier}>
               {link.title}
             </EntityLink>
           ) : (
-            <span
-              key={link.identifier}
-              className="font-mono text-xs text-muted-foreground"
-              title="Not ingested yet"
-            >
+            <span className="font-mono text-xs text-muted-foreground" title="Not ingested yet">
               {link.identifier}
             </span>
           ),
-        )}
-        <More hidden={links.slice(shown.length).map((link) => link.title || link.identifier)} />
-      </span>
+        }))}
+        viewAll={
+          compact ? (
+            entity && <ViewAll entity={entity} tab="relations" />
+          ) : (
+            <CatalogViewAll blueprint={target} identifiers={links.map((link) => link.identifier)} />
+          )
+        }
+      />
     );
   }
   if (value === undefined || value === null || value === "")
-    return <Empty label={property.display?.empty} />;
+    return <EmptyValue label={property.display?.empty} />;
 
   const as = displayAs(property);
   const colors = property.display?.colors;
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return <Empty label={property.display?.empty} />;
+    if (value.length === 0) return <EmptyValue label={property.display?.empty} />;
     const items = value.map((item) =>
       typeof item === "object" ? JSON.stringify(item) : String(item),
     );
@@ -120,14 +152,16 @@ export function PropertyValue({ property, value, links, compact = false }: Prope
         </span>
       );
     }
-    const shown = compact ? items.slice(0, compactItems) : items;
     return (
-      <span className="flex flex-wrap gap-1">
-        {shown.map((item) => (
-          <ValueBadge key={item} value={item} color={colors?.[item]} variant="outline" />
-        ))}
-        <More hidden={items.slice(shown.length)} />
-      </span>
+      <ListValue
+        compact={compact}
+        items={items.map((item) => ({
+          key: item,
+          node: item,
+          tint: swatch(colors?.[item])?.badge,
+        }))}
+        viewAll={compact && entity && <ViewAll entity={entity} />}
+      />
     );
   }
   if (typeof value === "boolean") {
@@ -223,15 +257,6 @@ export function PropertyValue({ property, value, links, compact = false }: Prope
 }
 
 // More counts the items a compact value leaves out, and names them on hover.
-function More({ hidden }: Readonly<{ hidden: string[] }>) {
-  if (hidden.length === 0) return null;
-  return (
-    <span className="text-xs text-muted-foreground" title={hidden.join(", ")}>
-      +{hidden.length}
-    </span>
-  );
-}
-
 // ValueBadge shows a value as a badge, in its color if it has one.
 export function ValueBadge({
   value,
@@ -240,14 +265,86 @@ export function ValueBadge({
 }: Readonly<{ value: string; color?: string; variant?: "secondary" | "outline" }>) {
   const tint = swatch(color);
   return (
-    <Badge variant={variant} className={cn("font-normal", tint?.badge)}>
+    <Badge
+      variant={variant}
+      className={cn(
+        "font-normal",
+        tint?.badge ??
+          "in-data-[slot=page-badges]:border-border in-data-[slot=page-badges]:bg-card",
+      )}
+    >
       {value}
     </Badge>
   );
 }
 
 // Empty marks a missing value, in the words the property's display gives.
-function Empty({ label }: Readonly<{ label?: string }>) {
+// EmptyValue stands in for a value that isn't there: the label a display
+// gives, or else a hyphen, as every empty value shows. title says why on hover.
+export function EmptyValue({ label, title }: Readonly<{ label?: string; title?: string }>) {
   if (label) return <span className="text-muted-foreground">{label}</span>;
-  return <Minus className="size-3.5 text-muted-foreground/60" aria-label="None" />;
+  return (
+    <span className="text-muted-foreground" title={title}>
+      <span aria-hidden>-</span>
+      <span className="sr-only">{title ?? "None"}</span>
+    </span>
+  );
+}
+
+// ViewAll opens the entity a list belongs to, where the list shows whole.
+function ViewAll({
+  entity,
+  tab,
+}: Readonly<{ entity: { blueprint: string; identifier: string }; tab?: string }>) {
+  return (
+    <EntityLink blueprint={entity.blueprint} identifier={entity.identifier} tab={tab}>
+      View all
+    </EntityLink>
+  );
+}
+
+// CatalogViewAll opens the catalog showing just the related entities, to
+// page through when there are too many to list.
+export function CatalogViewAll({
+  blueprint,
+  identifiers,
+}: Readonly<{ blueprint: string; identifiers: string[] }>) {
+  return (
+    <RouterLink
+      to="/catalog/$blueprint"
+      params={{ blueprint }}
+      search={{
+        view: "entities",
+        where: { property: "identifier", op: "in", values: identifiers },
+      }}
+      className="hover:underline"
+    >
+      View all
+    </RouterLink>
+  );
+}
+
+// LookupValue shows a looked-up value as the property it reads shows it,
+// under the lookup's own title and display.
+function LookupValue({
+  property,
+  entity,
+  ...props
+}: PropertyValueProps & { entity: { blueprint: string; identifier: string } }) {
+  const target = useLookupTarget(entity.blueprint, property.lookup);
+  const shown: Property = target
+    ? {
+        ...target,
+        ...property,
+        type: target.type,
+        format: target.format,
+        enum: target.enum,
+        relation: target.relation,
+        many: target.many,
+        items: target.items,
+        display: { ...target.display, ...property.display },
+        lookup: undefined,
+      }
+    : { ...property, lookup: undefined };
+  return <PropertyValue property={shown} entity={entity} {...props} />;
 }

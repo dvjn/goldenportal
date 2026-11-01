@@ -19,6 +19,7 @@ export type ScorecardSpec = {
   title: string;
   description?: string;
   icon?: string;
+  color?: string;
   blueprint: string;
   filter?: Filter;
   // tiers are a ladder, lowest first.
@@ -39,6 +40,13 @@ export type Result = {
   skipped: number;
   errored: number;
   criteria: Record<string, { status: Status; message?: string }>;
+};
+
+// ScoreValue is a scorecard property's value on an entity: its stored
+// result, with the identifiers of the checks it fails.
+export type ScoreValue = Omit<Result, "criteria"> & {
+  failing: string[];
+  checks: Record<string, Status>;
 };
 
 export type EntityResult = Result & {
@@ -131,18 +139,4 @@ export const entityScorecardsQueryOptions = (blueprint: string, identifier: stri
   queryOptions({
     queryKey: scorecardKeys.entity(blueprint, identifier),
     queryFn: () => listEntityScorecards(blueprint, identifier),
-  });
-
-export type ScorecardColumn = Pick<ScorecardSpec, "identifier" | "title" | "tiers">;
-
-export const scorecardColumnsQueryOptions = (blueprint: string) =>
-  queryOptions({
-    queryKey: [...scorecards.keys.all, "columns", blueprint] as const,
-    queryFn: async () =>
-      (
-        await api
-          .get("scorecard-columns", { searchParams: { blueprint } })
-          .json<ApiDataResponse<ScorecardColumn[]>>()
-      ).data,
-    enabled: blueprint !== "",
   });

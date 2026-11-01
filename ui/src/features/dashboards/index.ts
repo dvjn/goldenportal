@@ -1,6 +1,6 @@
 export {
   type Dashboard,
-  type DashboardFilter,
+  type DashboardInput,
   type DashboardSpec,
   type DashboardSummary,
   dashboards,

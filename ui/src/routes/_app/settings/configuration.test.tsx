@@ -57,8 +57,7 @@ const configuration: ServerConfiguration = {
   },
 };
 
-const row = (label: string) =>
-  screen.getByText(label).closest("[data-slot=setting]") as HTMLElement;
+const row = (label: string) => screen.getByText(label).closest("[data-slot=detail]") as HTMLElement;
 
 const card = (title: string) => screen.getByText(title).closest("[data-slot=card]") as HTMLElement;
 

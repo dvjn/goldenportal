@@ -86,22 +86,17 @@ const row = (text: string) => screen.getByText(text).closest("tr") as HTMLElemen
 describe("settings", () => {
   it("is only for admins", async () => {
     stubApi({ "GET config": acmeConfig, "GET me": ok({ ...ada, role: "builder" }) });
-    const { router } = renderRoute("/settings");
+    renderRoute("/settings");
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(await screen.findByText("You don't have access to this page")).toBeInTheDocument();
   });
 
-  it("opens each settings section from the user menu", async () => {
+  it("opens settings from the sidebar", async () => {
     const user = userEvent.setup();
     stubApi({ ...signedInAdmin, "GET settings/configuration": ok(serverConfiguration) });
     const { router } = renderRoute("/");
 
-    await user.click(await screen.findByRole("button", { name: "Open user menu" }));
-    expect(screen.getByRole("menuitem", { name: "Access" })).toHaveAttribute(
-      "href",
-      "/settings/access",
-    );
-    await user.click(screen.getByRole("menuitem", { name: "Server Configuration" }));
+    await user.click(await screen.findByRole("link", { name: "Settings" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings/configuration"));
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
@@ -110,15 +105,12 @@ describe("settings", () => {
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });
 
-  it("hides the settings link from everyone else", async () => {
-    const user = userEvent.setup();
+  it("hides settings from everyone else", async () => {
     stubApi({ "GET config": acmeConfig, "GET me": ok({ ...ada, role: "member" }) });
     renderRoute("/");
 
-    await user.click(await screen.findByRole("button", { name: "Open user menu" }));
-
-    expect(screen.queryByRole("menuitem", { name: "Access" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Catalog" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
   });
 
   it("switches tabs through links", async () => {
@@ -177,11 +169,11 @@ describe("access", () => {
     });
     renderRoute("/settings/access");
 
-    await user.click(await screen.findByRole("button", { name: "Grant access" }));
+    await user.click(await screen.findByRole("button", { name: "Grant Access" }));
     await user.click(screen.getByRole("combobox", { name: "Person or group" }));
     expect(screen.queryByRole("option", { name: /Ada Lovelace/ })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("option", { name: /Grace Hopper/ }));
-    await user.click(screen.getByRole("button", { name: "Grant access" }));
+    await user.click(screen.getByRole("button", { name: "Grant Access" }));
 
     await waitFor(() => expect(requests["PUT access/user/u2"]).toBeDefined());
     expect(await requests["PUT access/user/u2"]?.json()).toEqual({ role: "builder" });

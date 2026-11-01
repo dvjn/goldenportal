@@ -1,4 +1,4 @@
-import { act, screen } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { acmeConfig, ada, fail, ok, stubApi } from "@/test/api";
@@ -22,7 +22,7 @@ describe("app shell", () => {
     renderRoute("/");
 
     expect(await screen.findByRole("link", { name: "Acme" })).toHaveAttribute("href", "/");
-    expect(document.title).toBe("Acme");
+    expect(document.title).toBe("Home | Acme");
     expect(screen.getByRole("button", { name: "Open user menu" })).toHaveTextContent("AL");
     expect(document.querySelector("header img")).not.toBeInTheDocument();
   });
@@ -68,14 +68,15 @@ describe("app shell", () => {
     expect(document.documentElement).toHaveClass("light");
 
     await user.click(await screen.findByRole("button", { name: "Open user menu" }));
-    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
-    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByText("Ada Lovelace")).toBeInTheDocument();
+    expect(within(menu).getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "System" })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: "Dark" }));
 
     expect(document.documentElement).toHaveClass("dark");
     expect(document.documentElement).not.toHaveClass("light");
-    expect(localStorage.getItem("gp-ui-theme")).toBe("dark");
+    expect(localStorage.getItem("gp-ui-theme")).toBe('"dark"');
   });
 
   it("follows the system theme as it changes", async () => {

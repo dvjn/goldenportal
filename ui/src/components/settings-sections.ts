@@ -1,6 +1,6 @@
 import { type LucideIcon, ScrollText, Server, ShieldCheck } from "lucide-react";
 
-// settingsSections are the admin settings pages, as tabs and in the user menu.
+// settingsSections are the admin settings pages, shown as tabs.
 export const settingsSections = [
   { to: "/settings/configuration", label: "Server Configuration", icon: Server },
   { to: "/settings/access", label: "Access", icon: ShieldCheck },

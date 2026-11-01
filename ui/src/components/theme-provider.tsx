@@ -1,11 +1,11 @@
-import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import { useUiState } from "@/hooks/use-ui-state";
 
 export type Theme = "dark" | "light" | "system";
 
 type ThemeProviderProps = {
   children: React.ReactNode;
   defaultTheme?: Theme;
-  storageKey?: string;
 };
 
 type ThemeProviderState = {
@@ -20,15 +20,8 @@ const initialState: ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
-export function ThemeProvider({
-  children,
-  defaultTheme = "system",
-  storageKey = "gp-ui-theme",
-  ...props
-}: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
-  );
+export function ThemeProvider({ children, defaultTheme = "system", ...props }: ThemeProviderProps) {
+  const [theme, setTheme] = useUiState("theme", defaultTheme);
 
   const systemDark = useSyncExternalStore(subscribeToSystemTheme, prefersDark);
   const resolved = theme === "system" ? (systemDark ? "dark" : "light") : theme;
@@ -39,13 +32,7 @@ export function ThemeProvider({
     root.classList.add(resolved);
   }, [resolved]);
 
-  const value = {
-    theme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme);
-      setTheme(theme);
-    },
-  };
+  const value = { theme, setTheme };
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>

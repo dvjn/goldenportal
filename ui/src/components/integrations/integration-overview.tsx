@@ -3,12 +3,17 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { Suspense } from "react";
 import { toast } from "sonner";
+import { CardSection, CardTitleBar } from "@/components/card-sections";
+import { IconTile } from "@/components/catalog/blueprint-icon";
+import { BlueprintLabel } from "@/components/catalog/blueprint-label";
+import { Code } from "@/components/code";
 import { CopyIconButton } from "@/components/copy-button";
+import { Detail, DetailList } from "@/components/detail-list";
 import { IngestionTokens } from "@/components/integrations/ingestion-tokens";
-import { RecentRuns } from "@/components/integrations/recent-runs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { blueprints } from "@/features/blueprints";
 import {
   connectorsQueryOptions,
   type IntegrationSpec,
@@ -20,37 +25,23 @@ import {
 } from "@/features/integrations";
 
 // IntegrationOverview shows an integration read-only: its connector, how
-// data reaches it, how data becomes entities, and what recent runs did.
+// data reaches it and how data becomes entities.
 export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }>) {
   const { data: connectors } = useQuery(connectorsQueryOptions);
   const pulls = connectors?.find((c) => c.id === spec.connector.type)?.mode === "pull";
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className="grid min-w-0 gap-4">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Mappings</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            {spec.mappings.map((mapping, index) => (
-              // Two mappings can write the same blueprint, so the index keeps keys apart.
-              // biome-ignore lint/suspicious/noArrayIndexKey: mappings have no identity of their own.
-              <MappingView key={index} mapping={mapping} />
-            ))}
-          </CardContent>
-        </Card>
-        <Card className="gap-0 pb-0">
-          <CardHeader className="border-b">
-            <CardTitle>Recent Runs</CardTitle>
-          </CardHeader>
-          <CardContent className="px-0">
-            <Suspense fallback={null}>
-              <RecentRuns identifier={spec.identifier} />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="min-w-0 gap-0 pb-0">
+        <CardTitleBar title="Mappings" />
+        <CardContent className="grid px-0">
+          {spec.mappings.map((mapping, index) => (
+            // Two mappings can write the same blueprint, so the index keeps keys apart.
+            // biome-ignore lint/suspicious/noArrayIndexKey: mappings have no identity of their own.
+            <MappingView key={index} mapping={mapping} />
+          ))}
+        </CardContent>
+      </Card>
       <div className="grid gap-4">
         <ConnectorCard connector={spec.connector.type} description={spec.description} />
         <FeedsCard identifier={spec.identifier} />
@@ -74,9 +65,7 @@ function FeedsCard({ identifier }: Readonly<{ identifier: string }>) {
 
   return (
     <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Feeds</CardTitle>
-      </CardHeader>
+      <CardTitleBar title="Feeds" />
       <CardContent>
         {status.feeds.length === 0 ? (
           <p className="text-sm text-muted-foreground">It doesn't write any blueprint yet.</p>
@@ -87,12 +76,15 @@ function FeedsCard({ identifier }: Readonly<{ identifier: string }>) {
                 <Link
                   to="/catalog/$blueprint"
                   params={{ blueprint: feed.blueprint }}
-                  className="truncate hover:underline"
+                  className="min-w-0 hover:underline"
                 >
-                  {feed.title}
+                  <BlueprintLabel blueprint={feed.blueprint} />
                 </Link>
-                <span className="text-muted-foreground tabular-nums">
-                  {feed.entities} {feed.entities === 1 ? "entity" : "entities"}
+                <span
+                  className="font-medium tabular-nums"
+                  title={`${feed.entities} ${feed.entities === 1 ? "entity" : "entities"}`}
+                >
+                  {feed.entities}
                 </span>
               </li>
             ))}
@@ -108,9 +100,7 @@ function PushCards({ identifier }: Readonly<{ identifier: string }>) {
   return (
     <>
       <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Push Endpoint</CardTitle>
-        </CardHeader>
+        <CardTitleBar title="Push Endpoint" />
         <CardContent className="grid min-w-0 gap-2 text-sm">
           <CopyField value={ingestUrl(identifier)} label="Push endpoint" />
           <p className="text-muted-foreground">
@@ -123,9 +113,7 @@ function PushCards({ identifier }: Readonly<{ identifier: string }>) {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Ingestion Tokens</CardTitle>
-        </CardHeader>
+        <CardTitleBar title="Ingestion Tokens" />
         <CardContent>
           <Suspense fallback={null}>
             <IngestionTokens identifier={identifier} />
@@ -148,20 +136,18 @@ function ResourcesCard({ config }: Readonly<{ config?: Record<string, unknown> }
   const resources = (config?.resources ?? {}) as Record<string, HTTPResource>;
 
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Resources</CardTitle>
-      </CardHeader>
-      <CardContent className="grid min-w-0 gap-4 text-sm">
+    <Card className="gap-0 pb-0">
+      <CardTitleBar title="Resources" />
+      <CardContent className="grid min-w-0 px-0 text-sm">
         {Object.entries(resources).map(([name, resource]) => (
-          <section key={name} className="grid min-w-0 gap-1.5">
-            <h3 className="font-mono text-xs font-medium">{name}</h3>
-            <code
-              className="truncate rounded bg-muted px-1.5 py-1 font-mono text-xs"
-              title={resource.url}
-            >
+          <CardSection
+            key={name}
+            className="min-w-0 gap-1.5"
+            heading={<code className="font-mono text-xs">{name}</code>}
+          >
+            <Code className="truncate py-1 break-normal" title={resource.url}>
               GET {resource.url}
-            </code>
+            </Code>
             {resource.next && (
               <span className="text-xs text-muted-foreground">
                 Next page: <code className="font-mono">{resource.next}</code>
@@ -177,7 +163,7 @@ function ResourcesCard({ config }: Readonly<{ config?: Record<string, unknown> }
                 )}
               </span>
             ))}
-          </section>
+          </CardSection>
         ))}
       </CardContent>
     </Card>
@@ -206,9 +192,7 @@ function SyncCard({ identifier, interval }: Readonly<{ identifier: string; inter
 
   return (
     <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Sync</CardTitle>
-      </CardHeader>
+      <CardTitleBar title="Sync" />
       <CardContent className="grid gap-3 text-sm">
         <p className="text-muted-foreground">
           Syncs every <code className="font-mono">{interval}</code>. Each sync is a full snapshot,
@@ -238,12 +222,11 @@ function ConnectorCard({
 
   return (
     <Card>
-      <CardHeader className="border-b">
-        <CardTitle>About</CardTitle>
-      </CardHeader>
+      <CardTitleBar title="About" />
       <CardContent className="grid gap-3 text-sm">
         {description && <p className="text-muted-foreground">{description}</p>}
         <div className="flex items-center gap-2">
+          <IconTile icon={known?.icon} color={known?.color} size="sm" />
           <span className="font-medium">{known?.title ?? connector} Connector</span>
           {known && <Badge variant="secondary">{known.mode}</Badge>}
         </div>
@@ -254,61 +237,49 @@ function ConnectorCard({
 }
 
 function MappingView({ mapping }: Readonly<{ mapping: Mapping }>) {
+  const { data: target } = useQuery(blueprints.queries.detail(mapping.blueprint));
+  const properties = (target?.published?.spec ?? target?.draft?.spec)?.properties ?? [];
   const rows: [string, string | undefined][] = [
     ["Items", mapping.items === "." ? undefined : mapping.items],
     ["Filter", mapping.filter],
     ["Identifier", mapping.entity.identifier],
     ["Title", mapping.entity.title],
+    ...mapping.entity.properties.map((field): [string, string] => [
+      properties.find((p) => p.identifier === field.identifier)?.title ?? field.identifier,
+      field.expression,
+    ]),
   ];
 
   return (
-    <section className="grid gap-3 rounded-md border p-3">
-      <h3 className="flex items-center gap-2 text-sm font-medium">
-        {mapping.resource && (
-          <code className="font-mono text-muted-foreground">{mapping.resource}</code>
-        )}
-        <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
-        <Link
-          to="/blueprints/$identifier"
-          params={{ identifier: mapping.blueprint }}
-          className="font-mono hover:underline"
-        >
-          {mapping.blueprint}
-        </Link>
-      </h3>
-      <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
+    <CardSection
+      heading={
+        <>
+          {mapping.resource && (
+            <>
+              <code className="font-mono text-muted-foreground">{mapping.resource}</code>
+              <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            </>
+          )}
+          <Link
+            to="/blueprints/$identifier"
+            params={{ identifier: mapping.blueprint }}
+            className="min-w-0 hover:underline"
+          >
+            <BlueprintLabel blueprint={mapping.blueprint} />
+          </Link>
+        </>
+      }
+    >
+      <DetailList>
         {rows
           .filter(([, value]) => value)
           .map(([label, value]) => (
-            <Expression key={label} label={label} value={value ?? ""} />
+            <Detail key={label} label={label}>
+              <Code>{value}</Code>
+            </Detail>
           ))}
-        {mapping.entity.properties.map((field) => (
-          <Expression
-            key={field.identifier}
-            label={field.identifier}
-            value={field.expression}
-            mono
-          />
-        ))}
-      </dl>
-    </section>
-  );
-}
-
-function Expression({
-  label,
-  value,
-  mono,
-}: Readonly<{ label: string; value: string; mono?: boolean }>) {
-  return (
-    <>
-      <dt className={mono ? "truncate font-mono text-xs leading-5" : "text-muted-foreground"}>
-        {label}
-      </dt>
-      <dd>
-        <code className="rounded bg-muted px-1 font-mono text-xs break-all">{value}</code>
-      </dd>
-    </>
+      </DetailList>
+    </CardSection>
   );
 }
 

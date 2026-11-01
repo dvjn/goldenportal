@@ -1,9 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { cn } from "cn";
 import { EntityLink } from "@/components/catalog/entity-link";
-import { PropertyValue } from "@/components/catalog/property-value";
-import { ScorecardCell } from "@/components/scorecards/scorecard-cell";
+import { EmptyValue, formatNumber, PropertyValue } from "@/components/catalog/property-value";
+import { tableCellClass } from "@/components/data-table";
+import { ScoreLink } from "@/components/scorecards/scorecard-value";
 import {
   Table,
   TableBody,
@@ -12,98 +11,68 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMe } from "@/features/auth";
-import { blueprints, type Property } from "@/features/blueprints";
-import type { Entity, EntityPage } from "@/features/catalog";
-import { scorecardColumnsQueryOptions } from "@/features/scorecards";
-import { widgetQueryOptions } from "@/features/widgets";
+import type { Link } from "@/features/catalog";
+import type { TableColumn, TableData } from "@/features/widgets";
 import { formatAbsolute, formatRelative } from "@/lib/format";
-import { toCatalogFilters } from "./catalog-filter";
-import { WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
-
-const builtIns: Record<string, string> = {
-  $identifier: "Identifier",
-  $integration: "Integration",
-  $createdAt: "Created",
-  $updatedAt: "Updated",
-};
+import { ViewAll, WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
+import { linkable, WidgetLink } from "./widget-link";
 
 // TableWidget lists the first entities that match, with a link to the rest.
-export function TableWidget({ source, widget, context }: WidgetProps) {
-  const me = useMe();
-  const data = useQuery(widgetQueryOptions<EntityPage>(source, widget.identifier, context));
-  const { data: bp } = useQuery(blueprints.queries.detail(widget.blueprint ?? ""));
-  const { data: scorecards = [] } = useQuery(scorecardColumnsQueryOptions(widget.blueprint ?? ""));
-  if (data.error) return <WidgetError widget={widget} error={data.error} />;
-  const spec = bp?.published?.spec;
-  if (!data.data || !spec) return <WidgetLoading widget={widget} height="h-40" />;
+// The server reads each column and says how to show it.
+export function TableWidget({ widget, context, data, error }: WidgetProps<TableData>) {
+  if (error) return <WidgetError widget={widget} error={error} />;
+  if (!data) return <WidgetLoading widget={widget} height="h-40" />;
 
-  const columns = (widget.columns ?? []).filter((column) => column !== "$title");
-  const filters = toCatalogFilters(widget.filter, {
-    entity: context.entity,
-    entityData: context.entityData,
-    me,
-    filters: context.filters,
-  });
-  const { entities, total } = data.data;
-  const more =
-    filters && !context.draft ? (
-      <Link
-        to="/catalog/$blueprint"
-        params={{ blueprint: spec.identifier }}
-        search={{ view: "entities", f: filters, sort: widget.sort }}
-        className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-      >
-        {total > entities.length ? `All ${total}` : "Open in catalog"}
-        <ArrowRight className="size-3.5" aria-hidden />
-      </Link>
-    ) : undefined;
+  // Every row leads with its title, so a title column would say it twice.
+  const columns = data.columns.flatMap((column, index) =>
+    column.path === "title" ? [] : [{ column, index }],
+  );
+  const live = !context.draft;
 
   return (
-    <WidgetCard widget={widget} action={more} flush>
-      {entities.length === 0 ? (
-        <p className="px-4 pb-4 text-sm text-muted-foreground">Nothing matches yet.</p>
+    <WidgetCard widget={widget} action={live && <ViewAll link={data.link} />} flush>
+      {data.rows.length === 0 ? (
+        <p className="p-4 text-sm text-muted-foreground">Nothing matches yet.</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="pl-4">Title</TableHead>
-              {columns.map((column) => (
-                <TableHead key={column}>
-                  {scorecards.find((s) => column === `$scorecard.${s.identifier}`)?.title ??
-                    builtIns[column] ??
-                    spec.properties.find((p) => p.identifier === column)?.title ??
-                    column}
+              <TableHead className={tableCellClass}>Title</TableHead>
+              {columns.map(({ column, index }) => (
+                <TableHead key={index} className={tableCellClass}>
+                  {column.title}
                 </TableHead>
               ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {entities.map((entity) => (
-              <TableRow key={entity.identifier}>
-                <TableCell className="pl-4 font-medium">
-                  <EntityLink blueprint={spec.identifier} identifier={entity.identifier}>
-                    {entity.title}
-                  </EntityLink>
-                </TableCell>
-                {columns.map((column) => (
-                  <TableCell key={column}>
-                    {column.startsWith("$scorecard.") ? (
-                      <ScorecardCell
-                        entity={entity}
-                        column={scorecards.find((s) => column === `$scorecard.${s.identifier}`)}
-                      />
+            {data.rows.map((row) => {
+              const link = live ? row.link : undefined;
+              return (
+                <TableRow key={row.identifier}>
+                  <TableCell className={cn(tableCellClass, "font-medium")}>
+                    {linkable(link) ? (
+                      <WidgetLink link={link} className="hover:underline">
+                        {row.title}
+                      </WidgetLink>
                     ) : (
-                      <Cell
-                        entity={entity}
-                        column={column}
-                        property={spec.properties.find((p) => p.identifier === column)}
-                      />
+                      <EntityLink blueprint={data.blueprint} identifier={row.identifier}>
+                        {row.title}
+                      </EntityLink>
                     )}
                   </TableCell>
-                ))}
-              </TableRow>
-            ))}
+                  {columns.map(({ column, index }) => (
+                    <TableCell key={index} className={tableCellClass}>
+                      <Cell
+                        column={column}
+                        value={row.values[index]}
+                        links={row.links?.[index] ?? undefined}
+                      />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}
@@ -112,34 +81,71 @@ export function TableWidget({ source, widget, context }: WidgetProps) {
 }
 
 function Cell({
-  entity,
   column,
-  property,
-}: Readonly<{ entity: Entity; column: string; property?: Property }>) {
-  if (property) {
+  value,
+  links,
+}: Readonly<{
+  column: TableColumn;
+  value: unknown;
+  // links name a relation's entities, or the entity a tier was scored for.
+  links?: Link[];
+}>) {
+  if (column.scorecard) {
+    const scored = links?.[0];
     return (
-      <PropertyValue
-        property={property}
-        value={entity.properties[column]}
-        links={entity.related[column]}
-        compact
+      <ScoreLink
+        scorecard={column.scorecard.identifier}
+        tiers={column.scorecard.tiers}
+        tier={typeof value === "string" ? value : null}
+        entity={scored && { blueprint: column.scorecard.blueprint, identifier: scored.identifier }}
       />
     );
   }
-  switch (column) {
-    case "$identifier":
-      return <code className="font-mono text-xs">{entity.identifier}</code>;
-    case "$integration":
-      return entity.integration;
-    case "$createdAt":
-    case "$updatedAt": {
-      const at = column === "$createdAt" ? entity.createdAt : entity.updatedAt;
+  if (column.property) {
+    const property = column.unit
+      ? { ...column.property, display: { ...column.property.display, unit: column.unit } }
+      : column.property;
+    return <PropertyValue property={property} value={value} links={links} compact />;
+  }
+  if (column.builtIn) return <BuiltIn name={column.builtIn} value={value} />;
+  return <Computed value={value} unit={column.unit} />;
+}
+
+// BuiltIn shows one of the fields every entity has.
+function BuiltIn({ name, value }: Readonly<{ name: string; value: unknown }>) {
+  if (typeof value !== "string" || value === "") {
+    return <EmptyValue />;
+  }
+  switch (name) {
+    case "identifier":
+      return <code className="font-mono text-xs">{value}</code>;
+    case "createdAt":
+    case "updatedAt":
       return (
-        <span className="whitespace-nowrap text-muted-foreground" title={formatAbsolute(at)}>
-          {formatRelative(at)}
+        <span className="whitespace-nowrap text-muted-foreground" title={formatAbsolute(value)}>
+          {formatRelative(value)}
         </span>
       );
-    }
   }
-  return null;
+  return value;
+}
+
+// Computed shows what a jq column worked out: numbers in its unit, and
+// lists as their items.
+function Computed({ value, unit }: Readonly<{ value: unknown; unit?: string }>) {
+  if (value === null || value === undefined || value === "") {
+    return <EmptyValue />;
+  }
+  if (typeof value === "number") {
+    return <span className="tabular-nums">{formatNumber(value, unit)}</span>;
+  }
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) {
+    return value.length === 0 ? (
+      <EmptyValue />
+    ) : (
+      value.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).join(", ")
+    );
+  }
+  return typeof value === "string" ? value : JSON.stringify(value);
 }

@@ -18,6 +18,7 @@ export type DocSummary = {
   title: string;
   description?: string;
   icon?: string;
+  color?: string;
   // publishedVersion is 0 until the first publish.
   publishedVersion: number;
   hasDraft: boolean;
@@ -30,6 +31,7 @@ export type ConfigDoc<S> = {
   title: string;
   description?: string;
   icon?: string;
+  color?: string;
   published: {
     version: number;
     source: string;

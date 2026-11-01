@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vite-plus/test";
 import type { Property } from "@/features/blueprints";
 import { PropertyValue } from "./property-value";
@@ -22,13 +23,29 @@ describe("PropertyValue", () => {
     expect(screen.getByText("javascript:alert(1)")).toBeVisible();
   });
 
-  it("shows the first few tags of a compact value and counts the rest", () => {
+  it("shows a compact list's first item and lists up to ten more on demand", async () => {
+    const user = userEvent.setup();
     const tags: Property = { identifier: "tags", title: "Tags", type: "array" };
-    render(<PropertyValue property={tags} value={["a", "b", "c", "d", "e"]} compact />);
+    const values = Array.from({ length: 12 }, (_, i) => `tag${i + 1}`);
+    render(<PropertyValue property={tags} value={values} compact />);
 
-    expect(screen.getByText("c")).toBeVisible();
-    expect(screen.queryByText("d")).not.toBeInTheDocument();
-    expect(screen.getByText("+2")).toHaveAttribute("title", "d, e");
+    expect(screen.getByText("tag1")).toBeVisible();
+    expect(screen.queryByText("tag2")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show 11 more" }));
+    expect(await screen.findByText("tag10")).toBeVisible();
+    expect(screen.queryByText("tag11")).not.toBeInTheDocument();
+  });
+
+  it("shows a few of a list as chips and opens the rest in place", async () => {
+    const user = userEvent.setup();
+    const tags: Property = { identifier: "tags", title: "Tags", type: "array" };
+    render(<PropertyValue property={tags} value={["a", "b", "c", "d", "e", "f", "g", "h"]} />);
+
+    expect(screen.getByText("f")).toBeVisible();
+    expect(screen.queryByText("g")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show 2 more" }));
+    expect(screen.getByText("h")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /more/ })).not.toBeInTheDocument();
   });
 
   it("cuts long compact text short and keeps it on hover", () => {

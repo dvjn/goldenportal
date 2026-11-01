@@ -1,9 +1,17 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { CircleAlert } from "lucide-react";
-import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { CircleAlert, History } from "lucide-react";
+import {
+  DataTable,
+  type DataTableFilterField,
+  dataTableColumns,
+  type TableSearch,
+  usePageSize,
+  validateTableSearch,
+} from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { IconButton } from "@/components/icon-button";
 import { RunStatus } from "@/components/integrations/run-status";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -13,18 +21,51 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { type Run, runsQueryOptions } from "@/features/integrations";
+  type Run,
+  type RunOutcome,
+  type RunTrigger,
+  runsQueryOptions,
+} from "@/features/integrations";
 import { formatAbsolute, formatDuration, formatRelative } from "@/lib/format";
 
-// runsShown is how many runs show before "Show older runs".
-const runsShown = 10;
+// RunsSearch is the runs table's state in the URL. trigger and outcome are
+// comma-separated lists.
+export type RunsSearch = TableSearch & { trigger?: string; outcome?: string };
+
+const triggerOptions: { value: RunTrigger; label: string }[] = [
+  { value: "schedule", label: "Schedule" },
+  { value: "manual", label: "Sync Now" },
+  { value: "push", label: "Push" },
+];
+
+const outcomeOptions: { value: RunOutcome; label: string }[] = [
+  { value: "succeeded", label: "Succeeded" },
+  { value: "warnings", label: "Succeeded with warnings" },
+  { value: "failed", label: "Failed" },
+];
+
+const runFilterFields: DataTableFilterField[] = [
+  { kind: "options", id: "outcome", title: "Outcome", useOptions: () => outcomeOptions },
+  { kind: "options", id: "trigger", title: "Trigger", useOptions: () => triggerOptions },
+];
+
+function listFrom<T extends string>(value: unknown, options: { value: T }[]) {
+  const allowed = options.map((option) => option.value);
+  const list =
+    typeof value === "string"
+      ? value.split(",").filter((v): v is T => allowed.includes(v as T))
+      : [];
+  return list.length > 0 ? list.join(",") : undefined;
+}
+
+// validateRunsSearch reads the runs table's state. The server pages and
+// filters runs, newest first, but doesn't sort them.
+export function validateRunsSearch(search: Record<string, unknown>): RunsSearch {
+  const { sort: _sort, ...table } = validateTableSearch(search);
+  const trigger = listFrom(search.trigger, triggerOptions);
+  const outcome = listFrom(search.outcome, outcomeOptions);
+  return { ...table, ...(trigger ? { trigger } : {}), ...(outcome ? { outcome } : {}) };
+}
 
 const counts = [
   { key: "received", label: "Received" },
@@ -42,79 +83,133 @@ function triggerLabel(run: Run) {
   return run.token ? `Push · ${run.token}` : "Push";
 }
 
-// RecentRuns lists the latest runs and what each one did.
-export function RecentRuns({ identifier }: Readonly<{ identifier: string }>) {
-  const { data: runs } = useSuspenseQuery(runsQueryOptions(identifier));
-  const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? runs : runs.slice(0, runsShown);
+const column = dataTableColumns<Run>();
 
-  if (runs.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">Nothing has run yet.</p>;
+const columns = [
+  column.display({
+    id: "status",
+    header: () => <span className="sr-only">Status</span>,
+    cell: ({ row }) => <RunStatus run={row.original} />,
+  }),
+  column.accessor("startedAt", {
+    header: "When",
+    enableSorting: false,
+    cell: ({ getValue }) => (
+      <span className="whitespace-nowrap" title={formatAbsolute(getValue())}>
+        {formatRelative(getValue())}
+      </span>
+    ),
+  }),
+  column.display({
+    id: "trigger",
+    header: "Trigger",
+    cell: ({ row }) => (
+      <span
+        className={row.original.error ? "font-medium text-destructive" : "text-muted-foreground"}
+      >
+        {triggerLabel(row.original)}
+      </span>
+    ),
+  }),
+  column.display({
+    id: "took",
+    header: () => <span className="block text-right">Took</span>,
+    cell: ({ row }) => (
+      <span className="block text-right text-muted-foreground tabular-nums">
+        {formatDuration(row.original.startedAt, row.original.finishedAt)}
+      </span>
+    ),
+  }),
+  ...counts.map((count) =>
+    column.display({
+      id: count.key,
+      header: () => <span className="block text-right">{count.label}</span>,
+      cell: ({ row }) => (
+        <span
+          className={
+            count.key === "failed" && row.original.failed > 0
+              ? "block text-right font-medium text-destructive tabular-nums"
+              : "block text-right text-muted-foreground tabular-nums"
+          }
+        >
+          {row.original[count.key]}
+        </span>
+      ),
+    }),
+  ),
+  column.display({
+    id: "failures",
+    header: () => <span className="sr-only">Failures</span>,
+    cell: ({ row }) =>
+      (row.original.error || row.original.errors.length > 0) && (
+        <div className="text-right">
+          <RunErrors run={row.original} />
+        </div>
+      ),
+  }),
+];
+
+// RecentRuns pages through an integration's runs, newest first, and what each
+// one did.
+export function RecentRuns({
+  identifier,
+  search,
+}: Readonly<{ identifier: string; search: RunsSearch }>) {
+  const navigate = useNavigate();
+  const triggers = (search.trigger?.split(",") ?? []) as RunTrigger[];
+  const outcomes = (search.outcome?.split(",") ?? []) as RunOutcome[];
+  const page = useQuery({
+    ...runsQueryOptions(identifier, {
+      q: search.q,
+      triggers,
+      outcomes,
+      page: search.page,
+      size: usePageSize(search),
+    }),
+    placeholderData: keepPreviousData,
+  });
+
+  function filter(patch: Partial<RunsSearch>) {
+    void navigate({
+      to: ".",
+      search: (prev: RunsSearch) => ({ ...prev, ...patch, page: undefined }),
+      replace: true,
+      resetScroll: false,
+    } as never);
   }
 
   return (
-    <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-0 pl-4">
-              <span className="sr-only">Status</span>
-            </TableHead>
-            <TableHead>When</TableHead>
-            <TableHead>Trigger</TableHead>
-            <TableHead className="text-right">Took</TableHead>
-            {counts.map((count) => (
-              <TableHead key={count.key} className="text-right">
-                {count.label}
-              </TableHead>
-            ))}
-            <TableHead className="pr-4" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {shown.map((run) => (
-            <TableRow key={run.id}>
-              <TableCell className="pl-4">
-                <RunStatus run={run} />
-              </TableCell>
-              <TableCell title={formatAbsolute(run.startedAt)}>
-                {formatRelative(run.startedAt)}
-              </TableCell>
-              <TableCell
-                className={run.error ? "font-medium text-destructive" : "text-muted-foreground"}
-              >
-                {triggerLabel(run)}
-              </TableCell>
-              <TableCell className="text-right text-muted-foreground tabular-nums">
-                {formatDuration(run.startedAt, run.finishedAt)}
-              </TableCell>
-              {counts.map((count) => (
-                <TableCell
-                  key={count.key}
-                  className={
-                    count.key === "failed" && run.failed > 0
-                      ? "text-right font-medium text-destructive tabular-nums"
-                      : "text-right text-muted-foreground tabular-nums"
-                  }
-                >
-                  {run[count.key]}
-                </TableCell>
-              ))}
-              <TableCell className="pr-4 text-right">
-                {(run.error || run.errors.length > 0) && <RunErrors run={run} />}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {runs.length > shown.length && (
-        <div className="border-t p-2 text-center">
-          <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}>
-            Show {runs.length - shown.length} older runs
-          </Button>
-        </div>
-      )}
-    </>
+    <DataTable
+      data={page.data?.runs ?? []}
+      rowCount={page.data?.total ?? 0}
+      loading={page.isPlaceholderData}
+      pending={page.isPending}
+      error={page.error}
+      onRetry={() => void page.refetch()}
+      columns={columns}
+      getRowId={(run) => String(run.id)}
+      search={search}
+      searchLabel="Search tokens and errors"
+      onClearFilters={() => filter({ trigger: undefined, outcome: undefined })}
+      filters={{
+        fields: runFilterFields,
+        value: {
+          ...(outcomes.length > 0 && { outcome: outcomes }),
+          ...(triggers.length > 0 && { trigger: triggers }),
+        },
+        onChange: (id, value) => {
+          const values = Array.isArray(value) ? value : [];
+          filter({ [id]: values.length > 0 ? values.join(",") : undefined });
+        },
+      }}
+      empty={
+        <EmptyState
+          icon={<History />}
+          title="Nothing has run yet"
+          description="Syncs and pushes show up here as they finish."
+        />
+      }
+    />
   );
 }
 

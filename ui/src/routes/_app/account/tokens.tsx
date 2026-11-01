@@ -7,16 +7,10 @@ import {
   dataTableColumns,
   validateTableSearch,
 } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RevokeTokenButton } from "@/components/revoke-token-button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { type ApiToken, tokensQueryOptions, useTokens } from "@/features/tokens";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
@@ -97,11 +91,7 @@ function TokensPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="API Tokens"
-        description="Tokens let scripts and CI jobs call the Golden Portal API as you."
-        actions={<CreateTokenDialog />}
-      />
+      <PageHeader title="API Tokens" actions={<CreateTokenDialog />} />
       <DataTable
         data={tokens}
         columns={columns}
@@ -109,17 +99,11 @@ function TokensPage() {
         search={search}
         searchLabel="Search tokens"
         empty={
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <KeyRound />
-              </EmptyMedia>
-              <EmptyTitle>No API tokens yet</EmptyTitle>
-              <EmptyDescription>
-                Create one to call the API from a script or a CI job.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <EmptyState
+            icon={<KeyRound />}
+            title="No API tokens yet"
+            description="Create one to call the API from a script or a CI job."
+          />
         }
       />
     </div>

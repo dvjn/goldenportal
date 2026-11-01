@@ -1,43 +1,45 @@
-import type { DashboardFilter, HomeDashboard } from "@/features/dashboards";
-import { DashboardFilters, type FilterValues } from "./dashboard-filters";
+import { useQuery } from "@tanstack/react-query";
+import type { DashboardInput, HomeDashboard } from "@/features/dashboards";
+import { widgetsQueryOptions } from "@/features/widgets";
+import { DashboardInputs, type InputValues } from "./dashboard-inputs";
 import { WidgetGrid } from "./widget-grid";
 
-// Picked is what the viewer set the filters to, keyed by filter: a value,
-// several for a multiple filter, or "" for one cleared of its default. A
-// filter it doesn't mention is at its default. Home keeps it in the URL,
+// Picked is what the viewer set the inputs to, keyed by input: a value,
+// several for a multiple input, or "" for one cleared of its default. An
+// input it doesn't mention is at its default. Home keeps it in the URL,
 // and the builder's preview in memory.
 export type Picked = Record<string, string | string[] | undefined>;
 
-// starting is what a filter starts at for the viewer: its default, as the
-// server found it, or null when a lookup default found nothing.
-function starting(view: HomeDashboard, filter: DashboardFilter): string[] | null {
-  const found = view.defaults[filter.identifier];
+// starting is what an input starts at for the viewer: its default, as the
+// server found it, or null when a default query found nothing.
+function starting(view: HomeDashboard, input: DashboardInput): string[] | null {
+  const found = view.defaults[input.identifier];
   if (found === undefined) return [];
   return found.length === 0 ? null : found;
 }
 
-// filterValues is what each filter is set to: what was picked, or what
-// the filter starts at when nothing was.
-export function filterValues(view: HomeDashboard, picked: Picked): FilterValues {
+// inputValues is what each input is set to: what was picked, or what
+// the input starts at when nothing was.
+export function inputValues(view: HomeDashboard, picked: Picked): InputValues {
   return Object.fromEntries(
-    view.filters.map((filter) => {
-      const raw = picked[filter.identifier];
-      if (raw === undefined) return [filter.identifier, starting(view, filter)];
+    view.inputs.map((input) => {
+      const raw = picked[input.identifier];
+      if (raw === undefined) return [input.identifier, starting(view, input)];
       const values = Array.isArray(raw) ? raw : raw === "" ? [] : [raw];
-      return [filter.identifier, filter.multiple ? values : values.slice(0, 1)];
+      return [input.identifier, input.multiple ? values : values.slice(0, 1)];
     }),
   );
 }
 
-// toPicked is how a filter's values are kept: left out at what it starts
-// at, and "" when cleared, which a filter starting at nothing needs to
+// toPicked is how an input's values are kept: left out at what it starts
+// at, and "" when cleared, which an input starting at nothing needs to
 // show everything.
 function toPicked(
   view: HomeDashboard,
-  filter: DashboardFilter,
+  input: DashboardInput,
   values: string[],
 ): string | string[] | undefined {
-  const start = starting(view, filter);
+  const start = starting(view, input);
   if (start !== null && same(values, start)) return undefined;
   if (values.length === 0) return "";
   return values.length === 1 ? values[0] : values;
@@ -47,8 +49,9 @@ function same(a: string[], b: string[]) {
   return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
-// DashboardView is a dashboard's filter bar and widgets. Every widget on it
-// loads with the same filter values.
+// DashboardView is a dashboard's input bar and widgets. Every widget on it
+// loads with the same input values, in the request that also names what
+// relation inputs are set to.
 export function DashboardView({
   view,
   picked,
@@ -60,28 +63,32 @@ export function DashboardView({
   onPick: (patch: Picked) => void;
   draft?: boolean;
 }>) {
-  const values = filterValues(view, picked);
-  const changed = view.filters.some((filter) => picked[filter.identifier] !== undefined);
+  const values = inputValues(view, picked);
+  const changed = view.inputs.some((input) => picked[input.identifier] !== undefined);
+  const source = { dashboard: view.identifier };
+  const context = { inputs: values, draft };
+  const { data: links } = useQuery({
+    ...widgetsQueryOptions(source, context),
+    enabled: view.inputs.some((input) => input.type === "relation"),
+    select: (data) => data.inputs,
+  });
   return (
     <>
-      {view.filters.length > 0 && (
-        <DashboardFilters
-          filters={view.filters}
+      {view.inputs.length > 0 && (
+        <DashboardInputs
+          inputs={view.inputs}
           values={values}
           problems={view.problems}
-          onChange={(filter, next) => onPick({ [filter.identifier]: toPicked(view, filter, next) })}
+          links={links}
+          onChange={(input, next) => onPick({ [input.identifier]: toPicked(view, input, next) })}
           onReset={
             changed
-              ? () => onPick(Object.fromEntries(view.filters.map((f) => [f.identifier, undefined])))
+              ? () => onPick(Object.fromEntries(view.inputs.map((f) => [f.identifier, undefined])))
               : undefined
           }
         />
       )}
-      <WidgetGrid
-        widgets={view.widgets}
-        source={{ dashboard: view.identifier }}
-        context={{ filters: values, draft }}
-      />
+      <WidgetGrid widgets={view.widgets} source={source} context={context} />
     </>
   );
 }

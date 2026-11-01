@@ -14,6 +14,10 @@ export {
   type Mapping,
   type Run,
   type RunError,
+  type RunFilters,
+  type RunOutcome,
+  type RunPage,
+  type RunTrigger,
   revokeToken,
   syncIntegration,
 } from "./api";

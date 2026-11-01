@@ -1,7 +1,4 @@
-import { Check, PlusCircle } from "lucide-react";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Check } from "lucide-react";
 import {
   Command,
   CommandEmpty,
@@ -10,38 +7,38 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
+  CommandShortcut,
 } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
 
 // count, when known, is how many rows have the value.
-type Option = { value: string; label: string; count?: number };
+export type DataTableOption = { value: string; label: string; count?: number };
 
-type DataTableFacetedFilterProps = {
+type DataTableFacetedOptionsProps = {
   title: string;
-  options: Option[];
+  options: DataTableOption[];
   selected: string[];
   onChange: (selected: string[]) => void;
   // multiple is false when picking a value replaces the last one.
   multiple?: boolean;
 };
 
-// DataTableFacetedFilter picks any number of values for one field, after the
-// shadcn data table's faceted filter.
-export function DataTableFacetedFilter({
+// DataTableFacetedOptions is the searchable list of values a filter picks from.
+export function DataTableFacetedOptions({
   title,
   options,
   selected,
   onChange,
   multiple = true,
-}: DataTableFacetedFilterProps) {
-  const [open, setOpen] = useState(false);
+  loading = false,
+}: DataTableFacetedOptionsProps & {
+  // loading says the options are still on their way.
+  loading?: boolean;
+}) {
   const chosen = new Set(selected);
 
   function toggle(value: string) {
     if (!multiple) {
       onChange(chosen.has(value) ? [] : [value]);
-      setOpen(false);
       return;
     }
     const next = new Set(chosen);
@@ -51,73 +48,60 @@ export function DataTableFacetedFilter({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" className="border-dashed">
-          <PlusCircle />
-          {title}
-          {selected.length > 0 && (
-            <>
-              <Separator orientation="vertical" className="mx-1 data-vertical:h-4" />
-              {selected.length > 2 ? (
-                <Badge variant="secondary">{selected.length} selected</Badge>
-              ) : (
-                options
-                  .filter((option) => chosen.has(option.value))
-                  .map((option) => (
-                    <Badge key={option.value} variant="secondary">
-                      {option.label}
-                    </Badge>
-                  ))
-              )}
-            </>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-60 p-0" align="start">
-        <Command>
-          <CommandInput placeholder={title} />
-          <CommandList>
-            <CommandEmpty>Nothing matches.</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem
-                  key={option.value}
-                  value={option.label}
-                  onSelect={() => toggle(option.value)}
-                  aria-selected={chosen.has(option.value)}
+    <Command>
+      <CommandInput placeholder={title} />
+      <CommandList>
+        <CommandEmpty>{loading ? "Loading…" : "Nothing matches."}</CommandEmpty>
+        <CommandGroup>
+          {options.map((option) => (
+            <CommandItem
+              key={option.value}
+              value={option.label}
+              onSelect={() => toggle(option.value)}
+              aria-selected={chosen.has(option.value)}
+            >
+              {multiple ? (
+                <span
+                  className={`flex size-4 items-center justify-center rounded-sm border ${
+                    chosen.has(option.value)
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input [&_svg]:invisible"
+                  }`}
                 >
-                  <span
-                    className={`flex size-4 items-center justify-center rounded-sm border ${
-                      chosen.has(option.value)
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-input [&_svg]:invisible"
-                    }`}
-                  >
-                    <Check className="size-3" />
-                  </span>
-                  {option.label}
-                  {option.count !== undefined && (
-                    <span className="ml-auto font-mono text-xs text-muted-foreground">
-                      {option.count}
-                    </span>
+                  <Check className="size-3" />
+                </span>
+              ) : (
+                // A radio for a single value, round despite the squircle default.
+                <span
+                  className={`flex size-4 items-center justify-center rounded-full border [corner-shape:round] ${
+                    chosen.has(option.value) ? "border-primary" : "border-input"
+                  }`}
+                >
+                  {chosen.has(option.value) && (
+                    <span className="size-2 rounded-full bg-primary [corner-shape:round]" />
                   )}
-                </CommandItem>
-              ))}
+                </span>
+              )}
+              {option.label}
+              {option.count !== undefined && (
+                <CommandShortcut className="font-mono tracking-normal tabular-nums">
+                  {option.count}
+                </CommandShortcut>
+              )}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+        {selected.length > 0 && (
+          <>
+            <CommandSeparator className="mx-1" />
+            <CommandGroup>
+              <CommandItem onSelect={() => onChange([])} className="justify-center">
+                Clear
+              </CommandItem>
             </CommandGroup>
-            {selected.length > 0 && (
-              <>
-                <CommandSeparator />
-                <CommandGroup>
-                  <CommandItem onSelect={() => onChange([])} className="justify-center">
-                    Clear
-                  </CommandItem>
-                </CommandGroup>
-              </>
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+          </>
+        )}
+      </CommandList>
+    </Command>
   );
 }

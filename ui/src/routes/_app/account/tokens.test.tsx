@@ -69,7 +69,7 @@ describe("API tokens page", () => {
     });
     renderRoute("/account/tokens");
 
-    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.click(await screen.findByRole("button", { name: "New Token" }));
     await user.type(screen.getByLabelText("Name"), "CI pipeline");
     await user.click(screen.getByLabelText("Read only"));
     await user.click(screen.getByRole("button", { name: "Create token" }));
@@ -99,7 +99,7 @@ describe("API tokens page", () => {
     });
     renderRoute("/account/tokens");
 
-    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.click(await screen.findByRole("button", { name: "New Token" }));
     await user.type(screen.getByLabelText("Name"), " ");
     await user.click(screen.getByRole("button", { name: "Create token" }));
 

@@ -3,7 +3,9 @@ import { type ApiDataResponse, api } from "@/lib/api";
 export type AuditEvent = {
   id: number;
   at: string;
-  actor: { id?: string; label: string };
+  // name is the person's, when a person did it; label is how the event
+  // recorded them.
+  actor: { id?: string; label: string; name?: string };
   action: string;
   target: { type: string; id: string; label: string };
   details: Record<string, unknown>;
@@ -15,12 +17,14 @@ export type AuditPage = {
   total: number;
 };
 
-// AuditFilters picks a page of events. Dates are YYYY-MM-DD; to includes that day.
+// AuditFilters picks a page of events. Dates are YYYY-MM-DD; to includes
+// that day. within, such as 7d, reaches back from now instead.
 export type AuditFilters = {
   q?: string;
   actions?: string[];
   from?: string;
   to?: string;
+  within?: string;
   page?: number;
   size?: number;
 };
@@ -70,6 +74,7 @@ export async function listAuditEvents(filters: AuditFilters): Promise<AuditPage>
   if (filters.actions?.length) searchParams.set("action", filters.actions.join(","));
   if (filters.from) searchParams.set("from", filters.from);
   if (filters.to) searchParams.set("to", filters.to);
+  if (filters.within) searchParams.set("within", filters.within);
   if (filters.page) searchParams.set("page", String(filters.page));
   if (filters.size) searchParams.set("size", String(filters.size));
   return (await api.get("audit", { searchParams }).json<ApiDataResponse<AuditPage>>()).data;

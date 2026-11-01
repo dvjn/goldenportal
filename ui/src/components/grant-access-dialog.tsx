@@ -65,7 +65,7 @@ export function GrantAccessDialog() {
       <DialogTrigger asChild>
         <Button>
           <Plus />
-          Grant access
+          Grant Access
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -77,7 +77,7 @@ export function GrantAccessDialog() {
           }}
         >
           <DialogHeader>
-            <DialogTitle>Grant access</DialogTitle>
+            <DialogTitle>Grant Access</DialogTitle>
             <DialogDescription>
               Give a person or a whole group a role. Granting a group covers everyone in it.
             </DialogDescription>
@@ -101,7 +101,7 @@ export function GrantAccessDialog() {
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={!subject || grant.isPending}>
-              Grant access
+              Grant Access
             </Button>
           </DialogFooter>
         </form>

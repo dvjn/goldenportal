@@ -3,7 +3,8 @@ import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Property } from "@/features/blueprints";
 
-// PropertyType shows a property's type, linking relations to their blueprint.
+// PropertyType shows a property's type, linking relations to their
+// blueprint and scorecard properties to their scorecard.
 export function PropertyType({ property }: Readonly<{ property: Property }>) {
   if (property.relation) {
     return (
@@ -12,6 +13,16 @@ export function PropertyType({ property }: Readonly<{ property: Property }>) {
           <ArrowRight aria-hidden />
           {property.relation}
           {property.many && "[]"}
+        </Link>
+      </Badge>
+    );
+  }
+  if (property.scorecard) {
+    return (
+      <Badge asChild variant="outline" className="font-mono">
+        <Link to="/scorecards/$identifier" params={{ identifier: property.scorecard }}>
+          <ArrowRight aria-hidden />
+          {property.scorecard}
         </Link>
       </Badge>
     );

@@ -1,11 +1,20 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
+import { DocPage, type DocTab, validateDocSearch } from "@/components/config-docs/doc-page";
 import { IntegrationOverview } from "@/components/integrations/integration-overview";
+import {
+  RecentRuns,
+  type RunsSearch,
+  validateRunsSearch,
+} from "@/components/integrations/recent-runs";
 import { PageError } from "@/components/page-error";
 import { integrations, useIntegration } from "@/features/integrations";
 
+function validateIntegrationSearch(search: Record<string, unknown>): RunsSearch & { tab?: DocTab } {
+  return { ...validateDocSearch(search, ["runs"]), ...validateRunsSearch(search) };
+}
+
 export const Route = createFileRoute("/_app/integrations/$identifier")({
-  validateSearch: validateDocSearch,
+  validateSearch: validateIntegrationSearch,
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(integrations.queries.detail(params.identifier)),
@@ -19,7 +28,7 @@ export const Route = createFileRoute("/_app/integrations/$identifier")({
 
 function IntegrationPage() {
   const { identifier } = Route.useParams();
-  const { tab } = Route.useSearch();
+  const { tab, ...runsSearch } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const integration = useIntegration(identifier);
 
@@ -34,6 +43,13 @@ function IntegrationPage() {
       tab={tab}
       onTabChange={(next) => navigate({ search: { tab: next }, replace: true })}
       overview={(spec) => <IntegrationOverview spec={spec} />}
+      extraTabs={[
+        {
+          value: "runs",
+          title: "Runs",
+          content: <RecentRuns identifier={identifier} search={runsSearch} />,
+        },
+      ]}
     />
   );
 }

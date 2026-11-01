@@ -1,25 +1,25 @@
 import { queryOptions } from "@tanstack/react-query";
-import type { Filter } from "@/features/catalog";
 import { type ConfigDoc, configDocs, type DocSummary } from "@/features/config-docs";
-import type { Widget } from "@/features/widgets";
+import type { Query, Widget } from "@/features/widgets";
 import { type ApiDataResponse, api } from "@/lib/api";
 
-// DashboardFilter is a value Home asks for above the dashboard, which its
-// widgets compare with as $filter.<id>.
-export type DashboardFilter = {
+// DashboardInput is a value Home asks for above the dashboard. It narrows
+// only the queries that compare with it as $input.<id>.
+export type DashboardInput = {
   identifier: string;
   title: string;
   type: "enum" | "string" | "relation";
-  // values are what an enum filter offers.
+  // values are what an enum input offers.
   values?: string[];
-  // relation is the blueprint whose entities a relation filter offers.
+  // relation is the blueprint whose entities a relation input offers.
   relation?: string;
   multiple?: boolean;
-  // default is what the filter is set to until someone changes it.
+  // default is what the input is set to until someone changes it.
   default?: string[];
-  // lookup finds the default in the catalog instead, for whoever is
-  // looking: the entities of a blueprint that match where.
-  lookup?: { from: string; where: Filter };
+  // defaultQuery finds the default in the catalog instead, for whoever is
+  // looking: the entities its query matches. otherwise is what it starts
+  // at when it finds none.
+  defaultQuery?: { query: Query; otherwise?: "nothing" | "everything" };
 };
 
 // DashboardSpec is a tab of widgets on Home.
@@ -28,24 +28,27 @@ export type DashboardSpec = {
   title: string;
   description?: string;
   icon?: string;
+  color?: string;
   // order sorts Home's tabs, lowest first.
   order: number;
   visibility?: { roles?: string[]; groups?: string[] };
   defaultFor?: { roles?: string[]; groups?: string[] };
-  filters: DashboardFilter[];
+  inputs: DashboardInput[];
+  // queries are the named queries its widgets share.
+  queries?: Query[];
   widgets: Widget[];
 };
 
 // HomeDashboard is a dashboard as Home shows it to whoever is looking,
 // with its text filled in for them.
 export type HomeDashboard = DashboardSpec & {
-  // defaults are what the filters start at for them, by identifier, with
-  // lookup defaults found. A filter without a default is left out; a
-  // lookup that found nothing is an empty list, which selects nothing.
+  // defaults are what the inputs start at for them, by identifier, with
+  // default queries run. An input without a default is left out; a query
+  // that found nothing is an empty list, which selects nothing.
   defaults: Record<string, string[]>;
   preferred?: boolean;
-  // problems say why a lookup default couldn't be found, by filter. The
-  // filter starts at nothing then, as if the lookup found none.
+  // problems say why a default query couldn't run, by input. The input
+  // starts at nothing then, as if the query found none.
   problems?: Record<string, string>;
 };
 

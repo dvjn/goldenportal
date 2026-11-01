@@ -1,5 +1,5 @@
-import type { Me } from "@/features/auth";
-import type { Entity, Filter } from "@/features/catalog";
+import { type DateRange, isDuration } from "@/components/data-table";
+import type { Filter } from "@/features/catalog";
 
 type Value = string | number | boolean;
 
@@ -7,104 +7,94 @@ type Value = string | number | boolean;
 // matches any of its values, and every property must match.
 export type CatalogFilters = Record<string, Value[]>;
 
-// Context values a widget's filter can compare with. filters is what the
-// dashboard's filters are set to, by identifier, as a WidgetContext has them.
-export type FilterContext = {
-  entity?: string;
-  entityData?: Entity;
-  me?: Me;
-  filters?: Record<string, string[] | null>;
-};
+// CatalogLink is the catalog table's search for a link's entities: f and d,
+// the values and days the table's own filters are set to, and where, the
+// rest of the link's filter, which the table can only show or clear.
+export type CatalogLink = { f?: CatalogFilters; d?: Record<string, DateRange>; where?: Filter };
 
-// meValues is what $me and $me.<attribute> stand for, as the server binds
-// them, so a click shows the same entities the widget counted. An
-// attribute with no value matches nothing.
-function meValues(me: Me): Record<string, string[]> {
-  return {
-    $me: [me.email],
-    "$me.email": [me.email],
-    "$me.name": me.displayName ? [me.displayName] : [],
-    "$me.role": [me.role],
-    "$me.groups": me.groups ?? [],
-  };
+const day = /^\d{4}-\d{2}-\d{2}$/;
+const rangeOps = new Set(["gte", "gt", "lte", "lt"]);
+
+function shiftDay(date: string, days: number) {
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString().slice(0, 10);
 }
 
-// toCatalogFilters turns a widget's filter into the catalog's, so a click
-// shows the same entities. Filters the catalog can't express, such as ne
-// or or, give undefined, and the widget offers no link rather than a wrong one.
-export function toCatalogFilters(
-  filter: Filter | undefined,
-  context: FilterContext,
-): CatalogFilters | undefined {
-  if (!filter) return {};
-  // bind gives a value's entities-worth of values: none for an unset
-  // dashboard filter, which drops its condition as the server does. The
-  // catalog can't show nothing, so a filter set to nothing has no link.
-  const bind = (value: unknown): Value[] | undefined => {
-    if (value === "$entity") return context.entity === undefined ? undefined : [context.entity];
-    if (value === "$me" || (typeof value === "string" && value.startsWith("$me."))) {
-      const values = context.me && meValues(context.me)[value];
-      return values === undefined || values.length === 0 ? undefined : values;
-    }
-    if (typeof value === "string" && value.startsWith("$entity.")) {
-      const entity = context.entityData;
-      if (!entity) return undefined;
-      const name = value.slice("$entity.".length);
-      const raw =
-        name === "identifier"
-          ? entity.identifier
-          : name === "title"
-            ? entity.title
-            : name === "blueprint"
-              ? entity.blueprint
-              : entity.properties[name];
-      const items = Array.isArray(raw) ? raw : raw === null || raw === undefined ? [] : [raw];
-      return items.length > 0 &&
-        items.every(
-          (item) =>
-            typeof item === "string" || typeof item === "number" || typeof item === "boolean",
-        )
-        ? items
-        : undefined;
-    }
-    if (typeof value === "string" && value.startsWith("$today")) {
-      const match = /^\$today(?:([+-][0-9]+)d)?$/.exec(value);
-      if (!match) return undefined;
-      const days = Number(match[1] ?? 0);
-      if (!Number.isSafeInteger(days) || Math.abs(days) > 365000) return undefined;
-      const date = new Date();
-      date.setUTCDate(date.getUTCDate() + days);
-      return [date.toISOString().slice(0, 10)];
-    }
-    if (typeof value === "string" && value.startsWith("$filter.")) {
-      const picked = context.filters?.[value.slice("$filter.".length)];
-      return picked === null ? undefined : (picked ?? []);
-    }
-    return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-      ? [value]
-      : undefined;
-  };
+const isValue = (value: unknown): value is Value =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 
-  const conditions = "and" in filter ? filter.and : [filter];
-  const filters: CatalogFilters = {};
+// builtIns are the fields every entity has, of which the table only
+// filters the day it was updated.
+const builtIns = new Set([
+  "identifier",
+  "title",
+  "blueprint",
+  "integration",
+  "createdAt",
+  "updatedAt",
+]);
+
+// tableField reports whether the table filters a field: its own properties,
+// scorecard tiers among them, and the day it was updated, not the other
+// built-ins or anything a path reaches through a relation.
+function tableField(property: string, date: boolean) {
+  if (property.includes(".")) return false;
+  if (!builtIns.has(property)) return true;
+  return date && property === "updatedAt";
+}
+
+// matchesNothing reports an in with no values anywhere in a filter, which
+// is how the server fills in a dashboard filter set to nothing. The empty
+// list doesn't survive the trip back as JSON, so even under not, where it
+// would match everything, it has no link.
+function matchesNothing(filter: Filter): boolean {
+  if ("and" in filter) return filter.and.some(matchesNothing);
+  if ("or" in filter) return filter.or.some(matchesNothing);
+  if ("not" in filter) return matchesNothing(filter.not);
+  return filter.op === "in" && !filter.values?.length;
+}
+
+// toCatalogLink turns a link's filter, with its variables filled in by the
+// server, into the catalog's search. Each condition the table's filters
+// can say becomes one of them, so it can be changed there, and the rest
+// stays as where. A filter that matches nothing has no link, since the
+// catalog can't show nothing.
+export function toCatalogLink(filter: Filter | undefined): CatalogLink | undefined {
+  if (filter && matchesNothing(filter)) return undefined;
+  const conditions = filter && "and" in filter ? filter.and : filter ? [filter] : [];
+  const f: CatalogFilters = {};
+  const d: Record<string, DateRange> = {};
+  const rest: Filter[] = [];
   for (const condition of conditions) {
-    if (
-      !("property" in condition) ||
-      (condition.property.startsWith("$") && !condition.property.startsWith("$scorecard."))
-    )
-      return undefined;
-    const raw =
-      condition.op === "eq"
-        ? [condition.value]
-        : condition.op === "in"
-          ? condition.values
-          : undefined;
-    const bound = raw?.map(bind);
-    if (!bound || bound.some((values) => values === undefined)) return undefined;
-    const values = (bound as Value[][]).flat();
-    if (values.length === 0) continue;
-    if (filters[condition.property]) return undefined;
-    filters[condition.property] = values;
+    if (!("property" in condition)) {
+      rest.push(condition);
+      continue;
+    }
+    const { property, op, value } = condition;
+    if (op === "within" && isDuration(value) && tableField(property, true) && !d[property]) {
+      d[property] = { within: value };
+      continue;
+    }
+    if (rangeOps.has(op) && typeof value === "string" && day.test(value)) {
+      const range = d[property] ?? {};
+      const edge = op.startsWith("gt") ? "from" : "to";
+      if (tableField(property, true) && !range[edge] && !range.within) {
+        range[edge] = op === "gt" ? shiftDay(value, 1) : op === "lt" ? shiftDay(value, -1) : value;
+        d[property] = range;
+        continue;
+      }
+    }
+    const values = op === "eq" ? [value] : op === "in" ? condition.values : undefined;
+    if (values?.every(isValue) && tableField(property, false) && !f[property]) {
+      f[property] = values;
+      continue;
+    }
+    rest.push(condition);
   }
-  return filters;
+  const link: CatalogLink = {};
+  if (Object.keys(f).length > 0) link.f = f;
+  if (Object.keys(d).length > 0) link.d = d;
+  if (rest.length > 0) link.where = rest.length === 1 ? rest[0] : { and: rest };
+  return link;
 }

@@ -1,19 +1,13 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Plus, Trophy } from "lucide-react";
-import { IconTile } from "@/components/catalog/blueprint-icon";
+import { EmptyCard } from "@/components/empty-state";
+import { LinkCard } from "@/components/link-card";
 import { PageHeader } from "@/components/page-header";
+import { ChecksPassing, checkTotals } from "@/components/scorecards/checks-passing";
 import { TierDistribution } from "@/components/scorecards/tier-distribution";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { CardContent } from "@/components/ui/card";
 import { hasRole, useMe } from "@/features/auth";
 import { type ScorecardSummary, scorecards, summaryQueryOptions } from "@/features/scorecards";
 
@@ -39,26 +33,15 @@ function ScorecardsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Scorecards"
-        description="How entities measure up, tier by tier."
-        actions={newButton}
-      />
+      <PageHeader title="Scorecards" actions={newButton} />
       {shown.length === 0 ? (
-        <Card className="py-0">
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Trophy />
-              </EmptyMedia>
-              <EmptyTitle>No scorecards yet</EmptyTitle>
-              <EmptyDescription>
-                A scorecard rates entities against tiers of checks, such as bronze, silver and gold.
-              </EmptyDescription>
-            </EmptyHeader>
-            {newButton && <EmptyContent>{newButton}</EmptyContent>}
-          </Empty>
-        </Card>
+        <EmptyCard
+          icon={<Trophy />}
+          title="No scorecards yet"
+          description="A scorecard rates entities against tiers of checks, such as bronze, silver and gold."
+        >
+          {newButton}
+        </EmptyCard>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2">
           {shown.map((scorecard) => (
@@ -77,37 +60,40 @@ function ScorecardCard({ scorecard }: Readonly<{ scorecard: ScorecardSummary }>)
   const summary = useQuery({ ...summaryQueryOptions(scorecard.identifier), enabled: published });
 
   return (
-    <Link
+    <LinkCard
       to="/scorecards/$identifier"
       params={{ identifier: scorecard.identifier }}
-      className="block h-full rounded-xl focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      icon={scorecard.icon}
+      color={scorecard.color}
+      title={scorecard.title}
+      description={scorecard.description}
     >
-      <Card className="h-full transition-colors hover:bg-accent/50">
-        <CardHeader>
-          <div className="flex items-start gap-3">
-            <IconTile icon={scorecard.icon} />
-            <div className="grid min-w-0 gap-1">
-              <CardTitle className="truncate">{scorecard.title}</CardTitle>
-              {scorecard.description && (
-                <CardDescription className="line-clamp-2">{scorecard.description}</CardDescription>
-              )}
+      <CardContent className="grid gap-2">
+        {!published ? (
+          <p className="text-sm text-muted-foreground">Not published yet.</p>
+        ) : summary.data ? (
+          <>
+            <div className="flex items-end justify-between gap-4">
+              <ChecksPassing {...checkTotals(summary.data.criteria)} />
+              <dl className="flex gap-4 text-xs text-muted-foreground">
+                <div className="flex items-baseline gap-1">
+                  <dd className="text-sm font-medium text-foreground tabular-nums">
+                    {summary.data.entities}
+                  </dd>
+                  <dt>{summary.data.entities === 1 ? "entity" : "entities"}</dt>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <dd className="text-sm font-medium text-foreground tabular-nums">
+                    {summary.data.spec.tiers.flatMap((tier) => tier.criteria).length}
+                  </dd>
+                  <dt>checks</dt>
+                </div>
+              </dl>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-2">
-          {!published ? (
-            <p className="text-sm text-muted-foreground">Not published yet.</p>
-          ) : summary.data ? (
-            <>
-              <p className="text-xs text-muted-foreground">
-                {summary.data.entities} {summary.data.spec.blueprint} entities ·{" "}
-                {summary.data.criteria.length} criteria
-              </p>
-              <TierDistribution tiers={summary.data.spec.tiers} counts={summary.data.tiers} />
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
-    </Link>
+            <TierDistribution tiers={summary.data.spec.tiers} counts={summary.data.tiers} />
+          </>
+        ) : null}
+      </CardContent>
+    </LinkCard>
   );
 }

@@ -69,7 +69,7 @@ export function CreateTokenDialog() {
       <DialogTrigger asChild>
         <Button>
           <Plus />
-          New token
+          New Token
         </Button>
       </DialogTrigger>
       <DialogContent>

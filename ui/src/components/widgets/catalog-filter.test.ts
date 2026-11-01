@@ -1,64 +1,77 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { Entity } from "@/features/catalog";
-import { toCatalogFilters } from "./catalog-filter";
+import { describe, expect, it } from "vite-plus/test";
+import { toCatalogLink } from "./catalog-filter";
 
-const entity: Entity = {
-  blueprint: "service",
-  identifier: "ledger",
-  title: "Ledger",
-  properties: { owners: ["payments", "search"], coverage: 72, critical: true },
-  related: {},
-  integration: "registry",
-  createdAt: "2026-10-25T00:00:00Z",
-  updatedAt: "2026-10-25T00:00:00Z",
-};
-
-afterEach(() => vi.useRealTimers());
-
-describe("widget click-through variables", () => {
-  it("preserves scorecard tier filters in catalog links", () => {
+describe("widget links into the catalog", () => {
+  it("sets the table's filters to the values a link compares with", () => {
     expect(
-      toCatalogFilters({ property: "$scorecard.readiness", op: "in", values: ["gold", ""] }, {}),
-    ).toEqual({ "$scorecard.readiness": ["gold", ""] });
+      toCatalogLink({
+        and: [
+          { property: "owner", op: "in", values: ["payments", "search"] },
+          { property: "coverage", op: "eq", value: 72 },
+          { property: "readiness", op: "in", values: ["gold", ""] },
+        ],
+      }),
+    ).toEqual({
+      f: { owner: ["payments", "search"], coverage: [72], readiness: ["gold", ""] },
+    });
+    expect(toCatalogLink(undefined)).toEqual({});
   });
 
-  it("preserves entity property types and expands many-valued relations", () => {
-    const context = { entity: entity.identifier, entityData: entity };
+  it("links comparisons with a day as a range of days", () => {
     expect(
-      toCatalogFilters(
-        {
-          and: [
-            { property: "owner", op: "eq", value: "$entity.owners" },
-            { property: "coverage", op: "eq", value: "$entity.coverage" },
-            { property: "critical", op: "eq", value: "$entity.critical" },
-          ],
-        },
-        context,
-      ),
-    ).toEqual({ owner: ["payments", "search"], coverage: [72], critical: [true] });
-    expect(
-      toCatalogFilters({ property: "name", op: "eq", value: "$entity.title" }, context),
-    ).toEqual({ name: ["Ledger"] });
-    expect(
-      toCatalogFilters({ property: "owner", op: "eq", value: "$entity.missing" }, context),
-    ).toBeUndefined();
-    expect(
-      toCatalogFilters({ property: "owner", op: "eq", value: "$entity.owners" }, {}),
-    ).toBeUndefined();
+      toCatalogLink({
+        and: [
+          { property: "status", op: "eq", value: "failed" },
+          { property: "startedAt", op: "gte", value: "2024-02-23" },
+          { property: "startedAt", op: "lt", value: "2024-03-01" },
+        ],
+      }),
+    ).toEqual({
+      f: { status: ["failed"] },
+      d: { startedAt: { from: "2024-02-23", to: "2024-02-29" } },
+    });
   });
 
-  it("uses UTC calendar dates, including relative dates across a leap day", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2024-03-01T01:00:00+05:30"));
+  it("links a within as the table's own relative date filter", () => {
+    const later = { property: "startedAt", op: "gte", value: "2024-02-23" };
     expect(
-      toCatalogFilters(
-        { property: "day", op: "in", values: ["$today", "$today-1d", "$today+1d"] },
-        {},
-      ),
-    ).toEqual({ day: ["2024-02-29", "2024-02-28", "2024-03-01"] });
-    expect(toCatalogFilters({ property: "day", op: "eq", value: "$today-1w" }, {})).toBeUndefined();
+      toCatalogLink({ and: [{ property: "startedAt", op: "within", value: "7d" }, later] }),
+    ).toEqual({ d: { startedAt: { within: "7d" } }, where: later });
+  });
+
+  it("keeps what the table's filters can't say as where", () => {
+    const owner = { property: "service.owner", op: "in", values: ["payments"] };
+    const at = { property: "startedAt", op: "gt", value: "2024-01-31T10:00:00Z" };
     expect(
-      toCatalogFilters({ property: "day", op: "gte", value: "$today-7d" }, {}),
+      toCatalogLink({ and: [{ property: "status", op: "eq", value: "failed" }, owner, at] }),
+    ).toEqual({ f: { status: ["failed"] }, where: { and: [owner, at] } });
+    const either = { or: [{ property: "tier", op: "eq", value: "critical" }] };
+    expect(toCatalogLink(either)).toEqual({ where: either });
+    const team = { property: "identifier", op: "in", values: ["payments"] };
+    expect(toCatalogLink(team)).toEqual({ where: team });
+    const recent = { property: "service.startedAt", op: "within", value: "7d" };
+    expect(toCatalogLink(recent)).toEqual({ where: recent });
+    // Fields a path reaches through a scorecard aren't the table's either.
+    const failing = { property: "readiness.failed", op: "gt", value: 0 };
+    expect(toCatalogLink(failing)).toEqual({ where: failing });
+    // A property filtered twice keeps its first values, and the rest narrow too.
+    const second = { property: "tier", op: "eq", value: "critical" };
+    expect(
+      toCatalogLink({
+        and: [{ property: "tier", op: "in", values: ["critical", "standard"] }, second],
+      }),
+    ).toEqual({ f: { tier: ["critical", "standard"] }, where: second });
+  });
+
+  it("has no link for a filter set to nothing, which the catalog can't send", () => {
+    expect(
+      toCatalogLink({
+        and: [
+          { property: "owner", op: "in" },
+          { property: "tier", op: "eq", value: "a" },
+        ],
+      }),
     ).toBeUndefined();
+    expect(toCatalogLink({ not: { property: "owner", op: "in", values: [] } })).toBeUndefined();
   });
 });

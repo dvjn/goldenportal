@@ -10,11 +10,11 @@ import {
 
 type PageBreadcrumbsProps = {
   // children are the links to the pages above this one, outermost first.
-  children: ReactNode;
+  children?: ReactNode;
   page: string;
 };
 
-// PageBreadcrumbs is the trail every page below a top-level page starts with.
+// PageBreadcrumbs is the trail to a page, which on a top-level page is just its name.
 export function PageBreadcrumbs({ children, page }: PageBreadcrumbsProps) {
   return (
     <Breadcrumb>

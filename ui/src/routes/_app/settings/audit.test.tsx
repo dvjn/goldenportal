@@ -73,7 +73,8 @@ describe("audit log", () => {
     const queries = auditApi(() => ({ events: [event(1, "token.create")], total: 1 }));
     const { router } = renderRoute("/settings/audit?page=2");
 
-    await user.click(await screen.findByRole("button", { name: "Action" }));
+    await user.click(await screen.findByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("option", { name: "Action" }));
     await user.click(await screen.findByRole("option", { name: "Created API token" }));
     await user.click(screen.getByRole("option", { name: "Signed in" }));
 
@@ -88,13 +89,28 @@ describe("audit log", () => {
     const queries = auditApi(() => ({ events: [event(1, "auth.sign_in")], total: 1 }));
     const { router } = renderRoute("/settings/audit");
 
-    await user.click(await screen.findByRole("button", { name: "Date" }));
-    await user.click(screen.getByRole("button", { name: "Today" }));
+    await user.click(await screen.findByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("option", { name: "Date" }));
+    await user.click(await screen.findByRole("button", { name: "Today" }));
 
     const today = new Date();
     const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     await waitFor(() => expect(router.state.location.search).toEqual({ from: iso, to: iso }));
     await waitFor(() => expect(queries.at(-1)?.get("from")).toBe(iso));
+  });
+
+  it("filters to the last days counted back from now", async () => {
+    const user = userEvent.setup();
+    const queries = auditApi(() => ({ events: [event(1, "auth.sign_in")], total: 1 }));
+    const { router } = renderRoute("/settings/audit");
+
+    await user.click(await screen.findByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("option", { name: "Date" }));
+    await user.click(await screen.findByRole("button", { name: "Last 7 days" }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ within: "7d" }));
+    await waitFor(() => expect(queries.at(-1)?.get("within")).toBe("7d"));
+    expect(screen.getByText("Last 7 days", { selector: ".truncate" })).toBeInTheDocument();
   });
 
   it("restores filters from the URL and offers to clear them", async () => {
@@ -110,7 +126,7 @@ describe("audit log", () => {
     expect(queries[0]?.get("q")).toBe("ci");
     expect(queries[0]?.get("action")).toBe("token.revoke");
 
-    await user.click(screen.getByRole("button", { name: "Reset" }));
+    await user.click(screen.getByRole("button", { name: "Clear search and filters" }));
 
     await waitFor(() => expect(router.state.location.search).toEqual({}));
     expect(await screen.findByText("Signed in")).toBeInTheDocument();

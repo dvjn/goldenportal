@@ -1,9 +1,12 @@
-import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { TierBadge } from "@/components/scorecards/tier-badge";
-import { hasRole, meQueryOptions } from "@/features/auth";
+import { requireRole } from "@/features/auth";
 import { type ScorecardSpec, scorecards } from "@/features/scorecards";
 
+// Checks are jq over the flat entity: .owner, not .properties.owner. A
+// blueprint shows the results once it declares a property such as
+// readiness: {type: scorecard, scorecard: example}.
 const template = `kind: Scorecard
 metadata:
   name: example
@@ -17,17 +20,12 @@ spec:
       criteria:
         hasOwner:
           title: Has an owner
-          check: .properties.owner != null
+          check: .owner != null
           fix: Set the owner where this entity comes from.
 `;
 
 export const Route = createFileRoute("/_app/scorecards/new")({
-  beforeLoad: async ({ context }) => {
-    const me = await context.queryClient.ensureQueryData(meQueryOptions);
-    if (!hasRole(me.role, "builder")) {
-      throw redirect({ to: "/scorecards" });
-    }
-  },
+  beforeLoad: ({ context }) => requireRole(context.queryClient, "builder"),
   component: NewScorecardPage,
 });
 

@@ -2,7 +2,12 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { type DashboardSpec, dashboards } from "@/features/dashboards";
 
-// Widgets lay out on 12 columns, in order. Filters can compare with $me.
+// Widgets lay out on 12 columns, in order, and share the queries named
+// above them. $ marks a variable, such as an input's $input.team, and
+// fields are plain paths, such as owner.title; in takes values, a list or
+// a variable. A stat counts its query unless it names a field to sum, avg,
+// min or max, or a share; columns are paths, {title, path} or {title, jq},
+// where jq reads a flat entity: .tier, not .properties.tier.
 const template = `kind: Dashboard
 metadata:
   name: example
@@ -10,16 +15,41 @@ metadata:
   icon: layout-dashboard
 spec:
   order: 1
+  inputs:
+    team:
+      title: Team
+      type: relation
+      relation: team
+      multiple: true
+      default:
+        query: {blueprint: team, filter: {property: members, op: contains, value: $me}}
+        otherwise: everything
+  queries:
+    services:
+      blueprint: service
+      filter: {property: owner, op: in, values: $input.team}
   widgets:
     services:
       type: stat
       title: Services
-      blueprint: service
+      value: {query: services}
+      link: {query: services}
+    critical:
+      type: stat
+      title: Critical
+      value: {query: services, share: {property: tier, op: eq, value: critical}}
     byOwner:
       type: bar
       title: Services by Owner
-      blueprint: service
+      query: services
       groupBy: owner
+      link: {query: services, group: true}
+    recent:
+      type: table
+      title: Recently Updated
+      query: {blueprint: service, filter: {property: updatedAt, op: within, value: 7d}}
+      columns: [tier, owner.title, {title: Tags, jq: '.tags | length'}]
+      sort: -updatedAt
 `;
 
 export const Route = createFileRoute("/_app/dashboards/new")({

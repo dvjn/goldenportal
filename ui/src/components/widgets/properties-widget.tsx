@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { PropertyValue } from "@/components/catalog/property-value";
+import { Detail, DetailList } from "@/components/detail-list";
 import { blueprints } from "@/features/blueprints";
 import { entityQueryOptions } from "@/features/catalog";
 import { WidgetCard, WidgetLoading, type WidgetProps } from "./widget-grid";
 
 // PropertiesWidget shows some of the page's entity's properties, in the
 // order the widget lists them, or else every one that isn't hidden.
-export function PropertiesWidget({ widget, context }: WidgetProps) {
-  const blueprint = widget.blueprint ?? "";
+export function PropertiesWidget({ source, widget, context }: WidgetProps) {
+  const blueprint = "blueprint" in source ? source.blueprint : "";
   const { data: bp } = useQuery(blueprints.queries.detail(blueprint));
   const { data: entity } = useQuery({
     ...entityQueryOptions(blueprint, context.entity ?? ""),
@@ -22,22 +23,21 @@ export function PropertiesWidget({ widget, context }: WidgetProps) {
 
   return (
     <WidgetCard widget={widget}>
-      <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[minmax(7rem,auto)_minmax(0,1fr)]">
+      <DetailList>
         {shown.map((property) => (
-          <div key={property.identifier} className="contents">
-            <dt className="text-muted-foreground" title={property.description}>
-              {property.title}
-            </dt>
-            <dd className="min-w-0">
-              <PropertyValue
-                property={property}
-                value={entity.properties[property.identifier]}
-                links={entity.related[property.identifier]}
-              />
-            </dd>
-          </div>
+          <Detail
+            key={property.identifier}
+            label={<span title={property.description}>{property.title}</span>}
+          >
+            <PropertyValue
+              property={property}
+              value={entity.properties[property.identifier]}
+              links={entity.related[property.identifier]}
+              entity={entity}
+            />
+          </Detail>
         ))}
-      </dl>
+      </DetailList>
     </WidgetCard>
   );
 }

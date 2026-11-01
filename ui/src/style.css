@@ -128,7 +128,8 @@ body {
   --success: oklch(0.8 0.15 162);
   --warning: oklch(0.82 0.14 80);
   --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 26%);
+  /* Controls outline like every other border, so they sit in with cards. */
+  --input: var(--border);
   --ring: oklch(0.65 0.18 282);
   --chart-1: oklch(0.78 0.12 282);
   --chart-2: oklch(0.65 0.18 282);
@@ -146,8 +147,12 @@ body {
 }
 
 @layer base {
-  * {
+  *,
+  ::before,
+  ::after {
     @apply border-border outline-ring/50;
+    /* Rounded corners are squircles everywhere; browsers without corner-shape keep plain arcs. */
+    corner-shape: squircle;
   }
   body {
     @apply bg-background text-foreground;

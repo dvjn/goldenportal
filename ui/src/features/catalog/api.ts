@@ -6,6 +6,7 @@ export type CatalogEntry = {
   title: string;
   description?: string;
   icon?: string;
+  color?: string;
   entities: number;
 };
 
@@ -16,9 +17,9 @@ export type Entity = {
   blueprint: string;
   identifier: string;
   title: string;
-  // properties include relations, computed values and resolved lookups.
+  // properties include relations, computed values, resolved lookups and
+  // scorecard results.
   properties: Record<string, unknown>;
-  scorecards?: Record<string, { tier: string; score: number | null }>;
   related: Record<string, Link[]>;
   integration: string;
   createdAt: string;

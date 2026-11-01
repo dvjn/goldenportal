@@ -1,58 +1,58 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { cn } from "cn";
+import type { ReactNode } from "react";
+import { IconTile } from "@/components/catalog/blueprint-icon";
 import { formatNumber } from "@/components/catalog/property-value";
-import { useMe } from "@/features/auth";
-import { blueprints } from "@/features/blueprints";
-import { type StatData, widgetQueryOptions } from "@/features/widgets";
-import { toCatalogFilters } from "./catalog-filter";
-import { WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
+import { interactiveCard, stretchedLink } from "@/components/link-card";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { LinkData, StatData, Widget } from "@/features/widgets";
+import { WidgetError, type WidgetProps, WidgetTitle } from "./widget-grid";
+import { linkable, WidgetLink } from "./widget-link";
 
-const verbs = { sum: "Total", avg: "Average", min: "Lowest", max: "Highest" } as const;
+// StatWidget shows one number, worked out from a query's entities, in the
+// unit the server settled on.
+export function StatWidget({ widget, context, data, error }: WidgetProps<StatData>) {
+  if (error) return <WidgetError widget={widget} error={error} />;
+  if (!data) {
+    return (
+      <StatCard widget={widget}>
+        <Skeleton className="h-8 w-12" aria-hidden />
+        <span className="sr-only">Loading</span>
+      </StatCard>
+    );
+  }
 
-// StatWidget shows one number: how many entities match, or a sum of a
-// property across them.
-export function StatWidget({ source, widget, context }: WidgetProps) {
-  const me = useMe();
-  const data = useQuery(widgetQueryOptions<StatData>(source, widget.identifier, context));
-  const { data: bp } = useQuery(blueprints.queries.detail(widget.blueprint ?? ""));
-  if (data.error) return <WidgetError widget={widget} error={data.error} />;
-  if (!data.data) return <WidgetLoading widget={widget} height="h-9" />;
-
-  const property = bp?.published?.spec.properties.find((p) => p.identifier === widget.property);
-  const value = data.data.value;
-  const filters = toCatalogFilters(widget.filter, {
-    entity: context.entity,
-    entityData: context.entityData,
-    me,
-    filters: context.filters,
-  });
-  const number = (
-    <span className="text-3xl font-semibold tracking-tight tabular-nums">
-      {value === null ? "—" : formatNumber(value, widget.unit ?? property?.display?.unit)}
-    </span>
-  );
-
+  const link = context.draft ? undefined : data.link;
   return (
-    <WidgetCard widget={widget}>
-      <div className="grid gap-1">
-        {widget.aggregate === "count" && filters && widget.blueprint && !context.draft ? (
-          <Link
-            to="/catalog/$blueprint"
-            params={{ blueprint: widget.blueprint }}
-            search={{ view: "entities", f: filters }}
-            className="w-fit hover:underline"
-          >
-            {number}
-          </Link>
-        ) : (
-          number
-        )}
-        {widget.aggregate && widget.aggregate !== "count" && (
-          <span className="text-xs text-muted-foreground">
-            {verbs[widget.aggregate]} {property?.title ?? widget.property}
-          </span>
-        )}
+    <StatCard widget={widget} link={link}>
+      <span className="text-2xl font-semibold tracking-tight tabular-nums">
+        {data.value === null ? "-" : formatNumber(data.value, data.unit)}
+      </span>
+    </StatCard>
+  );
+}
+
+// StatCard is a stat's compact frame: its icon, if it has one, beside its
+// title and number. With a link, the whole card is the link.
+function StatCard({
+  widget,
+  link,
+  children,
+}: Readonly<{ widget: Widget; link?: LinkData; children: ReactNode }>) {
+  return (
+    <Card
+      size="sm"
+      className={cn("flex-row items-center gap-3 px-4", linkable(link) && interactiveCard)}
+    >
+      {widget.icon && <IconTile icon={widget.icon} color={widget.color} size="xl" />}
+      <div className="grid min-w-0 gap-0.5">
+        <span className="truncate text-sm text-muted-foreground">
+          <WidgetLink link={link} className={stretchedLink}>
+            <WidgetTitle widget={widget} />
+          </WidgetLink>
+        </span>
+        {children}
       </div>
-    </WidgetCard>
+    </Card>
   );
 }

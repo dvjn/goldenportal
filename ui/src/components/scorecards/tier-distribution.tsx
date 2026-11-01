@@ -3,12 +3,19 @@ import { TierBadge, tierColors } from "@/components/scorecards/tier-badge";
 import type { Summary, Tier } from "@/features/scorecards";
 
 // TierDistribution is one bar split by how many entities reached each tier,
-// best tier first, with a legend of counts.
+// best tier first, with a legend of counts. With onPick, each legend entry
+// picks its tier, "" for none.
 export function TierDistribution({
   tiers,
   counts,
   legend = true,
-}: Readonly<{ tiers: Tier[]; counts: Summary["tiers"]; legend?: boolean }>) {
+  onPick,
+}: Readonly<{
+  tiers: Tier[];
+  counts: Summary["tiers"];
+  legend?: boolean;
+  onPick?: (tier: string) => void;
+}>) {
   const ordered = [...counts].reverse();
   const total = counts.reduce((sum, tier) => sum + tier.count, 0);
 
@@ -32,12 +39,28 @@ export function TierDistribution({
       </div>
       {legend && (
         <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {ordered.map((tier) => (
-            <span key={tier.name || "none"} className="flex items-center gap-1.5 text-sm">
-              <TierBadge tiers={tiers} name={tier.name} />
-              <span className="text-muted-foreground tabular-nums">{tier.count}</span>
-            </span>
-          ))}
+          {ordered.map((tier) => {
+            const entry = (
+              <>
+                <TierBadge tiers={tiers} name={tier.name} />
+                <span className="text-muted-foreground tabular-nums">{tier.count}</span>
+              </>
+            );
+            return onPick ? (
+              <button
+                key={tier.name || "none"}
+                type="button"
+                className="flex items-center gap-1.5 text-sm hover:underline"
+                onClick={() => onPick(tier.name)}
+              >
+                {entry}
+              </button>
+            ) : (
+              <span key={tier.name || "none"} className="flex items-center gap-1.5 text-sm">
+                {entry}
+              </span>
+            );
+          })}
         </div>
       )}
     </div>

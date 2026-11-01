@@ -16,7 +16,9 @@ export type IntegrationSpec = {
   identifier: string;
   title: string;
   description?: string;
+  // icon and color are the connector's.
   icon?: string;
+  color?: string;
   connector: { type: string; config?: Record<string, unknown> };
   sync?: { interval: string };
   // mappings are also the only blueprints the integration writes.
@@ -30,6 +32,8 @@ export type Connector = {
   id: string;
   title: string;
   description: string;
+  icon: string;
+  color: string;
   mode: "push" | "pull";
   resources?: string[];
 };
@@ -121,8 +125,33 @@ export async function listStatus(): Promise<IntegrationStatus[]> {
   return (await api.get("integration-status").json<ApiDataResponse<IntegrationStatus[]>>()).data;
 }
 
-export async function listRuns(identifier: string): Promise<Run[]> {
-  return (await api.get(`${path(identifier)}/runs`).json<ApiDataResponse<Run[]>>()).data;
+export type RunPage = {
+  runs: Run[];
+  // total is how many runs match the filters, across every page.
+  total: number;
+};
+
+export type RunTrigger = Run["trigger"];
+export type RunOutcome = "succeeded" | "warnings" | "failed";
+
+export type RunFilters = {
+  q?: string;
+  triggers?: RunTrigger[];
+  outcomes?: RunOutcome[];
+  page?: number;
+  size?: number;
+};
+
+export async function listRuns(identifier: string, filters: RunFilters): Promise<RunPage> {
+  const searchParams = new URLSearchParams();
+  if (filters.q) searchParams.set("q", filters.q);
+  if (filters.triggers?.length) searchParams.set("trigger", filters.triggers.join(","));
+  if (filters.outcomes?.length) searchParams.set("outcome", filters.outcomes.join(","));
+  if (filters.page) searchParams.set("page", String(filters.page));
+  if (filters.size) searchParams.set("size", String(filters.size));
+  return (
+    await api.get(`${path(identifier)}/runs`, { searchParams }).json<ApiDataResponse<RunPage>>()
+  ).data;
 }
 
 // ingestUrl is where systems push data for an integration.

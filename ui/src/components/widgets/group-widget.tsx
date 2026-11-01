@@ -1,5 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { Cell, Pie, PieChart } from "recharts";
 import {
   type ChartConfig,
@@ -7,13 +5,11 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { useMe } from "@/features/auth";
-import { blueprints, type Property } from "@/features/blueprints";
 import type { Facet } from "@/features/catalog";
-import { type GroupData, widgetQueryOptions } from "@/features/widgets";
+import type { GroupData, LinkData } from "@/features/widgets";
 import { categorical, swatch } from "@/lib/colors";
-import { type CatalogFilters, toCatalogFilters } from "./catalog-filter";
-import { WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
+import { ViewAll, WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
+import { WidgetLink } from "./widget-link";
 
 type Group = {
   key: string;
@@ -21,69 +17,49 @@ type Group = {
   count: number;
   color: string;
   dot: string;
-  link?: CatalogFilters;
+  link?: LinkData;
 };
 
 // GroupWidget counts entities by a property's values, as bars or a donut.
-// Each value links to the catalog filtered to it.
-export function GroupWidget({ source, widget, context }: WidgetProps) {
-  const me = useMe();
-  const data = useQuery(widgetQueryOptions<GroupData>(source, widget.identifier, context));
-  const { data: bp } = useQuery(blueprints.queries.detail(widget.blueprint ?? ""));
-  if (data.error) return <WidgetError widget={widget} error={data.error} />;
-  if (!data.data) return <WidgetLoading widget={widget} height="h-32" />;
+// A link to each group opens its entities; any other link is the card's.
+export function GroupWidget({ widget, context, data, error }: WidgetProps<GroupData>) {
+  if (error) return <WidgetError widget={widget} error={error} />;
+  if (!data) return <WidgetLoading widget={widget} height="h-32" />;
 
-  const property = bp?.published?.spec.properties.find((p) => p.identifier === widget.groupBy);
-  const base = toCatalogFilters(widget.filter, {
-    entity: context.entity,
-    entityData: context.entityData,
-    me,
-    filters: context.filters,
-  });
-  const groups = data.data.groups.map((facet, index) =>
-    toGroup(
-      facet,
-      index,
-      property,
-      base && widget.groupBy && !context.draft && !base[widget.groupBy]
-        ? { ...base, [widget.groupBy]: [facet.value as string] }
-        : undefined,
-    ),
+  const live = !context.draft;
+  const groups = data.groups.map((facet, index) =>
+    toGroup(facet, index, live ? facet.link : undefined),
   );
-  if (data.data.none > 0) {
+  if (data.none > 0) {
     groups.push({
       key: "none",
       label: "None",
-      count: data.data.none,
+      count: data.none,
       color: "var(--color-muted-foreground)",
       dot: "bg-muted-foreground/40",
+      link: live ? data.noneLink : undefined,
     });
   }
 
   return (
-    <WidgetCard widget={widget}>
+    <WidgetCard widget={widget} action={live && <ViewAll link={data.link} />}>
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing to count yet.</p>
       ) : widget.type === "donut" ? (
-        <Donut groups={groups} blueprint={widget.blueprint ?? ""} />
+        <Donut groups={groups} />
       ) : (
-        <Bars groups={groups} blueprint={widget.blueprint ?? ""} />
+        <Bars groups={groups} />
       )}
     </WidgetCard>
   );
 }
 
-function toGroup(
-  facet: Facet,
-  index: number,
-  property: Property | undefined,
-  link?: CatalogFilters,
-): Group {
+// A group without a color, its own or its property's for its value, takes
+// the next of the categorical colors.
+function toGroup(facet: Facet & { color?: string }, index: number, link?: LinkData): Group {
   const key = JSON.stringify(facet.value);
   const raw = typeof facet.value === "boolean" ? (facet.value ? "Yes" : "No") : String(facet.value);
-  const color = swatch(
-    property?.display?.colors?.[String(facet.value)] ?? categorical[index % categorical.length],
-  );
+  const color = swatch(facet.color ?? categorical[index % categorical.length]);
   return {
     key,
     label: facet.title ?? raw,
@@ -94,28 +70,24 @@ function toGroup(
   };
 }
 
-function GroupLabel({ group, blueprint }: Readonly<{ group: Group; blueprint: string }>) {
-  if (!group.link) return <span className="truncate">{group.label}</span>;
+function GroupLabel({ group }: Readonly<{ group: Group }>) {
   return (
-    <Link
-      to="/catalog/$blueprint"
-      params={{ blueprint }}
-      search={{ view: "entities", f: group.link }}
-      className="truncate hover:underline"
-    >
-      {group.label}
-    </Link>
+    <span className="truncate">
+      <WidgetLink link={group.link} className="hover:underline">
+        {group.label}
+      </WidgetLink>
+    </span>
   );
 }
 
-function Bars({ groups, blueprint }: Readonly<{ groups: Group[]; blueprint: string }>) {
+function Bars({ groups }: Readonly<{ groups: Group[] }>) {
   const most = Math.max(...groups.map((group) => group.count));
   return (
     <ul className="grid gap-2.5">
       {groups.map((group) => (
         <li key={group.key} className="grid gap-1 text-sm">
           <span className="flex items-baseline justify-between gap-3">
-            <GroupLabel group={group} blueprint={blueprint} />
+            <GroupLabel group={group} />
             <span className="text-xs text-muted-foreground tabular-nums">{group.count}</span>
           </span>
           <span className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
@@ -130,7 +102,7 @@ function Bars({ groups, blueprint }: Readonly<{ groups: Group[]; blueprint: stri
   );
 }
 
-function Donut({ groups, blueprint }: Readonly<{ groups: Group[]; blueprint: string }>) {
+function Donut({ groups }: Readonly<{ groups: Group[] }>) {
   const total = groups.reduce((sum, group) => sum + group.count, 0);
   const config: ChartConfig = Object.fromEntries(
     groups.map((group) => [group.key, { label: group.label, color: group.color }]),
@@ -165,7 +137,7 @@ function Donut({ groups, blueprint }: Readonly<{ groups: Group[]; blueprint: str
           <li key={group.key} className="flex items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
               <span className={`size-2 shrink-0 rounded-full ${group.dot}`} aria-hidden />
-              <GroupLabel group={group} blueprint={blueprint} />
+              <GroupLabel group={group} />
             </span>
             <span className="text-xs text-muted-foreground tabular-nums">{group.count}</span>
           </li>

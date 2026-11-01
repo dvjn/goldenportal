@@ -1,23 +1,30 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Loader2, RefreshCw } from "lucide-react";
+import { useRef } from "react";
 import { toast } from "sonner";
+import { CardSection, CardTitleBar } from "@/components/card-sections";
+import { BlueprintLabel } from "@/components/catalog/blueprint-label";
 import { EntityLink } from "@/components/catalog/entity-link";
+import { ListValue } from "@/components/catalog/list-value";
+import { EmptyValue } from "@/components/catalog/property-value";
+import { Code } from "@/components/code";
 import {
   DataTable,
   DataTableColumnHeader,
-  DataTableFacetedFilter,
   dataTableColumns,
   type TableSearch,
+  usePageSize,
 } from "@/components/data-table";
+import { Detail, DetailList } from "@/components/detail-list";
+import { EmptyState } from "@/components/empty-state";
+import { ChecksPassing, checkTotals } from "@/components/scorecards/checks-passing";
+import { CriterionDetails } from "@/components/scorecards/criterion-details";
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import { TierDistribution } from "@/components/scorecards/tier-distribution";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  type Criterion,
   type EntityResult,
   evaluateScorecard,
   resultsQueryOptions,
@@ -28,8 +35,9 @@ import {
 } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
-// ScorecardSearch is the entities table's state in the URL; tier is a tier
-// name, or "none" for entities that reached no tier.
+// ScorecardSearch is the entities table's state in the URL; tier is a
+// comma-separated list of tier names, with "none" for entities that
+// reached no tier.
 export type ScorecardSearch = TableSearch & { tier?: string };
 
 const column = dataTableColumns<EntityResult>();
@@ -42,24 +50,53 @@ export function ScorecardOverview({
   canEvaluate,
 }: Readonly<{ spec: ScorecardSpec; search: ScorecardSearch; canEvaluate: boolean }>) {
   const summary = useQuery(summaryQueryOptions(spec.identifier));
+  const navigate = useNavigate();
+  // A tier picked above brings the entities table, filtered to it, into view.
+  const entities = useRef<HTMLDivElement>(null);
 
   return (
     <div className="grid gap-4">
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <TiersCard spec={spec} summary={summary.data} canEvaluate={canEvaluate} />
-        <AboutCard spec={spec} />
+        <TiersCard
+          spec={spec}
+          summary={summary.data}
+          canEvaluate={canEvaluate}
+          onPick={(tier) => {
+            entities.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            void navigate({
+              to: ".",
+              search: (prev: ScorecardSearch) => ({
+                ...prev,
+                tier: tier || "none",
+                page: undefined,
+              }),
+              replace: true,
+              resetScroll: false,
+            } as never);
+          }}
+        />
+        <AboutCard spec={spec} summary={summary.data} />
       </div>
       <CriteriaCard spec={spec} summary={summary.data} />
-      <EntitiesTable spec={spec} search={search} />
+      <div ref={entities} className="scroll-mt-16">
+        <EntitiesTable spec={spec} search={search} />
+      </div>
     </div>
   );
 }
 
+// TiersCard's legend picks a tier to filter the entities table to.
 function TiersCard({
   spec,
   summary,
   canEvaluate,
-}: Readonly<{ spec: ScorecardSpec; summary?: Summary; canEvaluate: boolean }>) {
+  onPick,
+}: Readonly<{
+  spec: ScorecardSpec;
+  summary?: Summary;
+  canEvaluate: boolean;
+  onPick: (tier: string) => void;
+}>) {
   const queryClient = useQueryClient();
   const evaluate = useMutation({
     mutationFn: () => evaluateScorecard(spec.identifier),
@@ -73,15 +110,10 @@ function TiersCard({
 
   return (
     <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Tiers</CardTitle>
-        <CardAction className="flex items-center gap-2 text-xs text-muted-foreground">
-          {summary?.evaluatedAt && (
-            <span title={formatAbsolute(summary.evaluatedAt)}>
-              Evaluated {formatRelative(summary.evaluatedAt)}
-            </span>
-          )}
-          {canEvaluate && (
+      <CardTitleBar
+        title="Tiers"
+        action={
+          canEvaluate && (
             <Button
               variant="outline"
               size="sm"
@@ -91,16 +123,14 @@ function TiersCard({
               {evaluate.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
               Evaluate Now
             </Button>
-          )}
-        </CardAction>
-      </CardHeader>
+          )
+        }
+      />
       <CardContent className="grid gap-3">
         {summary ? (
           <>
-            <p className="text-sm text-muted-foreground">
-              {summary.entities} {summary.entities === 1 ? "entity" : "entities"} scored
-            </p>
-            <TierDistribution tiers={spec.tiers} counts={summary.tiers} />
+            <ChecksPassing {...checkTotals(summary.criteria)} />
+            <TierDistribution tiers={spec.tiers} counts={summary.tiers} onPick={onPick} />
           </>
         ) : (
           <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />
@@ -110,34 +140,40 @@ function TiersCard({
   );
 }
 
-function AboutCard({ spec }: Readonly<{ spec: ScorecardSpec }>) {
+function AboutCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary?: Summary }>) {
   return (
     <Card>
-      <CardHeader className="border-b">
-        <CardTitle>About</CardTitle>
-      </CardHeader>
+      <CardTitleBar title="About" />
       <CardContent className="grid gap-3 text-sm">
         {spec.description && <p className="text-muted-foreground">{spec.description}</p>}
-        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
-          <dt className="text-muted-foreground">Scores</dt>
-          <dd>
+        <DetailList>
+          <Detail label="Scores">
             <Link
               to="/catalog/$blueprint"
               params={{ blueprint: spec.blueprint }}
-              className="font-mono hover:underline"
+              className="min-w-0 hover:underline"
             >
-              {spec.blueprint}
+              <BlueprintLabel blueprint={spec.blueprint} />
             </Link>
-          </dd>
-          {spec.filter && (
-            <>
-              <dt className="text-muted-foreground">Only</dt>
-              <dd>
-                <code className="font-mono text-xs break-all">{describeFilter(spec.filter)}</code>
-              </dd>
-            </>
+          </Detail>
+          {summary && (
+            <Detail label="Entities">
+              <span className="font-medium tabular-nums">{summary.entities}</span>
+            </Detail>
           )}
-        </dl>
+          {summary?.evaluatedAt && (
+            <Detail label="Evaluated">
+              <span title={formatAbsolute(summary.evaluatedAt)}>
+                {formatRelative(summary.evaluatedAt)}
+              </span>
+            </Detail>
+          )}
+          {spec.filter && (
+            <Detail label="Only">
+              <Code>{describeFilter(spec.filter)}</Code>
+            </Detail>
+          )}
+        </DetailList>
       </CardContent>
     </Card>
   );
@@ -158,15 +194,10 @@ function CriteriaCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary
 
   return (
     <Card className="gap-0 pb-0">
-      <CardHeader className="border-b">
-        <CardTitle>Criteria</CardTitle>
-      </CardHeader>
+      <CardTitleBar title="Criteria" />
       <CardContent className="grid px-0">
         {spec.tiers.map((tier) => (
-          <section key={tier.name} className="grid border-b last:border-b-0">
-            <h3 className="px-4 pt-3 pb-1">
-              <TierBadge tiers={spec.tiers} name={tier.name} />
-            </h3>
+          <CardSection key={tier.name} heading={<TierBadge tiers={spec.tiers} name={tier.name} />}>
             <ul className="grid">
               {tier.criteria.map((criterion) => {
                 const c = counts.get(criterion.identifier);
@@ -175,10 +206,10 @@ function CriteriaCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary
                 return (
                   <li
                     key={criterion.identifier}
-                    className="grid grid-cols-[minmax(0,1fr)_8rem_6rem] items-center gap-4 px-4 py-2 text-sm"
+                    className="grid grid-cols-[minmax(0,1fr)_8rem_6rem] items-center gap-4 py-1.5 text-sm"
                   >
                     <div className="grid min-w-0">
-                      <CriterionDetails criterion={criterion} />
+                      <CriterionDetails criterion={criterion} className="-mb-1 pb-1 font-medium" />
                       {criterion.fix && (
                         <span className="truncate text-xs text-muted-foreground">
                           {criterion.fix}
@@ -192,7 +223,7 @@ function CriteriaCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary
                       />
                     </div>
                     <span className="text-right text-xs text-muted-foreground tabular-nums">
-                      {rate === null ? "—" : `${rate}% pass`}
+                      {rate === null ? "-" : `${rate}%`}
                       {c && c.errored > 0 && (
                         <span className="block text-destructive">{c.errored} errored</span>
                       )}
@@ -201,41 +232,10 @@ function CriteriaCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary
                 );
               })}
             </ul>
-          </section>
+          </CardSection>
         ))}
       </CardContent>
     </Card>
-  );
-}
-
-// CriterionDetails shows a criterion's jq on hover, laid out to read.
-function CriterionDetails({ criterion }: Readonly<{ criterion: Criterion }>) {
-  return (
-    <HoverCard openDelay={200}>
-      <HoverCardTrigger asChild>
-        <span className="-mb-1 w-fit max-w-full cursor-default truncate pb-1 font-medium underline decoration-muted-foreground/40 decoration-dotted underline-offset-4">
-          {criterion.title}
-        </span>
-      </HoverCardTrigger>
-      <HoverCardContent align="start" className="grid w-md gap-3">
-        {criterion.description && <p className="text-sm">{criterion.description}</p>}
-        <Expression label="Check" value={criterion.check} />
-        {criterion.when && <Expression label="Only when" value={criterion.when} />}
-      </HoverCardContent>
-    </HoverCard>
-  );
-}
-
-function Expression({ label, value }: Readonly<{ label: string; value: string }>) {
-  return (
-    <div className="grid gap-1">
-      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {label}
-      </span>
-      <pre className="rounded-md bg-muted px-2.5 py-2 font-mono text-xs leading-5 break-words whitespace-pre-wrap">
-        {value}
-      </pre>
-    </div>
   );
 }
 
@@ -249,7 +249,7 @@ function EntitiesTable({
       tier: search.tier,
       q: search.q,
       page: search.page,
-      size: search.size,
+      size: usePageSize(search),
     }),
     placeholderData: keepPreviousData,
   });
@@ -263,8 +263,13 @@ function EntitiesTable({
       enableSorting: false,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Entity" />,
       cell: ({ row }) => (
-        <EntityLink blueprint={row.original.blueprint} identifier={row.original.identifier}>
-          <span className="font-medium">{row.original.title}</span>
+        <EntityLink
+          blueprint={row.original.blueprint}
+          identifier={row.original.identifier}
+          tab={spec.identifier}
+          className="font-medium hover:underline"
+        >
+          {row.original.title}
         </EntityLink>
       ),
     }),
@@ -277,20 +282,33 @@ function EntitiesTable({
       enableSorting: false,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Score" />,
       cell: ({ getValue }) => (
-        <span className="tabular-nums">{getValue() === null ? "—" : `${getValue()}%`}</span>
+        <span className="tabular-nums">{getValue() === null ? "-" : `${getValue()}%`}</span>
       ),
     }),
     column.display({
       id: "failing",
       header: () => "Failing",
       cell: ({ row }) => {
-        const failing = Object.entries(row.original.criteria)
-          .filter(([, c]) => c.status === "failed" || c.status === "errored")
-          .map(([id]) => titles.get(id) ?? id);
-        return failing.length === 0 ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          <span className="text-sm text-muted-foreground">{failing.join(", ")}</span>
+        // Failing checks keep the scorecard's order.
+        const failing = [...titles.keys()].filter((id) => {
+          const status = row.original.criteria[id]?.status;
+          return status === "failed" || status === "errored";
+        });
+        if (failing.length === 0) return <EmptyValue />;
+        return (
+          <ListValue
+            compact
+            items={failing.map((id) => ({ key: id, node: titles.get(id) ?? id }))}
+            viewAll={
+              <EntityLink
+                blueprint={row.original.blueprint}
+                identifier={row.original.identifier}
+                tab={spec.identifier}
+              >
+                View all
+              </EntityLink>
+            }
+          />
         );
       },
     }),
@@ -303,6 +321,7 @@ function EntitiesTable({
 
   return (
     <DataTable
+      title="Entities"
       data={page.data?.results ?? []}
       columns={columns}
       getRowId={(r) => `${r.blueprint}/${r.identifier}`}
@@ -313,27 +332,28 @@ function EntitiesTable({
       pending={page.isPending}
       error={page.error}
       onRetry={() => void page.refetch()}
-      filters={
-        <DataTableFacetedFilter
-          title="Tier"
-          options={tierOptions}
-          selected={search.tier ? [search.tier] : []}
-          // The server filters by one tier, so the newest pick wins.
-          onChange={(values) =>
-            navigate({
-              to: ".",
-              search: (prev: ScorecardSearch) => ({
-                ...prev,
-                tier: values.at(-1),
-                page: undefined,
-              }),
-              replace: true,
-              resetScroll: false,
-            } as never)
-          }
-        />
-      }
-      filtered={Boolean(search.tier)}
+      filters={{
+        fields: [
+          {
+            kind: "options",
+            id: "tier",
+            title: "Tier",
+            useOptions: () => tierOptions,
+          },
+        ],
+        value: search.tier ? { tier: search.tier.split(",") } : {},
+        onChange: (_, value) =>
+          navigate({
+            to: ".",
+            search: (prev: ScorecardSearch) => ({
+              ...prev,
+              tier: Array.isArray(value) && value.length > 0 ? value.join(",") : undefined,
+              page: undefined,
+            }),
+            replace: true,
+            resetScroll: false,
+          } as never),
+      }}
       onClearFilters={() =>
         navigate({
           to: ".",
@@ -342,14 +362,10 @@ function EntitiesTable({
         } as never)
       }
       empty={
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>Nothing scored yet</EmptyTitle>
-            <EmptyDescription>
-              Entities of {spec.blueprint} show up here once they're evaluated.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <EmptyState
+          title="Nothing scored yet"
+          description={`Entities of ${spec.blueprint} show up here once they're evaluated.`}
+        />
       }
     />
   );

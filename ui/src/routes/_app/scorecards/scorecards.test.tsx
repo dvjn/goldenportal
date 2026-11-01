@@ -84,8 +84,10 @@ describe("scorecards", () => {
     });
     renderRoute("/scorecards");
 
-    const card = (await screen.findByText("Readiness")).closest("a") as HTMLElement;
-    expect(await within(card).findByText("3 service entities · 2 criteria")).toBeInTheDocument();
+    const card = (await screen.findByText("Readiness")).closest("[data-slot=card]") as HTMLElement;
+    // 2 of the 5 checks that ran pass.
+    expect(await within(card).findByText("40%")).toBeInTheDocument();
+    expect(within(card).getByText("entities").previousElementSibling).toHaveTextContent("3");
     expect(within(card).getByText("Bronze")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /New Scorecard/ })).not.toBeInTheDocument();
   });
@@ -120,12 +122,45 @@ describe("scorecards", () => {
     const row = await screen.findByRole("row", { name: /Ledger/ });
     expect(within(row).getByText("50%")).toBeInTheDocument();
     expect(within(row).getByText("Owner is on call")).toBeInTheDocument();
-    expect(await screen.findByText("67% pass")).toBeInTheDocument();
+    expect(await screen.findByText("67%")).toBeInTheDocument();
+    expect(screen.getByText("40%")).toBeInTheDocument();
+    expect(within(row).getByRole("link", { name: "Ledger" })).toHaveAttribute(
+      "href",
+      "/catalog/service/ledger?tab=readiness",
+    );
     expect(screen.queryByRole("tab", { name: "Definition" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Evaluate Now" })).not.toBeInTheDocument();
   });
 
-  it("puts what blocks the next tier first on an entity", async () => {
+  it("filters the entities by tiers picked in the legend or the filter", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      ...member,
+      "GET scorecards/readiness": ok(readiness),
+      "GET scorecards/readiness/versions": ok([]),
+      "GET scorecards/readiness/summary": ok(summary),
+      "GET scorecards/readiness/results": ok({ results: [], total: 0 }),
+    });
+    const { router } = renderRoute("/scorecards/readiness");
+
+    const legend = await screen.findByRole("button", { name: /Bronze/ });
+    await user.click(legend);
+    await vi.waitFor(() => {
+      expect(router.state.location.search).toMatchObject({ tier: "bronze" });
+      const url = new URL(requests["GET scorecards/readiness/results"].url);
+      expect(url.searchParams.get("tier")).toBe("bronze");
+    });
+
+    // The filter adds tiers rather than replacing the one picked.
+    await user.click(screen.getByRole("button", { name: /^Tier/ }));
+    await user.click(await screen.findByRole("option", { name: "No tier" }));
+    await vi.waitFor(() => {
+      const url = new URL(requests["GET scorecards/readiness/results"].url);
+      expect(url.searchParams.get("tier")).toBe("none,bronze");
+    });
+  });
+
+  it("marks each criterion on an entity in the scorecard's order", async () => {
     stubApi({
       ...member,
       "GET blueprints/service": ok({
@@ -175,14 +210,19 @@ describe("scorecards", () => {
 
     const tabs = (await screen.findAllByRole("tab")).map((tab) => tab.textContent);
     expect(tabs).toEqual(["Overview", "Readiness", "Relations0", "YAML"]);
-    expect(await screen.findByRole("link", { name: /Readiness.*Bronze/ })).toHaveAttribute(
-      "href",
-      "/catalog/service/ledger?tab=readiness",
-    );
+    // Only the blueprint's own header badges sit beside the title.
+    expect(screen.queryByRole("link", { name: /Readiness.*Bronze/ })).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("tab", { name: "Readiness" }));
-    expect(await screen.findByText("1 criterion left")).toBeInTheDocument();
-    expect(screen.getByText("· next").parentElement).toHaveTextContent("Silver · next");
+    const marks = within(await screen.findByRole("list", { name: "Criteria" }));
+    // Marks keep the scorecard's order, whatever each check's outcome.
+    expect(marks.getAllByRole("listitem").map((item) => item.title)).toEqual([
+      expect.stringMatching(/: Passed$/),
+      expect.stringMatching(/: Failed$/),
+    ]);
+    expect(screen.getByRole("list", { name: "Tiers" })).toHaveTextContent("Silver (next)");
     expect(screen.getAllByText("Add an on-call rotation.").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /Show 1 passed or skipped/ })).toBeInTheDocument();
+    // Each tier opens from its own row; one with something to fix starts open.
+    expect(screen.getByRole("button", { name: /Silver/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Bronze/, expanded: false })).toBeInTheDocument();
   });
 });

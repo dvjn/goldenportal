@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Blueprint, BlueprintSpec } from "@/features/blueprints";
@@ -100,7 +100,7 @@ const serviceRoutes = {
 };
 
 describe("blueprints", () => {
-  it("lists blueprints with their status", async () => {
+  it("lists blueprints with the version they're on", async () => {
     stubApi({
       ...signedInBuilder,
       "GET blueprints": ok([
@@ -117,15 +117,18 @@ describe("blueprints", () => {
     renderRoute("/blueprints");
 
     const row = (await screen.findByText("Service")).closest("tr") as HTMLElement;
-    expect(within(row).getByText("Version 2")).toBeInTheDocument();
-    expect(within(row).getByText("Draft")).toBeInTheDocument();
+    expect(within(row).getByRole("cell", { name: "2" })).toBeInTheDocument();
+    expect(within(row).queryByText("Draft")).not.toBeInTheDocument();
   });
 
   it("keeps members out", async () => {
     stubApi({ "GET config": acmeConfig, "GET me": ok({ ...ada, role: "member" }) });
     const { router } = renderRoute("/blueprints");
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    // They stay on the page, told why, with the navigation still there.
+    expect(await screen.findByText("You don't have access to this page")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/blueprints");
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Blueprints" })).not.toBeInTheDocument();
   });
 
@@ -146,12 +149,79 @@ describe("blueprints", () => {
     expect(within(critical).getByText("Computed")).toBeInTheDocument();
     expect(await screen.findByText("There's an unpublished draft")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "deployment" })).toBeInTheDocument();
-    expect(await screen.findByText("12")).toBeInTheDocument();
+    const about = within(
+      (await screen.findByText("About")).closest("[data-slot=card]") as HTMLElement,
+    );
+    expect(about.getByText("Entities").nextElementSibling).toHaveTextContent("12");
     expect(screen.getByRole("link", { name: "Service Registry" })).toHaveAttribute(
       "href",
       "/integrations/registry",
     );
-    expect(screen.getByText("$identifier")).toBeInTheDocument();
+    expect(screen.getByText("updatedAt")).toBeInTheDocument();
+  });
+
+  it("puts the trail in the page bar, and the header once it's scrolled past", async () => {
+    const user = userEvent.setup();
+    // jsdom can't scroll, so the test reports the header passing under the bar.
+    let scrolledPast: (past: boolean) => void = () => {};
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          scrolledPast = (past) =>
+            callback(
+              [
+                {
+                  isIntersecting: !past,
+                  boundingClientRect: { top: past ? -200 : 80 },
+                } as IntersectionObserverEntry,
+              ],
+              this as unknown as IntersectionObserver,
+            );
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    stubApi(serviceRoutes);
+    const { router } = renderRoute("/blueprints/service");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Service" })).toBeVisible();
+    const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]') as HTMLElement;
+    const crumbs = within(bar).getByRole("navigation", { name: "breadcrumb" });
+    expect(within(crumbs).getByRole("link", { name: "Blueprints" })).toHaveAttribute(
+      "href",
+      "/blueprints",
+    );
+    expect(within(crumbs).getByRole("link", { name: "Service" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(bar).queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+
+    // Scrolled past, the bar trades the trail for the title, tabs and
+    // actions, and the page's own tabs step aside.
+    act(() => scrolledPast(true));
+    expect(bar).toHaveAttribute("data-collapsed");
+    expect(within(bar).queryByRole("navigation", { name: "breadcrumb" })).not.toBeInTheDocument();
+    const titles = within(bar).getAllByText("Service");
+    expect(titles.filter((title) => title.closest("[hidden]") === null)).toHaveLength(1);
+    expect(within(bar).getByRole("link", { name: "Export" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    await user.click(within(bar).getByRole("tab", { name: "Versions" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "versions" }));
+    expect(within(bar).getByRole("tab", { name: "Versions" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    act(() => scrolledPast(false));
+    expect(bar).not.toHaveAttribute("data-collapsed");
+    expect(within(bar).getByRole("navigation", { name: "breadcrumb" })).toBeInTheDocument();
+    expect(within(bar).queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Versions" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("edits the draft on the definition tab", async () => {

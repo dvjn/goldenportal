@@ -9,7 +9,6 @@ type Handler = (request: Request) => Response | Promise<Response>;
 export function stubApi(stubs: Record<string, Handler>) {
   const routes: Record<string, Handler> = {
     "GET home": ok([]),
-    "GET scorecard-columns": ok([]),
     ...stubs,
   };
   const requests: Record<string, Request> = {};

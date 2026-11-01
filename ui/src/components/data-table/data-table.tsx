@@ -1,10 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type RowData, useTable } from "@tanstack/react-table";
-import { FilterX, Search } from "lucide-react";
+import { cn } from "cn";
 import { type ReactNode, useEffect, useState } from "react";
+import { CardTitleBar } from "@/components/card-sections";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -14,6 +14,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { writeUiState } from "@/hooks/use-ui-state";
+import { DataTableFilterBox, type DataTableFixedFilter } from "./data-table-filter-box";
+import type {
+  DataTableFilterChange,
+  DataTableFilterField,
+  DataTableFilters,
+} from "./data-table-filter-picker";
 import { DataTablePagination } from "./data-table-pagination";
 import {
   type DataTableColumn,
@@ -23,19 +30,29 @@ import {
   sortingFromSearch,
   sortToSearch,
   type TableSearch,
+  tableCellClass,
+  usePageSize,
 } from "./table";
 
 type DataTableProps<TData extends RowData> = {
+  // title heads a table that shares its page with other cards. A table that
+  // fills its page or tab goes without, as the page names it.
+  title?: string;
   data: TData[];
   columns: DataTableColumn<TData>[];
   getRowId: (row: TData) => string;
   // search is the route's table state; pass Route.useSearch().
   search: TableSearch;
   searchLabel: string;
-  // filters sit next to the search box, e.g. faceted filters.
-  filters?: ReactNode;
-  // filtered says whether any filter besides the search is applied.
-  filtered?: boolean;
+  // filters sit in the search box as chips, added from a picker of their fields.
+  filters?: {
+    fields: DataTableFilterField[];
+    value: DataTableFilters;
+    onChange: DataTableFilterChange;
+  };
+  // fixedFilters are filters the table shows and can remove but not edit,
+  // such as those a link brought along.
+  fixedFilters?: DataTableFixedFilter[];
   // onClearFilters clears the filters besides the search.
   onClearFilters?: () => void;
   // actions sit at the end of the toolbar, e.g. a "New" button.
@@ -57,20 +74,18 @@ type DataTableProps<TData extends RowData> = {
 
 const pendingRows = 5;
 
-// Cells keep a wider gutter at the table's edges than between columns.
-const cellClass = "px-3 first:pl-5 last:pr-5";
-
 const searchDelay = 250;
 
 // DataTable is a searchable, sortable, paged table whose state lives in the URL.
 export function DataTable<TData extends RowData>({
+  title,
   data,
   columns,
   getRowId,
   search,
   searchLabel,
   filters,
-  filtered = false,
+  fixedFilters,
   onClearFilters,
   actions,
   empty,
@@ -83,6 +98,7 @@ export function DataTable<TData extends RowData>({
   const navigate = useNavigate();
   const server = rowCount !== undefined;
   const sorting = sortingFromSearch(search.sort);
+  usePageSize(search);
   const pagination = paginationFromSearch(search);
 
   function setSearch(patch: TableSearch) {
@@ -103,6 +119,8 @@ export function DataTable<TData extends RowData>({
     },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(pagination) : updater;
+      // A picked size is saved for every table, so it's left out of the URL.
+      if (next.pageSize !== pagination.pageSize) writeUiState("pageSize", next.pageSize);
       setSearch(paginationToSearch(next));
     },
     autoResetPageIndex: false,
@@ -122,6 +140,7 @@ export function DataTable<TData extends RowData>({
     return () => clearTimeout(timer);
   });
 
+  const filtered = Object.keys(filters?.value ?? {}).length > 0 || Boolean(fixedFilters?.length);
   const searching = Boolean(search.q) || filtered;
   const total = server ? rowCount : table.getFilteredRowModel().rows.length;
 
@@ -141,8 +160,11 @@ export function DataTable<TData extends RowData>({
   if (settled && total === 0 && !searching && (server || data.length === 0)) {
     return (
       <div className="flex flex-col gap-4">
-        {actions && <div className="flex justify-end">{actions}</div>}
-        <Card className="py-0">{empty}</Card>
+        {actions && !title && <div className="flex justify-end">{actions}</div>}
+        <Card className={title ? "gap-0 py-0 pt-(--card-spacing)" : "py-0"}>
+          {title && <CardTitleBar title={title} action={actions} />}
+          {empty}
+        </Card>
       </div>
     );
   }
@@ -150,99 +172,89 @@ export function DataTable<TData extends RowData>({
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="relative w-full max-w-72">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={searchLabel}
-            aria-label={searchLabel}
-            className="pl-8"
-          />
-        </div>
+    <Card
+      className={cn("gap-0 py-0 shadow-xs", title && "pt-(--card-spacing)")}
+      aria-busy={loading || pending || undefined}
+    >
+      {title && <CardTitleBar title={title} />}
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b px-(--card-spacing) py-3">
+        <DataTableFilterBox
+          label={searchLabel}
+          query={query}
+          onQueryChange={setQuery}
+          fields={filters?.fields ?? []}
+          value={filters?.value ?? {}}
+          onChange={filters?.onChange ?? (() => {})}
+          onClear={clearAll}
+          fixed={fixedFilters}
+        />
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
-      {(filters || searching) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {filters}
-          {searching && (
-            <Button variant="ghost" onClick={clearAll}>
-              <FilterX />
-              Reset
-            </Button>
-          )}
-        </div>
-      )}
-      <Card className="gap-0 py-0 shadow-xs" aria-busy={loading || pending || undefined}>
-        <Table className={loading ? "opacity-60 transition-opacity" : undefined}>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className={cellClass}>
-                    {header.isPlaceholder ? null : <table.FlexRender header={header} />}
-                  </TableHead>
+      <Table className={loading ? "opacity-60 transition-opacity" : undefined}>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead key={header.id} className={tableCellClass}>
+                  {header.isPlaceholder ? null : <table.FlexRender header={header} />}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {pending ? (
+            Array.from({ length: pendingRows }, (_, row) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: placeholder rows have no identity.
+              <TableRow key={row}>
+                {columns.map((_, cell) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: placeholder cells have no identity.
+                  <TableCell key={cell} className={tableCellClass}>
+                    <Skeleton className="h-4 w-full max-w-40" />
+                  </TableCell>
                 ))}
               </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {pending ? (
-              Array.from({ length: pendingRows }, (_, row) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: placeholder rows have no identity.
-                <TableRow key={row}>
-                  {columns.map((_, cell) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: placeholder cells have no identity.
-                    <TableCell key={cell} className={cellClass}>
-                      <Skeleton className="h-4 w-full max-w-40" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : error ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  <span className="text-muted-foreground">{error.message} </span>
-                  {onRetry && (
-                    <Button variant="link" className="h-auto p-0" onClick={onRetry}>
-                      Try again
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ) : rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  <span className="text-muted-foreground">
-                    {search.q ? `Nothing matches "${search.q}". ` : "Nothing matches the filters. "}
-                  </span>
-                  <Button variant="link" className="h-auto p-0" onClick={clearAll}>
-                    {filtered ? "Clear the filters" : "Clear the search"}
+            ))
+          ) : error ? (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center">
+                <span className="text-muted-foreground">{error.message} </span>
+                {onRetry && (
+                  <Button variant="link" className="h-auto p-0" onClick={onRetry}>
+                    Try again
                   </Button>
-                </TableCell>
+                )}
+              </TableCell>
+            </TableRow>
+          ) : rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center">
+                <span className="text-muted-foreground">
+                  {search.q ? `Nothing matches "${search.q}". ` : "Nothing matches the filters. "}
+                </span>
+                <Button variant="link" className="h-auto p-0" onClick={clearAll}>
+                  {filtered ? "Clear the filters" : "Clear the search"}
+                </Button>
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getAllCells().map((cell) => (
+                  <TableCell key={cell.id} className={tableCellClass}>
+                    <table.FlexRender cell={cell} />
+                  </TableCell>
+                ))}
               </TableRow>
-            ) : (
-              rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getAllCells().map((cell) => (
-                    <TableCell key={cell.id} className={cellClass}>
-                      <table.FlexRender cell={cell} />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        {settled && (
-          <div className="border-t px-5 py-3">
-            <DataTablePagination table={table} pagination={pagination} total={total} />
-          </div>
-        )}
-      </Card>
-    </div>
+            ))
+          )}
+        </TableBody>
+      </Table>
+      {settled && (
+        <div className="border-t px-(--card-spacing) py-3">
+          <DataTablePagination table={table} pagination={pagination} total={total} />
+        </div>
+      )}
+    </Card>
   );
 }

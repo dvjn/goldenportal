@@ -6,6 +6,7 @@ import {
   listRuns,
   listStatus,
   listTokens,
+  type RunFilters,
 } from "./api";
 
 export const connectorsQueryOptions = queryOptions({
@@ -25,8 +26,11 @@ export const statusQueryOptions = queryOptions({
   queryFn: listStatus,
 });
 
-export const runsQueryOptions = (identifier: string) =>
-  queryOptions({ queryKey: integrationKeys.runs(identifier), queryFn: () => listRuns(identifier) });
+export const runsQueryOptions = (identifier: string, filters: RunFilters) =>
+  queryOptions({
+    queryKey: [...integrationKeys.runs(identifier), filters],
+    queryFn: () => listRuns(identifier, filters),
+  });
 
 export function useIntegrations() {
   return useSuspenseQuery(integrations.queries.list).data;

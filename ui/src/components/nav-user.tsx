@@ -1,10 +1,16 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { KeyRound, LogOut, type LucideIcon, Monitor, Moon, Sun } from "lucide-react";
-import { settingsSections } from "@/components/settings-sections";
+import {
+  ChevronsUpDown,
+  KeyRound,
+  LogOut,
+  type LucideIcon,
+  Monitor,
+  Moon,
+  Sun,
+} from "lucide-react";
 import { type Theme, useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SidebarMenuButton, useSidebar } from "@/components/ui/sidebar";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { signOut, useMe } from "@/features/auth";
 
@@ -30,8 +37,11 @@ function initials(name: string) {
   ).toUpperCase();
 }
 
+// NavUser is the signed-in person at the foot of the sidebar, with their
+// own settings: theme, API tokens and signing out.
 export function NavUser() {
   const me = useMe();
+  const { isMobile } = useSidebar();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -45,13 +55,27 @@ export function NavUser() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label="Open user menu">
-          <Avatar>
+        <SidebarMenuButton
+          size="lg"
+          className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+          aria-label="Open user menu"
+        >
+          <Avatar className="size-8">
             <AvatarFallback>{initials(me.displayName)}</AvatarFallback>
           </Avatar>
-        </Button>
+          <span className="grid flex-1 text-left text-sm leading-tight">
+            <span className="truncate font-medium">{me.displayName}</span>
+            <span className="truncate text-xs text-muted-foreground">{me.email}</span>
+          </span>
+          <ChevronsUpDown className="ml-auto size-4" />
+        </SidebarMenuButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="min-w-56 rounded-lg" align="end" sideOffset={4}>
+      <DropdownMenuContent
+        className="min-w-56 rounded-lg"
+        side={isMobile ? "bottom" : "right"}
+        align="end"
+        sideOffset={4}
+      >
         <DropdownMenuLabel className="font-normal">
           <div className="grid text-sm leading-tight">
             <span className="truncate font-medium text-foreground">{me.displayName}</span>
@@ -80,22 +104,6 @@ export function NavUser() {
           </div>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {me.role === "admin" && (
-          <>
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Settings</DropdownMenuLabel>
-              {settingsSections.map(({ to, label, icon: Icon }) => (
-                <DropdownMenuItem key={to} asChild>
-                  <Link to={to}>
-                    <Icon />
-                    {label}
-                  </Link>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-          </>
-        )}
         <DropdownMenuItem asChild>
           <Link to="/account/tokens">
             <KeyRound />

@@ -1,22 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Boxes, Plus } from "lucide-react";
-import { StatusBadges } from "@/components/config-docs/status-badges";
+import { EmptyValue } from "@/components/catalog/property-value";
+import { DocTitle } from "@/components/config-docs/doc-title";
 import {
   DataTable,
   DataTableColumnHeader,
   dataTableColumns,
   validateTableSearch,
 } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { type BlueprintSummary, blueprints, useBlueprints } from "@/features/blueprints";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
@@ -34,21 +28,20 @@ const columns = [
     id: "title",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Blueprint" />,
     cell: ({ row }) => (
-      <Link
+      <DocTitle
         to="/blueprints/$identifier"
-        params={{ identifier: row.original.identifier }}
-        className="grid hover:underline"
-      >
-        <span className="font-medium">{row.original.title}</span>
-        <code className="font-mono text-xs text-muted-foreground">{row.original.identifier}</code>
-      </Link>
+        icon={row.original.icon}
+        color={row.original.color}
+        title={row.original.title}
+        identifier={row.original.identifier}
+      />
     ),
   }),
   column.accessor((blueprint) => blueprint.publishedVersion, {
-    id: "status",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+    id: "version",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Version" />,
     enableGlobalFilter: false,
-    cell: ({ row }) => <StatusBadges doc={row.original} />,
+    cell: ({ getValue }) => (getValue() > 0 ? getValue() : <EmptyValue title="Not published" />),
   }),
   column.accessor((blueprint) => blueprint.stats.properties ?? 0, {
     id: "properties",
@@ -90,10 +83,7 @@ function BlueprintsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Blueprints"
-        description="The kinds of entities in the catalog, and the properties and relations each one has."
-      />
+      <PageHeader title="Blueprints" />
       <DataTable
         data={blueprints}
         columns={columns}
@@ -102,20 +92,13 @@ function BlueprintsPage() {
         searchLabel="Search blueprints"
         actions={<NewBlueprintButton />}
         empty={
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Boxes />
-              </EmptyMedia>
-              <EmptyTitle>No blueprints yet</EmptyTitle>
-              <EmptyDescription>
-                A blueprint defines a kind of entity, such as a service or a team.
-              </EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-              <NewBlueprintButton />
-            </EmptyContent>
-          </Empty>
+          <EmptyState
+            icon={<Boxes />}
+            title="No blueprints yet"
+            description="A blueprint defines a kind of entity, such as a service or a team."
+          >
+            <NewBlueprintButton />
+          </EmptyState>
         }
       />
     </div>

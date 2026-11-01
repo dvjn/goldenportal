@@ -2,22 +2,16 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LayoutDashboard, Plus } from "lucide-react";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
+import { EmptyCard } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { PageTab } from "@/components/page-tabs";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import { DashboardView, type Picked } from "@/components/widgets/dashboard-view";
 import { hasRole, useMe } from "@/features/auth";
 import { homeQueryOptions } from "@/features/dashboards";
 
-// HomeSearch is the open dashboard, d, and what its filters are set to.
+// HomeSearch is the open dashboard, d, and what its inputs are set to.
 type HomeSearch = Picked & { d?: string };
 
 function validateHomeSearch(search: Record<string, unknown>): HomeSearch {
@@ -53,31 +47,27 @@ function HomePage() {
 
   if (views.length === 0) {
     return (
-      <Card className="py-0">
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <LayoutDashboard />
-            </EmptyMedia>
-            <EmptyTitle>Nothing on Home yet</EmptyTitle>
-            <EmptyDescription>
-              {builder
-                ? "Each dashboard shows here as a tab."
-                : "Dashboards show here once a builder adds them."}
-            </EmptyDescription>
-          </EmptyHeader>
+      <div className="flex flex-col gap-6">
+        <PageHeader title="Home" />
+        <EmptyCard
+          icon={<LayoutDashboard />}
+          title="Nothing on Home yet"
+          description={
+            builder
+              ? "Each dashboard shows here as a tab."
+              : "Dashboards show here once a builder adds them."
+          }
+        >
           {builder && (
-            <EmptyContent>
-              <Button asChild>
-                <Link to="/dashboards/new">
-                  <Plus />
-                  New Dashboard
-                </Link>
-              </Button>
-            </EmptyContent>
+            <Button asChild>
+              <Link to="/dashboards/new">
+                <Plus />
+                New Dashboard
+              </Link>
+            </Button>
           )}
-        </Empty>
-      </Card>
+        </EmptyCard>
+      </div>
     );
   }
 
@@ -88,21 +78,22 @@ function HomePage() {
       value={active.identifier}
       onValueChange={(next) => navigate({ search: { d: next }, replace: true })}
     >
-      <TabsList variant="line" aria-label="Dashboards">
-        {views.map((v) => (
-          <TabsTrigger
-            key={v.identifier}
-            value={v.identifier}
-            className="focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none"
-          >
-            {v.icon && <BlueprintIcon icon={v.icon} />}
-            {v.title}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+      <PageHeader
+        title="Home"
+        headless
+        tabs={
+          <TabsList variant="line" aria-label="Dashboards">
+            {views.map((v) => (
+              <PageTab key={v.identifier} value={v.identifier}>
+                {v.icon && <BlueprintIcon icon={v.icon} />}
+                {v.title}
+              </PageTab>
+            ))}
+          </TabsList>
+        }
+      />
       {views.map((v) => (
         <TabsContent key={v.identifier} value={v.identifier} className="grid gap-4 pt-2">
-          {v.description && <p className="text-sm text-muted-foreground">{v.description}</p>}
           <DashboardView
             view={v}
             picked={search}

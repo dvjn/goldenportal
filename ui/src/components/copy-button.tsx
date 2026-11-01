@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
@@ -42,11 +42,16 @@ export function CopyButton({ value }: Readonly<{ value: string }>) {
 
 // CopyIconButton copies value from a compact, icon-only button. label names
 // what it copies, e.g. "push endpoint".
-export function CopyIconButton({ value, label }: Readonly<{ value: string; label: string }>) {
+export function CopyIconButton({
+  value,
+  label,
+  ...props
+}: Readonly<{ value: string; label: string }> &
+  Omit<ComponentProps<typeof IconButton>, "label" | "onClick">) {
   const { copied, copy } = useCopy(value);
 
   return (
-    <IconButton label={copied ? "Copied" : `Copy ${label}`} onClick={copy}>
+    <IconButton label={copied ? "Copied" : `Copy ${label}`} onClick={copy} {...props}>
       {copied ? <Check /> : <Copy />}
     </IconButton>
   );

@@ -1,25 +1,33 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Columns3, FileCode, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
+import type { ReactNode } from "react";
 import { BlueprintIcon, IconTile } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
-import { PropertyValue } from "@/components/catalog/property-value";
+import { EmptyValue, PropertyValue } from "@/components/catalog/property-value";
 import { SplitTitle } from "@/components/catalog/split-title";
+import { UnpublishedBlueprint } from "@/components/catalog/unpublished-blueprint";
+import { useWhereFilters, withoutCondition } from "@/components/catalog/where-filters";
 import {
   DataTable,
   DataTableColumnHeader,
-  DataTableDateFilter,
-  DataTableFacetedFilter,
+  type DataTableFilterField,
+  type DataTableFilters,
+  type DataTableOption,
   type DateRange,
   dataTableColumns,
   dateRangeBounds,
+  isDuration,
+  pageSize,
   type TableSearch,
+  usePageSize,
   validateTableSearch,
 } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageError } from "@/components/page-error";
 import { PageHeader } from "@/components/page-header";
-import { ScorecardCell } from "@/components/scorecards/scorecard-cell";
+import { PageTab } from "@/components/page-tabs";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,26 +38,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
 import { hasRole, useMe } from "@/features/auth";
 import { type BlueprintSpec, blueprints, type Property } from "@/features/blueprints";
 import {
-  catalogQueryOptions,
   type Entity,
   type EntityQuery,
   entitiesQueryOptions,
   type Filter,
   facetsQueryOptions,
 } from "@/features/catalog";
-import { type ScorecardColumn, scorecardColumnsQueryOptions } from "@/features/scorecards";
+import { scorecards } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 import { usePageTitle } from "@/lib/page-title";
 
@@ -62,8 +62,10 @@ type Filters = Record<string, (string | number | boolean)[]>;
 type CatalogSearch = TableSearch & {
   view?: string;
   f?: Filters;
-  // d maps a date property, or $updatedAt, to the range of days it's filtered to.
+  // d maps a date property, or updatedAt, to the range of days it's filtered to.
   d?: Record<string, DateRange>;
+  // where is a filter a widget's link brought along that f and d can't say.
+  where?: Filter;
   cols?: string;
 };
 
@@ -75,6 +77,7 @@ function validateCatalogSearch(search: Record<string, unknown>): CatalogSearch {
     view: text(search.view),
     f: validFilters(search.f),
     d: validDates(search.d),
+    where: validWhere(search.where),
     cols: text(search.cols),
   };
 }
@@ -94,6 +97,13 @@ function validFilters(f: unknown): Filters | undefined {
   return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
+// validWhere keeps a filter's shape; the server checks what it says.
+function validWhere(where: unknown): Filter | undefined {
+  return typeof where === "object" && where !== null && !Array.isArray(where)
+    ? (where as Filter)
+    : undefined;
+}
+
 const day = /^\d{4}-\d{2}-\d{2}$/;
 
 function validDates(d: unknown): Record<string, DateRange> | undefined {
@@ -101,7 +111,11 @@ function validDates(d: unknown): Record<string, DateRange> | undefined {
   const dates: Record<string, DateRange> = {};
   for (const [key, range] of Object.entries(d)) {
     if (typeof range !== "object" || range === null) continue;
-    const { from, to } = range as Record<string, unknown>;
+    const { from, to, within } = range as Record<string, unknown>;
+    if (isDuration(within)) {
+      dates[key] = { within };
+      continue;
+    }
     const valid: DateRange = {
       from: typeof from === "string" && day.test(from) ? from : undefined,
       to: typeof to === "string" && day.test(to) ? to : undefined,
@@ -113,10 +127,11 @@ function validDates(d: unknown): Record<string, DateRange> | undefined {
 
 // toFilter turns the picked values into the server's filter: each property
 // matches any of its values, dates fall in their ranges, and every property
-// must match.
+// must match, as must where.
 function toFilter(
   filters: Filters | undefined,
   dates: Record<string, DateRange> | undefined,
+  where?: Filter,
 ): Filter | undefined {
   const conditions: Filter[] = Object.entries(filters ?? {}).map(([property, values]) => ({
     property,
@@ -124,21 +139,27 @@ function toFilter(
     values,
   }));
   for (const [property, range] of Object.entries(dates ?? {})) {
+    // The server reaches back from its own now, as dashboards do.
+    if (range.within) {
+      conditions.push({ property, op: "within", value: range.within });
+      continue;
+    }
     const { from, before } = dateRangeBounds(range);
     if (from) conditions.push({ property, op: "gte", value: from });
     if (before) conditions.push({ property, op: "lt", value: before });
   }
+  if (where) conditions.push(where);
   return conditions.length > 0 ? { and: conditions } : undefined;
 }
 
-function queryFrom(blueprint: string, search: CatalogSearch): EntityQuery {
+function queryFrom(blueprint: string, search: CatalogSearch, size: number): EntityQuery {
   return {
     blueprint,
     q: search.q,
-    filter: toFilter(search.f, search.d),
+    filter: toFilter(search.f, search.d, search.where),
     sort: search.sort,
     page: search.page,
-    size: search.size,
+    size,
   };
 }
 
@@ -148,7 +169,9 @@ export const Route = createFileRoute("/_app/catalog/$blueprint/")({
   loader: ({ context, params, deps }) =>
     Promise.all([
       context.queryClient.ensureQueryData(blueprints.queries.detail(params.blueprint)),
-      context.queryClient.ensureQueryData(entitiesQueryOptions(queryFrom(params.blueprint, deps))),
+      context.queryClient.ensureQueryData(
+        entitiesQueryOptions(queryFrom(params.blueprint, deps, pageSize(deps))),
+      ),
     ]),
   component: BlueprintCatalogPage,
   errorComponent: (props) => (
@@ -157,7 +180,7 @@ export const Route = createFileRoute("/_app/catalog/$blueprint/")({
 });
 
 // Lookups follow relations at read time, and objects and lists don't order,
-// so the server can't sort by them.
+// so the server can't sort by them. Scorecard tiers sort up their ladder.
 function sortable(property: Property) {
   return (
     !property.lookup && !property.many && property.type !== "array" && property.type !== "object"
@@ -171,6 +194,7 @@ function filterable(property: Property) {
   if (property.display?.filter !== undefined) return property.display.filter;
   return (
     Boolean(property.relation) ||
+    Boolean(property.scorecard) ||
     Boolean(property.enum) ||
     property.type === "boolean" ||
     (property.type === "array" && property.items?.type === "string")
@@ -183,17 +207,25 @@ function dateFilterable(property: Property) {
   return property.format === "date" || property.format === "date-time";
 }
 
-// defaultColumns are the properties whose display asks for a column, or
-// else the first few that fit in a cell.
+// builtInColumns are the fields every entity has that can be columns,
+// besides the title column, which shows the title and identifier.
+const builtInColumns = [
+  { id: "integration", title: "Integration" },
+  { id: "createdAt", title: "Created" },
+  { id: "updatedAt", title: "Updated" },
+];
+
+// defaultColumns are the blueprint's catalog columns, or else the first few
+// properties that fit in a cell and when each entity was last updated.
 function defaultColumns(spec: BlueprintSpec) {
-  const chosen = spec.properties.filter((property) => property.display?.column);
-  const columns =
-    chosen.length > 0
-      ? chosen
-      : spec.properties
-          .filter((property) => property.type !== "object" && property.display?.column !== false)
-          .slice(0, 5);
-  return columns.map((property) => property.identifier);
+  if (spec.catalog?.columns) return spec.catalog.columns;
+  return [
+    ...spec.properties
+      .filter((property) => property.type !== "object")
+      .slice(0, 5)
+      .map((property) => property.identifier),
+    "updatedAt",
+  ];
 }
 
 const column = dataTableColumns<Entity>();
@@ -206,29 +238,16 @@ function BlueprintCatalogPage() {
   const spec = doc.published?.spec;
   usePageTitle(spec?.title ?? doc.title);
   const builder = hasRole(useMe().role, "builder");
-  const { data: scorecards = [] } = useQuery(scorecardColumnsQueryOptions(blueprint));
   const page = useQuery({
-    ...entitiesQueryOptions(queryFrom(blueprint, search)),
+    ...entitiesQueryOptions(queryFrom(blueprint, search, usePageSize(search))),
     placeholderData: keepPreviousData,
   });
-  const { data: catalog } = useQuery(catalogQueryOptions);
+  const whereFilters = useWhereFilters(blueprint, search.where);
 
-  if (!spec) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>{doc.title} isn't published yet</EmptyTitle>
-          <EmptyDescription>Its entities show up here once it is.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
+  if (!spec) return <UnpublishedBlueprint blueprint={blueprint} title={doc.title} />;
 
   const filters = search.f ?? {};
-  const shown = search.cols?.split(",") ?? [
-    ...defaultColumns(spec),
-    ...scorecards.map((s) => `$scorecard.${s.identifier}`),
-  ];
+  const shown = search.cols?.split(",") ?? defaultColumns(spec);
   const setSearch = (patch: Partial<CatalogSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
 
@@ -238,7 +257,7 @@ function BlueprintCatalogPage() {
   );
   const columns = [
     column.accessor("title", {
-      id: "$title",
+      id: "title",
       header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
       cell: ({ row }) => (
         <EntityLink
@@ -271,54 +290,92 @@ function BlueprintCatalogPage() {
         </EntityLink>
       ),
     }),
-    ...spec.properties
-      .filter((property) => shown.includes(property.identifier))
-      .map((property) =>
+    // Columns keep the order they're listed in.
+    ...shown.flatMap((id) => {
+      const builtIn = builtInColumns.find((c) => c.id === id);
+      if (builtIn) {
+        return [
+          column.accessor((entity): unknown => entity[builtIn.id as "integration"], {
+            id,
+            header: ({ column }) => <DataTableColumnHeader column={column} title={builtIn.title} />,
+            cell: ({ getValue }) => <BuiltInCell id={id} value={String(getValue() ?? "")} />,
+          }),
+        ];
+      }
+      const property = spec.properties.find((p) => p.identifier === id);
+      if (!property) return [];
+      return [
         column.accessor((entity) => entity.properties[property.identifier], {
           id: property.identifier,
           enableSorting: sortable(property),
+          // A result is an object, which would sort descending first; tiers
+          // start, like text, at the bottom of their ladder.
+          sortDescFirst: property.scorecard ? false : undefined,
           header: ({ column }) => <DataTableColumnHeader column={column} title={property.title} />,
           cell: ({ row }) => (
             <PropertyValue
               property={property}
               value={row.original.properties[property.identifier]}
               links={row.original.related[property.identifier]}
+              entity={row.original}
               compact
             />
           ),
         }),
-      ),
-    ...scorecards
-      .filter((s) => shown.includes(`$scorecard.${s.identifier}`))
-      .map((s) =>
-        column.accessor((entity) => entity.scorecards?.[s.identifier]?.tier, {
-          id: `$scorecard.${s.identifier}`,
-          header: ({ column }) => <DataTableColumnHeader column={column} title={s.title} />,
-          cell: ({ row }) => <ScorecardCell entity={row.original} column={s} />,
-        }),
-      ),
-    column.accessor("updatedAt", {
-      id: "$updatedAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
-      cell: ({ getValue }) => (
-        <span
-          className="whitespace-nowrap text-muted-foreground"
-          title={formatAbsolute(getValue())}
-        >
-          {formatRelative(getValue())}
-        </span>
-      ),
+      ];
     }),
   ];
 
   const dates = search.d ?? {};
-  const filtered = Object.keys(filters).length > 0 || Object.keys(dates).length > 0;
   const setDates = (key: string, range: DateRange) =>
     setSearch({ d: validDates({ ...dates, [key]: range }), page: undefined });
-  // The header counts every entity, and how many match while the table is narrowed.
-  const count =
-    catalog?.find((entry) => entry.identifier === blueprint)?.entities ?? page.data?.total;
-  const matching = filtered || search.q ? page.data?.total : undefined;
+  // Every filter is offered, shown as a column or not. A date property whose
+  // display asks for a filter gets the date one, not a list of its values.
+  const filterFields: DataTableFilterField[] = [
+    ...spec.properties
+      .filter((property) => filterable(property) && !dateFilterable(property))
+      .map(
+        (property): DataTableFilterField => ({
+          kind: "options",
+          id: property.identifier,
+          title: property.title,
+          useOptions: propertyOptions(blueprint, property),
+        }),
+      ),
+    ...spec.properties.filter(dateFilterable).map(
+      (property): DataTableFilterField => ({
+        kind: "date",
+        id: property.identifier,
+        title: property.title,
+      }),
+    ),
+    { kind: "date", id: "updatedAt", title: "Updated" },
+  ];
+  // A link can filter by any property, so one without a field of its own
+  // gets one while it's filtered, to show and change it.
+  for (const id of Object.keys(filters)) {
+    if (filterFields.some((field) => field.id === id)) continue;
+    const property = spec.properties.find((p) => p.identifier === id);
+    filterFields.push({
+      kind: "options",
+      id,
+      title: property?.title ?? id,
+      useOptions: () =>
+        filters[id]?.map((value) => ({ value: JSON.stringify(value), label: String(value) })),
+    });
+  }
+  for (const id of Object.keys(dates)) {
+    if (filterFields.some((field) => field.id === id)) continue;
+    const title = spec.properties.find((p) => p.identifier === id)?.title ?? id;
+    filterFields.push({ kind: "date", id, title });
+  }
+  // Property values are keyed by their JSON, so values of any type fit the picker.
+  const filterValue: DataTableFilters = {
+    ...Object.fromEntries(
+      Object.entries(filters).map(([id, values]) => [id, values.map((v) => JSON.stringify(v))]),
+    ),
+    ...dates,
+  };
   // The blueprint's own tabs come first, then the entities table every catalog page has.
   const views = spec.catalog?.tabs ?? [];
   const view = views.some((v) => v.identifier === search.view)
@@ -327,22 +384,16 @@ function BlueprintCatalogPage() {
       ? "entities"
       : views[0].identifier;
 
-  const header = (
+  const header = (tabs?: ReactNode) => (
     <PageHeader
       title={spec.title}
-      icon={<IconTile icon={spec.icon} size="lg" />}
+      icon={<IconTile icon={spec.icon} color={spec.color} size="lg" />}
       breadcrumbs={
         <PageBreadcrumbs page={spec.title}>
           <Link to="/catalog">Catalog</Link>
         </PageBreadcrumbs>
       }
-      description={
-        <>
-          {spec.description}
-          {spec.description && count !== undefined && " · "}
-          {count !== undefined && countText(count, matching)}
-        </>
-      }
+      description={spec.description}
       actions={
         builder && (
           <Button variant="outline" asChild>
@@ -353,6 +404,7 @@ function BlueprintCatalogPage() {
           </Button>
         )
       }
+      tabs={tabs}
     />
   );
 
@@ -368,189 +420,173 @@ function BlueprintCatalogPage() {
       pending={page.isPending}
       error={page.error}
       onRetry={() => void page.refetch()}
-      filters={
-        <>
-          {spec.properties.filter(filterable).map((property) => (
-            <PropertyFilter
-              key={property.identifier}
-              blueprint={blueprint}
-              property={property}
-              selected={(filters[property.identifier] ?? []).map((value) => JSON.stringify(value))}
-              onChange={(values) =>
-                setSearch({
-                  f: validFilters({
-                    ...filters,
-                    [property.identifier]: values.map((value) => JSON.parse(value) as unknown),
-                  }),
-                  page: undefined,
-                })
-              }
-            />
-          ))}
-          {scorecards.map((s) => (
-            <DataTableFacetedFilter
-              key={s.identifier}
-              title={s.title}
-              options={[
-                { value: "", label: "No tier" },
-                ...s.tiers.map((tier) => ({ value: tier.name, label: tier.title })),
-              ]}
-              selected={(filters[`$scorecard.${s.identifier}`] ?? []).map(String)}
-              onChange={(values) =>
-                setSearch({
-                  f: validFilters({ ...filters, [`$scorecard.${s.identifier}`]: values }),
-                  page: undefined,
-                })
-              }
-            />
-          ))}
-          {spec.properties.filter(dateFilterable).map((property) => (
-            <DataTableDateFilter
-              key={property.identifier}
-              title={property.title}
-              value={dates[property.identifier] ?? {}}
-              onChange={(range) => setDates(property.identifier, range)}
-            />
-          ))}
-          <DataTableDateFilter
-            title="Updated"
-            value={dates.$updatedAt ?? {}}
-            onChange={(range) => setDates("$updatedAt", range)}
-          />
-        </>
+      filters={{
+        fields: filterFields,
+        value: filterValue,
+        onChange: (id, value) => {
+          if (filterFields.find((field) => field.id === id)?.kind === "date") {
+            setDates(id, Array.isArray(value) ? {} : (value ?? {}));
+            return;
+          }
+          const values = Array.isArray(value) ? value : [];
+          setSearch({
+            f: validFilters({
+              ...filters,
+              [id]: values.map((v) => JSON.parse(v) as unknown),
+            }),
+            page: undefined,
+          });
+        },
+      }}
+      fixedFilters={whereFilters.map(({ title, summary }, index) => ({
+        title,
+        summary,
+        onRemove: () =>
+          setSearch({
+            where: search.where && withoutCondition(search.where, index),
+            page: undefined,
+          }),
+      }))}
+      onClearFilters={() =>
+        setSearch({ f: undefined, d: undefined, where: undefined, page: undefined })
       }
-      filtered={filtered}
-      onClearFilters={() => setSearch({ f: undefined, d: undefined, page: undefined })}
       actions={
         <ColumnsMenu
           spec={spec}
-          scorecards={scorecards}
           shown={shown}
           onChange={(cols) => setSearch({ cols: cols.join(",") })}
           onReset={search.cols === undefined ? undefined : () => setSearch({ cols: undefined })}
         />
       }
       empty={
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <LayoutGrid />
-            </EmptyMedia>
-            <EmptyTitle>No {spec.title.toLowerCase()} entities yet</EmptyTitle>
-            <EmptyDescription>They show up here once an integration writes them.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <EmptyState
+          icon={<LayoutGrid />}
+          title={`No ${spec.title.toLowerCase()} entities yet`}
+          description="They show up here once an integration writes them."
+        />
       }
     />
   );
 
+  if (views.length === 0) {
+    return (
+      <div className="flex flex-col gap-6">
+        {header()}
+        {table}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-6">
-      {header}
-      {views.length === 0 ? (
-        table
-      ) : (
-        <Tabs
-          value={view}
-          onValueChange={(next) =>
-            navigate({ search: (prev) => ({ ...prev, view: next }), replace: true })
-          }
-        >
-          <TabsList variant="line" aria-label={spec.title}>
-            {views.map((v) => (
-              <TabsTrigger key={v.identifier} value={v.identifier} className={tabClass}>
-                {v.icon && <BlueprintIcon icon={v.icon} />}
-                {v.title}
-              </TabsTrigger>
-            ))}
-            <TabsTrigger value="entities" className={tabClass}>
-              <Rows3 />
-              Entities
-              {page.data && (
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {page.data.total}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
+    <Tabs
+      value={view}
+      onValueChange={(next) =>
+        navigate({ search: (prev) => ({ ...prev, view: next }), replace: true })
+      }
+    >
+      {header(
+        <TabsList variant="line" aria-label={spec.title}>
           {views.map((v) => (
-            <TabsContent key={v.identifier} value={v.identifier} className="pt-2">
-              <WidgetGrid
-                widgets={v.widgets}
-                source={{ blueprint, page: "catalog", tab: v.identifier }}
-                context={{}}
-              />
-            </TabsContent>
+            <PageTab key={v.identifier} value={v.identifier}>
+              {v.icon && <BlueprintIcon icon={v.icon} />}
+              {v.title}
+            </PageTab>
           ))}
-          <TabsContent value="entities" className="pt-2">
-            {table}
-          </TabsContent>
-        </Tabs>
+          <PageTab value="entities">
+            <Rows3 />
+            Entities
+            {page.data && (
+              <span className="text-xs text-muted-foreground tabular-nums">{page.data.total}</span>
+            )}
+          </PageTab>
+        </TabsList>,
       )}
-    </div>
+      {views.map((v) => (
+        <TabsContent key={v.identifier} value={v.identifier} className="pt-2">
+          <WidgetGrid
+            widgets={v.widgets}
+            source={{ blueprint, page: "catalog", tab: v.identifier }}
+            context={{}}
+          />
+        </TabsContent>
+      ))}
+      <TabsContent value="entities" className="pt-2">
+        {table}
+      </TabsContent>
+    </Tabs>
   );
 }
 
-const tabClass =
-  "focus-visible:border-transparent focus-visible:bg-muted focus-visible:ring-0 focus-visible:outline-none";
+// propertyOptions is the hook a property's filter loads its options with,
+// once the filter is picked.
+function propertyOptions(blueprint: string, property: Property) {
+  return function useOptions() {
+    return usePropertyOptions(blueprint, property);
+  };
+}
 
-// PropertyFilter picks values of one property. Enums and booleans offer
-// their values; relations and tag lists offer what entities actually have.
-// Options are keyed by their JSON, so values of any type fit the picker.
-function PropertyFilter({
-  blueprint,
-  property,
-  selected,
-  onChange,
-}: Readonly<{
-  blueprint: string;
-  property: Property;
-  selected: string[];
-  onChange: (values: string[]) => void;
-}>) {
-  const fixed = property.enum ?? (property.type === "boolean" ? [true, false] : undefined);
+// usePropertyOptions loads the values a property can be filtered to. Enums
+// and booleans offer their values, and scorecards no tier and their tiers;
+// relations and tag lists offer what entities actually have. Options are
+// keyed by their JSON, so values of any type fit the picker.
+function usePropertyOptions(blueprint: string, property: Property): DataTableOption[] | undefined {
+  const scorecard = useQuery({
+    ...scorecards.queries.detail(property.scorecard ?? ""),
+    enabled: Boolean(property.scorecard),
+  });
+  const tiers = scorecard.data?.published?.spec.tiers;
+  const fixed = property.scorecard
+    ? tiers && ["", ...tiers.map((tier) => tier.name)]
+    : (property.enum ?? (property.type === "boolean" ? [true, false] : undefined));
   const facets = useQuery({
     ...facetsQueryOptions(blueprint, property.identifier),
-    enabled: !fixed || property.type === "boolean",
+    enabled: !property.scorecard && (!fixed || property.type === "boolean"),
   });
+  if (!fixed && !facets.data) return undefined;
   const counts = new Map(facets.data?.map((facet) => [JSON.stringify(facet.value), facet]));
   const values = fixed ?? facets.data?.map((facet) => facet.value) ?? [];
 
-  const options = values.map((value) => {
+  return values.map((value) => {
     const key = JSON.stringify(value);
     const facet = counts.get(key);
-    const label =
-      typeof value === "boolean" ? (value ? "Yes" : "No") : (facet?.title ?? String(value));
+    const label = property.scorecard
+      ? (tiers?.find((tier) => tier.name === value)?.title ?? "No tier")
+      : typeof value === "boolean"
+        ? value
+          ? "Yes"
+          : "No"
+        : (facet?.title ?? String(value));
     return { value: key, label, count: facet?.count ?? (facets.data ? 0 : undefined) };
   });
+}
 
+// BuiltInCell shows a field every entity has: dates as how long ago, and
+// the integration that wrote it.
+function BuiltInCell({ id, value }: Readonly<{ id: string; value: string }>) {
+  if (!value) return <EmptyValue />;
+  if (id === "integration") return <span className="text-muted-foreground">{value}</span>;
   return (
-    <DataTableFacetedFilter
-      title={property.title}
-      options={options}
-      selected={selected}
-      onChange={onChange}
-    />
+    <span className="whitespace-nowrap text-muted-foreground" title={formatAbsolute(value)}>
+      {formatRelative(value)}
+    </span>
   );
 }
 
 function ColumnsMenu({
   spec,
-  scorecards,
   shown,
   onChange,
   onReset,
 }: Readonly<{
   spec: BlueprintSpec;
-  scorecards: ScorecardColumn[];
   shown: string[];
   onChange: (cols: string[]) => void;
   // onReset goes back to the blueprint's default columns, once others are chosen.
   onReset?: () => void;
 }>) {
   const options = [
-    ...spec.properties,
-    ...scorecards.map((s) => ({ identifier: `$scorecard.${s.identifier}`, title: s.title })),
+    ...spec.properties.map((p) => ({ id: p.identifier, title: p.title })),
+    ...builtInColumns,
   ];
   return (
     <DropdownMenu>
@@ -563,20 +599,20 @@ function ColumnsMenu({
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuLabel>Show Columns</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {options.map((property) => (
+        {options.map((option) => (
           <DropdownMenuCheckboxItem
-            key={property.identifier}
-            checked={shown.includes(property.identifier)}
+            key={option.id}
+            checked={shown.includes(option.id)}
             onSelect={(event) => event.preventDefault()}
             onCheckedChange={(checked) =>
               onChange(
                 options
-                  .map((p) => p.identifier)
-                  .filter((id) => (id === property.identifier ? checked : shown.includes(id))),
+                  .map((o) => o.id)
+                  .filter((id) => (id === option.id ? checked : shown.includes(id))),
               )
             }
           >
-            {property.title}
+            {option.title}
           </DropdownMenuCheckboxItem>
         ))}
         {onReset && (
@@ -591,9 +627,4 @@ function ColumnsMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function countText(count: number, matching: number | undefined) {
-  if (matching !== undefined) return `${matching} of ${count} match`;
-  return `${count} ${count === 1 ? "entity" : "entities"}`;
 }

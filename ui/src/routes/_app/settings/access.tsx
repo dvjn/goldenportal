@@ -9,15 +9,9 @@ import {
   dataTableColumns,
   validateTableSearch,
 } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { GrantAccessDialog } from "@/components/grant-access-dialog";
 import { RoleSelect, roleLabels } from "@/components/role-select";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import {
   accessKeys,
   type Grant,
@@ -74,10 +68,6 @@ function AccessPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        Roles granted directly to people and groups. Everyone who signs in is a member; people in a
-        group get the group's role.
-      </p>
       <DataTable
         data={grants}
         columns={columns}
@@ -86,17 +76,11 @@ function AccessPage() {
         searchLabel="Search people and groups"
         actions={<GrantAccessDialog />}
         empty={
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <ShieldCheck />
-              </EmptyMedia>
-              <EmptyTitle>No access granted yet</EmptyTitle>
-              <EmptyDescription>
-                Grant a role to a person or a group to get started.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <EmptyState
+            icon={<ShieldCheck />}
+            title="No access granted yet"
+            description="Grant a role to a person or a group to get started."
+          />
         }
       />
     </div>
