@@ -48,6 +48,7 @@ metadata:
   title: Team
   description: A group of people who own things in the catalog.
   icon: users
+  color: violet
 spec:
   properties:
     slackChannel:
@@ -62,7 +63,17 @@ spec:
       title: Members
       relation: user
       many: true
+    basics:
+      title: Basics
+      type: scorecard
+      scorecard: team-basics
+  catalog:
+    columns: [slackChannel, members, basics, updatedAt]
   entity:
+    queries:
+      owned:
+        blueprint: service
+        filter: {property: owner, op: eq, value: $entity}
     tabs:
       services:
         title: Services
@@ -71,27 +82,31 @@ spec:
           owned:
             type: stat
             title: Services
-            blueprint: service
-            filter: {property: owner, op: eq, value: $entity}
+            value: {query: owned}
+            link: {query: owned}
           critical:
             type: stat
             title: Critical
-            blueprint: service
-            filter:
-              and:
-                - {property: owner, op: eq, value: $entity}
-                - {property: tier, op: eq, value: critical}
+            value:
+              query:
+                blueprint: service
+                filter:
+                  and:
+                    - {property: owner, op: eq, value: $entity}
+                    - {property: tier, op: eq, value: critical}
+            link: {query: owned, filter: {property: tier, op: eq, value: critical}}
           readiness:
             type: scorecard
             title: Readiness
             scorecard: service-readiness
-            filter: {property: owner, op: eq, value: $entity}
+            query: owned
+            link: {path: /scorecards/service-readiness}
           services:
             type: table
             title: Services
-            blueprint: service
-            filter: {property: owner, op: eq, value: $entity}
-            columns: [tier, language, lastDeployedAt]
+            query: owned
+            columns: [readiness, tier, language, lastDeployedAt]
+            link: {query: owned}
 $yaml$),
   ('service', $yaml$kind: Blueprint
 metadata:
@@ -99,14 +114,13 @@ metadata:
   title: Service
   description: A deployable unit of software.
   icon: server
+  color: blue
 spec:
   properties:
     language:
       title: Language
       type: string
       enum: [go, python, typescript, java]
-      display:
-        column: true
     tier:
       title: Tier
       description: How much depends on the service; critical services page on-call.
@@ -115,8 +129,7 @@ spec:
       required: true
       display:
         as: badge
-        colors: {critical: red, standard: blue, experimental: gray}
-        column: true
+        colors: {critical: rose, standard: indigo, experimental: gray}
     repository:
       title: Repository
       type: string
@@ -132,13 +145,9 @@ spec:
       title: Last Deployed
       type: string
       format: date-time
-      display:
-        column: true
     owner:
       title: Owner
       relation: team
-      display:
-        column: true
     dependsOn:
       title: Depends On
       relation: service
@@ -154,10 +163,20 @@ spec:
     critical:
       title: Critical
       type: boolean
-      compute: .properties.tier == "critical"
+      compute: .tier == "critical"
       display:
         hidden: true
+    readiness:
+      title: Readiness
+      type: scorecard
+      scorecard: service-readiness
   catalog:
+    columns: [language, tier, lastDeployedAt, owner, readiness]
+    queries:
+      services:
+        blueprint: service
+      critical:
+        filter: {property: critical, op: eq, value: true}
     tabs:
       overview:
         title: Overview
@@ -166,23 +185,29 @@ spec:
           byTier:
             type: donut
             title: By Tier
+            query: services
             groupBy: tier
+            link: {query: services, group: true}
           byLanguage:
             type: bar
             title: By Language
             width: 4
+            query: services
             groupBy: language
+            link: {query: services, group: true}
           readiness:
             type: scorecard
             title: Readiness
             width: 4
             scorecard: service-readiness
+            link: {path: /scorecards/service-readiness}
           critical:
             type: table
             title: Critical Services
-            filter: {property: critical, op: eq, value: true}
-            columns: [owner, language, lastDeployedAt]
+            query: critical
+            columns: [readiness, owner, language, lastDeployedAt]
             sort: -lastDeployedAt
+            link: {query: critical}
   entity:
     header:
       badges: [tier]
@@ -191,41 +216,73 @@ spec:
       - title: Ownership
         properties: [owner, ownerSlack, ownerOncall]
       - title: Delivery
-        properties: [language, lastDeployedAt, dependsOn]
+        properties: [language, lastDeployedAt, dependsOn, tags, readiness]
+    queries:
+      deployments:
+        blueprint: deployment
+        filter: {property: service, op: eq, value: $entity}
+      failed:
+        blueprint: deployment
+        filter:
+          and:
+            - {property: service, op: eq, value: $entity}
+            - {property: status, op: eq, value: failed}
+      production:
+        blueprint: deployment
+        filter:
+          and:
+            - {property: service, op: eq, value: $entity}
+            - {property: environment, op: eq, value: production}
     tabs:
       deployments:
         title: Deployments
         icon: rocket
         widgets:
-          about:
-            type: markdown
-            width: 12
-            text: 'Deployments of **{{ $entity.title }}**, owned by {{ $entity.owner }}, as of {{ $today }}.'
           total:
             type: stat
             title: Deployments
-            blueprint: deployment
-            filter: {property: service, op: eq, value: $entity}
+            icon: rocket
+            color: orange
+            value: {query: deployments}
+            link: {query: deployments}
+          succeeded:
+            type: stat
+            title: Success Rate
+            icon: circle-check
+            color: emerald
+            value:
+              query: deployments
+              share: {property: status, op: eq, value: succeeded}
+          failed:
+            type: stat
+            title: Failed
+            icon: circle-x
+            color: red
+            value: {query: failed}
+            link: {query: failed}
+          production:
+            type: stat
+            title: To Production
+            icon: globe
+            color: blue
+            value: {query: production}
+            link: {query: production}
+          recent:
+            type: table
+            title: Recent
+            width: 9
+            query: deployments
+            columns: [environment, status, startedAt]
+            sort: -startedAt
+            limit: 5
+            link: {query: deployments}
           byStatus:
             type: donut
             title: By Status
             width: 3
-            blueprint: deployment
+            query: deployments
             groupBy: status
-            filter: {property: service, op: eq, value: $entity}
-          byEnvironment:
-            type: bar
-            title: By Environment
-            blueprint: deployment
-            groupBy: environment
-            filter: {property: service, op: eq, value: $entity}
-          recent:
-            type: table
-            title: Recent
-            blueprint: deployment
-            filter: {property: service, op: eq, value: $entity}
-            columns: [environment, version, status, startedAt]
-            sort: -startedAt
+            link: {query: deployments, group: true}
 $yaml$),
   ('user', $yaml$kind: Blueprint
 metadata:
@@ -233,6 +290,7 @@ metadata:
   title: User
   description: Someone who can sign in to the portal.
   icon: user
+  color: sky
 spec:
   properties:
     email:
@@ -257,6 +315,7 @@ metadata:
   title: Group
   description: A group from the identity provider.
   icon: users-round
+  color: teal
 spec:
   properties:
     members:
@@ -270,6 +329,7 @@ metadata:
   title: Blueprint
   description: A kind of entity in the catalog.
   icon: shapes
+  color: indigo
 spec:
   properties:
     description:
@@ -292,6 +352,7 @@ metadata:
   title: Integration
   description: Where entities come from.
   icon: plug
+  color: emerald
 spec:
   properties:
     connector:
@@ -307,6 +368,13 @@ spec:
       title: Last Run
       type: string
       format: date-time
+    lastRunOutcome:
+      title: Outcome
+      type: string
+      enum: [succeeded, warnings, failed]
+      display:
+        as: badge
+        colors: {succeeded: emerald, warnings: amber, failed: red}
     writes:
       title: Writes
       relation: blueprint
@@ -318,6 +386,7 @@ metadata:
   title: Deployment
   description: A release of a service to an environment.
   icon: rocket
+  color: orange
 spec:
   properties:
     service:
@@ -328,9 +397,6 @@ spec:
       title: Environment
       type: string
       enum: [production, staging]
-      display:
-        as: badge
-        colors: {production: violet, staging: gray}
     version:
       title: Version
       type: string
@@ -351,8 +417,13 @@ spec:
       format: date-time
     owner:
       title: Owner
-      lookup: service.owner.$title
+      lookup: service.owner.title
   catalog:
+    queries:
+      deployments:
+        blueprint: deployment
+      failed:
+        filter: {property: status, op: eq, value: failed}
     tabs:
       overview:
         title: Overview
@@ -361,18 +432,24 @@ spec:
           byStatus:
             type: donut
             title: By Status
+            width: 3
+            query: deployments
             groupBy: status
+            link: {query: deployments, group: true}
           byService:
             type: bar
             title: By Service
             width: 8
+            query: deployments
             groupBy: service
+            link: {query: deployments, group: true}
           failed:
             type: table
             title: Failed
-            filter: {property: status, op: eq, value: failed}
+            query: failed
             columns: [service, environment, version, startedAt]
             sort: -startedAt
+            link: {query: failed}
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -478,6 +555,7 @@ spec:
           version: .version
           entities: .entities
           lastRunAt: .lastRunAt
+          lastRunOutcome: .lastRunOutcome
           writes: .blueprints
 $yaml$),
   ('deploy-tracker', $yaml$kind: Integration
@@ -530,8 +608,9 @@ FROM (VALUES
 JOIN config_documents d ON d.kind = 'integration' AND d.identifier = t.identifier
 ON CONFLICT (secret_hash) DO NOTHING;
 
--- Example scorecards. Checks are jq over each entity, with its relations and
--- lookups as properties.
+-- Example scorecards. Checks are jq over each entity, flat as paths read
+-- it: its properties, relations and lookups beside identifier and title.
+-- The service and team blueprints hold each one's results in a property.
 WITH example (identifier, source) AS (VALUES
   ('service-readiness', $yaml$kind: Scorecard
 metadata:
@@ -539,6 +618,7 @@ metadata:
   title: Service Readiness
   description: What a service needs before people can rely on it.
   icon: shield-check
+  color: amber
 spec:
   blueprint: service
   filter: {property: tier, op: ne, value: experimental}
@@ -549,11 +629,11 @@ spec:
       criteria:
         hasOwner:
           title: Has an owner
-          check: .properties.owner != null
+          check: .owner != null
           fix: Set the owning team in the service registry.
         hasRepository:
           title: Has a repository
-          check: .properties.repository != null
+          check: .repository != null
           fix: Add the repository URL to the service registry.
     - name: silver
       title: Silver
@@ -561,16 +641,16 @@ spec:
       criteria:
         ownerOnSlack:
           title: Owner has a Slack channel
-          check: .properties.ownerSlack != null
+          check: .ownerSlack != null
           fix: Give the owning team a Slack channel in the team directory.
         tagged:
           title: Tagged
-          check: (.properties.tags // []) | length > 0
+          check: (.tags // []) | length > 0
           fix: Tag the service in the service registry.
         criticalOnCall:
           title: Owner is on call
-          when: .properties.critical
-          check: .properties.ownerOncall != null
+          when: .critical
+          check: .ownerOncall != null
           fix: Critical services need an owning team with an on-call rotation.
     - name: gold
       title: Gold
@@ -578,11 +658,11 @@ spec:
       criteria:
         deployedRecently:
           title: Deployed in the last 6 hours
-          check: (.properties.lastDeployedAt // "1970-01-01T00:00:00Z" | fromdate) > (now - 6 * 3600)
+          check: (.lastDeployedAt // "1970-01-01T00:00:00Z" | fromdate) > (now - 6 * 3600)
           fix: Ship small changes often.
         dependenciesKnown:
           title: Dependencies are listed
-          check: .properties.dependsOn != null
+          check: .dependsOn != null
           fix: List what the service calls in the service registry.
 $yaml$),
   ('team-basics', $yaml$kind: Scorecard
@@ -591,6 +671,7 @@ metadata:
   title: Team Basics
   description: How to reach a team.
   icon: contact
+  color: lime
 spec:
   blueprint: team
   tiers:
@@ -600,10 +681,10 @@ spec:
       criteria:
         slack:
           title: Has a Slack channel
-          check: .properties.slackChannel != null
+          check: .slackChannel != null
         oncall:
           title: Has an on-call rotation
-          check: .properties.oncall != null
+          check: .oncall != null
           fix: Add the team's on-call rotation to the team directory.
 $yaml$)
 ), created AS (
@@ -616,136 +697,126 @@ INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
 -- Example dashboards, each a tab on Home. The blueprints above lay out
--- their own catalog and entity pages. The overview's filters narrow its
--- widgets to a team and tiers; unset, they match everything. My Services
--- starts its team filter at the teams whose members include whoever is
--- looking, found by their email, which is a user entity's identifier, and
--- greets them by name with {{ $me.name }}. Its last widget compares with
--- $me.groups instead: the dev teams are named after the identity
--- provider's groups, so it counts the services of the groups they're in.
+-- their own catalog and entity pages. A dashboard's inputs narrow only the
+-- queries that compare with them as $input.<id>, and an unset input drops
+-- its conditions. Services' team input starts at the teams whose members
+-- include whoever is looking, found by their email, which is a user
+-- entity's identifier, and at every team for someone on none. Deployments
+-- have no team of their own, so their queries follow their service's.
 WITH example (identifier, source) AS (VALUES
-  ('overview', $yaml$kind: Dashboard
+  ('services', $yaml$kind: Dashboard
 metadata:
-  name: overview
-  title: Overview
-  description: How the services are doing.
-  icon: layout-dashboard
+  name: services
+  title: Services
+  icon: server
+  color: blue
 spec:
   order: 1
-  filters:
-    team:
-      title: Team
-      type: relation
-      relation: team
-    tier:
-      title: Tier
-      type: enum
-      values: [critical, standard, experimental]
-      multiple: true
-  widgets:
-    services:
-      type: stat
-      title: Services
-      blueprint: service
-      filter:
-        and:
-          - {property: owner, op: eq, value: $filter.team}
-          - {property: tier, op: eq, value: $filter.tier}
-    critical:
-      type: stat
-      title: Critical Services
-      blueprint: service
-      filter:
-        and:
-          - {property: owner, op: eq, value: $filter.team}
-          - {property: tier, op: eq, value: critical}
-    teams:
-      type: stat
-      title: Teams
-      blueprint: team
-    failed:
-      type: stat
-      title: Failed Deployments
-      blueprint: deployment
-      filter: {property: status, op: eq, value: failed}
-    readiness:
-      type: scorecard
-      title: Service Readiness
-      scorecard: service-readiness
-      filter:
-        and:
-          - {property: owner, op: eq, value: $filter.team}
-          - {property: tier, op: eq, value: $filter.tier}
-    byOwner:
-      type: bar
-      title: Services by Owner
-      blueprint: service
-      groupBy: owner
-      filter: {property: tier, op: eq, value: $filter.tier}
-    deployments:
-      type: table
-      title: Recent Deployments
-      blueprint: deployment
-      columns: [service, environment, status, startedAt]
-      sort: -startedAt
-      limit: 8
-$yaml$),
-  ('mine', $yaml$kind: Dashboard
-metadata:
-  name: mine
-  title: My Services
-  description: The services of the teams you're in.
-  icon: user-check
-spec:
-  order: 2
-  defaultFor: {groups: [payments, search]}
-  filters:
+  inputs:
     team:
       title: Team
       type: relation
       relation: team
       multiple: true
       default:
-        from: team
-        where: {property: members, op: contains, value: $me}
-  widgets:
-    hello:
-      type: markdown
-      width: 12
-      text: |
-        **Hello {{ $me.name }}.** These are the services of the teams you're in.
-        Pick other teams above to look around.
+        query:
+          blueprint: team
+          filter: {property: members, op: contains, value: $me}
+        otherwise: everything
+    tier:
+      title: Tier
+      type: enum
+      values: [critical, standard, experimental]
+      multiple: true
+  queries:
     services:
-      type: stat
-      title: Services
-      blueprint: service
-      filter: {property: owner, op: eq, value: $filter.team}
-    critical:
-      type: stat
-      title: Critical Services
       blueprint: service
       filter:
         and:
-          - {property: owner, op: eq, value: $filter.team}
-          - {property: tier, op: eq, value: critical}
+          - {property: owner, op: in, values: $input.team}
+          - {property: tier, op: in, values: $input.tier}
+    teams:
+      blueprint: team
+      filter: {property: identifier, op: in, values: $input.team}
+    deployments:
+      blueprint: deployment
+      filter:
+        and:
+          - {property: service.owner, op: in, values: $input.team}
+          - {property: service.tier, op: in, values: $input.tier}
+    failedRecently:
+      blueprint: deployment
+      filter:
+        and:
+          - {property: status, op: eq, value: failed}
+          - {property: startedAt, op: within, value: 7d}
+          - {property: service.owner, op: in, values: $input.team}
+          - {property: service.tier, op: in, values: $input.tier}
+  widgets:
+    services:
+      type: stat
+      title: Services
+      icon: server
+      color: blue
+      value: {query: services}
+      link: {query: services}
+    critical:
+      type: stat
+      title: Critical Share
+      description: Critical services out of all services
+      icon: siren
+      color: orange
+      value:
+        query: services
+        share: {property: tier, op: eq, value: critical}
+      link: {query: services, filter: {property: tier, op: eq, value: critical}}
+    teams:
+      type: stat
+      title: Teams
+      icon: users
+      color: violet
+      value: {query: teams}
+      link: {query: teams}
+    failed:
+      type: stat
+      title: Failed Deployments
+      description: Last 7 days
+      icon: circle-x
+      color: red
+      value: {query: failedRecently}
+      link: {query: failedRecently}
     readiness:
       type: scorecard
       title: Service Readiness
       scorecard: service-readiness
-      filter: {property: owner, op: eq, value: $filter.team}
+      query: services
+      link: {path: /scorecards/service-readiness}
+    byOwner:
+      type: bar
+      title: Services by Owner
+      query: services
+      groupBy: owner
+      link: {query: services, group: true}
     list:
       type: table
       title: Services
-      blueprint: service
-      filter: {property: owner, op: eq, value: $filter.team}
-      columns: [owner, $scorecard.service-readiness, tier, language, lastDeployedAt]
+      query: services
+      columns:
+        - readiness
+        - {title: Failing Checks, path: readiness.failed}
+        - tier
+        - lastDeployedAt
       sort: -lastDeployedAt
-    groupServices:
-      type: stat
-      title: Services of My Groups
-      description: Teams named after the groups you're in.
-      blueprint: service
-      filter: {property: owner, op: eq, value: $me.groups}
+      limit: 8
+      link: {query: services}
+    deployments:
+      type: table
+      title: Recent Deployments
+      query: deployments
+      columns: [service, environment, status, startedAt]
+      sort: -startedAt
+      limit: 8
+      link: {query: deployments}
 $yaml$),
   ('portal', $yaml$kind: Dashboard
 metadata:
@@ -753,34 +824,56 @@ metadata:
   title: Portal
   description: What the portal holds and where it comes from.
   icon: database
+  color: cyan
 spec:
-  order: 3
+  order: 2
   visibility: {roles: [builder, admin]}
+  queries:
+    activeUsers:
+      blueprint: user
+      filter: {property: active, op: eq, value: true}
+    integrations:
+      blueprint: integration
+    failing:
+      blueprint: integration
+      filter: {property: lastRunOutcome, op: eq, value: failed}
   widgets:
-    welcome:
-      type: markdown
-      width: 4
-      text: |
-        **Welcome to the portal.** Everything here comes from integrations,
-        so fix data at its source. Builders can change these dashboards
-        under Dashboards.
     users:
       type: stat
       title: Active Users
-      width: 4
-      blueprint: user
-      filter: {property: active, op: eq, value: true}
+      icon: users
+      color: violet
+      value: {query: activeUsers}
+      link: {query: activeUsers}
     blueprints:
       type: stat
       title: Blueprints
-      width: 4
-      blueprint: blueprint
+      icon: shapes
+      color: blue
+      value: {query: {blueprint: blueprint}}
+      link: {path: /blueprints}
     integrations:
+      type: stat
+      title: Integrations
+      icon: plug
+      color: teal
+      value: {query: integrations}
+      link: {path: /integrations}
+    failing:
+      type: stat
+      title: Failing Integrations
+      icon: circle-x
+      color: red
+      value: {query: failing}
+      link: {query: failing}
+    list:
       type: table
       title: Integrations
-      blueprint: integration
-      columns: [connector, entities, lastRunAt]
+      query: integrations
+      columns: [connector, lastRunOutcome, entities, lastRunAt]
       sort: -entities
+      rowLink: {path: '/integrations/{{ .identifier }}'}
+      link: {query: integrations}
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)

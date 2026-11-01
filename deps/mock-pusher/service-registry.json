@@ -85,6 +85,30 @@
       "lifecycle": "production"
     },
     {
+      "name": "api-gateway",
+      "displayName": "API Gateway",
+      "language": "go",
+      "tier": "critical",
+      "repo": "https://git.example.com/platform/api-gateway",
+      "tags": ["public", "edge"],
+      "owner": "platform",
+      "dependencies": ["auth-service", "payments-api", "search-api"],
+      "lastDeploy": "@DEPLOY:api-gateway@",
+      "lifecycle": "production"
+    },
+    {
+      "name": "feature-flags",
+      "displayName": "Feature Flags",
+      "language": "typescript",
+      "tier": "standard",
+      "repo": "https://git.example.com/platform/feature-flags",
+      "tags": ["internal"],
+      "owner": "platform",
+      "dependencies": ["postgres-proxy"],
+      "lastDeploy": "@DEPLOY:feature-flags@",
+      "lifecycle": "production"
+    },
+    {
       "name": "legacy-reports",
       "displayName": "Legacy Reports",
       "language": "java",
