@@ -1,6 +1,7 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import { House, LayoutDashboard, Library, Plug, Settings, Shapes, Trophy } from "lucide-react";
 import { NavUser } from "@/components/nav-user";
+import { SearchCommand } from "@/components/search-command";
 import {
   Sidebar,
   SidebarContent,
@@ -55,6 +56,9 @@ export function AppSidebar() {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarMenu>
+          <SearchCommand />
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>

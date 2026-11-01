@@ -110,4 +110,60 @@ describe("app shell", () => {
     expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go to the home page" })).toHaveAttribute("href", "/");
   });
+
+  it("searches the portal with the platform's shortcut", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      "GET config": acmeConfig,
+      "GET me": ok(ada),
+      "GET search": (request: Request) => {
+        const q = new URL(request.url).searchParams.get("q");
+        return ok(
+          q === ""
+            ? [
+                { kind: "blueprint", identifier: "service", title: "Service" },
+                { kind: "dashboard", identifier: "ops", title: "Operations" },
+              ]
+            : [
+                {
+                  kind: "entity",
+                  identifier: "payments",
+                  title: "Payments",
+                  detail: "Team",
+                  blueprint: "team",
+                },
+                { kind: "scorecard", identifier: "payout-ready", title: "Payout Readiness" },
+              ],
+        )();
+      },
+    });
+    const { router } = renderRoute("/");
+    // Outside Apple devices the shortcut is Ctrl+K, and the sidebar says so.
+    expect(await screen.findByRole("button", { name: /Search/ })).toHaveTextContent("CtrlK");
+
+    // ⌘K is a Mac's shortcut, so here it's left alone.
+    await user.keyboard("{Meta>}k{/Meta}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.keyboard("{Control>}k{/Control}");
+    const dialog = within(await screen.findByRole("dialog"));
+    // Before typing, it offers what to start from, each marked with its kind.
+    expect(await dialog.findByRole("option", { name: /Service.*Blueprint/ })).toBeInTheDocument();
+    await user.click(dialog.getByRole("option", { name: /Operations/ }));
+    await vi.waitFor(() => expect(router.state.location.search).toEqual({ d: "ops" }));
+
+    await user.keyboard("{Control>}k{/Control}");
+    const again = within(await screen.findByRole("dialog"));
+    await user.type(again.getByRole("combobox"), "pay");
+    // One list, closest first; an entity names its blueprint beside its kind.
+    const entity = await again.findByRole("option", { name: /Payments.*Team.*Entity/ });
+    expect(again.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "PaymentsTeamEntity",
+      "Payout ReadinessScorecard",
+    ]);
+    expect(new URL(requests["GET search"].url).searchParams.get("q")).toBe("pay");
+    expect(entity).toHaveAttribute("data-selected", "true");
+    await user.keyboard("{Enter}");
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/catalog/team/payments"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });

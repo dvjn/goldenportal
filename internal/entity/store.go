@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/dvjn/goldenportal/internal/blueprint"
 )
 
@@ -203,6 +205,46 @@ type Page struct {
 }
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// SearchResult is an entity a search found.
+type SearchResult struct {
+	Blueprint  string `json:"blueprint"`
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+}
+
+// Search finds up to limit entities of blueprints whose title or
+// identifier contains text, ignoring case: exact matches first, then those
+// starting with it, then by title.
+func (s Store) Search(ctx context.Context, blueprints []string, text string, limit int) ([]SearchResult, error) {
+	escaped := likeEscaper.Replace(text)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT b.identifier, e.identifier, e.title
+		FROM entities e
+		JOIN config_documents b ON b.id = e.blueprint_id
+		WHERE b.kind = 'blueprint' AND b.identifier = ANY($1)
+			AND (e.title ILIKE $2 OR e.identifier ILIKE $2)
+		ORDER BY lower(e.title) = lower($3) OR lower(e.identifier) = lower($3) DESC,
+			e.title ILIKE $4 OR e.identifier ILIKE $4 DESC,
+			e.title, b.identifier, e.identifier
+		LIMIT $5`,
+		pq.Array(blueprints), "%"+escaped+"%", text, escaped+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	found := []SearchResult{}
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.Blueprint, &r.Identifier, &r.Title); err != nil {
+			return nil, err
+		}
+		found = append(found, r)
+	}
+
+	return found, rows.Err()
+}
 
 // List returns a page of entities. Filter and sort problems come back as a
 // FilterError, since they're the caller's to fix.
