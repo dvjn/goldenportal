@@ -92,6 +92,11 @@ func (s Spec) Meta() configdoc.Meta {
 
 func (s Spec) Stats() map[string]int { return map[string]int{"widgets": len(s.Widgets)} }
 
+// Facts show where the dashboard sits on Home and who sees it there.
+func (s Spec) Facts() map[string]any {
+	return map[string]any{"order": s.Order, "visibility": s.Visibility, "defaultFor": s.DefaultFor}
+}
+
 // render fills in the viewer's $me variables in the dashboard's text, for
 // the one looking.
 func (s Spec) render(me widget.Values) Spec {

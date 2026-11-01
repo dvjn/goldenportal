@@ -2,13 +2,14 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { House } from "lucide-react";
 import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
+import { DashboardOverview } from "@/components/dashboards/dashboard-overview";
 import { PageError } from "@/components/page-error";
 import { Button } from "@/components/ui/button";
 import { DashboardPreview } from "@/components/widgets/dashboard-preview";
 import { dashboards } from "@/features/dashboards";
 
 export const Route = createFileRoute("/_app/dashboards/$identifier")({
-  validateSearch: validateDocSearch,
+  validateSearch: (search) => validateDocSearch(search, ["preview"]),
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(dashboards.queries.detail(params.identifier)),
@@ -25,6 +26,9 @@ function DashboardPage() {
   const { tab } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const { data: dashboard } = useSuspenseQuery(dashboards.queries.detail(identifier));
+  // The preview shows what the overview does: the published version, or
+  // the draft until there is one.
+  const spec = dashboard.published?.spec ?? dashboard.draft?.spec;
 
   return (
     <DocPage
@@ -47,7 +51,18 @@ function DashboardPage() {
           </Button>
         )
       }
-      overview={(spec, doc) => <DashboardPreview spec={spec} draft={!doc.published} />}
+      overview={(spec, doc) => <DashboardOverview spec={spec} dashboard={doc} />}
+      extraTabs={
+        spec
+          ? [
+              {
+                value: "preview",
+                title: "Preview",
+                content: <DashboardPreview spec={spec} draft={!dashboard.published} />,
+              },
+            ]
+          : []
+      }
     />
   );
 }

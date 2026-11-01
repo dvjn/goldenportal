@@ -31,8 +31,8 @@ export type DashboardSpec = {
   color?: string;
   // order sorts Home's tabs, lowest first.
   order: number;
-  visibility?: { roles?: string[]; groups?: string[] };
-  defaultFor?: { roles?: string[]; groups?: string[] };
+  visibility?: Audience;
+  defaultFor?: Audience;
   inputs: DashboardInput[];
   // queries are the named queries its widgets share.
   queries?: Query[];
@@ -53,7 +53,15 @@ export type HomeDashboard = DashboardSpec & {
 };
 
 export type Dashboard = ConfigDoc<DashboardSpec>;
-export type DashboardSummary = DocSummary;
+// Audience is who a dashboard is for: anyone with one of the roles or in
+// one of the groups.
+export type Audience = { roles?: string[]; groups?: string[] };
+
+// DashboardSummary is a dashboard as listed, with where it sits on Home
+// and who sees it there, or opens on it.
+export type DashboardSummary = DocSummary & {
+  facts?: { order: number; visibility: Audience | null; defaultFor: Audience | null };
+};
 
 export const dashboards = configDocs<DashboardSpec>("dashboards");
 

@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Plug, Plus } from "lucide-react";
-import { EmptyValue } from "@/components/catalog/property-value";
-import { DocTitle } from "@/components/config-docs/doc-title";
+import { docColumns } from "@/components/config-docs/doc-columns";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -33,27 +32,11 @@ type Row = IntegrationSummary & { lastRun: Run | null };
 
 const column = dataTableColumns<Row>();
 
+const doc = docColumns<Row>("Integration", "/integrations/$identifier");
+
 const columns = [
-  // The identifier is part of the value so search finds integrations by either.
-  column.accessor((integration) => `${integration.title} ${integration.identifier}`, {
-    id: "title",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Integration" />,
-    cell: ({ row }) => (
-      <DocTitle
-        to="/integrations/$identifier"
-        icon={row.original.icon}
-        color={row.original.color}
-        title={row.original.title}
-        identifier={row.original.identifier}
-      />
-    ),
-  }),
-  column.accessor((integration) => integration.publishedVersion, {
-    id: "version",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Version" />,
-    enableGlobalFilter: false,
-    cell: ({ getValue }) => (getValue() > 0 ? getValue() : <EmptyValue title="Not published" />),
-  }),
+  doc.title,
+  doc.status,
   column.accessor((integration) => integration.lastRun?.startedAt ?? "", {
     id: "lastRun",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Last Run" />,
@@ -74,17 +57,7 @@ const columns = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="Mappings" />,
     enableGlobalFilter: false,
   }),
-  column.accessor((integration) => new Date(integration.updatedAt), {
-    id: "updated",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
-    sortFn: "datetime",
-    enableGlobalFilter: false,
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground" title={formatAbsolute(getValue())}>
-        {formatRelative(getValue())}
-      </span>
-    ),
-  }),
+  doc.updated,
 ];
 
 function NewIntegrationButton() {
@@ -109,14 +82,13 @@ function IntegrationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Integrations" />
+      <PageHeader title="Integrations" actions={<NewIntegrationButton />} />
       <DataTable
         data={list}
         columns={columns}
         getRowId={(integration) => integration.identifier}
         search={search}
         searchLabel="Search integrations"
-        actions={<NewIntegrationButton />}
         empty={
           <EmptyState
             icon={<Plug />}

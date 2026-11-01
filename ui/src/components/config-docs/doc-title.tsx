@@ -1,8 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 
-// DocTitle opens a blueprint or integration from a table: its icon, then
-// its title over its identifier.
+// DocPath is the page a document of each listed kind opens on.
+export type DocPath =
+  | "/blueprints/$identifier"
+  | "/integrations/$identifier"
+  | "/dashboards/$identifier";
+
+// DocTitle opens a configuration document from a table: its icon, then its
+// title over its identifier.
 export function DocTitle({
   to,
   icon,
@@ -10,7 +16,7 @@ export function DocTitle({
   title,
   identifier,
 }: Readonly<{
-  to: "/blueprints/$identifier" | "/integrations/$identifier";
+  to: DocPath;
   icon?: string;
   color?: string;
   title: string;

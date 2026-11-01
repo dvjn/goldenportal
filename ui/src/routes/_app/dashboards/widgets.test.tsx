@@ -156,6 +156,49 @@ function withTabs(pages: Pick<BlueprintSpec, "catalog" | "entity">): Blueprint {
 }
 
 describe("dashboards and page tabs", () => {
+  it("lists dashboards in Home's order with who sees them", async () => {
+    stubApi({
+      "GET config": acmeConfig,
+      "GET me": ok(ada),
+      "GET dashboards": ok([
+        {
+          identifier: "teams",
+          title: "Teams",
+          publishedVersion: 0,
+          hasDraft: true,
+          stats: { widgets: 1 },
+          facts: { order: 2, visibility: null, defaultFor: null },
+          updatedAt: "2026-10-24T10:00:00Z",
+        },
+        {
+          identifier: "services",
+          title: "Services",
+          publishedVersion: 3,
+          hasDraft: false,
+          stats: { widgets: 4 },
+          facts: {
+            order: 1,
+            visibility: { roles: ["builder"], groups: ["payments"] },
+            defaultFor: { groups: ["payments"] },
+          },
+          updatedAt: "2026-10-24T10:00:00Z",
+        },
+      ]),
+    });
+    renderRoute("/dashboards");
+
+    await screen.findByText("Services");
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows.map((row) => within(row).getAllByRole("cell")[1].textContent)).toEqual(["1", "2"]);
+    const [services, teams] = rows.map((row) => within(row));
+    expect(services.getByTitle("Role")).toHaveTextContent("builder");
+    expect(services.getAllByTitle("Group")).toHaveLength(2);
+    expect(services.getByText("Published")).toBeInTheDocument();
+    expect(teams.getByText("Everyone")).toBeInTheDocument();
+    expect(teams.getByText("Draft")).toBeInTheDocument();
+    expect(teams.queryByText("Published")).not.toBeInTheDocument();
+  });
+
   it("shows table widget tiers, linked to each result, and tells no tier from not evaluated", async () => {
     stubApi({
       ...signedInMember,
@@ -882,7 +925,17 @@ describe("dashboards and page tabs", () => {
         defaults: { team: ["payments"] },
       }),
     });
-    renderRoute("/dashboards/mine?tab=overview");
+    const { router } = renderRoute("/dashboards/mine?tab=overview");
+
+    // The overview has the details; Home's order and who sees it.
+    const about = within(
+      (await screen.findByText("About")).closest("[data-slot=card]") as HTMLElement,
+    );
+    expect(about.getByText("Audience").nextElementSibling).toHaveTextContent("Everyone");
+    expect(screen.getByRole("cell", { name: /Services.*count/ })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: /Team.*team/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Preview" }));
+    await vi.waitFor(() => expect(router.state.location.search).toEqual({ tab: "preview" }));
 
     // The view and the widgets come from the draft, filled in for the builder.
     expect(await screen.findByText("3")).toBeInTheDocument();

@@ -2,8 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
 import {
-  ArrowLeft,
-  ArrowRight,
   Calculator,
   Database,
   Link2,
@@ -14,7 +12,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { PropertyType } from "@/components/blueprints/property-type";
-import { CardSection, CardTitleBar } from "@/components/card-sections";
+import { CardTitleBar } from "@/components/card-sections";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 import { EmptyValue } from "@/components/catalog/property-value";
 import { Code } from "@/components/code";
@@ -51,8 +49,7 @@ const sources: Record<ReturnType<typeof propertySource>, { label: string; icon: 
 };
 
 // BlueprintOverview shows a blueprint read-only: what each property holds,
-// the rules values must follow, where they come from, and how the blueprint
-// relates to others.
+// the rules values must follow, and where they come from.
 export function BlueprintOverview({
   spec,
   blueprint,
@@ -70,8 +67,6 @@ export function BlueprintOverview({
       <div className="grid gap-4">
         <AboutCard spec={spec} blueprint={blueprint} usage={usage} />
         <WritersCard spec={spec} usage={usage} />
-        <RelationsCard spec={spec} usage={usage} />
-        <PagesCard spec={spec} published={blueprint.published !== null} />
       </div>
     </div>
   );
@@ -320,133 +315,3 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
 
 // PagesCard lists the tabs of the blueprint's catalog page and its
 // entities' pages, its own beside those every page has.
-function PagesCard({ spec, published }: Readonly<{ spec: BlueprintSpec; published: boolean }>) {
-  const catalog = spec.catalog?.tabs ?? [];
-  const entity = spec.entity?.tabs ?? [];
-  const tab = (title: string, widgets?: number) => (
-    <>
-      {title}
-      {widgets !== undefined && (
-        <span className="text-xs text-muted-foreground">
-          {" "}
-          · {widgets} {widgets === 1 ? "widget" : "widgets"}
-        </span>
-      )}
-    </>
-  );
-
-  return (
-    <Card className="gap-0 pb-0">
-      <CardTitleBar title="Pages" />
-      <CardContent className="grid px-0 text-sm">
-        <CardSection title="Catalog Page">
-          <ul className="grid gap-1">
-            {catalog.map((t) => (
-              <li key={t.identifier}>
-                {published ? (
-                  <Link
-                    to="/catalog/$blueprint"
-                    params={{ blueprint: spec.identifier }}
-                    search={{ view: t.identifier }}
-                    className="hover:underline"
-                  >
-                    {tab(t.title, t.widgets.length)}
-                  </Link>
-                ) : (
-                  tab(t.title, t.widgets.length)
-                )}
-              </li>
-            ))}
-            <li className="text-muted-foreground">Entities</li>
-          </ul>
-        </CardSection>
-        <CardSection title="Entity Pages">
-          <ul className="grid gap-1">
-            {!entity.some((t) => t.identifier === "overview") && (
-              <li className="text-muted-foreground">Overview</li>
-            )}
-            {entity.map((t) => (
-              <li key={t.identifier}>{tab(t.title, t.widgets.length)}</li>
-            ))}
-            <li className="text-muted-foreground">Scorecards, Relations, YAML</li>
-          </ul>
-        </CardSection>
-      </CardContent>
-    </Card>
-  );
-}
-
-function RelationsCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Usage }>) {
-  const outgoing = spec.properties.filter((property) => property.relation);
-  const incoming = usage?.references ?? [];
-
-  return (
-    <Card className="gap-0 pb-0">
-      <CardTitleBar title="Relations" />
-      <CardContent className="grid px-0">
-        <RelationList title="Points To" empty="No relations to other blueprints.">
-          {outgoing.map((property) => (
-            <RelationRow
-              key={property.identifier}
-              icon={ArrowRight}
-              blueprint={property.relation ?? ""}
-              via={property.title}
-              many={property.many}
-            />
-          ))}
-        </RelationList>
-        <RelationList title="Pointed At By" empty="No blueprint relates to this one.">
-          {incoming.map((reference) => (
-            <RelationRow
-              key={`${reference.blueprint}.${reference.property}`}
-              icon={ArrowLeft}
-              blueprint={reference.blueprint}
-              via={reference.propertyTitle}
-              many={reference.many}
-            />
-          ))}
-        </RelationList>
-      </CardContent>
-    </Card>
-  );
-}
-
-function RelationList({
-  title,
-  empty,
-  children,
-}: Readonly<{ title: string; empty: string; children: ReactNode[] }>) {
-  return (
-    <CardSection title={title}>
-      {children.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="grid gap-2">{children}</ul>
-      )}
-    </CardSection>
-  );
-}
-
-function RelationRow({
-  icon: Icon,
-  blueprint,
-  via,
-  many,
-}: Readonly<{ icon: LucideIcon; blueprint: string; via: string; many?: boolean }>) {
-  return (
-    <li className="flex items-center gap-2 text-sm">
-      <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      <Link
-        to="/blueprints/$identifier"
-        params={{ identifier: blueprint }}
-        className="font-mono hover:underline"
-      >
-        {blueprint}
-      </Link>
-      <span className="truncate text-muted-foreground">
-        via {via}
-        {many && " (many)"}
-      </span>
-    </li>
-  );
-}

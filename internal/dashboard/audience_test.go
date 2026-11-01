@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -55,5 +56,20 @@ spec:
 	changes := Diff(Spec{}, spec)
 	if len(changes) < 2 {
 		t.Fatal("audience changes missing from impact preview")
+	}
+}
+
+func TestFactsShowOrderAndAudience(t *testing.T) {
+	spec := mustParse(t, `kind: Dashboard
+metadata: {name: mine, title: Mine}
+spec:
+  order: 3
+  visibility: {roles: [builder]}
+  widgets:
+    hello: {type: markdown, text: Hello}
+`)
+	encoded, _ := json.Marshal(spec.Facts())
+	if want := `{"defaultFor":null,"order":3,"visibility":{"roles":["builder"]}}`; string(encoded) != want {
+		t.Errorf("Facts = %s, want %s", encoded, want)
 	}
 }

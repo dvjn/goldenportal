@@ -1,7 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Boxes, Plus } from "lucide-react";
 import { EmptyValue } from "@/components/catalog/property-value";
-import { DocTitle } from "@/components/config-docs/doc-title";
+import { docColumns } from "@/components/config-docs/doc-columns";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -12,7 +13,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { type BlueprintSummary, blueprints, useBlueprints } from "@/features/blueprints";
-import { formatAbsolute, formatRelative } from "@/lib/format";
+import { catalogQueryOptions } from "@/features/catalog";
 
 export const Route = createFileRoute("/_app/blueprints/")({
   validateSearch: validateTableSearch,
@@ -20,50 +21,22 @@ export const Route = createFileRoute("/_app/blueprints/")({
   component: BlueprintsPage,
 });
 
-const column = dataTableColumns<BlueprintSummary>();
+// Row is a blueprint with how many entities it has, once it's published.
+type Row = BlueprintSummary & { entities?: number };
+
+const doc = docColumns<Row>("Blueprint", "/blueprints/$identifier");
+const column = dataTableColumns<Row>();
 
 const columns = [
-  // The identifier is part of the value so search finds blueprints by either.
-  column.accessor((blueprint) => `${blueprint.title} ${blueprint.identifier}`, {
-    id: "title",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Blueprint" />,
-    cell: ({ row }) => (
-      <DocTitle
-        to="/blueprints/$identifier"
-        icon={row.original.icon}
-        color={row.original.color}
-        title={row.original.title}
-        identifier={row.original.identifier}
-      />
-    ),
-  }),
-  column.accessor((blueprint) => blueprint.publishedVersion, {
-    id: "version",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Version" />,
+  doc.title,
+  doc.status,
+  column.accessor((blueprint) => blueprint.entities ?? -1, {
+    id: "entities",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Entities" />,
     enableGlobalFilter: false,
-    cell: ({ getValue }) => (getValue() > 0 ? getValue() : <EmptyValue title="Not published" />),
+    cell: ({ row }) => row.original.entities ?? <EmptyValue title="Not published" />,
   }),
-  column.accessor((blueprint) => blueprint.stats.properties ?? 0, {
-    id: "properties",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Properties" />,
-    enableGlobalFilter: false,
-  }),
-  column.accessor((blueprint) => blueprint.stats.relations ?? 0, {
-    id: "relations",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Relations" />,
-    enableGlobalFilter: false,
-  }),
-  column.accessor((blueprint) => new Date(blueprint.updatedAt), {
-    id: "updated",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
-    sortFn: "datetime",
-    enableGlobalFilter: false,
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground" title={formatAbsolute(getValue())}>
-        {formatRelative(getValue())}
-      </span>
-    ),
-  }),
+  doc.updated,
 ];
 
 function NewBlueprintButton() {
@@ -78,19 +51,24 @@ function NewBlueprintButton() {
 }
 
 function BlueprintsPage() {
-  const blueprints = useBlueprints();
+  const list = useBlueprints();
+  const { data: catalog } = useQuery(catalogQueryOptions);
+  const counts = new Map(catalog?.map((entry) => [entry.identifier, entry.entities]));
+  const rows: Row[] = list.map((blueprint) => ({
+    ...blueprint,
+    entities: counts.get(blueprint.identifier),
+  }));
   const search = Route.useSearch();
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Blueprints" />
+      <PageHeader title="Blueprints" actions={<NewBlueprintButton />} />
       <DataTable
-        data={blueprints}
+        data={rows}
         columns={columns}
         getRowId={(blueprint) => blueprint.identifier}
         search={search}
         searchLabel="Search blueprints"
-        actions={<NewBlueprintButton />}
         empty={
           <EmptyState
             icon={<Boxes />}

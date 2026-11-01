@@ -52,6 +52,7 @@ type summary struct {
 	PublishedVersion int            `json:"publishedVersion"`
 	HasDraft         bool           `json:"hasDraft"`
 	Stats            map[string]int `json:"stats"`
+	Facts            map[string]any `json:"facts,omitempty"`
 	UpdatedAt        time.Time      `json:"updatedAt"`
 }
 
@@ -79,11 +80,15 @@ func (h handlers[S]) list(ctx *gofr.Context) (any, error) {
 		if record.HasDraft() {
 			updated = record.DraftUpdatedAt
 		}
-		summaries = append(summaries, summary{
+		s := summary{
 			Identifier: record.Identifier, Meta: h.meta(record, spec),
 			PublishedVersion: record.PublishedVersion, HasDraft: record.HasDraft(),
 			Stats: spec.Stats(), UpdatedAt: updated,
-		})
+		}
+		if factual, ok := any(spec).(Factual); ok {
+			s.Facts = factual.Facts()
+		}
+		summaries = append(summaries, s)
 	}
 
 	return summaries, nil

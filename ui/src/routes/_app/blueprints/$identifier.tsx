@@ -1,7 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Library } from "lucide-react";
 import { BlueprintOverview } from "@/components/blueprints/blueprint-overview";
 import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
 import { PageError } from "@/components/page-error";
+import { Button } from "@/components/ui/button";
 import { blueprints, useBlueprint } from "@/features/blueprints";
 
 export const Route = createFileRoute("/_app/blueprints/$identifier")({
@@ -33,6 +35,16 @@ function BlueprintPage() {
       onDeleted={() => navigate({ to: "/blueprints" })}
       tab={tab}
       onTabChange={(next) => navigate({ search: { tab: next }, replace: true })}
+      actions={
+        blueprint.published && (
+          <Button variant="outline" asChild>
+            <Link to="/catalog/$blueprint" params={{ blueprint: identifier }}>
+              <Library />
+              View in Catalog
+            </Link>
+          </Button>
+        )
+      }
       overview={(spec, doc) => <BlueprintOverview spec={spec} blueprint={doc} />}
     />
   );

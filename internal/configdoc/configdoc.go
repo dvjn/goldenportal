@@ -58,6 +58,12 @@ type Spec interface {
 	Stats() map[string]int
 }
 
+// Factual is a Spec with more than counts to show when listed, such as a
+// dashboard's audience.
+type Factual interface {
+	Facts() map[string]any
+}
+
 // Meta is what every document shows about itself.
 type Meta struct {
 	Title       string `json:"title"`

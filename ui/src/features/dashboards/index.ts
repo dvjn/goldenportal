@@ -1,4 +1,5 @@
 export {
+  type Audience,
   type Dashboard,
   type DashboardInput,
   type DashboardSpec,

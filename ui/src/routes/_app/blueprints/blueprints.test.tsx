@@ -100,9 +100,10 @@ const serviceRoutes = {
 };
 
 describe("blueprints", () => {
-  it("lists blueprints with the version they're on", async () => {
+  it("lists blueprints with their status and entities", async () => {
     stubApi({
       ...signedInBuilder,
+      "GET catalog": ok([{ identifier: "service", title: "Service", entities: 12 }]),
       "GET blueprints": ok([
         {
           identifier: "service",
@@ -117,8 +118,14 @@ describe("blueprints", () => {
     renderRoute("/blueprints");
 
     const row = (await screen.findByText("Service")).closest("tr") as HTMLElement;
-    expect(within(row).getByRole("cell", { name: "2" })).toBeInTheDocument();
-    expect(within(row).queryByText("Draft")).not.toBeInTheDocument();
+    // Published, with a draft waiting.
+    expect(within(row).getByText("Published")).toBeInTheDocument();
+    expect(within(row).getByText("Draft")).toBeInTheDocument();
+    expect(await within(row).findByRole("cell", { name: "12" })).toBeInTheDocument();
+    // The primary action leads the page, not the table.
+    expect(
+      screen.getByRole("link", { name: "New Blueprint" }).closest("[data-slot=card]"),
+    ).toBeNull();
   });
 
   it("keeps members out", async () => {
@@ -148,7 +155,10 @@ describe("blueprints", () => {
     const critical = screen.getByText("Critical").closest("tr") as HTMLElement;
     expect(within(critical).getByText("Computed")).toBeInTheDocument();
     expect(await screen.findByText("There's an unpublished draft")).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: "deployment" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View in Catalog" })).toHaveAttribute(
+      "href",
+      "/catalog/service",
+    );
     const about = within(
       (await screen.findByText("About")).closest("[data-slot=card]") as HTMLElement,
     );
