@@ -51,7 +51,7 @@ func Diff(previous, next Spec) []configdoc.Change {
 			Detail: fmt.Sprintf("syncs every %s instead of every %s", next.SyncEvery(), previous.SyncEvery()),
 		})
 	}
-	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon {
+	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon || previous.Color != next.Color {
 		changes = append(changes, configdoc.Change{
 			Section: "integration", Change: configdoc.ChangeChanged,
 			Detail: "changes the title, description or icon",

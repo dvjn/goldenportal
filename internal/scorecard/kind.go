@@ -37,7 +37,7 @@ func Diff(previous, next Spec) []configdoc.Change {
 	if !reflect.DeepEqual(previous.Filter, next.Filter) {
 		add("scorecard", "", configdoc.ChangeChanged, "changes which entities are scored")
 	}
-	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon {
+	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon || previous.Color != next.Color {
 		add("scorecard", "", configdoc.ChangeChanged, "changes the title, description or icon")
 	}
 

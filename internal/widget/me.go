@@ -60,9 +60,11 @@ func MeValues(p auth.Principal) Values {
 // fails at publish time rather than quietly comparing with the text. Other
 // texts are literals.
 func checkVariable(text string) error {
-	if strings.HasPrefix(text, "$today") {
-		_, err := dayOffset(text)
-		return err
+	if strings.HasPrefix(text, ValueToday) {
+		return checkToday(text)
+	}
+	if id, ok := strings.CutPrefix(text, "$filter."); ok {
+		return fmt.Errorf("%s is now %s%s: dashboards take inputs", text, ValueInput, id)
 	}
 	if strings.HasPrefix(text, "$entity.") && !entityName.MatchString(text) {
 		return fmt.Errorf("invalid entity variable %s", text)
@@ -104,8 +106,8 @@ func CheckTextIn(text string, scope Scope) error {
 			}
 			continue
 		}
-		if strings.HasPrefix(name, "$today") {
-			if _, err := dayOffset(name); err != nil {
+		if strings.HasPrefix(name, ValueToday) {
+			if err := checkToday(name); err != nil {
 				return err
 			}
 			continue

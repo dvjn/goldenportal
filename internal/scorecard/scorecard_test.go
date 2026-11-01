@@ -2,8 +2,13 @@ package scorecard
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 )
@@ -23,19 +28,19 @@ spec:
       criteria:
         hasOwner:
           title: Has an owner
-          check: .properties.owner != null
+          check: .owner != null
           fix: Set the owner.
     - name: silver
       criteria:
         hasRepository:
-          check: .properties.repository != null
+          check: .repository != null
         pagesOnCall:
-          when: .properties.tier == "critical"
-          check: .properties.oncall != null
+          when: .tier == "critical"
+          check: .oncall != null
     - name: gold
       criteria:
         manyStars:
-          check: (.properties.stars | tonumber) > 100
+          check: (.stars | tonumber) > 100
 `
 
 func mustParse(t *testing.T, source string) Spec {
@@ -89,7 +94,7 @@ func TestEvaluate(t *testing.T) {
 		t.Fatal(err)
 	}
 	evaluate := func(properties map[string]any) Result {
-		return checks.evaluate(context.Background(), spec, map[string]any{"properties": properties})
+		return checks.evaluate(context.Background(), spec, properties)
 	}
 
 	tests := []struct {
@@ -146,7 +151,7 @@ func TestEvaluate(t *testing.T) {
 }
 
 func TestChecksMustBeBoolean(t *testing.T) {
-	spec := mustParse(t, strings.Replace(readinessYAML, "check: .properties.owner != null", "check: .properties.owner", 1))
+	spec := mustParse(t, strings.Replace(readinessYAML, "check: .owner != null", "check: .owner", 1))
 	checks, _ := compileSpec(spec)
 	r := checks.evaluate(context.Background(), spec, map[string]any{"properties": map[string]any{"owner": "a"}})
 	if got := r.Criteria["hasOwner"]; got.Status != StatusErrored || !strings.Contains(got.Message, "true or false") {
@@ -163,5 +168,30 @@ func TestDiff(t *testing.T) {
 	changes := Diff(before, after)
 	if len(changes) != 1 || changes[0].ID != "manyStars" || changes[0].Breaking {
 		t.Fatalf("changes = %+v", changes)
+	}
+}
+
+func TestResultsFilterBySeveralTiers(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	spec := Spec{Tiers: []Tier{{Name: "bronze"}, {Name: "silver"}}}
+	// "none" is the empty tier of entities that reached none.
+	mock.ExpectQuery(regexp.QuoteMeta(`r.tier = ANY($2)`)).
+		WithArgs("sc", pq.Array([]string{"silver", ""}), "", pq.Array([]string{"", "bronze", "silver"}), 10, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "at", "tier", "score", "p", "f", "s", "x", "c", "total"}).
+			AddRow("service", "ledger", "Ledger", time.Time{}, "silver", 80, 4, 1, 0, 0, []byte(`{}`), 1))
+
+	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Tiers: []string{"silver", "none"}, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || page.Results[0].Identifier != "ledger" {
+		t.Errorf("page = %+v", page)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Error(err)
 	}
 }

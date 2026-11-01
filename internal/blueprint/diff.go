@@ -31,6 +31,9 @@ func Diff(previous, next Spec) []Change {
 	if previous.Icon != next.Icon {
 		meta = append(meta, "icon")
 	}
+	if previous.Color != next.Color {
+		meta = append(meta, "color")
+	}
 	if len(meta) > 0 {
 		changes = append(changes, Change{
 			Section: "blueprint", Change: ChangeChanged,

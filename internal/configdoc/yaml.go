@@ -84,7 +84,7 @@ func ReadDocument(r *Reader, source, kind string) Document {
 	metadata := fields["metadata"]
 	if metadata == nil {
 		r.Errorf(root, "metadata", "add metadata with a name and a title")
-	} else if meta, ok := r.Fields(metadata, "metadata", "name", "title", "description", "icon"); ok {
+	} else if meta, ok := r.Fields(metadata, "metadata", "name", "title", "description", "icon", "color"); ok {
 		doc.Name = r.Text(meta["name"], "metadata.name")
 		if !ValidIdentifier(doc.Name) {
 			r.Errorf(OrNode(meta["name"], metadata), "metadata.name",
@@ -96,6 +96,14 @@ func ReadDocument(r *Reader, source, kind string) Document {
 		}
 		doc.Meta.Description = r.Text(meta["description"], "metadata.description")
 		doc.Meta.Icon = r.Text(meta["icon"], "metadata.icon")
+		doc.Meta.Color = r.Text(meta["color"], "metadata.color")
+		switch n := meta["color"]; {
+		case n == nil:
+		case !slices.Contains(Colors, doc.Meta.Color):
+			r.Errorf(n, "metadata.color", "color must be one of %s", strings.Join(Colors, ", "))
+		case doc.Meta.Icon == "":
+			r.Errorf(n, "metadata.color", "color tints the icon, so add an icon too")
+		}
 	}
 
 	doc.Spec = fields["spec"]

@@ -109,12 +109,12 @@ func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifie
 // Entity is a stored entity as the API shows it.
 type Entity struct {
 	// ID is the row's ID, which other tables reference.
-	ID         string           `json:"-"`
-	Blueprint  string           `json:"blueprint"`
-	Identifier string           `json:"identifier"`
-	Title      string           `json:"title"`
-	Scorecards map[string]Score `json:"scorecards,omitempty"`
-	// Properties include relations, computed properties and resolved lookups.
+	ID         string `json:"-"`
+	Blueprint  string `json:"blueprint"`
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+	// Properties include relations, computed properties, resolved lookups
+	// and scorecard results.
 	Properties map[string]any `json:"properties"`
 	// Related names the entities each relation points at, with their titles.
 	Related     map[string][]Link `json:"related"`
@@ -184,10 +184,14 @@ func (s Store) Get(ctx context.Context, blueprintIdentifier, identifier string) 
 // Query picks a page of one blueprint's entities.
 type Query struct {
 	Blueprint blueprint.Spec
+	// Blueprints are the published ones, for filters that follow relations.
+	Blueprints map[string]blueprint.Spec
+	// Ladders are the published scorecards' tiers, which tiers sort by.
+	Ladders map[string]blueprint.Ladder
 	// Search matches the identifier or title, ignoring case.
 	Search string
 	Filter *Filter
-	// Sort is a property, or -property for descending.
+	// Sort is a path, or -path for descending.
 	Sort     string
 	Page     int
 	PageSize int
@@ -203,7 +207,7 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 // List returns a page of entities. Filter and sort problems come back as a
 // FilterError, since they're the caller's to fix.
 func (s Store) List(ctx context.Context, q Query) (Page, error) {
-	c := &compiler{spec: q.Blueprint, args: []any{q.Blueprint.Identifier}}
+	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, args: []any{q.Blueprint.Identifier}}
 	where := "b.kind = 'blueprint' AND b.identifier = $1"
 	if q.Search != "" {
 		search := c.arg("%" + likeEscaper.Replace(q.Search) + "%")
@@ -214,11 +218,11 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 		if err != nil {
 			return Page{}, FilterError{err}
 		}
-		where += " AND coalesce(" + sql + ", false)"
+		where += " AND " + sql
 	}
-	order, err := s.orderBy(ctx, q.Blueprint, q.Sort, c)
+	order, err := c.orderBy(q.Sort, q.Ladders)
 	if err != nil {
-		return Page{}, err
+		return Page{}, FilterError{err}
 	}
 
 	limit, offset := c.arg(q.PageSize), c.arg((q.Page-1)*q.PageSize)
@@ -244,16 +248,17 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 }
 
 // Identifiers lists the entities matching a filter, by identifier, in the
-// catalog's order. At most limit come back.
-func (s Store) Identifiers(ctx context.Context, spec blueprint.Spec, filter *Filter, limit int) ([]string, error) {
-	c := &compiler{spec: spec, args: []any{spec.Identifier}}
+// catalog's order. At most limit come back. specs are the blueprints the
+// filter's relations lead to.
+func (s Store) Identifiers(ctx context.Context, specs map[string]blueprint.Spec, spec blueprint.Spec, filter *Filter, limit int) ([]string, error) {
+	c := &compiler{spec: spec, specs: specs, args: []any{spec.Identifier}}
 	where := "b.kind = 'blueprint' AND b.identifier = $1"
 	if filter != nil {
 		sql, err := c.compile(*filter, 1)
 		if err != nil {
 			return nil, FilterError{err}
 		}
-		where += " AND coalesce(" + sql + ", false)"
+		where += " AND " + sql
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT e.identifier`+entityFrom+`
 		WHERE `+where+`
@@ -280,3 +285,17 @@ func (s Store) Identifiers(ctx context.Context, spec blueprint.Spec, filter *Fil
 type FilterError struct{ err error }
 
 func (e FilterError) Error() string { return e.err.Error() }
+
+// Document is an entity as jq reads it, everywhere: flat, as paths see it,
+// with its properties beside the built-in fields, whose names they can't
+// take. Times are whole seconds, which jq's fromdate reads.
+func Document(e *Entity) map[string]any {
+	encoded, _ := json.Marshal(e.Properties)
+	doc := map[string]any{}
+	_ = json.Unmarshal(encoded, &doc)
+	doc["identifier"], doc["title"], doc["blueprint"], doc["integration"] = e.Identifier, e.Title, e.Blueprint, e.Integration
+	doc["createdAt"] = e.CreatedAt.UTC().Format(time.RFC3339)
+	doc["updatedAt"] = e.UpdatedAt.UTC().Format(time.RFC3339)
+
+	return doc
+}

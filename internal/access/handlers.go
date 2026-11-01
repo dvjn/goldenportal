@@ -13,6 +13,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/audit"
 	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
@@ -159,6 +160,14 @@ func listAudit(ctx *gofr.Context) (any, error) {
 	var err error
 	if q.From, err = dateParam(ctx, "from"); err != nil {
 		return nil, err
+	}
+	// within reaches back from now, as a catalog date filter's does.
+	if value := ctx.Param("within"); value != "" {
+		duration, ok := filter.ParseDuration(value)
+		if !ok {
+			return nil, badRequest("within must be a duration like 30m, 12h, 7d or 2w")
+		}
+		q.From = time.Now().Add(-duration)
 	}
 	if q.To, err = dateParam(ctx, "to"); err != nil {
 		return nil, err

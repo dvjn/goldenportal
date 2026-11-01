@@ -14,5 +14,6 @@ func All() map[int64]migration.Migrate {
 		20261025160000: createIngestion(),
 		20261025180000: createScorecardResults(),
 		20261029120000: addIngestionRunError(),
+		20261101120000: addEntityValueIndexes(),
 	}
 }

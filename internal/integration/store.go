@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 )
@@ -130,20 +133,61 @@ func (s Store) RecordRun(ctx context.Context, integrationID, tokenID string, run
 		run.Unchanged, run.Deleted, run.Failed, errorsJSON, run.Error).Scan(&run.ID, &run.FinishedAt)
 }
 
-// Runs lists an integration's latest runs, newest first.
-func (s Store) Runs(ctx context.Context, integrationID string, limit int) ([]Run, error) {
+// RunQuery picks a page of an integration's runs. Empty fields don't filter.
+type RunQuery struct {
+	// Search matches the pushing token's name or the run's error, ignoring case.
+	Search   string
+	Triggers []string
+	Outcomes []string
+	Page     int
+	PageSize int
+}
+
+// RunPage is one page of runs, newest first, and how many runs match in all.
+type RunPage struct {
+	Runs  []Run `json:"runs"`
+	Total int   `json:"total"`
+}
+
+// Run outcomes: a failed run fetched nothing, and a run with warnings skipped
+// some items.
+const (
+	OutcomeSucceeded = "succeeded"
+	OutcomeWarnings  = "warnings"
+	OutcomeFailed    = "failed"
+)
+
+const runFilter = `
+	FROM ingestion_runs r LEFT JOIN ingestion_tokens t ON t.id = r.token_id
+	WHERE r.integration_id = $1
+		AND ($2 = '' OR coalesce(t.name, '') ILIKE $2 OR r.error ILIKE $2)
+		AND (coalesce(cardinality($3::text[]), 0) = 0 OR r.trigger = ANY($3))
+		AND (coalesce(cardinality($4::text[]), 0) = 0 OR CASE
+			WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 THEN 'warnings' ELSE 'succeeded' END = ANY($4))`
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// Runs returns the page of an integration's runs that match q.
+func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunPage, error) {
+	search := ""
+	if q.Search != "" {
+		search = "%" + likeEscaper.Replace(q.Search) + "%"
+	}
+	args := []any{integrationID, search, pq.Array(q.Triggers), pq.Array(q.Outcomes)}
+
+	page := RunPage{Runs: []Run{}}
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*)`+runFilter, args...).Scan(&page.Total); err != nil {
+		return RunPage{}, err
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.id, r.started_at, r.finished_at, r.trigger, coalesce(t.name, ''), r.received, r.created, r.updated,
-			r.unchanged, r.deleted, r.failed, r.errors, r.error
-		FROM ingestion_runs r LEFT JOIN ingestion_tokens t ON t.id = r.token_id
-		WHERE r.integration_id = $1
-		ORDER BY r.id DESC LIMIT $2`, integrationID, limit)
+			r.unchanged, r.deleted, r.failed, r.errors, r.error`+runFilter+`
+		ORDER BY r.id DESC LIMIT $5 OFFSET $6`, append(args, q.PageSize, (q.Page-1)*q.PageSize)...)
 	if err != nil {
-		return nil, err
+		return RunPage{}, err
 	}
 	defer rows.Close()
 
-	runs := []Run{}
 	for rows.Next() {
 		var (
 			r      Run
@@ -151,15 +195,15 @@ func (s Store) Runs(ctx context.Context, integrationID string, limit int) ([]Run
 		)
 		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.Received, &r.Created, &r.Updated,
 			&r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
-			return nil, err
+			return RunPage{}, err
 		}
 		if err := json.Unmarshal(errors, &r.Errors); err != nil {
-			return nil, err
+			return RunPage{}, err
 		}
-		runs = append(runs, r)
+		page.Runs = append(page.Runs, r)
 	}
 
-	return runs, rows.Err()
+	return page, rows.Err()
 }
 
 func nullable(s string) any {

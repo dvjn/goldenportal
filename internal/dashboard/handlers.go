@@ -26,8 +26,8 @@ func Register(app *gofr.App) {
 	configdoc.Register(app, Kind)
 	app.GET("/api/v1/home", home)
 	app.GET("/api/v1/dashboards/{identifier}/view", dashboardView)
-	app.GET("/api/v1/dashboards/{identifier}/widgets/{widget}", dashboardWidget)
-	app.GET("/api/v1/blueprints/{identifier}/widgets/{page}/{tab}/{widget}", blueprintWidget)
+	app.GET("/api/v1/dashboards/{identifier}/data", dashboardData)
+	app.GET("/api/v1/blueprints/{identifier}/pages/{page}/{tab}/data", blueprintData)
 }
 
 // home lists the published dashboards, in the order Home shows them.
@@ -91,12 +91,12 @@ func dashboardView(ctx *gofr.Context) (any, error) {
 type homeDashboard struct {
 	Spec
 	Preferred bool `json:"preferred,omitempty"`
-	// Defaults are what the filters start at for them, by identifier, with
-	// lookup defaults found. A filter without a default is left out; a
-	// lookup that found nothing is an empty list, which selects nothing.
+	// Defaults are what the inputs start at for them, by identifier, with
+	// default queries run. An input without a default is left out; a query
+	// that found nothing is an empty list, which selects nothing.
 	Defaults map[string][]string `json:"defaults"`
-	// Problems say why a lookup default couldn't be found, by filter. The
-	// filter starts at nothing then, as if the lookup found none.
+	// Problems say why a default query failed, by input. The input starts
+	// at nothing then, as if the query found none.
 	Problems map[string]string `json:"problems,omitempty"`
 }
 
@@ -107,20 +107,20 @@ func view(ctx context.Context, find finder, spec Spec, p auth.Principal) (homeDa
 	widget.SetToday(me, time.Now())
 	values, problems := defaults(ctx, find, spec, me, nil)
 	v := homeDashboard{Spec: spec.render(me), Defaults: map[string][]string{}, Problems: map[string]string{}}
-	for _, f := range spec.Filters {
-		if value := values[widget.ValueFilter+f.ID]; value != nil {
-			v.Defaults[f.ID] = value
+	for _, in := range spec.Inputs {
+		if value := values[widget.ValueInput+in.ID]; value != nil {
+			v.Defaults[in.ID] = value
 		}
-		if err := problems[f.ID]; err != nil {
-			v.Problems[f.ID] = explain(err)
+		if err := problems[in.ID]; err != nil {
+			v.Problems[in.ID] = explain(err)
 		}
 	}
 
 	return v, problems
 }
 
-// explain says why a lookup failed, to whoever is looking. A filter the
-// blueprint can't answer names the property, which a builder can fix;
+// explain says why a default query failed, to whoever is looking. A filter
+// the blueprint can't answer names the field, which a builder can fix;
 // anything else is the server's problem, which the log has.
 func explain(err error) string {
 	var filterErr entity.FilterError
@@ -133,16 +133,16 @@ func explain(err error) string {
 
 func logProblems(ctx *gofr.Context, spec Spec, problems map[string]error) {
 	for id, err := range problems {
-		ctx.Errorf("find the default of filter %s on dashboard %s: %v", id, spec.Identifier, err)
+		ctx.Errorf("find the default of input %s on dashboard %s: %v", id, spec.Identifier, err)
 	}
 }
 
-// lookupLimit caps what a lookup default finds, at what the bar offers.
-const lookupLimit = 100
+// defaultLimit caps what a default query finds, at what the bar offers.
+const defaultLimit = 100
 
-// finder finds the entities of a blueprint matching where, by identifier.
-// It finds nothing when the blueprint isn't published.
-type finder func(ctx context.Context, from string, where *filter.Filter) ([]string, error)
+// finder finds the entities of a blueprint matching a filter, by
+// identifier. It finds nothing when the blueprint isn't published.
+type finder func(ctx context.Context, blueprint string, where *filter.Filter) ([]string, error)
 
 func find(ctx *gofr.Context) finder {
 	return func(c context.Context, from string, where *filter.Filter) ([]string, error) {
@@ -155,39 +155,44 @@ func find(ctx *gofr.Context) finder {
 			return nil, nil
 		}
 
-		return entity.NewStore(ctx.SQL).Identifiers(c, bp, where, lookupLimit)
+		return entity.NewStore(ctx.SQL).Identifiers(c, blueprints, bp, where, defaultLimit)
 	}
 }
 
-// defaults is what a dashboard's filters are set to for whoever is
-// looking, by context value: what they picked, or else the filter's
-// default, with a lookup default found in the catalog with their $me
-// values. A lookup that finds no entity sets the filter to Nothing, so
-// widgets show nothing, unlike a filter they cleared, which is unset and
-// shows everything. A lookup that fails does the same, and says why by
-// filter, so one broken dashboard neither takes Home down nor shows more
-// than its author meant.
+// defaults is what a dashboard's inputs are set to for whoever is looking,
+// by context value: what they picked, or else the input's default, with a
+// default query run against the catalog with their $me values. A query
+// that finds no entity sets the input to Nothing, so widgets show nothing,
+// unlike an input they cleared, which is unset and shows everything,
+// unless the default says to start at everything otherwise. A query that
+// fails shows nothing either way, and says why by input, so one broken
+// dashboard neither takes Home down nor shows more than its author meant.
 func defaults(ctx context.Context, find finder, spec Spec, me, picked widget.Values) (widget.Values, map[string]error) {
 	values := widget.Values{}
 	problems := map[string]error{}
-	for _, f := range spec.Filters {
-		key := widget.ValueFilter + f.ID
+	for _, in := range spec.Inputs {
+		key := widget.ValueInput + in.ID
 		if value, ok := picked[key]; ok {
 			values[key] = value
 			continue
 		}
-		if f.Lookup == nil {
-			values[key] = f.Default
+		if in.DefaultQuery == nil {
+			values[key] = in.Default
 			continue
 		}
-		found, err := find(ctx, f.Lookup.From, widget.Bind(f.Lookup.Where, me))
+		q := in.DefaultQuery
+		found, err := find(ctx, q.Query.Blueprint, widget.Bind(q.Query.Filter, me))
 		if err != nil {
-			problems[f.ID] = err
+			problems[in.ID] = err
 		}
-		if len(found) == 0 {
-			found = widget.Nothing
+		switch {
+		case len(found) > 0:
+			values[key] = found
+		case err == nil && q.Otherwise == OtherwiseEverything:
+			values[key] = nil
+		default:
+			values[key] = widget.Nothing
 		}
-		values[key] = found
 	}
 
 	return values, problems
@@ -224,7 +229,9 @@ func source(ctx *gofr.Context, p auth.Principal, kind, name string) (string, err
 	return record.PublishedSource, nil
 }
 
-func dashboardWidget(ctx *gofr.Context) (any, error) {
+// dashboardData loads every widget on a dashboard, as Home shows it to
+// whoever is looking, with its inputs as picked.
+func dashboardData(ctx *gofr.Context) (any, error) {
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
 		return nil, err
@@ -234,10 +241,6 @@ func dashboardWidget(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	spec, _ := Parse(src)
-	w, ok := widget.Find(spec.Widgets, ctx.PathParam("widget"))
-	if !ok {
-		return nil, noWidget(ctx)
-	}
 	picked, err := picked(spec, httpx.Query(ctx))
 	if err != nil {
 		return nil, err
@@ -247,47 +250,98 @@ func dashboardWidget(ctx *gofr.Context) (any, error) {
 	values, problems := defaults(ctx, find(ctx), spec, me, picked)
 	logProblems(ctx, spec, problems)
 	maps.Copy(values, me)
+	l, err := newLoader(ctx, widget.Env{Values: values}, nil)
+	if err != nil {
+		return nil, err
+	}
 
-	return respond(load(ctx, w, values, nil, nil))
+	data := l.load(spec.Widgets)
+	data.Inputs, err = inputLinks(ctx, l.store, spec, values)
+
+	return data, err
 }
 
-// picked reads what Home picked for a dashboard's filters from the query,
-// as filter.<id>=value, repeated for a multiple filter. An empty value
-// clears the filter, leaving it unset, and a filter the query doesn't
+// inputLinks names the entities each relation input is set to, so Home can
+// show what's picked without loading what there is to pick from.
+func inputLinks(ctx context.Context, store entity.Store, spec Spec, values widget.Values) (map[string][]entity.Link, error) {
+	links := map[string][]entity.Link{}
+	for _, in := range spec.Inputs {
+		picked := values[widget.ValueInput+in.ID]
+		if in.Type != InputRelation || len(picked) == 0 {
+			continue
+		}
+		found, err := store.Links(ctx, in.Relation, picked)
+		if err != nil {
+			return nil, err
+		}
+		links[in.ID] = found
+	}
+
+	return links, nil
+}
+
+// newLoader loads what a page's widgets read, with own in place of its
+// published version, so a draft's widgets can show the draft's fields.
+func newLoader(ctx *gofr.Context, env widget.Env, own *blueprint.Spec) (loader, error) {
+	blueprints, err := blueprint.Published(ctx, ctx.SQL)
+	if err != nil {
+		return loader{}, err
+	}
+	if own != nil {
+		blueprints[own.Identifier] = *own
+	}
+	ladders, err := blueprint.Ladders(ctx, ctx.SQL)
+	if err != nil {
+		return loader{}, err
+	}
+	scorecards, err := scorecard.Published(ctx, ctx.SQL)
+	if err != nil {
+		return loader{}, err
+	}
+
+	return loader{
+		ctx: ctx, db: ctx.SQL, store: entity.NewStore(ctx.SQL), blueprints: blueprints, ladders: ladders,
+		scorecards: scorecards, env: env, logf: ctx.Errorf,
+	}, nil
+}
+
+// picked reads what Home picked for a dashboard's inputs from the query,
+// as input.<id>=value, repeated for a multiple input. An empty value
+// clears the input, leaving it unset, and an input the query doesn't
 // mention is left out, to take its default.
 func picked(spec Spec, query url.Values) (widget.Values, error) {
 	values := widget.Values{}
 	for key, raw := range query {
-		id, ok := strings.CutPrefix(key, "filter.")
+		id, ok := strings.CutPrefix(key, "input.")
 		if !ok {
 			continue
 		}
-		i := slices.IndexFunc(spec.Filters, func(f Filter) bool { return f.ID == id })
+		i := slices.IndexFunc(spec.Inputs, func(in Input) bool { return in.ID == id })
 		if i < 0 {
-			return nil, badRequest("the dashboard has no filter " + id)
+			return nil, badRequest("the dashboard has no input " + id)
 		}
-		f := spec.Filters[i]
+		in := spec.Inputs[i]
 		picked := slices.DeleteFunc(slices.Clone(raw), func(value string) bool { return value == "" })
-		if len(picked) > 1 && !f.Multiple {
-			return nil, badRequest(f.ID + " takes one value")
+		if len(picked) > 1 && !in.Multiple {
+			return nil, badRequest(in.ID + " takes one value")
 		}
 		for _, value := range picked {
-			if f.Type == FilterEnum && !slices.Contains(f.Values, value) {
-				return nil, badRequest(f.ID + " must be one of " + strings.Join(f.Values, ", "))
+			if in.Type == InputEnum && !slices.Contains(in.Values, value) {
+				return nil, badRequest(in.ID + " must be one of " + strings.Join(in.Values, ", "))
 			}
 		}
 		if len(picked) == 0 {
 			picked = nil
 		}
-		values[widget.ValueFilter+id] = picked
+		values[widget.ValueInput+id] = picked
 	}
 
 	return values, nil
 }
 
-// blueprintWidget loads a widget on one of a blueprint's pages. Entity
-// pages need the entity, for $entity.
-func blueprintWidget(ctx *gofr.Context) (any, error) {
+// blueprintData loads every widget on one tab of a blueprint's pages.
+// Entity pages need the entity, for $entity.
+func blueprintData(ctx *gofr.Context) (any, error) {
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
 		return nil, err
@@ -314,145 +368,47 @@ func blueprintWidget(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("page must be catalog or entity")
 	}
 	if page == nil {
-		return nil, noWidget(ctx)
+		return nil, noTab(ctx)
 	}
 	tab, ok := widget.FindTab(page.Tabs, ctx.PathParam("tab"))
 	if !ok {
-		return nil, noWidget(ctx)
-	}
-	w, ok := widget.Find(tab.Widgets, ctx.PathParam("widget"))
-	if !ok {
-		return nil, noWidget(ctx)
+		return nil, noTab(ctx)
 	}
 
-	var data map[string][]any
+	env := widget.Env{Values: values}
+	l, err := newLoader(ctx, env, &spec)
+	if err != nil {
+		return nil, err
+	}
 	if ctx.PathParam("page") == "entity" {
-		store := entity.NewStore(ctx.SQL)
-		current, err := store.Get(ctx, spec.Identifier, ctx.Param("entity"))
+		current, err := l.store.Get(ctx, spec.Identifier, ctx.Param("entity"))
 		if errors.Is(err, entity.ErrNotFound) {
 			return nil, httpx.Error{Code: http.StatusNotFound, Message: "no entity " + ctx.Param("entity")}
 		}
 		if err != nil {
 			return nil, err
 		}
-		blueprints, err := blueprint.Published(ctx, ctx.SQL)
-		if err != nil {
-			return nil, err
-		}
-		blueprints[spec.Identifier] = spec
-		if err := store.Resolve(ctx, blueprints, spec, []*entity.Entity{current}); err != nil {
+		if err := l.store.Resolve(ctx, l.blueprints, spec, []*entity.Entity{current}); err != nil {
 			return nil, err
 		}
 		names := make([]string, 0, len(spec.Properties))
 		for _, property := range spec.Properties {
 			names = append(names, property.ID)
 		}
-		data = widget.EntityValues(current.Identifier, current.Title, current.Blueprint, current.Properties, names)
-		maps.Copy(values, widget.TextValues(data))
+		l.env.Data = widget.EntityValues(current.Identifier, current.Title, current.Blueprint, current.Properties, names)
+		maps.Copy(values, widget.TextValues(l.env.Data))
+		l.env.Entity = entityVariable(current)
 	}
-	return respond(load(ctx, w, values, &spec, data))
+
+	return l.load(tab.Widgets), nil
 }
 
-func noWidget(ctx *gofr.Context) error {
-	return httpx.Error{Code: http.StatusNotFound, Message: "no widget " + ctx.PathParam("widget")}
+func noTab(ctx *gofr.Context) error {
+	return httpx.Error{Code: http.StatusNotFound, Message: "no tab " + ctx.PathParam("tab")}
 }
 
-// respond turns filters the data can't answer into bad requests.
-func respond(data any, err error) (any, error) {
-	var filterErr entity.FilterError
-	if errors.As(err, &filterErr) {
-		return nil, badRequest(filterErr.Error())
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return data, nil
-}
-
-type (
-	statData struct {
-		Value *float64 `json:"value"`
-	}
-	groupData struct {
-		Groups []entity.Facet `json:"groups"`
-		None   int            `json:"none"`
-	}
-	tierData struct {
-		Tiers []scorecard.TierCount `json:"tiers"`
-	}
-	textData struct {
-		Text string `json:"text"`
-	}
-)
-
-// load works out what a widget shows for whoever is looking, with own in
-// place of its published version, so a draft's widgets can show the
-// draft's derived properties.
-func load(ctx *gofr.Context, w widget.Widget, values widget.Values, own *blueprint.Spec, data map[string][]any) (any, error) {
-	if w.Type == widget.TypeMarkdown {
-		return textData{Text: widget.Render(w.Text, values)}, nil
-	}
-	if w.Type == widget.TypeProperties {
-		return nil, badRequest(w.Type + " widgets have no data to load")
-	}
-	f := widget.BindContext(w.Filter, values, data)
-	blueprints, err := blueprint.Published(ctx, ctx.SQL)
-	if err != nil {
-		return nil, err
-	}
-	if own != nil {
-		blueprints[own.Identifier] = *own
-	}
-
-	if w.Type == widget.TypeScorecard {
-		scorecards, err := scorecard.Published(ctx, ctx.SQL)
-		if err != nil {
-			return nil, err
-		}
-		sc, ok := scorecards[w.Scorecard]
-		if !ok {
-			return nil, httpx.Error{Code: http.StatusNotFound, Message: "no published scorecard " + w.Scorecard}
-		}
-		tiers, err := scorecard.Tiers(ctx, ctx.SQL, sc, blueprints[sc.Blueprint], f)
-		if err != nil {
-			return nil, err
-		}
-		return tierData{Tiers: tiers}, nil
-	}
-
-	bp, ok := blueprints[w.Blueprint]
-	if !ok {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no published blueprint " + w.Blueprint}
-	}
-	store := entity.NewStore(ctx.SQL)
-	switch w.Type {
-	case widget.TypeStat:
-		value, err := store.Aggregate(ctx, bp, f, w.Aggregate, w.Property)
-		if err != nil {
-			return nil, err
-		}
-		return statData{Value: value}, nil
-	case widget.TypeBar, widget.TypeDonut:
-		groups, none, err := store.Group(ctx, bp, f, w.GroupBy, w.Limit)
-		if err != nil {
-			return nil, err
-		}
-		return groupData{Groups: groups, None: none}, nil
-	}
-
-	page, err := store.List(ctx, entity.Query{Blueprint: bp, Filter: f, Sort: w.Sort, Page: 1, PageSize: w.Limit})
-	if err != nil {
-		return nil, err
-	}
-	if err := store.Resolve(ctx, blueprints, bp, page.Entities); err != nil {
-		return nil, err
-	}
-
-	if err := store.ResolveScores(ctx, page.Entities); err != nil {
-		return nil, err
-	}
-	return page, nil
+func notFound(message string) error {
+	return httpx.Error{Code: http.StatusNotFound, Message: message}
 }
 
 func badRequest(message string) error {

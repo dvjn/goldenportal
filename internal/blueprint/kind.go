@@ -30,7 +30,11 @@ var Kind = configdoc.Kind[Spec]{
 		if err != nil {
 			return nil, err
 		}
-		return Check(spec, published), nil
+		ladders, err := Ladders(ctx, db)
+		if err != nil {
+			return nil, err
+		}
+		return append(Check(spec, published), CheckScorecards(spec, ladders)...), nil
 	},
 	Diff:      Diff,
 	Deletable: deletable,

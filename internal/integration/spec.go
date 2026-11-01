@@ -23,6 +23,7 @@ type Spec struct {
 	Title       string        `json:"title"`
 	Description string        `json:"description,omitempty"`
 	Icon        string        `json:"icon,omitempty"`
+	Color       string        `json:"color,omitempty"`
 	Connector   ConnectorSpec `json:"connector"`
 	Sync        *SyncSpec     `json:"sync,omitempty"`
 	// Mappings turn incoming data into entities. They're also the only
@@ -83,7 +84,7 @@ const (
 func (s Spec) Key() string { return s.Identifier }
 
 func (s Spec) Meta() configdoc.Meta {
-	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon}
+	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon, Color: s.Color}
 }
 
 func (s Spec) Stats() map[string]int { return map[string]int{"mappings": len(s.Mappings)} }
@@ -104,7 +105,13 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
 	spec := Spec{
 		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Mappings: []Mapping{},
+		Mappings: []Mapping{},
+	}
+	metadata := configdoc.Field(doc.Root, "metadata")
+	for _, key := range []string{"icon", "color"} {
+		if n := configdoc.Field(metadata, key); n != nil {
+			r.Errorf(n, "metadata."+key, "an integration's %s comes from its connector, so drop it", key)
+		}
 	}
 	if doc.Spec == nil {
 		return spec, r.Issues
@@ -139,6 +146,7 @@ func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) Co
 	}
 	spec.Connector.Type = r.Text(fields["type"], "spec.connector.type")
 	c, known := connector(spec.Connector.Type)
+	spec.Icon, spec.Color = c.Icon, c.Color
 	if !known {
 		var ids []string
 		for _, c := range Connectors {

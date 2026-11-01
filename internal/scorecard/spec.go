@@ -26,6 +26,7 @@ type Spec struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
+	Color       string `json:"color,omitempty"`
 	Blueprint   string `json:"blueprint"`
 	// Filter narrows the entities scored, in the catalog's filter language.
 	Filter *entity.Filter `json:"filter,omitempty"`
@@ -61,7 +62,7 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
 func (s Spec) Key() string { return s.Identifier }
 
 func (s Spec) Meta() configdoc.Meta {
-	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon}
+	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon, Color: s.Color}
 }
 
 func (s Spec) Stats() map[string]int {
@@ -80,7 +81,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
 	spec := Spec{
 		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Tiers: []Tier{},
+		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Tiers: []Tier{},
 	}
 	if doc.Spec == nil {
 		return spec, r.Issues
@@ -178,7 +179,7 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 func jq(r *configdoc.Reader, node, parent *yaml.Node, path string, required bool) string {
 	if node == nil {
 		if required {
-			r.Errorf(parent, path, "add a jq check that gives true or false, such as .properties.owner != null")
+			r.Errorf(parent, path, "add a jq check that gives true or false, such as .owner != null")
 		}
 		return ""
 	}
@@ -204,7 +205,9 @@ func toFilter(raw any) (*entity.Filter, error) {
 }
 
 // Check checks the scorecard against its blueprint: an unpublished one is
-// a warning, a filter it can't answer is an error.
+// a warning, as is one with no property holding the results, which then
+// only show on the scorecard's own pages. A filter it can't answer is an
+// error.
 func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, error) {
 	published, err := blueprint.Published(ctx, db)
 	if err != nil {
@@ -217,11 +220,18 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 			Message: fmt.Sprintf("no blueprint %q is published yet, so nothing is scored until it is", spec.Blueprint),
 		}}, nil
 	}
+	var issues []configdoc.Issue
 	if spec.Filter != nil {
-		if err := entity.CheckFilter(bp, *spec.Filter); err != nil {
-			return []configdoc.Issue{{Severity: configdoc.SeverityError, Path: "spec.filter", Message: err.Error()}}, nil
+		if err := entity.CheckFilter(published, bp, *spec.Filter); err != nil {
+			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: "spec.filter", Message: err.Error()})
 		}
 	}
+	if !slices.ContainsFunc(bp.Properties, func(p blueprint.Property) bool { return p.Scorecard == spec.Identifier }) {
+		issues = append(issues, configdoc.Issue{
+			Severity: configdoc.SeverityWarning, Path: "spec.blueprint", Line: spec.line,
+			Message: fmt.Sprintf("%s declares no property for this scorecard, so its results only show on the scorecard's pages; add one, such as readiness: {type: scorecard, scorecard: %s}", bp.Identifier, spec.Identifier),
+		})
+	}
 
-	return nil, nil
+	return issues, nil
 }

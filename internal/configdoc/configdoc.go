@@ -63,6 +63,8 @@ type Meta struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
+	// Color tints the icon's tile, so documents tell apart at a glance.
+	Color string `json:"color,omitempty"`
 }
 
 // Kind describes one type of document and how to handle it.

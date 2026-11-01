@@ -69,6 +69,9 @@ type Logger interface {
 type Actor struct {
 	ID    string `json:"id,omitempty"`
 	Label string `json:"label"`
+	// Name is the person's current name, when the actor is a user, so
+	// events name people the way access does.
+	Name string `json:"name,omitempty"`
 }
 
 type Target struct {
@@ -141,14 +144,15 @@ func List(ctx context.Context, db DB, q Query) (Page, error) {
 	}
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, at, coalesce(actor_id::text, ''), actor_label, action,
-			target_type, target_id, target_label, details, count(*) OVER ()
-		FROM audit_events
-		WHERE ($1 = '' OR actor_label ILIKE $1 OR target_label ILIKE $1 OR action ILIKE $1)
+		SELECT a.id, a.at, coalesce(a.actor_id::text, ''), a.actor_label, coalesce(u.display_name, ''),
+			a.action, a.target_type, a.target_id, a.target_label, a.details, count(*) OVER ()
+		FROM audit_events a
+		LEFT JOIN users u ON u.id = a.actor_id
+		WHERE ($1 = '' OR actor_label ILIKE $1 OR u.display_name ILIKE $1 OR target_label ILIKE $1 OR action ILIKE $1)
 			AND (coalesce(cardinality($2::text[]), 0) = 0 OR action = ANY($2))
 			AND ($3::timestamptz IS NULL OR at >= $3)
 			AND ($4::timestamptz IS NULL OR at < $4)
-		ORDER BY id DESC
+		ORDER BY a.id DESC
 		LIMIT $5 OFFSET $6`,
 		search(q.Search), pq.Array(q.Actions), from, to, q.PageSize, (q.Page-1)*q.PageSize)
 	if err != nil {
@@ -162,7 +166,7 @@ func List(ctx context.Context, db DB, q Query) (Page, error) {
 			e       Event
 			details []byte
 		)
-		if err := rows.Scan(&e.ID, &e.At, &e.Actor.ID, &e.Actor.Label, &e.Action,
+		if err := rows.Scan(&e.ID, &e.At, &e.Actor.ID, &e.Actor.Label, &e.Actor.Name, &e.Action,
 			&e.Target.Type, &e.Target.ID, &e.Target.Label, &details, &page.Total); err != nil {
 			return Page{}, err
 		}
@@ -193,8 +197,9 @@ func countOnly(ctx context.Context, db DB, q Query) (Page, error) {
 	}
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT count(*) FROM audit_events
-		WHERE ($1 = '' OR actor_label ILIKE $1 OR target_label ILIKE $1 OR action ILIKE $1)
+		SELECT count(*) FROM audit_events a
+		LEFT JOIN users u ON u.id = a.actor_id
+		WHERE ($1 = '' OR actor_label ILIKE $1 OR u.display_name ILIKE $1 OR target_label ILIKE $1 OR action ILIKE $1)
 			AND (coalesce(cardinality($2::text[]), 0) = 0 OR action = ANY($2))
 			AND ($3::timestamptz IS NULL OR at >= $3)
 			AND ($4::timestamptz IS NULL OR at < $4)`,

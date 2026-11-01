@@ -61,7 +61,16 @@ type portalIntegration struct {
 	Blueprints  []string   `json:"blueprints"`
 	Entities    int        `json:"entities"`
 	LastRunAt   *time.Time `json:"lastRunAt"`
-	PublishedAt time.Time  `json:"publishedAt"`
+	// LastRunOutcome is how the last run went, as the runs table filters
+	// them: succeeded, warnings or failed. It's null before the first run.
+	LastRunOutcome *string   `json:"lastRunOutcome"`
+	PublishedAt    time.Time `json:"publishedAt"`
+}
+
+// lastRun is when an integration last ran, and how it went.
+type lastRun struct {
+	at      time.Time
+	outcome string
 }
 
 // portalSnapshot reads the resources asked for: users, groups, and published
@@ -197,7 +206,7 @@ func portalDocuments(ctx context.Context, db configdoc.DB, data *portalData) err
 			Entities: counts["integration:"+record.Identifier], PublishedAt: record.PublishedAt,
 		}
 		if last, ok := lastRuns[record.Identifier]; ok {
-			in.LastRunAt = &last
+			in.LastRunAt, in.LastRunOutcome = &last.at, &last.outcome
 		}
 		for _, m := range spec.Mappings {
 			in.Blueprints = append(in.Blueprints, m.Blueprint)
@@ -210,7 +219,7 @@ func portalDocuments(ctx context.Context, db configdoc.DB, data *portalData) err
 
 // portalCounts counts entities by blueprint and by integration, keyed as
 // "blueprint:<id>" and "integration:<id>", and finds each integration's last run.
-func portalCounts(ctx context.Context, db configdoc.DB) (map[string]int, map[string]time.Time, error) {
+func portalCounts(ctx context.Context, db configdoc.DB) (map[string]int, map[string]lastRun, error) {
 	counts := map[string]int{}
 	rows, err := db.QueryContext(ctx, `
 		SELECT d.kind || ':' || d.identifier, count(*) FROM entities e
@@ -234,11 +243,13 @@ func portalCounts(ctx context.Context, db configdoc.DB) (map[string]int, map[str
 		return nil, nil, err
 	}
 
-	lastRuns := map[string]time.Time{}
+	lastRuns := map[string]lastRun{}
 	runs, err := db.QueryContext(ctx, `
-		SELECT d.identifier, max(r.finished_at) FROM ingestion_runs r
+		SELECT DISTINCT ON (r.integration_id) d.identifier, r.finished_at,
+			CASE WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 THEN 'warnings' ELSE 'succeeded' END
+		FROM ingestion_runs r
 		JOIN config_documents d ON d.id = r.integration_id
-		GROUP BY d.identifier`)
+		ORDER BY r.integration_id, r.finished_at DESC`)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -246,9 +257,9 @@ func portalCounts(ctx context.Context, db configdoc.DB) (map[string]int, map[str
 	for runs.Next() {
 		var (
 			id   string
-			last time.Time
+			last lastRun
 		)
-		if err := runs.Scan(&id, &last); err != nil {
+		if err := runs.Scan(&id, &last.at, &last.outcome); err != nil {
 			return nil, nil, err
 		}
 		lastRuns[id] = last

@@ -9,29 +9,22 @@ import (
 	"github.com/dvjn/goldenportal/internal/filter"
 )
 
-func TestRelativeDates(t *testing.T) {
+func TestToday(t *testing.T) {
 	values := Values{}
 	SetToday(values, time.Date(2024, 3, 1, 1, 0, 0, 0, time.FixedZone("east", 19800)))
-	for name, want := range map[string]string{
-		"$today": "2024-02-29", "$today-1d": "2024-02-28", "$today+1d": "2024-03-01", "$today-60d": "2023-12-31",
-	} {
-		if err := CheckText("{{ " + name + " }}"); err != nil {
-			t.Fatal(err)
-		}
-		if got := Render("Date: {{ "+name+" }}", values); got != "Date: "+want {
-			t.Errorf("%s rendered %q", name, got)
-		}
-		f := &filter.Filter{Property: "deployed", Op: "gte", Value: name}
-		if got := Bind(f, values); got.Value != want {
-			t.Errorf("%s bound %+v", name, got)
-		}
-		if f.Value != name {
-			t.Fatal("binding mutated the source")
-		}
+	if err := CheckText("{{ $today }}"); err != nil {
+		t.Fatal(err)
 	}
-	for _, name := range []string{"$today-7w", "$today+1", "$today--1d", "$today-365001d", "$today+999999999999999999999d"} {
-		if err := CheckText("{{ " + name + " }}"); err == nil {
-			t.Errorf("accepted %s", name)
+	if got := Render("Date: {{ $today }}", values); got != "Date: 2024-02-29" {
+		t.Errorf("rendered %q", got)
+	}
+	if got := Bind(&filter.Filter{Property: "deployed", Op: "gte", Value: ValueToday}, values); got.Value != "2024-02-29" {
+		t.Errorf("bound %+v", got)
+	}
+	// Day offsets are gone; within takes their place.
+	for _, name := range []string{"$today-7d", "$today+1d", "$todayish"} {
+		if err := CheckText("{{ " + name + " }}"); err == nil || !strings.Contains(err.Error(), "within") {
+			t.Errorf("accepted %s: %v", name, err)
 		}
 		if err := checkVariable(name); err == nil {
 			t.Errorf("accepted filter %s", name)

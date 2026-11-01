@@ -16,37 +16,65 @@ import (
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
-// Check checks a dashboard's filters and widgets.
+// Check checks a dashboard's inputs, queries and widgets.
 func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, error) {
 	blueprints, scorecards, err := published(ctx, db, nil)
 	if err != nil {
 		return nil, err
 	}
-	return append(checkFilters(spec.Filters, blueprints), checkWidgets(spec.Widgets, blueprints, scorecards)...), nil
+	issues := checkInputs(spec.Inputs, blueprints)
+	issues = append(issues, checkQueries(spec.Queries, blueprints)...)
+
+	return append(issues, checkWidgets(spec.Widgets, "", blueprints, scorecards)...), nil
 }
 
-// checkFilters checks the blueprints the filters pick from. A lookup
-// default's blueprint is the filter's own, so it's only reported once.
-func checkFilters(filters []Filter, blueprints map[string]blueprint.Spec) []configdoc.Issue {
+// checkQueries checks named queries against their blueprints, once, so
+// the widgets that use them only report what's their own.
+func checkQueries(queries []widget.Query, blueprints map[string]blueprint.Spec) []configdoc.Issue {
 	var issues []configdoc.Issue
-	for _, f := range filters {
-		if f.Type != FilterRelation {
-			continue
-		}
-		bp, ok := blueprints[f.Relation]
+	for _, q := range queries {
+		bp, ok := blueprints[q.Blueprint]
 		if !ok {
 			issues = append(issues, configdoc.Issue{
-				Severity: configdoc.SeverityWarning, Path: "spec.filters." + f.ID + ".relation", Line: f.line,
-				Message: fmt.Sprintf("no blueprint %q is published yet", f.Relation),
+				Severity: configdoc.SeverityWarning, Path: q.Path + ".blueprint", Line: q.Line,
+				Message: fmt.Sprintf("no blueprint %q is published yet", q.Blueprint),
 			})
 			continue
 		}
-		if f.Lookup == nil || f.Lookup.Where == nil {
+		if err := checkFilter(blueprints, bp, q.Filter); err != nil {
+			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: q.Path + ".filter", Line: q.Line, Message: err.Error()})
+		}
+	}
+
+	return issues
+}
+
+// checkInputs checks the blueprints the inputs pick from. A default
+// query's blueprint is the input's own, so it's only reported once.
+func checkInputs(inputs []Input, blueprints map[string]blueprint.Spec) []configdoc.Issue {
+	var issues []configdoc.Issue
+	for _, in := range inputs {
+		if in.Type != InputRelation {
 			continue
 		}
-		if err := entity.CheckFilter(bp, *widget.Bind(f.Lookup.Where, sampleValues())); err != nil {
+		bp, ok := blueprints[in.Relation]
+		if !ok {
 			issues = append(issues, configdoc.Issue{
-				Severity: configdoc.SeverityError, Path: "spec.filters." + f.ID + ".default.where", Line: f.line,
+				Severity: configdoc.SeverityWarning, Path: "spec.inputs." + in.ID + ".relation", Line: in.line,
+				Message: fmt.Sprintf("no blueprint %q is published yet", in.Relation),
+			})
+			continue
+		}
+		if in.DefaultQuery == nil || in.DefaultQuery.Query.Filter == nil {
+			continue
+		}
+		bound := widget.Bind(in.DefaultQuery.Query.Filter, sampleValues())
+		if bound == nil {
+			continue
+		}
+		if err := entity.CheckFilter(blueprints, bp, *bound); err != nil {
+			issues = append(issues, configdoc.Issue{
+				Severity: configdoc.SeverityError, Path: "spec.inputs." + in.ID + ".default.query.filter", Line: in.line,
 				Message: err.Error(),
 			})
 		}
@@ -59,47 +87,50 @@ func checkFilters(filters []Filter, blueprints map[string]blueprint.Spec) []conf
 // does. $me is never unset, so binding it never drops a condition.
 var sampleMe = widget.MeValues(auth.Principal{Email: "me@example.com", DisplayName: "Me", Role: auth.RoleMember, Groups: []string{"group"}})
 
-// CheckPages checks the widgets on a blueprint's pages. They may show the
-// blueprint itself, so they're checked against the version being checked.
+// CheckPages checks the queries and widgets on a blueprint's pages. They
+// may show the blueprint itself, so they're checked against the version
+// being checked. On entity pages, $entity stands for an entity with every
+// property, typed.
 func CheckPages(ctx context.Context, db configdoc.DB, spec blueprint.Spec) ([]configdoc.Issue, error) {
 	blueprints, scorecards, err := published(ctx, db, &spec)
 	if err != nil {
 		return nil, err
 	}
+
+	return checkPages(spec, blueprints, scorecards), nil
+}
+
+func checkPages(spec blueprint.Spec, blueprints map[string]blueprint.Spec, scorecards map[string]scorecard.Spec) []configdoc.Issue {
 	samples := sampleEntity(spec, blueprints)
-	var widgets []widget.Widget
+	bind := func(f *filter.Filter) *filter.Filter { return widget.BindData(f, samples) }
+	var issues []configdoc.Issue
 	for _, page := range []*blueprint.Page{spec.Catalog, spec.Entity} {
 		if page == nil {
 			continue
 		}
+		queries := page.Queries
+		if page == spec.Entity {
+			queries = make([]widget.Query, len(page.Queries))
+			for i, q := range page.Queries {
+				q.Filter = bind(q.Filter)
+				queries[i] = q
+			}
+		}
+		issues = append(issues, checkQueries(queries, blueprints)...)
+		var widgets []widget.Widget
 		for _, tab := range page.Tabs {
 			for _, w := range tab.Widgets {
 				// Check with the page entity's types, even when the widget shows another blueprint.
 				if page == spec.Entity {
-					w.Filter = widget.BindData(w.Filter, samples)
+					w = w.MapFilters(bind)
 				}
 				widgets = append(widgets, w)
 			}
 		}
+		issues = append(issues, checkWidgets(widgets, spec.Identifier, blueprints, scorecards)...)
 	}
 
-	return checkWidgets(widgets, blueprints, scorecards), nil
-}
-
-// CheckWidgets checks widgets against the blueprints and scorecards they
-// show, with own in place of its published version. One that isn't
-// published is a warning, since it may be on its way; a property or
-// filter they can't answer is an error.
-func CheckWidgets(ctx context.Context, db configdoc.DB, widgets []widget.Widget, own *blueprint.Spec) ([]configdoc.Issue, error) {
-	if len(widgets) == 0 {
-		return nil, nil
-	}
-	blueprints, scorecards, err := published(ctx, db, own)
-	if err != nil {
-		return nil, err
-	}
-
-	return checkWidgets(widgets, blueprints, scorecards), nil
+	return issues
 }
 
 // published loads what widgets can show, with own in place of its
@@ -120,102 +151,173 @@ func published(ctx context.Context, db configdoc.DB, own *blueprint.Spec) (map[s
 	return blueprints, scorecards, nil
 }
 
-func checkWidgets(widgets []widget.Widget, blueprints map[string]blueprint.Spec, scorecards map[string]scorecard.Spec) []configdoc.Issue {
+// checkWidgets checks widgets against the blueprints and scorecards they
+// show; page is the blueprint whose page they're on, if any. One that
+// isn't published is a warning, since it may be on its way; a property or
+// filter they can't answer is an error. A named query's own problems are
+// checkQueries'.
+func checkWidgets(widgets []widget.Widget, page string, blueprints map[string]blueprint.Spec, scorecards map[string]scorecard.Spec) []configdoc.Issue {
 	var issues []configdoc.Issue
-	report := func(severity, path string, line int, format string, args ...any) {
-		issues = append(issues, configdoc.Issue{Severity: severity, Path: path, Line: line, Message: fmt.Sprintf(format, args...)})
-	}
 	for _, w := range widgets {
-		if w.Type == widget.TypeScorecard {
-			sc, ok := scorecards[w.Scorecard]
-			if !ok {
-				report(configdoc.SeverityWarning, w.Path+".scorecard", w.Line, "no scorecard %q is published yet", w.Scorecard)
-				continue
-			}
-			if bp, ok := blueprints[sc.Blueprint]; ok {
-				if err := checkFilter(bp, w.Filter); err != nil {
-					report(configdoc.SeverityError, w.Path+".filter", w.Line, "%v", err)
-				}
-			}
-			continue
-		}
-		if w.Blueprint == "" {
-			continue
-		}
-		bp, ok := blueprints[w.Blueprint]
-		if !ok {
-			report(configdoc.SeverityWarning, w.Path+".blueprint", w.Line, "no blueprint %q is published yet", w.Blueprint)
-			continue
-		}
-		refs := append([]string{}, w.Columns...)
-		refs = append(refs, scorecardRefs(w.Filter)...)
-		for _, ref := range refs {
-			if name, ok := entity.ScorecardName(ref); ok {
-				sc, exists := scorecards[name]
-				if !exists {
-					report(configdoc.SeverityWarning, w.Path, w.Line, "no scorecard %q is published yet", name)
-				} else if sc.Blueprint != bp.Identifier {
-					report(configdoc.SeverityError, w.Path, w.Line, "%s scores %s, not %s", name, sc.Blueprint, bp.Identifier)
-				}
-			}
-		}
-		for _, problem := range checkWidget(bp, w) {
-			report(configdoc.SeverityError, w.Path+"."+problem.field, w.Line, "%v", problem.err)
-		}
+		c := widgetCheck{w: w, blueprints: blueprints, scorecards: scorecards}
+		c.check(page)
+		issues = append(issues, c.issues...)
 	}
 
 	return issues
 }
 
-type problem struct {
-	field string
-	err   error
+type widgetCheck struct {
+	w          widget.Widget
+	blueprints map[string]blueprint.Spec
+	scorecards map[string]scorecard.Spec
+	issues     []configdoc.Issue
 }
 
-func checkWidget(bp blueprint.Spec, w widget.Widget) []problem {
-	var problems []problem
-	add := func(field string, err error) {
-		if err != nil {
-			problems = append(problems, problem{field, err})
-		}
+func (c *widgetCheck) report(severity, field, format string, args ...any) {
+	c.issues = append(c.issues, configdoc.Issue{Severity: severity, Path: c.w.Path + "." + field, Line: c.w.Line, Message: fmt.Sprintf(format, args...)})
+}
+
+func (c *widgetCheck) fail(field string, err error) {
+	if err != nil {
+		c.report(configdoc.SeverityError, field, "%v", err)
 	}
-	add("filter", checkFilter(bp, w.Filter))
-	switch w.Type {
-	case widget.TypeStat:
-		add("aggregate", entity.CheckAggregate(bp, w.Aggregate, w.Property))
-	case widget.TypeBar, widget.TypeDonut:
-		add("groupBy", entity.CheckGroup(bp, w.GroupBy))
-	case widget.TypeTable:
-		for _, column := range w.Columns {
-			add("columns", entity.CheckColumn(bp, column))
-		}
-		if w.Sort != "" {
-			add("sort", entity.CheckSort(bp, w.Sort))
-		}
-	case widget.TypeProperties:
-		for _, property := range w.Properties {
-			add("properties", entity.CheckColumn(bp, property))
-		}
+}
+
+// query finds the blueprint a query picks from and checks a filter written
+// in place. It's false when there's nothing more to check it against.
+func (c *widgetCheck) query(q *widget.Query, field string) (blueprint.Spec, bool) {
+	if q == nil {
+		return blueprint.Spec{}, false
+	}
+	bp, ok := c.blueprints[q.Blueprint]
+	switch {
+	case !ok && q.Name == "":
+		c.report(configdoc.SeverityWarning, field+".blueprint", "no blueprint %q is published yet", q.Blueprint)
+	case ok && q.Name == "":
+		c.fail(field+".filter", checkFilter(c.blueprints, bp, q.Filter))
 	}
 
-	return problems
+	return bp, ok
+}
+
+func (c *widgetCheck) check(page string) {
+	w := c.w
+	switch w.Type {
+	case widget.TypeMarkdown:
+		return
+	case widget.TypeProperties:
+		if bp, ok := c.blueprints[page]; ok {
+			for _, property := range w.Properties {
+				c.fail("properties", entity.CheckColumn(c.blueprints, bp, property))
+			}
+		}
+		return
+	case widget.TypeStat:
+		if w.Value != nil {
+			c.value(*w.Value)
+		}
+	case widget.TypeScorecard:
+		c.scorecard()
+	default:
+		if bp, ok := c.query(w.Query, "query"); ok {
+			c.entities(bp)
+		}
+	}
+	c.link()
+}
+
+func (c *widgetCheck) value(v widget.Value) {
+	bp, ok := c.query(&v.Query, "value.query")
+	op, path := v.Op()
+	if !ok || op == widget.OpJQ || op == widget.OpCount {
+		return
+	}
+	a := entity.Aggregate{Op: op, Path: path}
+	if v.Share != nil {
+		a.Share = bindSample(v.Share)
+		if a.Share == nil {
+			return
+		}
+	}
+	c.fail("value."+op, entity.CheckAggregate(c.blueprints, bp, a))
+}
+
+func (c *widgetCheck) scorecard() {
+	sc, ok := c.scorecards[c.w.Scorecard]
+	if !ok {
+		c.report(configdoc.SeverityWarning, "scorecard", "no scorecard %q is published yet", c.w.Scorecard)
+		return
+	}
+	q := c.w.Query
+	switch {
+	case q == nil:
+	case q.Blueprint != "" && q.Blueprint != sc.Blueprint:
+		c.report(configdoc.SeverityError, "query", "the query picks %s, but %s scores %s", q.Blueprint, sc.Identifier, sc.Blueprint)
+	case q.Name == "":
+		if bp, ok := c.blueprints[sc.Blueprint]; ok {
+			c.fail("query.filter", checkFilter(c.blueprints, bp, q.Filter))
+		}
+	}
+}
+
+// entities checks what bars, donuts and tables show of bp's entities.
+func (c *widgetCheck) entities(bp blueprint.Spec) {
+	w := c.w
+	switch w.Type {
+	case widget.TypeBar, widget.TypeDonut:
+		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
+	case widget.TypeTable:
+		for _, column := range w.Columns {
+			if column.Path != "" {
+				c.fail("columns", entity.CheckColumn(c.blueprints, bp, column.Path))
+			}
+		}
+		if w.Sort != "" {
+			c.fail("sort", entity.CheckSort(c.blueprints, bp, w.Sort))
+		}
+	}
+}
+
+// link checks a query link's entities: its filter, and for a link to each
+// group, that the group's value can narrow them.
+func (c *widgetCheck) link() {
+	l := c.w.Link
+	if l == nil || l.Query == nil {
+		return
+	}
+	bp, ok := c.query(l.Query, "link.query")
+	if !ok {
+		return
+	}
+	c.fail("link.filter", checkFilter(c.blueprints, bp, l.Filter))
+	if l.Group && c.w.GroupBy != "" {
+		c.fail("link.group", entity.CheckFilter(c.blueprints, bp, filter.Filter{Property: c.w.GroupBy, Op: filter.OpExists}))
+	}
 }
 
 // checkFilter checks a filter with its context values bound to text, as
 // they will be when the widget loads.
-func checkFilter(bp blueprint.Spec, f *filter.Filter) error {
-	values := maps.Clone(sampleMe)
-	values[widget.ValueEntity] = []string{"entity"}
-	widget.SetToday(values, time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC))
-	for _, ref := range widget.FilterRefs(f) {
-		values[ref] = []string{"value"}
-	}
-	bound := widget.Bind(f, values)
+func checkFilter(blueprints map[string]blueprint.Spec, bp blueprint.Spec, f *filter.Filter) error {
+	bound := bindSample(f)
 	if bound == nil {
 		return nil
 	}
 
-	return entity.CheckFilter(bp, *bound)
+	return entity.CheckFilter(blueprints, bp, *bound)
+}
+
+// bindSample binds a filter's context values to text, as they will be when
+// the widget loads.
+func bindSample(f *filter.Filter) *filter.Filter {
+	values := maps.Clone(sampleMe)
+	values[widget.ValueEntity] = []string{"entity"}
+	widget.SetToday(values, time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC))
+	for _, ref := range widget.InputRefs(f) {
+		values[ref] = []string{"value"}
+	}
+
+	return widget.Bind(f, values)
 }
 
 func sampleValues() widget.Values {
@@ -275,16 +377,4 @@ func sampleEntity(spec blueprint.Spec, blueprints map[string]blueprint.Spec) map
 		properties[id] = value
 	}
 	return widget.EntityValues("entity", "Entity", spec.Identifier, properties, names)
-}
-
-func scorecardRefs(f *filter.Filter) []string {
-	if f == nil {
-		return nil
-	}
-	refs := []string{f.Property}
-	refs = append(refs, scorecardRefs(f.Not)...)
-	for _, part := range append(append([]filter.Filter{}, f.And...), f.Or...) {
-		refs = append(refs, scorecardRefs(&part)...)
-	}
-	return refs
 }

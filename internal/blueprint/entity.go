@@ -117,20 +117,22 @@ func (s Spec) ValidateEntity(in Entity) (Entity, []string) {
 	return out, problems
 }
 
-// Compute evaluates the computed properties against an entity. A value
-// that fails or doesn't match its type is left out, with the reason.
+// Compute evaluates the computed properties against an entity, flat as
+// paths see it: its properties and relations beside identifier, title and
+// blueprint. A value that fails or doesn't match its type is left out,
+// with the reason.
 func (s Spec) Compute(entity Entity) (map[string]any, []string) {
 	values := map[string]any{}
 	var problems []string
 
-	properties := make(map[string]any, len(entity.Properties)+len(entity.Relations))
+	input := make(map[string]any, len(entity.Properties)+len(entity.Relations)+3)
 	for key, value := range entity.Properties {
-		properties[key] = value
+		input[key] = value
 	}
 	for key, value := range relationsForJQ(entity.Relations) {
-		properties[key] = value
+		input[key] = value
 	}
-	input := map[string]any{"identifier": entity.Identifier, "title": entity.Title, "properties": properties}
+	input["identifier"], input["title"], input["blueprint"] = entity.Identifier, entity.Title, s.Identifier
 	for _, prop := range s.Properties {
 		if prop.Compute == "" {
 			continue

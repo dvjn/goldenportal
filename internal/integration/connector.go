@@ -11,6 +11,10 @@ type Connector struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	// Icon and Color are the integrations' too, so the same source looks the
+	// same everywhere.
+	Icon  string `json:"icon"`
+	Color string `json:"color"`
 	// Mode is "push" when other systems send entities, or "pull" when the portal fetches them.
 	Mode string `json:"mode"`
 	// Resources are what a pull connector can fetch, which mappings name.
@@ -43,12 +47,16 @@ const (
 var Connectors = []Connector{
 	{
 		ID:          "push",
+		Icon:        "webhook",
+		Color:       "violet",
 		Title:       "Push",
 		Description: "Other systems send entities to the ingest API with an ingestion token.",
 		Mode:        ModePush,
 	},
 	{
 		ID:          "portal",
+		Icon:        "panels-top-left",
+		Color:       "indigo",
 		Title:       "Portal",
 		Description: "The portal's own users, groups, blueprints and integrations, synced one way. Changes to the entities never flow back.",
 		Mode:        ModePull,
@@ -56,6 +64,8 @@ var Connectors = []Connector{
 	},
 	{
 		ID:          "http",
+		Icon:        "globe",
+		Color:       "cyan",
 		Title:       "HTTP",
 		Description: "JSON fetched from URLs on a schedule, following pages if there are several.",
 		Mode:        ModePull,

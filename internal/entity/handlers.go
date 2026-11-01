@@ -28,6 +28,7 @@ type CatalogEntry struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
+	Color       string `json:"color,omitempty"`
 	Entities    int    `json:"entities"`
 }
 
@@ -68,7 +69,7 @@ func catalog(ctx *gofr.Context) (any, error) {
 	for _, spec := range specs {
 		entries = append(entries, CatalogEntry{
 			Identifier: spec.Identifier, Title: spec.Title,
-			Description: spec.Description, Icon: spec.Icon, Entities: counts[spec.Identifier],
+			Description: spec.Description, Icon: spec.Icon, Color: spec.Color, Entities: counts[spec.Identifier],
 		})
 	}
 	slices.SortFunc(entries, func(a, b CatalogEntry) int {
@@ -81,7 +82,7 @@ func catalog(ctx *gofr.Context) (any, error) {
 var pageSizes = []int{10, 20, 50, 100}
 
 // list returns a page of one blueprint's entities: searched by q, filtered by
-// filter (see Filter) and sorted by sort.
+// filter (see Filter) and sorted by sort, a path.
 func list(ctx *gofr.Context) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
@@ -91,7 +92,7 @@ func list(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	q := Query{Blueprint: spec, Search: ctx.Param("q"), Sort: ctx.Param("sort"), Page: 1, PageSize: pageSizes[0]}
+	q := Query{Blueprint: spec, Blueprints: specs, Search: ctx.Param("q"), Sort: ctx.Param("sort"), Page: 1, PageSize: pageSizes[0]}
 	if value := ctx.Param("page"); value != "" {
 		page, err := strconv.Atoi(value)
 		if err != nil || page < 1 {
@@ -109,6 +110,9 @@ func list(ctx *gofr.Context) (any, error) {
 	if q.Filter, err = ParseFilter(ctx.Param("filter")); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	if q.Ladders, err = blueprint.Ladders(ctx, ctx.SQL); err != nil {
+		return nil, err
+	}
 
 	store := NewStore(ctx.SQL)
 	page, err := store.List(ctx, q)
@@ -123,9 +127,6 @@ func list(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	if err := store.ResolveScores(ctx, page.Entities); err != nil {
-		return nil, err
-	}
 	return page, nil
 }
 
@@ -168,12 +169,16 @@ func facets(ctx *gofr.Context) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	_, spec, err := publishedBlueprint(ctx, ctx.Param("blueprint"))
+	specs, spec, err := publishedBlueprint(ctx, ctx.Param("blueprint"))
 	if err != nil {
 		return nil, err
 	}
 
-	values, err := NewStore(ctx.SQL).Facets(ctx, spec, ctx.Param("property"))
+	ladders, err := blueprint.Ladders(ctx, ctx.SQL)
+	if err != nil {
+		return nil, err
+	}
+	values, err := NewStore(ctx.SQL).Facets(ctx, Query{Blueprint: spec, Blueprints: specs, Ladders: ladders}, ctx.Param("property"))
 	var filterErr FilterError
 	if errors.As(err, &filterErr) {
 		return nil, badRequest(filterErr.Error())

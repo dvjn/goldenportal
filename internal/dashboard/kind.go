@@ -31,7 +31,7 @@ func Diff(previous, next Spec) []configdoc.Change {
 	if previous.Order != next.Order {
 		add("dashboard", "", configdoc.ChangeChanged, "changes its order from %d to %d", previous.Order, next.Order)
 	}
-	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon {
+	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon || previous.Color != next.Color {
 		add("dashboard", "", configdoc.ChangeChanged, "changes the title, description or icon")
 	}
 
@@ -41,26 +41,49 @@ func Diff(previous, next Spec) []configdoc.Change {
 	if !reflect.DeepEqual(previous.DefaultFor, next.DefaultFor) {
 		add("dashboard", "", configdoc.ChangeChanged, "changes whose default Home tab it is")
 	}
-	filters := map[string]Filter{}
-	for _, f := range previous.Filters {
-		f.line = 0
-		filters[f.ID] = f
+	inputs := map[string]Input{}
+	for _, in := range previous.Inputs {
+		in.line = 0
+		inputs[in.ID] = in
 	}
-	seenFilters := map[string]bool{}
-	for _, f := range next.Filters {
-		seenFilters[f.ID] = true
-		f.line = 0
-		old, ok := filters[f.ID]
+	seenInputs := map[string]bool{}
+	for _, in := range next.Inputs {
+		seenInputs[in.ID] = true
+		in.line = 0
+		old, ok := inputs[in.ID]
 		switch {
 		case !ok:
-			add("filters", f.ID, configdoc.ChangeAdded, "adds a %s filter", f.Type)
-		case !reflect.DeepEqual(old, f):
-			add("filters", f.ID, configdoc.ChangeChanged, "changes it")
+			add("inputs", in.ID, configdoc.ChangeAdded, "adds a %s input", in.Type)
+		case !reflect.DeepEqual(old, in):
+			add("inputs", in.ID, configdoc.ChangeChanged, "changes it")
 		}
 	}
-	for _, f := range previous.Filters {
-		if !seenFilters[f.ID] {
-			add("filters", f.ID, configdoc.ChangeRemoved, "removes it")
+	for _, in := range previous.Inputs {
+		if !seenInputs[in.ID] {
+			add("inputs", in.ID, configdoc.ChangeRemoved, "removes it")
+		}
+	}
+
+	queries := map[string]widget.Query{}
+	for _, q := range previous.Queries {
+		q.Line = 0
+		queries[q.Name] = q
+	}
+	seenQueries := map[string]bool{}
+	for _, q := range next.Queries {
+		seenQueries[q.Name] = true
+		q.Line = 0
+		old, ok := queries[q.Name]
+		switch {
+		case !ok:
+			add("queries", q.Name, configdoc.ChangeAdded, "adds a query of %s", q.Blueprint)
+		case !reflect.DeepEqual(old, q):
+			add("queries", q.Name, configdoc.ChangeChanged, "changes it")
+		}
+	}
+	for _, q := range previous.Queries {
+		if !seenQueries[q.Name] {
+			add("queries", q.Name, configdoc.ChangeRemoved, "removes it")
 		}
 	}
 

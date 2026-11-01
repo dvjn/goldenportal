@@ -90,7 +90,7 @@ func evaluateIn(ctx context.Context, db configdoc.DB, spec Spec) (int, error) {
 	entities := entity.NewStore(db)
 	scored := []string{}
 	for page := 1; ; page++ {
-		result, err := entities.List(ctx, entity.Query{Blueprint: bp, Filter: spec.Filter, Page: page, PageSize: evaluationPage})
+		result, err := entities.List(ctx, entity.Query{Blueprint: bp, Blueprints: specs, Filter: spec.Filter, Page: page, PageSize: evaluationPage})
 		if err != nil {
 			return 0, err
 		}
@@ -118,23 +118,10 @@ func evaluateIn(ctx context.Context, db configdoc.DB, spec Spec) (int, error) {
 	return len(scored), nil
 }
 
-// Input is the document checks run against: the entity with its
-// properties, including relations, computed values and resolved lookups.
-func Input(e *entity.Entity) map[string]any {
-	encoded, _ := json.Marshal(map[string]any{
-		"identifier":  e.Identifier,
-		"title":       e.Title,
-		"blueprint":   e.Blueprint,
-		"integration": e.Integration,
-		"properties":  e.Properties,
-		"createdAt":   e.CreatedAt,
-		"updatedAt":   e.UpdatedAt,
-	})
-	var input map[string]any
-	_ = json.Unmarshal(encoded, &input)
-
-	return input
-}
+// Input is the document checks run against: the entity flat, with its
+// relations, computed values, resolved lookups and scorecard results
+// beside its built-in fields.
+func Input(e *entity.Entity) map[string]any { return entity.Document(e) }
 
 func saveResult(ctx context.Context, db configdoc.DB, scorecardID, entityID string, r Result) error {
 	criteria, err := json.Marshal(r.Criteria)
@@ -270,8 +257,9 @@ type EntityResult struct {
 
 // ResultQuery picks a page of a scorecard's results, worst tier first.
 type ResultQuery struct {
-	// Tier filters to entities whose highest tier it is; "none" for those with none.
-	Tier     string
+	// Tiers filter to entities whose highest tier is one of them; "none"
+	// for those with none.
+	Tiers    []string
 	Search   string
 	Page     int
 	PageSize int
@@ -287,9 +275,11 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 	for _, tier := range spec.Tiers {
 		tierOrder = append(tierOrder, tier.Name)
 	}
-	tier := q.Tier
-	if tier == "none" {
-		tier = ""
+	tiers := make([]string, len(q.Tiers))
+	for i, tier := range q.Tiers {
+		if tier != "none" {
+			tiers[i] = tier
+		}
 	}
 	search := ""
 	if q.Search != "" {
@@ -303,11 +293,11 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 		JOIN entities e ON e.id = r.entity_id
 		JOIN config_documents b ON b.id = e.blueprint_id
 		WHERE r.scorecard_id = $1
-			AND ($2 = false OR r.tier = $3)
-			AND ($4 = '' OR e.identifier ILIKE $4 OR e.title ILIKE $4)
-		ORDER BY array_position($5::text[], r.tier), r.score NULLS FIRST, e.title, e.identifier
-		LIMIT $6 OFFSET $7`,
-		scorecardID, q.Tier != "", tier, search, pq.Array(tierOrder), q.PageSize, (q.Page-1)*q.PageSize)
+			AND (cardinality($2::text[]) = 0 OR r.tier = ANY($2))
+			AND ($3 = '' OR e.identifier ILIKE $3 OR e.title ILIKE $3)
+		ORDER BY array_position($4::text[], r.tier), r.score NULLS FIRST, e.title, e.identifier
+		LIMIT $5 OFFSET $6`,
+		scorecardID, pq.Array(tiers), search, pq.Array(tierOrder), q.PageSize, (q.Page-1)*q.PageSize)
 	if err != nil {
 		return ResultPage{}, err
 	}

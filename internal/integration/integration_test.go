@@ -59,7 +59,7 @@ func mustParse(t *testing.T, source string) Spec {
 
 func TestParse(t *testing.T) {
 	spec := mustParse(t, inventoryYAML)
-	if len(spec.Mappings) != 1 || spec.Mappings[0].Entity.Properties[0].ID != "tier" || spec.Connector.Type != "push" {
+	if len(spec.Mappings) != 1 || spec.Mappings[0].Entity.Properties[0].ID != "tier" || spec.Connector.Type != "push" || spec.Icon != "webhook" {
 		t.Fatalf("spec = %+v", spec)
 	}
 	portal := mustParse(t, portalYAML)
@@ -71,6 +71,7 @@ func TestParse(t *testing.T) {
 	push := head + "  connector: {type: push}\n"
 	pull := head + "  connector: {type: portal}\n"
 	tests := []struct{ name, source, want string }{
+		{"own icon", "kind: Integration\nmetadata: {name: a, title: A, icon: plug}\nspec:\n  connector: {type: push}", "icon comes from its connector"},
 		{"connector", head + "  connector: {type: ftp}", "type must be one of push, portal"},
 		{"config", head + "  connector: {type: push, config: {url: x}}", "takes no config"},
 		{"no mappings", push, "add a mapping for each blueprint"},

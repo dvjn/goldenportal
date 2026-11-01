@@ -27,55 +27,67 @@ type Spec struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
+	Color       string `json:"color,omitempty"`
 	// Order sorts Home's tabs, lowest first.
 	Order      int             `json:"order"`
 	Visibility *Audience       `json:"visibility,omitempty"`
 	DefaultFor *Audience       `json:"defaultFor,omitempty"`
-	Filters    []Filter        `json:"filters"`
+	Inputs     []Input         `json:"inputs"`
+	Queries    []widget.Query  `json:"queries"`
 	Widgets    []widget.Widget `json:"widgets"`
 }
 
-// Filter is a value Home asks for above the dashboard, which its widgets
-// compare with as $filter.<id>.
-type Filter struct {
+// Input is a value Home asks for above the dashboard. It narrows only the
+// queries that compare with it as $input.<id>, and while it's unset their
+// conditions on it drop.
+type Input struct {
 	ID    string `json:"identifier"`
 	Title string `json:"title"`
 	Type  string `json:"type"`
-	// Values are what an enum filter offers.
+	// Values are what an enum input offers.
 	Values []string `json:"values,omitempty"`
-	// Relation is the blueprint whose entities a relation filter offers.
+	// Relation is the blueprint whose entities a relation input offers.
 	Relation string `json:"relation,omitempty"`
 	Multiple bool   `json:"multiple,omitempty"`
-	// Default is what the filter is set to until someone changes it.
+	// Default is what the input is set to until someone changes it.
 	Default []string `json:"default,omitempty"`
-	// Lookup finds the default in the catalog instead, for whoever is looking.
-	Lookup *Lookup `json:"lookup,omitempty"`
-	line   int
+	// DefaultQuery finds the default in the catalog instead, for whoever
+	// is looking.
+	DefaultQuery *DefaultQuery `json:"defaultQuery,omitempty"`
+	line         int
 }
 
-// Lookup is a default found when the dashboard loads: the entities of a
-// blueprint that match where, which can compare with $me.
-type Lookup struct {
-	From  string         `json:"from"`
-	Where *filter.Filter `json:"where"`
+// DefaultQuery is a default found when the dashboard loads: the entities
+// a query picks, whose filter can compare with $me.
+type DefaultQuery struct {
+	Query widget.Query `json:"query"`
+	// Otherwise is what the input starts at when the query finds nothing:
+	// nothing, the default, or everything, as if it had no default.
+	Otherwise string `json:"otherwise,omitempty"`
 }
 
-// Filter types.
+// What a default query that finds nothing starts the input at.
 const (
-	FilterEnum     = "enum"
-	FilterString   = "string"
-	FilterRelation = "relation"
+	OtherwiseNothing    = "nothing"
+	OtherwiseEverything = "everything"
 )
 
-var filterTypes = []string{FilterEnum, FilterString, FilterRelation}
+// Input types.
+const (
+	InputEnum     = "enum"
+	InputString   = "string"
+	InputRelation = "relation"
+)
 
-// reservedFilters can't name a filter, since Home's URL uses them.
-var reservedFilters = []string{"d"}
+var inputTypes = []string{InputEnum, InputString, InputRelation}
+
+// reservedInputs can't name an input, since Home's URL uses them.
+var reservedInputs = []string{"d"}
 
 func (s Spec) Key() string { return s.Identifier }
 
 func (s Spec) Meta() configdoc.Meta {
-	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon}
+	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon, Color: s.Color}
 }
 
 func (s Spec) Stats() map[string]int { return map[string]int{"widgets": len(s.Widgets)} }
@@ -96,7 +108,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
 	spec := Spec{
 		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Filters: []Filter{}, Widgets: []widget.Widget{},
+		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Inputs: []Input{}, Queries: []widget.Query{}, Widgets: []widget.Widget{},
 	}
 	for _, name := range []string{"title", "description"} {
 		if n := configdoc.Field(configdoc.Field(doc.Root, "metadata"), name); n != nil {
@@ -108,7 +120,11 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	if doc.Spec == nil {
 		return spec, r.Issues
 	}
-	fields, ok := r.Fields(doc.Spec, "spec", "order", "filters", "widgets", "visibility", "defaultFor")
+	if n := configdoc.Field(doc.Spec, "filters"); n != nil {
+		r.Errorf(n, "spec.filters", "filters are now inputs: rename spec.filters to spec.inputs, and $filter.<id> to $input.<id>")
+		return spec, r.Issues
+	}
+	fields, ok := r.Fields(doc.Spec, "spec", "order", "inputs", "queries", "widgets", "visibility", "defaultFor")
 	if !ok {
 		return spec, r.Issues
 	}
@@ -121,25 +137,65 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	spec.Visibility = parseAudience(r, fields["visibility"], "spec.visibility")
 	spec.DefaultFor = parseAudience(r, fields["defaultFor"], "spec.defaultFor")
 	scope := widget.Scope{}
-	r.Each(fields["filters"], "spec.filters", func(id string, key, value *yaml.Node) {
-		spec.Filters = append(spec.Filters, parseFilter(r, "spec.filters."+id, id, key, value))
-		scope.Filters = append(scope.Filters, id)
+	r.Each(fields["inputs"], "spec.inputs", func(id string, key, value *yaml.Node) {
+		spec.Inputs = append(spec.Inputs, parseInput(r, "spec.inputs."+id, id, key, value))
+		scope.Inputs = append(scope.Inputs, id)
 	})
+	spec.Queries = widget.ParseQueries(r, fields["queries"], "spec.queries", scope)
+	scope.Queries = spec.Queries
 	spec.Widgets = widget.Parse(r, fields["widgets"], "spec.widgets", scope)
 	if len(spec.Widgets) == 0 {
 		r.Errorf(configdoc.OrNode(fields["widgets"], doc.Spec), "spec.widgets", "add the widgets, keyed by identifier")
+	}
+	for _, in := range unused(spec) {
+		r.Report(configdoc.SeverityWarning, &yaml.Node{Line: in.line}, "spec.inputs."+in.ID,
+			"no query compares with %s%s, so the input narrows nothing", widget.ValueInput, in.ID)
 	}
 
 	return spec, r.Issues
 }
 
-func parseFilter(r *configdoc.Reader, path, id string, key, node *yaml.Node) Filter {
-	f := Filter{ID: id, Title: id, line: key.Line}
+// unused lists the inputs nothing compares with: no query, value, link
+// filter or link template.
+func unused(spec Spec) []Input {
+	used := map[string]bool{}
+	mark := func(f *filter.Filter) {
+		for _, ref := range widget.InputRefs(f) {
+			used[strings.TrimPrefix(ref, widget.ValueInput)] = true
+		}
+	}
+	for _, q := range spec.Queries {
+		mark(q.Filter)
+	}
+	var templates []string
+	for _, w := range spec.Widgets {
+		for _, f := range w.Filters() {
+			mark(f)
+		}
+		for _, l := range []*widget.Link{w.Link, w.RowLink} {
+			if l != nil {
+				templates = append(templates, l.URL, l.Path)
+			}
+		}
+	}
+	var out []Input
+	for _, in := range spec.Inputs {
+		mentioned := slices.ContainsFunc(templates, func(t string) bool { return strings.Contains(t, widget.ValueInput+in.ID) })
+		if !used[in.ID] && !mentioned {
+			out = append(out, in)
+		}
+	}
+
+	return out
+}
+
+func parseInput(r *configdoc.Reader, path, id string, key, node *yaml.Node) Input {
+	f := Input{ID: id, Title: id, line: key.Line}
 	switch {
 	case !widget.ValidName(id):
 		r.Errorf(key, path, "%q must start with a letter and use only letters, digits, - and _", id)
-	case slices.Contains(reservedFilters, id):
-		r.Errorf(key, path, "%s picks the open dashboard in Home's URL, so filters can't be named %s", id, id)
+	case slices.Contains(reservedInputs, id):
+		r.Errorf(key, path, "%s picks the open dashboard in Home's URL, so inputs can't be named %s", id, id)
 	}
 	fields, ok := r.Fields(node, path, "title", "type", "values", "relation", "multiple", "default")
 	if !ok {
@@ -149,17 +205,17 @@ func parseFilter(r *configdoc.Reader, path, id string, key, node *yaml.Node) Fil
 		f.Title = r.Text(n, path+".title")
 	}
 	f.Type = r.Text(fields["type"], path+".type")
-	if !slices.Contains(filterTypes, f.Type) {
-		r.Errorf(configdoc.OrNode(fields["type"], key), path+".type", "type must be one of %s", strings.Join(filterTypes, ", "))
+	if !slices.Contains(inputTypes, f.Type) {
+		r.Errorf(configdoc.OrNode(fields["type"], key), path+".type", "type must be one of %s", strings.Join(inputTypes, ", "))
 		return f
 	}
 	f.Multiple = r.Bool(fields["multiple"], path+".multiple")
 
 	switch f.Type {
-	case FilterEnum:
+	case InputEnum:
 		f.Values = texts(r, fields["values"], path+".values")
 		if len(f.Values) == 0 {
-			r.Errorf(configdoc.OrNode(fields["values"], key), path+".values", "list the values an enum filter offers")
+			r.Errorf(configdoc.OrNode(fields["values"], key), path+".values", "list the values an enum input offers")
 		}
 		for i, value := range f.Values {
 			if slices.Contains(f.Values[:i], value) {
@@ -167,26 +223,26 @@ func parseFilter(r *configdoc.Reader, path, id string, key, node *yaml.Node) Fil
 			}
 		}
 		if n := fields["relation"]; n != nil {
-			r.Errorf(n, path+".relation", "only relation filters name a blueprint")
+			r.Errorf(n, path+".relation", "only relation inputs name a blueprint")
 		}
-	case FilterRelation:
+	case InputRelation:
 		f.Relation = r.Text(fields["relation"], path+".relation")
 		if !configdoc.ValidIdentifier(f.Relation) {
 			r.Errorf(configdoc.OrNode(fields["relation"], key), path+".relation", "relation must name the blueprint to pick from")
 		}
 		if n := fields["values"]; n != nil {
-			r.Errorf(n, path+".values", "only enum filters list values")
+			r.Errorf(n, path+".values", "only enum inputs list values")
 		}
-	case FilterString:
+	case InputString:
 		for _, name := range []string{"values", "relation"} {
 			if n := fields[name]; n != nil {
-				r.Errorf(n, path+"."+name, "string filters take any text, so they have no %s", name)
+				r.Errorf(n, path+"."+name, "string inputs take any text, so they have no %s", name)
 			}
 		}
 	}
 
 	if n := fields["default"]; n != nil && n.Kind == yaml.MappingNode {
-		f.Lookup = parseLookup(r, n, path+".default", f)
+		f.DefaultQuery = parseDefaultQuery(r, n, path+".default", f)
 	} else if n != nil {
 		f.Default = parseDefault(r, n, path+".default", f)
 	}
@@ -194,37 +250,64 @@ func parseFilter(r *configdoc.Reader, path, id string, key, node *yaml.Node) Fil
 	return f
 }
 
-// parseLookup reads a default written as from and where.
-func parseLookup(r *configdoc.Reader, node *yaml.Node, path string, f Filter) *Lookup {
-	if f.Type != FilterRelation || !f.Multiple {
-		r.Errorf(node, path, "a lookup default picks entities, so only a relation filter with multiple: true can have one")
+// parseDefaultQuery reads a default written as a query and what to start
+// at when it finds nothing.
+func parseDefaultQuery(r *configdoc.Reader, node *yaml.Node, path string, f Input) *DefaultQuery {
+	if configdoc.Field(node, "from") != nil || configdoc.Field(node, "where") != nil {
+		r.Errorf(node, path, "a default is now a query: write {query: {blueprint: %s, filter: <condition>}, otherwise: everything|nothing}", orName(f.Relation))
 		return nil
 	}
-	fields, ok := r.Fields(node, path, "from", "where")
+	if f.Type != InputRelation || !f.Multiple {
+		r.Errorf(node, path, "a default query picks entities, so only a relation input with multiple: true can have one")
+		return nil
+	}
+	fields, ok := r.Fields(node, path, "query", "otherwise")
 	if !ok {
 		return nil
 	}
-	l := &Lookup{From: r.Text(fields["from"], path+".from")}
+	d := &DefaultQuery{}
+	if n := fields["otherwise"]; n != nil {
+		d.Otherwise = r.Text(n, path+".otherwise")
+		if d.Otherwise != OtherwiseNothing && d.Otherwise != OtherwiseEverything {
+			r.Errorf(n, path+".otherwise", "otherwise must be %s or %s", OtherwiseNothing, OtherwiseEverything)
+		}
+	}
+	n := fields["query"]
+	if n == nil {
+		r.Errorf(node, path+".query", "add the query whose entities the input starts at, as blueprint and filter")
+		return d
+	}
+	queryFields, ok := r.Fields(n, path+".query", "blueprint", "filter")
+	if !ok {
+		return d
+	}
+	d.Query.Blueprint = r.Text(queryFields["blueprint"], path+".query.blueprint")
 	switch {
-	case !configdoc.ValidIdentifier(l.From):
-		r.Errorf(configdoc.OrNode(fields["from"], node), path+".from", "from must name the blueprint to find the default in")
-	case l.From != f.Relation:
-		r.Errorf(fields["from"], path+".from", "from must be %s, the blueprint the filter picks from", f.Relation)
+	case !configdoc.ValidIdentifier(d.Query.Blueprint):
+		r.Errorf(configdoc.OrNode(queryFields["blueprint"], n), path+".query.blueprint", "blueprint must name the blueprint to find the default in")
+	case d.Query.Blueprint != f.Relation:
+		r.Errorf(queryFields["blueprint"], path+".query.blueprint", "blueprint must be %s, the blueprint the input picks from", f.Relation)
 	}
-	if fields["where"] == nil {
-		r.Errorf(node, path+".where", "add where, the condition the default's entities match")
-		return l
-	}
-	l.Where = widget.ReadFilter(r, fields["where"], path+".where")
-	if widget.Uses(l.Where, widget.ValueEntity) || len(widget.FilterRefs(l.Where)) > 0 {
-		r.Errorf(fields["where"], path+".where", "where can compare with %s and %s.<attribute>, but not with %s or the dashboard's filters", widget.ValueMe, widget.ValueMe, widget.ValueEntity)
+	if fn := queryFields["filter"]; fn != nil {
+		d.Query.Filter = widget.ReadFilter(r, fn, path+".query.filter")
+		if widget.Uses(d.Query.Filter, widget.ValueEntity) || len(widget.InputRefs(d.Query.Filter)) > 0 {
+			r.Errorf(fn, path+".query.filter", "a default's filter can compare with %s and %s.<attribute>, but not with %s or the dashboard's inputs", widget.ValueMe, widget.ValueMe, widget.ValueEntity)
+		}
 	}
 
-	return l
+	return d
 }
 
-// parseDefault reads one value, or for a multiple filter a list of them.
-func parseDefault(r *configdoc.Reader, node *yaml.Node, path string, f Filter) []string {
+func orName(blueprint string) string {
+	if blueprint == "" {
+		return "<blueprint>"
+	}
+
+	return blueprint
+}
+
+// parseDefault reads one value, or for a multiple input a list of them.
+func parseDefault(r *configdoc.Reader, node *yaml.Node, path string, f Input) []string {
 	var values []string
 	switch {
 	case node.Kind == yaml.ScalarNode:
@@ -239,7 +322,7 @@ func parseDefault(r *configdoc.Reader, node *yaml.Node, path string, f Filter) [
 		switch {
 		case strings.TrimSpace(value) == "":
 			r.Errorf(node, path, "default can't be empty; leave it out to start unset")
-		case f.Type == FilterEnum && !slices.Contains(f.Values, value):
+		case f.Type == InputEnum && !slices.Contains(f.Values, value):
 			r.Errorf(node, path, "default %q is not one of the values", value)
 		}
 	}

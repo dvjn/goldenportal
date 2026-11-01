@@ -4,47 +4,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
 
-var (
-	entityName  = regexp.MustCompile(`^\$entity\.[a-zA-Z][a-zA-Z0-9_]{0,62}$`)
-	relativeDay = regexp.MustCompile(`^\$today([+-][0-9]+)d$`)
-)
+var entityName = regexp.MustCompile(`^\$entity\.[a-zA-Z][a-zA-Z0-9_]{0,62}$`)
 
-func dayOffset(name string) (int, error) {
-	if name == "$today" {
-		return 0, nil
+// checkToday reports $today with a day offset, which within replaced.
+func checkToday(name string) error {
+	if name == ValueToday {
+		return nil
 	}
-	match := relativeDay.FindStringSubmatch(name)
-	if match != nil {
-		days, err := strconv.Atoi(match[1])
-		if err == nil && days >= -365000 && days <= 365000 {
-			return days, nil
-		}
-	}
-	return 0, fmt.Errorf("invalid date variable %s; use $today or $today±<n>d (up to 365000 days)", name)
+
+	return fmt.Errorf("%s is gone: $today is the date alone; for the last few days, use op: within with a duration such as 7d", name)
 }
 
 func lookup(values Values, name string) ([]string, bool) {
-	if strings.HasPrefix(name, "$today") {
-		days, err := dayOffset(name)
-		base := values["$today"]
-		if err == nil && len(base) == 1 {
-			date, err := time.Parse(time.DateOnly, base[0])
-			if err == nil {
-				return []string{date.AddDate(0, 0, days).Format(time.DateOnly)}, true
-			}
-		}
-	}
 	value, set := values[name]
 	return value, set
 }
 
 func SetToday(values Values, now time.Time) {
-	values["$today"] = []string{now.UTC().Format(time.DateOnly)}
+	values[ValueToday] = []string{now.UTC().Format(time.DateOnly)}
 }
 
 // EntityValues keeps numbers and booleans typed when used in filters.
@@ -103,7 +84,9 @@ func EntityRefs(w Widget) []string {
 			refs = append(refs, strings.TrimPrefix(name, "$entity."))
 		}
 	}
-	eachText(w.Filter, add)
+	for _, f := range w.Filters() {
+		eachText(f, add)
+	}
 	for _, text := range []string{w.Title, w.Description, w.Text} {
 		for _, match := range tokenPattern.FindAllStringSubmatch(text, -1) {
 			add(strings.TrimSpace(match[1]))

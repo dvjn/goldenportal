@@ -3,6 +3,8 @@ package integration
 import (
 	"errors"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -19,8 +21,9 @@ const (
 	tokenPrefix        = "gpi_"
 	tokenDisplayLength = len(tokenPrefix) + 8
 	maxTokenName       = 100
-	recentRuns         = 50
 )
+
+var runPageSizes = []int{10, 20, 50, 100}
 
 func Register(app *gofr.App) {
 	configdoc.Register(app, Kind)
@@ -144,6 +147,9 @@ func revokeToken(ctx *gofr.Context) (any, error) {
 	return nil, nil
 }
 
+// listRuns returns a page of an integration's runs, newest first. It filters
+// by free text (q), triggers and outcomes (comma-separated lists), and pages
+// with page and size.
 func listRuns(ctx *gofr.Context) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return nil, err
@@ -153,7 +159,44 @@ func listRuns(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	return NewStore(ctx.SQL).Runs(ctx, id, recentRuns)
+	q := RunQuery{Search: ctx.Param("q"), Page: 1, PageSize: runPageSizes[0]}
+	if value := ctx.Param("page"); value != "" {
+		page, err := strconv.Atoi(value)
+		if err != nil || page < 1 {
+			return nil, badRequest("page must be a whole number from 1")
+		}
+		q.Page = page
+	}
+	if value := ctx.Param("size"); value != "" {
+		size, err := strconv.Atoi(value)
+		if err != nil || !slices.Contains(runPageSizes, size) {
+			return nil, badRequest("size must be 10, 20, 50 or 100")
+		}
+		q.PageSize = size
+	}
+	if q.Triggers, err = listParam(ctx, "trigger", TriggerSchedule, TriggerManual, TriggerPush); err != nil {
+		return nil, err
+	}
+	if q.Outcomes, err = listParam(ctx, "outcome", OutcomeSucceeded, OutcomeWarnings, OutcomeFailed); err != nil {
+		return nil, err
+	}
+
+	return NewStore(ctx.SQL).Runs(ctx, id, q)
+}
+
+// listParam reads a comma-separated list of the allowed values.
+func listParam(ctx *gofr.Context, name string, allowed ...string) ([]string, error) {
+	var values []string
+	if value := ctx.Param(name); value != "" {
+		for v := range strings.SplitSeq(value, ",") {
+			if !slices.Contains(allowed, v) {
+				return nil, badRequest("unknown " + name + " " + strconv.Quote(v))
+			}
+			values = append(values, v)
+		}
+	}
+
+	return values, nil
 }
 
 func notFound() error {

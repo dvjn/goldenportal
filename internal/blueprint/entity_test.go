@@ -84,10 +84,10 @@ spec:
 func TestCompute(t *testing.T) {
 	spec := mustParse(t, serviceYAML+`    owners:
       type: number
-      compute: .properties.dependsOn | length
+      compute: .dependsOn | length
     broken:
       type: string
-      compute: .properties.stars
+      compute: .stars
 `)
 	values, problems := spec.Compute(Entity{
 		Identifier: "a",
@@ -114,8 +114,8 @@ spec:
     tabs:
       overview:
         widgets:
-          about: {type: markdown, text: 'About {{ $entity.title }} ({{ $entity.blueprint }}), owned by {{ $entity.owner }}, as of {{ $today-7d }}.'}
-          peers: {type: stat, title: Peers, filter: {property: coverage, op: gte, value: $entity.coverage}}
+          about: {type: markdown, text: 'About {{ $entity.title }} ({{ $entity.blueprint }}), owned by {{ $entity.owner }}, as of {{ $today }}.'}
+          peers: {type: stat, title: Peers, value: {query: {filter: {property: coverage, op: gte, value: $entity.coverage}}}}
 `
 	_, issues := Parse(source)
 	if HasErrors(issues) {
@@ -125,7 +125,7 @@ spec:
 		strings.Replace(source, "$entity.owner", "$entity.owenr", 1),
 		strings.Replace(source, "$entity.coverage", "$entity.coveage", 1),
 		strings.Replace(source, "  entity:", "  catalog:", 1),
-		strings.Replace(source, "$today-7d", "$today-7w", 1),
+		strings.Replace(source, "$today", "$today-7d", 1),
 	} {
 		_, issues := Parse(invalid)
 		if !HasErrors(issues) {

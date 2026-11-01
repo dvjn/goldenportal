@@ -23,6 +23,7 @@ type Spec struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description,omitempty"`
 	Icon        string     `json:"icon,omitempty"`
+	Color       string     `json:"color,omitempty"`
 	Properties  []Property `json:"properties"`
 	// Catalog and Entity lay out the blueprint's catalog page and its
 	// entities' pages as tabs of widgets, beside the tabs every page has.
@@ -30,12 +31,17 @@ type Spec struct {
 	Entity  *Page `json:"entity,omitempty"`
 }
 
-// Page is the tabs a blueprint adds to one of its pages. Entity pages also
-// take a header and sections for their properties.
+// Page is the tabs a blueprint adds to one of its pages, and the queries
+// their widgets share. Entity pages also take a header and sections for
+// their properties.
 type Page struct {
-	Header   *Header      `json:"header,omitempty"`
-	Sections []Section    `json:"sections,omitempty"`
-	Tabs     []widget.Tab `json:"tabs"`
+	// Columns are the catalog table's columns until someone picks their
+	// own: properties, and the dates every entity has.
+	Columns  []string       `json:"columns,omitempty"`
+	Header   *Header        `json:"header,omitempty"`
+	Sections []Section      `json:"sections,omitempty"`
+	Queries  []widget.Query `json:"queries,omitempty"`
+	Tabs     []widget.Tab   `json:"tabs"`
 }
 
 // Tabs every page has. An entity tab named overview replaces the built-in one.
@@ -67,6 +73,9 @@ type Property struct {
 	Many     bool   `json:"many,omitempty"`
 	// Lookup reads a value from a related entity, such as owner.slackChannel.
 	Lookup string `json:"lookup,omitempty"`
+	// Scorecard names the scorecard whose result the property holds; its
+	// type is "scorecard".
+	Scorecard string `json:"scorecard,omitempty"`
 	// Compute is a jq expression evaluated against the entity.
 	Compute string   `json:"compute,omitempty"`
 	Display *Display `json:"display,omitempty"`
@@ -74,9 +83,11 @@ type Property struct {
 }
 
 // Derived reports whether the portal works the value out, so integrations can't write it.
-func (p Property) Derived() bool { return p.Lookup != "" || p.Compute != "" }
+func (p Property) Derived() bool { return p.Lookup != "" || p.Compute != "" || p.IsScorecard() }
 
 func (p Property) IsRelation() bool { return p.Relation != "" }
+
+func (p Property) IsScorecard() bool { return p.Scorecard != "" }
 
 // Items describes the values of an array property.
 type Items struct {
@@ -101,7 +112,7 @@ func HasErrors(issues []Issue) bool { return configdoc.HasErrors(issues) }
 func (s Spec) Key() string { return s.Identifier }
 
 func (s Spec) Meta() configdoc.Meta {
-	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon}
+	return configdoc.Meta{Title: s.Title, Description: s.Description, Icon: s.Icon, Color: s.Color}
 }
 
 func (s Spec) Stats() map[string]int {
@@ -125,8 +136,9 @@ var (
 	itemTypes     = []string{"string", "number", "integer", "boolean", "object"}
 	stringFormats = []string{"date", "date-time", "uri", "email", "markdown"}
 
-	// BuiltIns are the fields every entity has, which lookups can end on.
-	BuiltIns = []string{"$identifier", "$title"}
+	// BuiltIns are the fields every entity has. Paths and jq read them
+	// beside its properties, so no property can be named after one.
+	BuiltIns = []string{"identifier", "title", "blueprint", "integration", "createdAt", "updatedAt"}
 )
 
 // ValidIdentifier reports whether s can name a blueprint.
@@ -142,7 +154,7 @@ func Parse(source string) (Spec, []Issue) {
 	doc := configdoc.ReadDocument(&p.Reader, source, DocumentKind)
 	spec := Spec{
 		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Properties: []Property{},
+		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Properties: []Property{},
 	}
 	if doc.Spec == nil {
 		return spec, p.Issues
@@ -153,13 +165,16 @@ func Parse(source string) (Spec, []Issue) {
 			spec.Properties = append(spec.Properties, p.property(id, "spec.properties."+id, key, value))
 		})
 		spec.Catalog = p.page(fields["catalog"], "spec.catalog", widget.Scope{Blueprint: spec.Identifier}, CatalogTabs)
+		if spec.Catalog != nil {
+			spec.Catalog.Columns = p.columns(fields["catalog"], spec)
+		}
 		spec.Entity = p.entityPage(fields["entity"], "spec.entity", spec)
 	}
 	if spec.Entity != nil {
 		for _, tab := range spec.Entity.Tabs {
 			for _, w := range tab.Widgets {
 				for _, name := range widget.EntityRefs(w) {
-					if name == "identifier" || name == "title" || name == "blueprint" {
+					if slices.Contains(BuiltIns, name) {
 						continue
 					}
 					if _, ok := spec.Property(name); !ok {
@@ -180,7 +195,7 @@ func (p *parser) property(id, path string, key, node *yaml.Node) Property {
 	prop := Property{ID: id, Title: id, line: key.Line}
 	fields, ok := p.Fields(node, path, "title", "description", "type", "format", "enum", "required",
 		"pattern", "minLength", "maxLength", "minimum", "maximum", "items", "relation", "many", "lookup", "compute",
-		"display")
+		"scorecard", "display")
 	if !ok {
 		return prop
 	}
@@ -197,6 +212,9 @@ func (p *parser) shape(prop Property, path string, key *yaml.Node, fields map[st
 	p.titles(fields, path, &prop.Title, &prop.Description)
 	if fields["relation"] != nil {
 		return p.relation(prop, path, fields)
+	}
+	if fields["scorecard"] != nil || (fields["type"] != nil && fields["type"].Value == "scorecard") {
+		return p.scorecard(prop, path, key, fields)
 	}
 	if n := fields["many"]; n != nil {
 		p.Errorf(n, path+".many", "only relations can be many; arrays hold many values")
@@ -304,10 +322,33 @@ func (p *parser) relation(prop Property, path string, fields map[string]*yaml.No
 	prop.Required = p.Bool(fields["required"], path+".required")
 	for _, name := range []string{
 		"type", "format", "enum", "pattern", "minLength", "maxLength", "minimum", "maximum",
-		"items", "lookup", "compute",
+		"items", "lookup", "compute", "scorecard",
 	} {
 		if n := fields[name]; n != nil {
 			p.Errorf(n, path+"."+name, "relations can't have %s", name)
+		}
+	}
+
+	return prop
+}
+
+// scorecard reads a property holding an entity's result on a scorecard.
+// Paths follow it like a relation, into its tier, score and checks.
+func (p *parser) scorecard(prop Property, path string, key *yaml.Node, fields map[string]*yaml.Node) Property {
+	prop.Type = "scorecard"
+	if n := fields["type"]; n != nil && n.Value != "scorecard" {
+		p.Errorf(n, path+".type", "a property naming a scorecard has type: scorecard")
+	}
+	prop.Scorecard = p.Text(fields["scorecard"], path+".scorecard")
+	if !configdoc.ValidIdentifier(prop.Scorecard) {
+		p.Errorf(configdoc.OrNode(fields["scorecard"], key), path+".scorecard", "scorecard must name the scorecard whose result it holds")
+	}
+	for _, name := range []string{
+		"format", "enum", "required", "pattern", "minLength", "maxLength", "minimum", "maximum",
+		"items", "many", "lookup", "compute",
+	} {
+		if n := fields[name]; n != nil {
+			p.Errorf(n, path+"."+name, "scorecard properties can't have %s; the scorecard works the value out", name)
 		}
 	}
 
@@ -330,9 +371,12 @@ func (p *parser) derived(prop Property, path string, key *yaml.Node, fields map[
 	if n := fields["lookup"]; n != nil {
 		prop.Lookup = p.Text(n, path+".lookup")
 		segments := strings.Split(prop.Lookup, ".")
-		if len(segments) < 2 || len(segments) > MaxLookupHops+1 || slices.Contains(segments, "") {
+		switch {
+		case strings.Contains(prop.Lookup, "$"):
+			p.Errorf(n, path+".lookup", "lookups are plain paths, and $ marks variables: write %s", strings.ReplaceAll(prop.Lookup, "$", ""))
+		case len(segments) < 2 || len(segments) > MaxLookupHops+1 || slices.Contains(segments, ""):
 			p.Errorf(n, path+".lookup",
-				"lookup must follow 1 to %d relations and end on a property, such as owner.$title", MaxLookupHops)
+				"lookup must follow 1 to %d relations and end on a property, such as owner.title", MaxLookupHops)
 		}
 		// The type comes from the looked-up property, so it's optional.
 		if fields["type"] == nil {
@@ -343,7 +387,7 @@ func (p *parser) derived(prop Property, path string, key *yaml.Node, fields map[
 	if n := fields["compute"]; n != nil {
 		prop.Compute = p.Text(n, path+".compute")
 		if strings.TrimSpace(prop.Compute) == "" {
-			p.Errorf(n, path+".compute", "add a jq expression, such as .properties.stars > 100")
+			p.Errorf(n, path+".compute", "add a jq expression, such as .stars > 100")
 		} else if err := CompileExpression(prop.Compute); err != nil {
 			p.Errorf(n, path+".compute", "compute is not valid jq: %v", err)
 		}
@@ -369,24 +413,74 @@ func (p *parser) page(node *yaml.Node, path string, scope widget.Scope, reserved
 	if node == nil {
 		return nil
 	}
-	fields, ok := p.Fields(node, path, "tabs")
+	fields, ok := p.Fields(node, path, "columns", "queries", "tabs")
 	if !ok {
 		return nil
 	}
 
-	return &Page{Tabs: widget.ParseTabs(&p.Reader, fields["tabs"], path+".tabs", scope, reserved...)}
+	return p.tabs(fields, path, scope, reserved)
+}
+
+// columnBuiltIns are the built-ins a catalog column can show; the title
+// column, always first, already shows the title and identifier.
+var columnBuiltIns = []string{"integration", "createdAt", "updatedAt"}
+
+// columns reads the catalog's default columns, once the properties they
+// name are known.
+func (p *parser) columns(catalog *yaml.Node, spec Spec) []string {
+	var node *yaml.Node
+	for i := 0; i+1 < len(catalog.Content); i += 2 {
+		if catalog.Content[i].Value == "columns" {
+			node = catalog.Content[i+1]
+		}
+	}
+	if node == nil {
+		return nil
+	}
+	columns := []string{}
+	p.List(node, "spec.catalog.columns", func(i int, item *yaml.Node) {
+		path := fmt.Sprintf("spec.catalog.columns[%d]", i)
+		name := p.Text(item, path)
+		switch {
+		case name == "":
+		case slices.Contains(columns, name):
+			p.Errorf(item, path, "%s is already a column", name)
+		case slices.Contains(columnBuiltIns, name):
+			columns = append(columns, name)
+		case slices.Contains(BuiltIns, name):
+			p.Errorf(item, path, "the title column already shows the %s", name)
+		default:
+			if _, ok := spec.Property(name); !ok {
+				p.Errorf(item, path, "%s has no property %q; columns are properties, integration, createdAt or updatedAt", spec.Identifier, name)
+				return
+			}
+			columns = append(columns, name)
+		}
+	})
+
+	return columns
+}
+
+// tabs reads a page's queries, then the tabs whose widgets use them.
+func (p *parser) tabs(fields map[string]*yaml.Node, path string, scope widget.Scope, reserved []string) *Page {
+	scope.Queries = widget.ParseQueries(&p.Reader, fields["queries"], path+".queries", scope)
+	page := &Page{Tabs: widget.ParseTabs(&p.Reader, fields["tabs"], path+".tabs", scope, reserved...)}
+	if len(scope.Queries) > 0 {
+		page.Queries = scope.Queries
+	}
+
+	return page
 }
 
 func (p *parser) entityPage(node *yaml.Node, path string, spec Spec) *Page {
 	if node == nil {
 		return nil
 	}
-	fields, ok := p.Fields(node, path, "header", "sections", "tabs")
+	fields, ok := p.Fields(node, path, "header", "sections", "queries", "tabs")
 	if !ok {
 		return nil
 	}
-	page := &Page{Tabs: widget.ParseTabs(&p.Reader, fields["tabs"], path+".tabs",
-		widget.Scope{Blueprint: spec.Identifier, Entity: true}, EntityTabs...)}
+	page := p.tabs(fields, path, widget.Scope{Blueprint: spec.Identifier, Entity: true}, EntityTabs)
 	if n := fields["header"]; n != nil {
 		page.Header = p.header(n, path+".header", spec)
 	}
@@ -397,8 +491,12 @@ func (p *parser) entityPage(node *yaml.Node, path string, spec Spec) *Page {
 	return page
 }
 
-// CompileExpression checks a jq expression compiles.
+// CompileExpression checks a jq expression over an entity compiles. jq
+// sees the entity flat, as paths do, so the old nested shape is an error.
 func CompileExpression(expression string) error {
+	if err := widget.CheckFlat(expression); err != nil {
+		return err
+	}
 	query, err := gojq.Parse(expression)
 	if err != nil {
 		return err
@@ -412,12 +510,17 @@ func CompileExpression(expression string) error {
 func (p *parser) checkNames(spec Spec) {
 	check := func(id, section string, line int) {
 		path := "spec." + section + "." + id
-		if !fieldPattern.MatchString(id) {
+		switch {
+		case !fieldPattern.MatchString(id):
 			p.Issues = append(p.Issues, Issue{
 				Severity: SeverityError, Path: path, Line: line,
 				Message: fmt.Sprintf("%q must start with a letter and use only letters, digits and _ (up to 63)", id),
 			})
-			return
+		case slices.Contains(BuiltIns, id):
+			p.Issues = append(p.Issues, Issue{
+				Severity: SeverityError, Path: path, Line: line,
+				Message: fmt.Sprintf("%s is a built-in field every entity has, so a property can't be named %s", id, id),
+			})
 		}
 	}
 	for _, prop := range spec.Properties {

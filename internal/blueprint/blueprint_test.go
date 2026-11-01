@@ -1,6 +1,7 @@
 package blueprint
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,10 +37,10 @@ spec:
       relation: service
       many: true
     ownerName:
-      lookup: owner.$title
+      lookup: owner.title
     popular:
       type: boolean
-      compute: .properties.stars > 100
+      compute: .stars > 100
 `
 
 const teamYAML = `
@@ -101,7 +102,7 @@ spec:
     tier:
       type: string
       enum: [critical, standard]
-      display: {as: badge, colors: {critical: red}, column: true, filter: false}
+      display: {as: badge, colors: {critical: red}, filter: false}
     coverage:
       type: number
       maximum: 100
@@ -109,12 +110,18 @@ spec:
     owner:
       relation: team
       display: {hidden: true}
+  catalog:
+    columns: [tier, updatedAt]
+    tabs: {}
 `)
+	if !slices.Equal(spec.Catalog.Columns, []string{"tier", "updatedAt"}) {
+		t.Errorf("columns = %v", spec.Catalog.Columns)
+	}
 	tier, coverage, owner := spec.Properties[0].Display, spec.Properties[1].Display, spec.Properties[2].Display
-	if tier.As != "badge" || tier.Colors["critical"] != "red" || !*tier.Column || *tier.Filter {
+	if tier.As != "badge" || tier.Colors["critical"] != "red" || *tier.Filter {
 		t.Errorf("tier display = %+v", tier)
 	}
-	if coverage.As != "progress" || coverage.Unit != "%" || coverage.Column != nil {
+	if coverage.As != "progress" || coverage.Unit != "%" {
 		t.Errorf("coverage display = %+v", coverage)
 	}
 	if !owner.Hidden {
@@ -136,6 +143,8 @@ spec:
         widgets:
           byTier: {type: donut, title: By Tier, groupBy: tier}
   entity:
+    queries:
+      recentDeployments: {blueprint: deployment, filter: {property: service, op: eq, value: $entity}}
     tabs:
       overview:
         widgets:
@@ -146,11 +155,13 @@ spec:
           recent:
             type: table
             title: Recent
-            blueprint: deployment
-            filter: {property: service, op: eq, value: $entity}
+            query: recentDeployments
 `
 	spec := mustParse(t, source)
-	if len(spec.Catalog.Tabs) != 1 || spec.Catalog.Tabs[0].Widgets[0].Blueprint != "service" {
+	if len(spec.Entity.Queries) != 1 || spec.Entity.Tabs[1].Widgets[0].Query.Blueprint != "deployment" {
+		t.Errorf("entity queries = %+v", spec.Entity)
+	}
+	if len(spec.Catalog.Tabs) != 1 || spec.Catalog.Tabs[0].Widgets[0].Query.Blueprint != "service" {
 		t.Errorf("catalog = %+v", spec.Catalog)
 	}
 	if len(spec.Entity.Tabs) != 2 || spec.Entity.Tabs[1].Widgets[0].Path != "spec.entity.tabs.deployments.widgets.recent" {
@@ -281,11 +292,11 @@ func TestCheckRelationsAndLookups(t *testing.T) {
 		t.Fatalf("with team: issues = %+v", issues)
 	}
 
-	broken := mustParse(t, strings.Replace(serviceYAML, "owner.$title", "owner.missing", 1))
+	broken := mustParse(t, strings.Replace(serviceYAML, "owner.title", "owner.missing", 1))
 	if issues := Check(broken, map[string]Spec{"team": team}); !HasErrors(issues) {
 		t.Fatalf("missing property: issues = %+v", issues)
 	}
-	many := mustParse(t, strings.Replace(serviceYAML, "owner.$title", "dependsOn.$title", 1))
+	many := mustParse(t, strings.Replace(serviceYAML, "owner.title", "dependsOn.title", 1))
 	if issues := Check(many, nil); !HasErrors(issues) {
 		t.Fatalf("many relation: issues = %+v", issues)
 	}
@@ -313,7 +324,7 @@ func TestDiff(t *testing.T) {
 		{"retarget", "relation: team", "relation: group", "properties", ChangeChanged, true},
 		{"many to one", "      many: true\n", "", "properties", ChangeChanged, true},
 		{"jq change", "> 100", "> 10", "properties", ChangeChanged, false},
-		{"remove derived", "    ownerName:\n      lookup: owner.$title\n", "", "properties", ChangeRemoved, false},
+		{"remove derived", "    ownerName:\n      lookup: owner.title\n", "", "properties", ChangeRemoved, false},
 		{"stored to derived", "      minimum: 0\n", "      compute: '1'\n", "properties", ChangeChanged, true},
 	}
 
@@ -329,5 +340,79 @@ func TestDiff(t *testing.T) {
 				t.Fatalf("change = %+v, want %s %s breaking=%v", got, test.section, test.change, test.breaking)
 			}
 		})
+	}
+}
+
+func TestParseSymbols(t *testing.T) {
+	base := "kind: Blueprint\nmetadata: {name: service, title: Service}\nspec:\n  properties:\n"
+	tests := []struct{ name, properties, path, message string }{
+		{"reserved title", "    title: {type: string}", "spec.properties.title", "built-in field every entity has"},
+		{"reserved updatedAt", "    updatedAt: {type: string}", "spec.properties.updatedAt", "built-in field"},
+		{"lookup with $", "    owner: {relation: team}\n    ownerName: {lookup: owner.$title}", "spec.properties.ownerName.lookup", "write owner.title"},
+		{"nested compute", "    stars: {type: number}\n    popular: {type: boolean, compute: .properties.stars > 9}", "spec.properties.popular.compute", "write .stars, not .properties.stars"},
+		{"old scorecards in compute", "    gold: {type: boolean, compute: '.scorecards.readiness.tier == \"gold\"'}", "spec.properties.gold.compute", ".scorecards is gone"},
+		{"scorecard needs a name", "    readiness: {type: scorecard}", "spec.properties.readiness.scorecard", "name the scorecard"},
+		{"scorecard type", "    readiness: {type: string, scorecard: r}", "spec.properties.readiness.type", "type: scorecard"},
+		{"scorecard constraints", "    readiness: {scorecard: r, required: true}", "spec.properties.readiness.required", "the scorecard works the value out"},
+		{"scorecard display", "    readiness: {scorecard: r, display: {as: text}}", "spec.properties.readiness.display.as", "show as badge"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, issues := Parse(base + test.properties)
+			for _, issue := range issues {
+				if issue.Path == test.path && strings.Contains(issue.Message, test.message) {
+					return
+				}
+			}
+			t.Fatalf("issues = %+v, want %s: %s", issues, test.path, test.message)
+		})
+	}
+
+	spec := mustParse(t, base+"    readiness: {type: scorecard, scorecard: service-readiness, display: {as: badge}}")
+	prop, _ := spec.Property("readiness")
+	if !prop.IsScorecard() || !prop.Derived() || prop.Type != "scorecard" || prop.Scorecard != "service-readiness" {
+		t.Fatalf("readiness = %+v", prop)
+	}
+	if _, problems := spec.ValidateEntity(Entity{Identifier: "a", Properties: map[string]any{"readiness": "gold"}}); len(problems) == 0 {
+		t.Fatal("an integration wrote a scorecard's result")
+	}
+}
+
+func TestCheckScorecards(t *testing.T) {
+	spec := mustParse(t, "kind: Blueprint\nmetadata: {name: service, title: Service}\nspec:\n  properties:\n    readiness: {type: scorecard, scorecard: readiness}")
+	for _, test := range []struct {
+		ladders map[string]Ladder
+		want    string
+	}{
+		{map[string]Ladder{"readiness": {Blueprint: "service"}}, ""},
+		{map[string]Ladder{}, SeverityWarning},
+		{map[string]Ladder{"readiness": {Blueprint: "team"}}, SeverityError},
+	} {
+		issues := CheckScorecards(spec, test.ladders)
+		got := ""
+		if len(issues) > 0 {
+			got = issues[0].Severity
+		}
+		if got != test.want {
+			t.Errorf("ladders %v: issues = %+v, want %q", test.ladders, issues, test.want)
+		}
+	}
+	if names := (Ladder{Tiers: []Rung{{Name: "bronze"}, {Name: "gold"}}}).Names(); strings.Join(names, ",") != ",bronze,gold" {
+		t.Errorf("Names() = %q", names)
+	}
+}
+
+func TestCatalogColumnsAreKnownFields(t *testing.T) {
+	head := "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    tier: {type: string, display: {column: true}}\n  catalog:\n    tabs: {}\n    columns: "
+	for columns, want := range map[string]string{
+		"[tier, tier]": "tier is already a column",
+		"[title]":      "the title column already shows the title",
+		"[nope]":       `s has no property "nope"`,
+		"[updatedAt]":  "default columns moved to spec.catalog.columns",
+	} {
+		_, issues := Parse(head + columns)
+		if !slices.ContainsFunc(issues, func(issue configdoc.Issue) bool { return strings.Contains(issue.Message, want) }) {
+			t.Errorf("columns %s: issues = %+v, want %q", columns, issues, want)
+		}
 	}
 }

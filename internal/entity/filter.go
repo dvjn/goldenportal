@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/filter"
@@ -23,78 +26,43 @@ const (
 	OpGte      = filter.OpGte
 	OpLt       = filter.OpLt
 	OpLte      = filter.OpLte
+	OpWithin   = filter.OpWithin
 )
 
-// MaxFilterDepth and MaxFilterConditions keep filters cheap to compile and run.
+// MaxFilterDepth, MaxFilterConditions and MaxFilterHops keep filters cheap
+// to compile and run.
 const (
 	MaxFilterDepth      = 5
 	MaxFilterConditions = 50
+	MaxFilterHops       = 3
 )
 
 // ParseFilter reads a filter from JSON. An empty string is no filter.
 func ParseFilter(raw string) (*Filter, error) { return filter.Parse(raw) }
 
 // CheckFilter reports whether a filter fits a blueprint, without running it.
-func CheckFilter(spec blueprint.Spec, f Filter) error {
-	c := &compiler{spec: spec}
+// specs are the blueprints its relations lead to, for properties that
+// follow them.
+func CheckFilter(specs map[string]blueprint.Spec, spec blueprint.Spec, f Filter) error {
+	c := &compiler{spec: spec, specs: specs}
 	_, err := c.compile(f, 1)
 
 	return err
 }
 
-// field is where a property's value lives in SQL.
-type field struct {
-	// value is a jsonb expression, or a typed column for the built-ins.
-	value    string
-	column   bool
-	nullable bool
-	many     bool
-	kind     string
-}
-
-func fieldFor(spec blueprint.Spec, property string) (field, error) {
-	if strings.HasPrefix(property, ScorecardPrefix) {
-		return scorecardField(property)
-	}
-	switch property {
-	case "$identifier":
-		return field{value: "e.identifier", column: true, kind: "string"}, nil
-	case "$title":
-		return field{value: "e.title", column: true, kind: "string"}, nil
-	case "$integration":
-		return field{value: "i.identifier", column: true, kind: "string"}, nil
-	case "$createdAt":
-		return field{value: "e.created_at", column: true, kind: "date-time"}, nil
-	case "$updatedAt":
-		return field{value: "e.updated_at", column: true, kind: "date-time"}, nil
-	}
-
-	prop, ok := spec.Property(property)
-	if !ok {
-		return field{}, fmt.Errorf("%s has no property %q", spec.Identifier, property)
-	}
-	key := quoteLiteral(prop.ID)
-	switch {
-	case prop.Lookup != "":
-		return field{}, fmt.Errorf("%s is a lookup, which can't be filtered or sorted yet", prop.ID)
-	case prop.IsRelation():
-		return field{value: "e.relations -> " + key, many: prop.Many, kind: "relation"}, nil
-	case prop.Compute != "":
-		return field{value: "e.computed -> " + key, many: prop.Type == "array", kind: prop.Type}, nil
-	}
-	kind := prop.Type
-	if prop.Format == "date" || prop.Format == "date-time" {
-		kind = "date-time"
-	}
-
-	return field{value: "e.properties -> " + key, many: prop.Type == "array", kind: kind}, nil
-}
-
 // compiler turns a filter into SQL, adding values as query arguments.
+// specs are the blueprints relations lead to, and hops how many it has
+// followed to reach spec.
 type compiler struct {
 	spec       blueprint.Spec
+	specs      map[string]blueprint.Spec
 	args       []any
 	conditions int
+	hops       int
+}
+
+func (c *compiler) field(path string) (field, error) {
+	return reader{specs: c.specs}.read(c.spec, "e", path, c.hops)
 }
 
 func (c *compiler) arg(value any) string {
@@ -138,14 +106,29 @@ func (c *compiler) compile(f Filter, depth int) (string, error) {
 }
 
 func (c *compiler) condition(f Filter) (string, error) {
-	fld, err := fieldFor(c.spec, f.Property)
+	if name, rest, ok := strings.Cut(f.Property, "."); ok {
+		if prop, ok := c.spec.Property(name); ok && (prop.IsRelation() || prop.Lookup != "") {
+			return c.follow(f, name, rest)
+		}
+	}
+	if prop, ok := c.spec.Property(f.Property); ok && prop.Lookup != "" {
+		f.Property = prop.Lookup
+		return c.condition(f)
+	}
+	fld, err := c.field(f.Property)
 	if err != nil {
 		return "", err
+	}
+	if f.ValuesFrom != "" {
+		return "", fmt.Errorf("values on %s names %s, which isn't set here", f.Property, f.ValuesFrom)
 	}
 
 	switch f.Op {
 	case OpExists:
-		if fld.nullable {
+		if fld.kind == kindTier {
+			return "(coalesce(" + fld.value + ", '') <> '')", nil
+		}
+		if fld.nullable && fld.column {
 			return "(" + fld.value + " IS NOT NULL)", nil
 		}
 		if fld.column {
@@ -162,6 +145,9 @@ func (c *compiler) condition(f Filter) (string, error) {
 		}
 		return sql, nil
 	case OpIn:
+		if f.Value != nil {
+			return "", fmt.Errorf("in on %s takes values, a list or a variable such as $input.team, not value", f.Property)
+		}
 		if f.Values == nil {
 			return "", fmt.Errorf("in on %s needs values", f.Property)
 		}
@@ -184,37 +170,124 @@ func (c *compiler) condition(f Filter) (string, error) {
 			return "", fmt.Errorf("contains on %s needs a text value", f.Property)
 		}
 		if fld.many {
-			return "(" + fld.value + " @> " + c.arg(jsonArray(text)) + "::jsonb)", nil
+			return c.equals(fld, f.Property, text)
 		}
 		return "(" + textOf(fld) + " ILIKE " + c.arg("%"+likeEscaper.Replace(text)+"%") + ")", nil
 	case OpGt, OpGte, OpLt, OpLte:
 		return c.compare(fld, f)
+	case OpWithin:
+		return c.within(fld, f)
 	}
 
-	return "", fmt.Errorf("unknown op %q on %s; use eq, ne, in, contains, exists, gt, gte, lt or lte", f.Op, f.Property)
+	return "", fmt.Errorf("unknown op %q on %s; use eq, ne, in, contains, exists, gt, gte, lt, lte or within", f.Op, f.Property)
 }
 
-// equals matches a value, or for lists and many-relations, one of their items.
+// within matches dates in the last duration, from that long ago on.
+func (c *compiler) within(fld field, f Filter) (string, error) {
+	text, _ := f.Value.(string)
+	duration, ok := filter.ParseDuration(text)
+	if !ok {
+		return "", fmt.Errorf("within on %s takes a duration, such as 30m, 12h, 7d or 2w", f.Property)
+	}
+	if fld.kind != kindDate {
+		return "", fmt.Errorf("within on %s only compares dates", f.Property)
+	}
+
+	return "(" + dateOf(fld) + " >= now() - " + c.arg(strconv.FormatInt(int64(duration/time.Second), 10)+" seconds") + "::interval)", nil
+}
+
+// dateOf is a date field's value as a timestamp.
+func dateOf(fld field) string {
+	if fld.column {
+		return fld.value
+	}
+
+	return "(" + textOf(fld) + ")::timestamptz"
+}
+
+// follow matches entities whose relation name points at an entity matching
+// the condition on rest, as service.owner does for a deployment. A lookup
+// follows the relations it reads through. Many-relations match when any
+// entity they point at does.
+func (c *compiler) follow(f Filter, name, rest string) (string, error) {
+	prop, _ := c.spec.Property(name)
+	switch {
+	case prop.Lookup != "":
+		f.Property = prop.Lookup + "." + rest
+		return c.condition(f)
+	case c.hops >= MaxFilterHops:
+		return "", fmt.Errorf("%s follows more than %d relations and scorecards", f.Property, MaxFilterHops)
+	}
+	target, ok := c.specs[prop.Relation]
+	if !ok {
+		return "", fmt.Errorf("%s follows %s to %s, which isn't published", f.Property, name, prop.Relation)
+	}
+	// The subquery's aliases shadow the outer ones, so the condition
+	// compiles as it would on target's own entities.
+	inner := &compiler{spec: target, specs: c.specs, args: c.args, conditions: c.conditions, hops: c.hops + 1}
+	f.Property = rest
+	sql, err := inner.condition(f)
+	c.args, c.conditions = inner.args, inner.conditions
+	if err != nil {
+		return "", err
+	}
+
+	// Postgres hashes the matching identifiers once, rather than comparing
+	// each entity's relation with all of them.
+	matching := "(SELECT e.identifier" + entityFrom + " WHERE b.kind = 'blueprint' AND b.identifier = " +
+		c.arg(target.Identifier) + " AND " + sql + ")"
+	relation := "e.relations -> " + quoteLiteral(prop.ID)
+	if !prop.Many {
+		return "((e.relations ->> " + quoteLiteral(prop.ID) + ") IN " + matching + ")", nil
+	}
+
+	return "EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(" + relation + ") = 'array' THEN " +
+		relation + " END) target(identifier) WHERE target.identifier IN " + matching + ")", nil
+}
+
+// equals matches a value, or for lists and many-relations, one of their
+// items. A tier of "" matches no tier, evaluated or not.
 func (c *compiler) equals(fld field, property string, value any) (string, error) {
 	if value == nil {
 		return "", fmt.Errorf("compare %s with a value, or use exists", property)
+	}
+	if fld.column && (fld.kind == "integer" || fld.kind == "number") {
+		number, ok := value.(float64)
+		if !ok {
+			return "", fmt.Errorf("%s is a number", property)
+		}
+		return "((" + fld.value + ")::numeric = " + c.arg(number) + ")", nil
 	}
 	if fld.column {
 		text, ok := value.(string)
 		if !ok {
 			return "", fmt.Errorf("%s is text", property)
 		}
-		if fld.kind == "date-time" {
+		switch fld.kind {
+		case kindDate:
 			return "(" + fld.value + " = " + c.arg(text) + "::timestamptz)", nil
+		case kindTier:
+			return "(coalesce(" + fld.value + ", '') = " + c.arg(text) + ")", nil
 		}
 		return "(" + fld.value + " = " + c.arg(text) + ")", nil
+	}
+	if fld.many {
+		value = []any{value}
+	}
+	// Containment on the whole column is what its GIN index answers.
+	if fld.jsonb != "" {
+		encoded, err := json.Marshal(map[string]any{fld.key: value})
+		if err != nil {
+			return "", err
+		}
+		return "(" + fld.jsonb + " @> " + c.arg(string(encoded)) + "::jsonb)", nil
 	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return "", err
 	}
 	if fld.many {
-		return "(" + fld.value + " @> " + c.arg("["+string(encoded)+"]") + "::jsonb)", nil
+		return "(" + fld.value + " @> " + c.arg(string(encoded)) + "::jsonb)", nil
 	}
 
 	return "(" + fld.value + " = " + c.arg(string(encoded)) + "::jsonb)", nil
@@ -229,16 +302,12 @@ func (c *compiler) compare(fld field, f Filter) (string, error) {
 			return "", fmt.Errorf("%s on %s needs a number", f.Op, f.Property)
 		}
 		return "((" + fld.value + ")::numeric " + operator + " " + c.arg(number) + ")", nil
-	case fld.kind == "date-time":
+	case fld.kind == kindDate:
 		text, ok := f.Value.(string)
 		if !ok {
 			return "", fmt.Errorf("%s on %s needs a date", f.Op, f.Property)
 		}
-		value := fld.value
-		if !fld.column {
-			value = "(" + textOf(fld) + ")::timestamptz"
-		}
-		return "(" + value + " " + operator + " " + c.arg(text) + "::timestamptz)", nil
+		return "(" + dateOf(fld) + " " + operator + " " + c.arg(text) + "::timestamptz)", nil
 	}
 
 	return "", fmt.Errorf("%s only compares numbers and dates", f.Property)
@@ -253,30 +322,30 @@ func textOf(fld field) string {
 	return "(" + fld.value + " #>> '{}')"
 }
 
-// orderBy sorts by a property, ascending unless it starts with "-". Ties
-// fall back to the title, then the identifier, so pages are stable.
-func orderBy(spec blueprint.Spec, sort string) (string, error) {
+// orderBy sorts by a path, ascending unless it starts with "-". Ties fall
+// back to the title, then the identifier, so pages are stable. Tiers sort
+// up their scorecard's ladder, lowest first, as ladders say.
+func (c *compiler) orderBy(sort string, ladders map[string]blueprint.Ladder) (string, error) {
 	if sort == "" {
 		return "e.title, e.identifier", nil
 	}
 	direction := "ASC"
-	if property, ok := strings.CutPrefix(sort, "-"); ok {
-		sort, direction = property, "DESC"
+	if path, ok := strings.CutPrefix(sort, "-"); ok {
+		sort, direction = path, "DESC"
 	}
-	fld, err := fieldFor(spec, sort)
+	fld, err := c.field(sort)
 	if err != nil {
 		return "", err
 	}
-	if fld.many {
-		return "", fmt.Errorf("%s holds a list, which can't be sorted", sort)
+	if fld.many || fld.kind == "object" {
+		return "", fmt.Errorf("%s holds a list or an object, which can't be sorted", sort)
+	}
+	value := fld.value
+	if ladder, ok := ladders[fld.scorecard]; ok && fld.kind == kindTier {
+		value = "array_position(" + c.arg(pq.Array(ladder.Names())) + "::text[], coalesce(" + value + ", ''))"
 	}
 
-	return fld.value + " " + direction + " NULLS LAST, e.title, e.identifier", nil
-}
-
-func jsonArray(values ...string) string {
-	encoded, _ := json.Marshal(values)
-	return string(encoded)
+	return value + " " + direction + " NULLS LAST, e.title, e.identifier", nil
 }
 
 // quoteLiteral quotes a property name for SQL. Names are validated as

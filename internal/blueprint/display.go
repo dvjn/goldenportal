@@ -20,8 +20,6 @@ type Display struct {
 	Unit string `json:"unit,omitempty"`
 	// Colors color badges by value.
 	Colors map[string]string `json:"colors,omitempty"`
-	// Column shows the property in the catalog table until someone picks columns.
-	Column *bool `json:"column,omitempty"`
 	// Filter offers the property's values as a catalog filter.
 	Filter *bool `json:"filter,omitempty"`
 	// Hidden leaves the property off entity pages; it's still in the data.
@@ -32,13 +30,14 @@ type Display struct {
 
 // displays lists how each type can look; the first is the default.
 var displays = map[string][]string{
-	"string":   {"text", "badge", "code", "link", "date", "relative"},
-	"number":   {"number", "progress", "badge"},
-	"integer":  {"number", "progress", "badge"},
-	"boolean":  {"check", "badge"},
-	"array":    {"tags", "list"},
-	"object":   {"json"},
-	"relation": {"link"},
+	"string":    {"text", "badge", "code", "link", "date", "relative"},
+	"number":    {"number", "progress", "badge"},
+	"integer":   {"number", "progress", "badge"},
+	"boolean":   {"check", "badge"},
+	"array":     {"tags", "list"},
+	"object":    {"json"},
+	"relation":  {"link"},
+	"scorecard": {"badge"},
 }
 
 func (p *parser) display(node *yaml.Node, path string, prop Property) *Display {
@@ -79,8 +78,7 @@ func (p *parser) display(node *yaml.Node, path string, prop Property) *Display {
 		d.Colors[value] = name
 	})
 	if n := fields["column"]; n != nil {
-		column := p.Bool(n, path+".column")
-		d.Column = &column
+		p.Errorf(n, path+".column", "default columns moved to spec.catalog.columns, a list of properties")
 	}
 	if n := fields["filter"]; n != nil {
 		filter := p.Bool(n, path+".filter")
