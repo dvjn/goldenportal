@@ -90,7 +90,7 @@ const routes = {
 };
 
 describe("integrations", () => {
-  it("shows the mappings and the push endpoint, with runs in their own tab", async () => {
+  it("shows the mappings, with runs and pushing in their own tabs", async () => {
     const user = userEvent.setup();
     stubApi(routes);
     renderRoute("/integrations/inventory");
@@ -103,8 +103,10 @@ describe("integrations", () => {
       "/blueprints/service",
     );
     expect(screen.getByText(".services[]")).toBeInTheDocument();
-    expect(screen.getByText(/\/api\/v1\/ingest\/inventory$/)).toBeInTheDocument();
     expect(await screen.findByText("Push Connector")).toBeInTheDocument();
+    // It pushes, so there's nothing to sync; it hasn't been pushed to yet.
+    expect(screen.queryByRole("button", { name: "Sync Now" })).not.toBeInTheDocument();
+    expect(screen.getByText("Never run")).toBeInTheDocument();
 
     const feeds = (await screen.findByText("Feeds")).closest("[data-slot=card]") as HTMLElement;
     expect(within(feeds).getByRole("link", { name: "Service" })).toHaveAttribute(
@@ -120,6 +122,14 @@ describe("integrations", () => {
     await user.click(await screen.findByRole("button", { name: "View failures" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("tier is required")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    // Pushing shows a request to copy, aimed at the endpoint.
+    await user.click(screen.getByRole("tab", { name: "Push" }));
+    expect(
+      await screen.findByText(/curl -X POST ".*\/api\/v1\/ingest\/inventory"/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Copy push request/i })).toBeInTheDocument();
   });
 
   it("filters runs by outcome on the server", async () => {
@@ -204,7 +214,7 @@ describe("integrations", () => {
         secret: "gpi_abcdefghsecret",
       }),
     });
-    renderRoute("/integrations/inventory");
+    renderRoute("/integrations/inventory?tab=push");
 
     await user.click(await screen.findByRole("button", { name: "New Token" }));
     await user.type(screen.getByLabelText("Name"), "CI");
@@ -256,7 +266,8 @@ describe("integrations", () => {
     await user.click(await screen.findByRole("button", { name: "Sync Now" }));
     expect(await screen.findByText("Synced: 1 created, 1 updated, 2 deleted")).toBeInTheDocument();
     expect(requests["POST integrations/portal/sync"]).toBeDefined();
-    expect(screen.queryByText("Push Endpoint")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ingestion Tokens")).not.toBeInTheDocument();
+    // It pulls, every minute, so there's no Push tab.
+    expect(screen.getByText("Syncs Every").nextElementSibling).toHaveTextContent("1m");
+    expect(screen.queryByRole("tab", { name: "Push" })).not.toBeInTheDocument();
   });
 });

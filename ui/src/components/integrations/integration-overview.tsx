@@ -1,31 +1,24 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
-import { Suspense } from "react";
-import { toast } from "sonner";
+import { ArrowRight } from "lucide-react";
 import { CardSection, CardTitleBar } from "@/components/card-sections";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 import { BlueprintLabel } from "@/components/catalog/blueprint-label";
 import { Code } from "@/components/code";
-import { CopyIconButton } from "@/components/copy-button";
 import { Detail, DetailList } from "@/components/detail-list";
-import { IngestionTokens } from "@/components/integrations/ingestion-tokens";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { blueprints } from "@/features/blueprints";
 import {
   connectorsQueryOptions,
   type IntegrationSpec,
-  ingestUrl,
-  integrationKeys,
   type Mapping,
   statusQueryOptions,
-  syncIntegration,
 } from "@/features/integrations";
 
-// IntegrationOverview shows an integration read-only: its connector, how
-// data reaches it and how data becomes entities.
+// IntegrationOverview shows an integration read-only: its connector, what
+// it writes and how data becomes entities. Pushing has its own tab, and
+// syncing sits in the page header.
 export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }>) {
   const { data: connectors } = useQuery(connectorsQueryOptions);
   const pulls = connectors?.find((c) => c.id === spec.connector.type)?.mode === "pull";
@@ -43,14 +36,12 @@ export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }
         </CardContent>
       </Card>
       <div className="grid gap-4">
-        <ConnectorCard connector={spec.connector.type} description={spec.description} />
+        <ConnectorCard
+          connector={spec.connector.type}
+          description={spec.description}
+          interval={pulls ? (spec.sync?.interval ?? "15m") : undefined}
+        />
         <FeedsCard identifier={spec.identifier} />
-        {spec.connector.type === "http" && <ResourcesCard config={spec.connector.config} />}
-        {pulls ? (
-          <SyncCard identifier={spec.identifier} interval={spec.sync?.interval ?? "15m"} />
-        ) : (
-          <PushCards identifier={spec.identifier} />
-        )}
       </div>
     </div>
   );
@@ -95,128 +86,14 @@ function FeedsCard({ identifier }: Readonly<{ identifier: string }>) {
   );
 }
 
-// PushCards show how other systems push: the endpoint and the tokens.
-function PushCards({ identifier }: Readonly<{ identifier: string }>) {
-  return (
-    <>
-      <Card>
-        <CardTitleBar title="Push Endpoint" />
-        <CardContent className="grid min-w-0 gap-2 text-sm">
-          <CopyField value={ingestUrl(identifier)} label="Push endpoint" />
-          <p className="text-muted-foreground">
-            <code className="font-mono">POST</code> JSON with an ingestion token.{" "}
-            <code className="font-mono">
-              DELETE …/entities/&lt;blueprint&gt;/&lt;identifier&gt;
-            </code>{" "}
-            removes one.
-          </p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardTitleBar title="Ingestion Tokens" />
-        <CardContent>
-          <Suspense fallback={null}>
-            <IngestionTokens identifier={identifier} />
-          </Suspense>
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
-type HTTPResource = {
-  url?: string;
-  next?: string;
-  headers?: Record<string, string | { env?: string }>;
-};
-
-// ResourcesCard lists what an http integration fetches. Headers show by
-// name only, and secrets by the variable they're read from.
-function ResourcesCard({ config }: Readonly<{ config?: Record<string, unknown> }>) {
-  const resources = (config?.resources ?? {}) as Record<string, HTTPResource>;
-
-  return (
-    <Card className="gap-0 pb-0">
-      <CardTitleBar title="Resources" />
-      <CardContent className="grid min-w-0 px-0 text-sm">
-        {Object.entries(resources).map(([name, resource]) => (
-          <CardSection
-            key={name}
-            className="min-w-0 gap-1.5"
-            heading={<code className="font-mono text-xs">{name}</code>}
-          >
-            <Code className="truncate py-1 break-normal" title={resource.url}>
-              GET {resource.url}
-            </Code>
-            {resource.next && (
-              <span className="text-xs text-muted-foreground">
-                Next page: <code className="font-mono">{resource.next}</code>
-              </span>
-            )}
-            {Object.entries(resource.headers ?? {}).map(([header, value]) => (
-              <span key={header} className="text-xs text-muted-foreground">
-                {header}:{" "}
-                {typeof value === "object" && value.env ? (
-                  <code className="font-mono">${value.env}</code>
-                ) : (
-                  "set"
-                )}
-              </span>
-            ))}
-          </CardSection>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-// SyncCard syncs a pull integration now, on top of its schedule.
-function SyncCard({ identifier, interval }: Readonly<{ identifier: string; interval: string }>) {
-  const queryClient = useQueryClient();
-  const sync = useMutation({
-    mutationFn: () => syncIntegration(identifier),
-    // A failed sync is recorded as a run too, so both outcomes refresh the runs.
-    onSettled: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: integrationKeys.runs(identifier) }),
-        queryClient.invalidateQueries({ queryKey: integrationKeys.status }),
-      ]),
-    onSuccess: (run) => {
-      toast.success(
-        `Synced: ${run.created} created, ${run.updated} updated, ${run.deleted} deleted` +
-          (run.failed > 0 ? `, ${run.failed} failed` : ""),
-      );
-    },
-    onError: (error) => toast.error(error.message),
-  });
-
-  return (
-    <Card>
-      <CardTitleBar title="Sync" />
-      <CardContent className="grid gap-3 text-sm">
-        <p className="text-muted-foreground">
-          Syncs every <code className="font-mono">{interval}</code>. Each sync is a full snapshot,
-          so entities that drop out of it are deleted.
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="justify-self-start"
-          onClick={() => sync.mutate()}
-          disabled={sync.isPending}
-        >
-          {sync.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-          Sync Now
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
+// ConnectorCard says what the integration connects to, and for one that
+// pulls, how often it syncs; each sync is a full snapshot, so entities
+// that drop out of it are deleted.
 function ConnectorCard({
   connector,
   description,
-}: Readonly<{ connector: string; description?: string }>) {
+  interval,
+}: Readonly<{ connector: string; description?: string; interval?: string }>) {
   const { data: connectors } = useQuery(connectorsQueryOptions);
   const known = connectors?.find((c) => c.id === connector);
 
@@ -231,6 +108,13 @@ function ConnectorCard({
           {known && <Badge variant="secondary">{known.mode}</Badge>}
         </div>
         {known && <p className="text-muted-foreground">{known.description}</p>}
+        {interval && (
+          <DetailList>
+            <Detail label="Syncs Every">
+              <code className="font-mono">{interval}</code>
+            </Detail>
+          </DetailList>
+        )}
       </CardContent>
     </Card>
   );
@@ -280,14 +164,5 @@ function MappingView({ mapping }: Readonly<{ mapping: Mapping }>) {
           ))}
       </DetailList>
     </CardSection>
-  );
-}
-
-function CopyField({ value, label }: Readonly<{ value: string; label: string }>) {
-  return (
-    <div className="flex min-w-0 items-center gap-1 rounded-md bg-muted py-1 pr-1 pl-2">
-      <code className="min-w-0 flex-1 truncate font-mono text-xs">{value}</code>
-      <CopyIconButton value={value} label={label.toLowerCase()} />
-    </div>
   );
 }

@@ -61,6 +61,8 @@ type DocPageProps<S> = {
   extraTabs?: DocExtraTab[];
   // actions go before Export in the header.
   actions?: ReactNode;
+  // badges follow the title, such as how an integration last ran.
+  badges?: ReactNode;
   // editable is false for people who can read the document but not change
   // it: they see only the overview.
   editable?: boolean;
@@ -102,6 +104,7 @@ function DocWorkspace<S>({
   overview,
   extraTabs = [],
   actions,
+  badges,
   saved,
 }: DocPageProps<S> & { saved: string }) {
   const { identifier } = doc;
@@ -145,6 +148,7 @@ function DocWorkspace<S>({
         icon={doc.icon && <IconTile icon={doc.icon} color={doc.color} size="lg" />}
         breadcrumbs={<PageBreadcrumbs page={doc.title}>{parent}</PageBreadcrumbs>}
         description={<code className="font-mono">{identifier}</code>}
+        badges={badges}
         actions={
           <>
             {actions}
