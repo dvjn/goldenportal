@@ -3,7 +3,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AppWindow,
   ChevronsUpDown,
-  KeyRound,
   LogOut,
   type LucideIcon,
   Monitor,
@@ -39,7 +38,7 @@ function initials(name: string) {
 }
 
 // NavUser is the signed-in person at the foot of the sidebar, with their
-// own settings: theme, API tokens and signing out.
+// own settings: theme, connected apps and signing out.
 export function NavUser() {
   const me = useMe();
   const { isMobile } = useSidebar();
@@ -105,12 +104,6 @@ export function NavUser() {
           </div>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to="/account/tokens">
-            <KeyRound />
-            API tokens
-          </Link>
-        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/account/apps">
             <AppWindow />

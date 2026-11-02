@@ -65,11 +65,11 @@ func Require(ctx context.Context, role Role) (Principal, error) {
 
 type authKey struct{}
 
-// authInfo is how the request was signed in: by a session cookie or an API token.
+// authInfo is who the request was signed in as and, from a browser, their
+// session.
 type authInfo struct {
 	principal   Principal
 	sessionHash []byte
-	viaToken    bool
 }
 
 func withAuth(ctx context.Context, info authInfo) context.Context {
@@ -88,10 +88,10 @@ func FromContext(ctx context.Context) (Principal, bool) {
 }
 
 // WithPrincipal signs in a call the server makes on p's behalf, such as an
-// MCP tool's API request, which the client authorized with its own token
-// rather than a session or API token.
+// MCP tool's, which the client authorized with its own token rather than a
+// session.
 func WithPrincipal(ctx context.Context, p Principal) context.Context {
-	return withAuth(ctx, authInfo{principal: p, viaToken: true})
+	return withAuth(ctx, authInfo{principal: p})
 }
 
 // InSession reports whether the request was signed in with a browser

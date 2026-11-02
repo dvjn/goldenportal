@@ -18,7 +18,6 @@ import { Route as AppIntegrationsRouteImport } from "./routes/_app/integrations"
 import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
 import { Route as OauthAuthorizeRouteImport } from "./routes/oauth/authorize";
 import { Route as AppAccountAppsRouteImport } from "./routes/_app/account/apps";
-import { Route as AppAccountTokensRouteImport } from "./routes/_app/account/tokens";
 import { Route as AppBlueprintsIndexRouteImport } from "./routes/_app/blueprints/index";
 import { Route as AppBlueprintsIdentifierRouteImport } from "./routes/_app/blueprints/$identifier";
 import { Route as AppBlueprintsNewRouteImport } from "./routes/_app/blueprints/new";
@@ -81,11 +80,6 @@ const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
 const AppAccountAppsRoute = AppAccountAppsRouteImport.update({
   id: "/account/apps",
   path: "/account/apps",
-  getParentRoute: () => AppRoute,
-} as any);
-const AppAccountTokensRoute = AppAccountTokensRouteImport.update({
-  id: "/account/tokens",
-  path: "/account/tokens",
   getParentRoute: () => AppRoute,
 } as any);
 const AppBlueprintsIndexRoute = AppBlueprintsIndexRouteImport.update({
@@ -197,7 +191,6 @@ export interface FileRoutesByFullPath {
   "/settings": typeof AppSettingsRouteWithChildren;
   "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/account/apps": typeof AppAccountAppsRoute;
-  "/account/tokens": typeof AppAccountTokensRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
   "/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
@@ -223,7 +216,6 @@ export interface FileRoutesByTo {
   "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/": typeof AppIndexRoute;
   "/account/apps": typeof AppAccountAppsRoute;
-  "/account/tokens": typeof AppAccountTokensRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
   "/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
@@ -255,7 +247,6 @@ export interface FileRoutesById {
   "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/_app/": typeof AppIndexRoute;
   "/_app/account/apps": typeof AppAccountAppsRoute;
-  "/_app/account/tokens": typeof AppAccountTokensRoute;
   "/_app/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/_app/blueprints/new": typeof AppBlueprintsNewRoute;
   "/_app/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
@@ -287,7 +278,6 @@ export interface FileRouteTypes {
     | "/settings"
     | "/oauth/authorize"
     | "/account/apps"
-    | "/account/tokens"
     | "/blueprints/$identifier"
     | "/blueprints/new"
     | "/dashboards/$identifier"
@@ -313,7 +303,6 @@ export interface FileRouteTypes {
     | "/oauth/authorize"
     | "/"
     | "/account/apps"
-    | "/account/tokens"
     | "/blueprints/$identifier"
     | "/blueprints/new"
     | "/dashboards/$identifier"
@@ -344,7 +333,6 @@ export interface FileRouteTypes {
     | "/oauth/authorize"
     | "/_app/"
     | "/_app/account/apps"
-    | "/_app/account/tokens"
     | "/_app/blueprints/$identifier"
     | "/_app/blueprints/new"
     | "/_app/dashboards/$identifier"
@@ -435,13 +423,6 @@ declare module "@tanstack/react-router" {
       path: "/account/apps";
       fullPath: "/account/apps";
       preLoaderRoute: typeof AppAccountAppsRouteImport;
-      parentRoute: typeof AppRoute;
-    };
-    "/_app/account/tokens": {
-      id: "/_app/account/tokens";
-      path: "/account/tokens";
-      fullPath: "/account/tokens";
-      preLoaderRoute: typeof AppAccountTokensRouteImport;
       parentRoute: typeof AppRoute;
     };
     "/_app/blueprints/": {
@@ -653,7 +634,6 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
   AppAccountAppsRoute: typeof AppAccountAppsRoute;
-  AppAccountTokensRoute: typeof AppAccountTokensRoute;
   AppScorecardsIdentifierRoute: typeof AppScorecardsIdentifierRoute;
   AppScorecardsNewRoute: typeof AppScorecardsNewRoute;
   AppCatalogIndexRoute: typeof AppCatalogIndexRoute;
@@ -669,7 +649,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppAccountAppsRoute: AppAccountAppsRoute,
-  AppAccountTokensRoute: AppAccountTokensRoute,
   AppScorecardsIdentifierRoute: AppScorecardsIdentifierRoute,
   AppScorecardsNewRoute: AppScorecardsNewRoute,
   AppCatalogIndexRoute: AppCatalogIndexRoute,

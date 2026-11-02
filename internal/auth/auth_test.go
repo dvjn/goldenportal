@@ -27,8 +27,6 @@ func TestPrincipalRolesNest(t *testing.T) {
 
 type fakeResolver struct {
 	sessions map[string]Principal
-	tokens   map[string]Principal
-	readOnly map[string]bool
 }
 
 func (f fakeResolver) SessionPrincipal(_ context.Context, hash []byte) (Principal, error) {
@@ -42,24 +40,9 @@ func (f fakeResolver) SessionPrincipal(_ context.Context, hash []byte) (Principa
 	return Principal{}, errNotFound
 }
 
-func (f fakeResolver) TokenPrincipal(_ context.Context, hash []byte) (Principal, bool, error) {
-	if p, ok := f.tokens[string(hash)]; ok {
-		return p, f.readOnly[string(hash)], nil
-	}
-
-	return Principal{}, false, errNotFound
-}
-
 func TestMiddleware(t *testing.T) {
 	alice := Principal{ID: "1", Email: "alice", Role: RoleAdmin}
-	resolver := fakeResolver{
-		sessions: map[string]Principal{string(hashSecret("alice-session")): alice},
-		tokens: map[string]Principal{
-			string(hashSecret("gpp_rw")): alice,
-			string(hashSecret("gpp_ro")): alice,
-		},
-		readOnly: map[string]bool{string(hashSecret("gpp_ro")): true},
-	}
+	resolver := fakeResolver{sessions: map[string]Principal{string(hashSecret("alice-session")): alice}}
 
 	tests := []struct {
 		name       string
@@ -82,12 +65,10 @@ func TestMiddleware(t *testing.T) {
 		{name: "writes need the CSRF header", method: http.MethodPost, path: "/api/web/auth/logout", cookie: "alice-session", wantStatus: http.StatusForbidden},
 		{name: "writes with the CSRF header pass", method: http.MethodPost, path: "/api/web/auth/logout", cookie: "alice-session", csrf: true, wantStatus: http.StatusOK, wantUser: "alice"},
 		{name: "public writes need the CSRF header too", method: http.MethodPost, path: "/api/web/config", wantStatus: http.StatusForbidden},
-		{name: "an API token signs the request in", method: http.MethodGet, path: "/api/web/me", bearer: "gpp_rw", wantStatus: http.StatusOK, wantUser: "alice"},
-		{name: "token writes need no CSRF header", method: http.MethodPost, path: "/api/web/things", bearer: "gpp_rw", wantStatus: http.StatusOK, wantUser: "alice"},
-		{name: "read-only tokens can read", method: http.MethodGet, path: "/api/web/me", bearer: "gpp_ro", wantStatus: http.StatusOK, wantUser: "alice"},
-		{name: "read-only tokens can't write", method: http.MethodPost, path: "/api/web/things", bearer: "gpp_ro", wantStatus: http.StatusForbidden},
-		{name: "an unknown token is rejected even on public paths", method: http.MethodGet, path: "/api/web/config", bearer: "gpp_nope", wantStatus: http.StatusUnauthorized},
-		{name: "a token wins over a session cookie", method: http.MethodGet, path: "/api/web/me", bearer: "gpp_nope", cookie: "alice-session", wantStatus: http.StatusUnauthorized},
+		{name: "the web API takes no tokens", method: http.MethodGet, path: "/api/web/me", bearer: "gpp_rw", wantStatus: http.StatusUnauthorized},
+		{name: "a token is refused even with a session", method: http.MethodGet, path: "/api/web/me", bearer: "gpp_rw", cookie: "alice-session", wantStatus: http.StatusUnauthorized},
+		{name: "a token is refused on public paths too", method: http.MethodGet, path: "/api/web/config", bearer: "gpp_rw", wantStatus: http.StatusUnauthorized},
+		{name: "other API paths serve nothing", method: http.MethodGet, path: "/api/v1/me", cookie: "alice-session", wantStatus: http.StatusNotFound},
 		{name: "ingest paths leave the ingestion token to their handlers", method: http.MethodPost, path: "/api/ingest/ci", bearer: "gpi_unknown", wantStatus: http.StatusOK},
 		{name: "ingest paths don't sign in with a session", method: http.MethodPost, path: "/api/ingest/ci", cookie: "alice-session", wantStatus: http.StatusOK},
 	}

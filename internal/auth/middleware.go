@@ -11,10 +11,10 @@ import (
 
 const (
 	sessionCookie = "gp_session"
-	// csrfHeader must be present on every state-changing API request signed in
-	// by cookie. Browsers cannot send a custom header cross-site without a CORS
+	// csrfHeader must be present on every state-changing web API request.
+	// Browsers cannot send a custom header cross-site without a CORS
 	// preflight, so requiring it stops cross-site requests from riding on the
-	// session cookie. Token requests don't need it: browsers never attach tokens.
+	// session cookie.
 	csrfHeader = "X-GP-CSRF"
 )
 
@@ -31,36 +31,34 @@ var publicPaths = map[string]bool{
 
 type principalResolver interface {
 	SessionPrincipal(ctx context.Context, sessionHash []byte) (Principal, error)
-	TokenPrincipal(ctx context.Context, secretHash []byte) (Principal, bool, error)
 }
 
-// Middleware attaches the signed-in user to API requests and rejects API
-// requests that need one and don't have it. A request signs in with either an
-// API token in the Authorization header or a session cookie. Non-API requests
-// pass through.
+// Middleware signs in API requests, by the one credential each API takes:
+// the web API a browser session, and ingest an ingestion token, which its
+// handlers check. It rejects web API requests that need a user and don't
+// have one, and API paths that serve nothing. Other requests pass through.
 func Middleware(resolver principalResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !strings.HasPrefix(r.URL.Path, "/api/") {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if strings.HasPrefix(r.URL.Path, IngestPrefix) {
+			switch {
+			case strings.HasPrefix(r.URL.Path, IngestPrefix):
 				secret, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ingestKey{}, secret)))
 				return
+			case strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, httpx.WebAPI):
+				httpx.WriteError(w, http.StatusNotFound, "there is no API here")
+				return
+			case !strings.HasPrefix(r.URL.Path, httpx.WebAPI):
+				next.ServeHTTP(w, r)
+				return
+			case r.Header.Get("Authorization") != "":
+				// Only the portal's own pages call the web API. Agents connect
+				// over MCP, which has its own sign-in.
+				httpx.WriteError(w, http.StatusUnauthorized, "the web API takes a browser session, not a token; connect agents over MCP at /mcp")
+				return
 			}
 
-			var (
-				info   authInfo
-				status int
-				msg    string
-			)
-			if header := r.Header.Get("Authorization"); header != "" {
-				info, status, msg = tokenAuth(r, resolver, header)
-			} else {
-				info, status, msg = cookieAuth(r, resolver)
-			}
+			info, status, msg := cookieAuth(r, resolver)
 			if status != 0 {
 				httpx.WriteError(w, status, msg)
 				return
@@ -76,25 +74,6 @@ func Middleware(resolver principalResolver) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-func tokenAuth(r *http.Request, resolver principalResolver, header string) (authInfo, int, string) {
-	secret, ok := strings.CutPrefix(header, "Bearer ")
-	if !ok || secret == "" {
-		return authInfo{}, http.StatusUnauthorized, "send the API token as \"Authorization: Bearer <token>\""
-	}
-
-	p, readOnly, err := resolver.TokenPrincipal(r.Context(), hashSecret(secret))
-	switch {
-	case errors.Is(err, errNotFound):
-		return authInfo{}, http.StatusUnauthorized, "the API token is invalid, expired or revoked"
-	case err != nil:
-		return authInfo{}, http.StatusInternalServerError, "could not check the API token"
-	case readOnly && !isSafeMethod(r.Method):
-		return authInfo{}, http.StatusForbidden, "this API token is read-only"
-	}
-
-	return authInfo{principal: p, viaToken: true}, 0, ""
 }
 
 func cookieAuth(r *http.Request, resolver principalResolver) (authInfo, int, string) {

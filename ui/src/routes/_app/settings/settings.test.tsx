@@ -62,7 +62,6 @@ const serverConfiguration = {
   },
   scim: { enabled: false, url: "https://portal.example.com/scim/v2" },
   sessions: { secureCookies: true, idleTimeoutHours: 8, maxAgeHours: 168 },
-  tokens: { prefix: "gpp_", maxDays: 365 },
   database: {
     dialect: "postgres",
     host: "db",

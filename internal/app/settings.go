@@ -21,7 +21,6 @@ type serverConfig struct {
 	OIDC     oidcConfig     `json:"oidc"`
 	SCIM     scimConfig     `json:"scim"`
 	Sessions sessionsConfig `json:"sessions"`
-	Tokens   tokensConfig   `json:"tokens"`
 	Database databaseConfig `json:"database"`
 	Server   serverInfo     `json:"server"`
 }
@@ -55,11 +54,6 @@ type sessionsConfig struct {
 	SecureCookies    bool `json:"secureCookies"`
 	IdleTimeoutHours int  `json:"idleTimeoutHours"`
 	MaxAgeHours      int  `json:"maxAgeHours"`
-}
-
-type tokensConfig struct {
-	Prefix  string `json:"prefix"`
-	MaxDays int    `json:"maxDays"`
 }
 
 type databaseConfig struct {
@@ -105,7 +99,6 @@ func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server)
 			IdleTimeoutHours: int(auth.SessionIdleTimeout.Hours()),
 			MaxAgeHours:      int(auth.SessionMaxAge.Hours()),
 		},
-		Tokens: tokensConfig{Prefix: auth.TokenPrefix, MaxDays: auth.MaxTokenDays},
 		Database: databaseConfig{
 			Dialect:     cfg.Get("DB_DIALECT"),
 			Host:        cfg.Get("DB_HOST"),

@@ -34,7 +34,7 @@ function ConfigurationPage() {
           <AuthenticationCard oidc={config.oidc} scim={config.scim} />
         </div>
         <div className="grid gap-4">
-          <SessionsCard sessions={config.sessions} tokens={config.tokens} />
+          <SessionsCard sessions={config.sessions} />
           <PlatformCard database={config.database} server={config.server} />
         </div>
       </div>
@@ -89,20 +89,15 @@ function PortalImage({ label, src }: Readonly<{ label: string; src: string }>) {
   );
 }
 
-function SessionsCard({
-  sessions,
-  tokens,
-}: Readonly<{ sessions: ServerConfiguration["sessions"]; tokens: ServerConfiguration["tokens"] }>) {
+function SessionsCard({ sessions }: Readonly<{ sessions: ServerConfiguration["sessions"] }>) {
   return (
     <Card>
-      <CardTitleBar title="Sessions & API Tokens" />
+      <CardTitleBar title="Sessions" />
       <CardContent>
         <DetailList>
           <Detail label="Session Idle Timeout">{hours(sessions.idleTimeoutHours)}</Detail>
           <Detail label="Session Max Age">{hours(sessions.maxAgeHours)}</Detail>
           <Detail label="Secure Cookies">{sessions.secureCookies ? "On" : "Off"}</Detail>
-          <Detail label="API Token Max Expiry">{days(tokens.maxDays)}</Detail>
-          <Detail label="API Token Prefix">{tokens.prefix}</Detail>
         </DetailList>
       </CardContent>
     </Card>

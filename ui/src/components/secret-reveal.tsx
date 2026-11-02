@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 
 type SecretRevealProps = {
   secret: string;
-  // label names the secret for screen readers, e.g. "New API token".
+  // label names the secret for screen readers, e.g. "New ingestion token".
   label: string;
   // children say where the secret goes and how it's sent.
   children: ReactNode;

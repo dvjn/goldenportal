@@ -49,6 +49,8 @@ const (
 
 // Actions lists every action, for filters.
 var Actions = []string{
+	// TokenCreate and TokenRevoke are personal API tokens, which only past
+	// events hold.
 	SignIn, SignOut, TokenCreate, TokenRevoke, AccessGrant, AccessRevoke, BootstrapAdmin,
 	AppAuthorize, AppRevoke,
 	SCIMUserProvision, SCIMUserDeactivate, SCIMUserReactivate, SCIMGroupProvision, SCIMGroupDelete,

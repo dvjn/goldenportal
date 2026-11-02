@@ -185,7 +185,7 @@ func (s store) replaceUser(ctx context.Context, id string, in userInput) (bool, 
 }
 
 // deactivateUser is what deleting a user means: they can't sign in, and their
-// sessions and API tokens stop working at once. Their history stays.
+// sessions end at once. Their history stays.
 func (s store) deactivateUser(ctx context.Context, id string) error {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE users SET status = 'deactivated', updated_at = now() WHERE id = $1`, id)
@@ -200,11 +200,7 @@ func (s store) deactivateUser(ctx context.Context, id string) error {
 }
 
 func (s store) cutOff(ctx context.Context, userID string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
-		return err
-	}
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE api_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
 
 	return err
 }

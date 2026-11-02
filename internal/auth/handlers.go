@@ -18,9 +18,6 @@ func NewHandlers(secureCookie bool) Handlers {
 func (h Handlers) Register(app httpx.Routes) {
 	app.POST("auth/logout", h.logout)
 	app.GET("me", h.me)
-	app.GET("me/tokens", h.listTokens)
-	app.POST("me/tokens", h.createToken)
-	app.DELETE("me/tokens/{id}", h.revokeToken)
 }
 
 func (h Handlers) logout(ctx *gofr.Context) (any, error) {

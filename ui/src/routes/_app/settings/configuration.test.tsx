@@ -38,7 +38,6 @@ const configuration: ServerConfiguration = {
   },
   scim: { enabled: false, url: "https://portal.example.com/scim/v2" },
   sessions: { secureCookies: false, idleTimeoutHours: 8, maxAgeHours: 168 },
-  tokens: { prefix: "gpp_", maxDays: 365 },
   database: {
     dialect: "postgres",
     host: "db.internal",
@@ -125,16 +124,14 @@ describe("configuration", () => {
     expect(within(row("Client Secret")).getByText("Not set")).toBeInTheDocument();
   });
 
-  it("lists session, token and platform settings", async () => {
+  it("lists session and platform settings", async () => {
     stubApi({ ...signedInAdmin, "GET settings/configuration": ok(configuration) });
     renderRoute("/settings/configuration");
 
-    expect(await screen.findByText("Sessions & API Tokens")).toBeInTheDocument();
+    expect(await screen.findByText("Sessions")).toBeInTheDocument();
     expect(row("Session Idle Timeout")).toHaveTextContent("8 hours");
     expect(row("Session Max Age")).toHaveTextContent("7 days");
     expect(row("Secure Cookies")).toHaveTextContent("Off");
-    expect(row("API Token Max Expiry")).toHaveTextContent("365 days");
-    expect(row("API Token Prefix")).toHaveTextContent("gpp_");
     expect(row("Dialect")).toHaveTextContent("postgres");
     expect(row("Host")).toHaveTextContent("db.internal:5432");
     expect(row("Database")).toHaveTextContent("portal");

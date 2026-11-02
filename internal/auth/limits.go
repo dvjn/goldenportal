@@ -12,8 +12,6 @@ import (
 const (
 	SessionIdleTimeout = sessionIdleTimeout
 	SessionMaxAge      = sessionMaxAge
-	TokenPrefix        = tokenPrefix
-	MaxTokenDays       = maxTokenDays
 )
 
 const checkTimeout = 10 * time.Second
