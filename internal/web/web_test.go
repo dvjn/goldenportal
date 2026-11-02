@@ -158,3 +158,20 @@ func TestSPALeavesMCPToTheServer(t *testing.T) {
 		t.Errorf("GET /mcp got the app shell: %d", w.Code)
 	}
 }
+
+func TestBuildHeaderNamesTheServedBuild(t *testing.T) {
+	files := fstest.MapFS{"index.html": {Data: []byte(`<head><meta name="gp-build" content="m4k2x9"></head>`)}}
+	build := Build(files)
+	if build != "m4k2x9" || Build(fstest.MapFS{"index.html": {Data: []byte("<html>dev</html>")}}) != "" {
+		t.Fatalf("build = %q", build)
+	}
+
+	handler := BuildHeader(build)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for path, want := range map[string]string{"/api/web/me": build, "/api/ingest/ci": "", "/catalog": ""} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := w.Header().Get("X-GP-Build"); got != want {
+			t.Errorf("%s: X-GP-Build = %q, want %q", path, got, want)
+		}
+	}
+}

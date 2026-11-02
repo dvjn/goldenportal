@@ -5,8 +5,11 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 //go:embed all:dist
@@ -97,5 +100,34 @@ func setCacheControl(w http.ResponseWriter, name string) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	case name == indexName:
 		w.Header().Set("Cache-Control", "no-cache")
+	}
+}
+
+var buildPattern = regexp.MustCompile(`<meta name="gp-build" content="([a-z0-9]+)"`)
+
+// Build is the ID of the UI build files hold, from its index.html, or
+// nothing when it has none.
+func Build(files fs.FS) string {
+	index, err := fs.ReadFile(files, indexName)
+	if err != nil {
+		return ""
+	}
+	if m := buildPattern.FindSubmatch(index); m != nil {
+		return string(m[1])
+	}
+
+	return ""
+}
+
+// BuildHeader tells the web API's callers which UI build is served, so a
+// tab running an older one knows to reload: the web API changes with it.
+func BuildHeader(build string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if build != "" && strings.HasPrefix(r.URL.Path, httpx.WebAPI) {
+				w.Header().Set("X-GP-Build", build)
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }

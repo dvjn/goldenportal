@@ -6,6 +6,7 @@ import "./style.css";
 import { ThemeProvider } from "./components/theme-provider";
 import { authKeys } from "./features/auth";
 import { isUnauthorized } from "./lib/api";
+import { reloadOnStaleChunks } from "./lib/new-build";
 import { createAppRouter } from "./router";
 
 const queryClient = new QueryClient({
@@ -21,6 +22,7 @@ const queryClient = new QueryClient({
 });
 
 const router = createAppRouter(queryClient);
+reloadOnStaleChunks();
 
 declare module "@tanstack/react-router" {
   interface Register {

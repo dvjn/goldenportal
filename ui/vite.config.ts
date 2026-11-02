@@ -4,8 +4,19 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
+// build identifies this build. index.html carries it, and the server sends
+// it back on every web API response, so an open tab can tell it's stale.
+const build = Date.now().toString(36);
+
 export default defineConfig({
   plugins: [
+    {
+      name: "build-id",
+      apply: "build",
+      transformIndexHtml: () => [
+        { tag: "meta", attrs: { name: "gp-build", content: build }, injectTo: "head" },
+      ],
+    },
     tanstackRouter({
       target: "react",
       autoCodeSplitting: !process.env.VITEST,

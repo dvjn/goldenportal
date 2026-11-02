@@ -1,4 +1,5 @@
 import ky, { type BeforeErrorHook, HTTPError } from "ky";
+import { noticeNewBuild } from "./new-build";
 
 export type ApiDataResponse<T> = { data: T };
 
@@ -29,6 +30,7 @@ export function createApi(prefix: string) {
       "X-GP-CSRF": "1",
     },
     hooks: {
+      afterResponse: [noticeNewBuild],
       beforeError: [adoptEnvelopeMessage],
     },
   });

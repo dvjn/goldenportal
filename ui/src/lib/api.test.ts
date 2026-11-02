@@ -5,7 +5,7 @@ import { createApi } from "./api";
 const api = createApi("http://localhost/api/web");
 
 function stubFetch(response: Response) {
-  const fetchMock = vi.fn(async (_request: Request) => response);
+  const fetchMock = vi.fn(async (_request: Request) => response.clone());
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }

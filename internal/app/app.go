@@ -60,7 +60,7 @@ func New() *gofr.App {
 		app.Logger().Errorf("The favicon can't be served: %v", err)
 		favicon, _ = web.Favicon("")
 	}
-	app.UseMiddleware(favicon, web.SPA(web.Dist()), httpx.WithQuery)
+	app.UseMiddleware(favicon, web.SPA(web.Dist()), web.BuildHeader(web.Build(web.Dist())), httpx.WithQuery)
 	mcpLimits := portalmcp.NewLimiter()
 	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
