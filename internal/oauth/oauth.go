@@ -68,12 +68,18 @@ const (
 // Server answers the OAuth endpoints for a portal at baseURL, its public
 // URL, which is also the issuer.
 type Server struct {
-	baseURL string
-	name    string
+	baseURL  string
+	name     string
+	metadata *http.Client
 }
 
+// NewServer makes the server. A portal on this machine may read client
+// metadata from it too, which is how one is tried out locally.
 func NewServer(baseURL, name string) Server {
-	return Server{baseURL: strings.TrimSuffix(baseURL, "/"), name: name}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	u, _ := url.Parse(baseURL)
+	local := u != nil && isLoopback(u.Hostname())
+	return Server{baseURL: baseURL, name: name, metadata: newMetadataClient(local)}
 }
 
 // Issuer is the portal's public URL, as clients see it.
@@ -143,6 +149,7 @@ func (s Server) serverMetadata(w http.ResponseWriter, r *http.Request, _ Store) 
 		"revocation_endpoint_auth_methods_supported":     []string{"none"},
 		"scopes_supported":                               Scopes,
 		"authorization_response_iss_parameter_supported": true,
+		"client_id_metadata_document_supported":          true,
 	})
 }
 
@@ -161,56 +168,22 @@ func (s Server) resourceMetadata(w http.ResponseWriter, r *http.Request, _ Store
 }
 
 // register signs up a client, as dynamic client registration (RFC 7591)
-// does. Every client is public: it gets an identifier but no secret, and
-// PKCE stands in for one.
+// does, for clients without a metadata document. Every client is public:
+// it gets an identifier but no secret, and PKCE stands in for one.
 func (s Server) register(w http.ResponseWriter, r *http.Request, store Store) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "invalid_request", "use POST")
 		return
 	}
-	var req struct {
-		RedirectURIs            []string `json:"redirect_uris"`
-		ClientName              string   `json:"client_name"`
-		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
-		GrantTypes              []string `json:"grant_types"`
-		ResponseTypes           []string `json:"response_types"`
-	}
+	var req clientMetadata
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_client_metadata", "the body must be a JSON object")
 		return
 	}
-	if req.TokenEndpointAuthMethod != "" && req.TokenEndpointAuthMethod != "none" {
-		writeError(w, http.StatusBadRequest, "invalid_client_metadata", "clients are public: token_endpoint_auth_method must be none")
+	name, p := req.check("MCP client")
+	if p != nil {
+		writeError(w, http.StatusBadRequest, p.code, p.description)
 		return
-	}
-	for _, grant := range req.GrantTypes {
-		if grant != "authorization_code" && grant != "refresh_token" {
-			writeError(w, http.StatusBadRequest, "invalid_client_metadata", "grant_types may only be authorization_code and refresh_token")
-			return
-		}
-	}
-	for _, response := range req.ResponseTypes {
-		if response != "code" {
-			writeError(w, http.StatusBadRequest, "invalid_client_metadata", "response_types may only be code")
-			return
-		}
-	}
-	if len(req.RedirectURIs) == 0 || len(req.RedirectURIs) > maxRedirectURIs {
-		writeError(w, http.StatusBadRequest, "invalid_redirect_uri", "register between 1 and 10 redirect_uris")
-		return
-	}
-	for _, uri := range req.RedirectURIs {
-		if err := checkRedirectURI(uri); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_redirect_uri", err.Error())
-			return
-		}
-	}
-	name := strings.TrimSpace(req.ClientName)
-	if name == "" {
-		name = "MCP client"
-	}
-	if len([]rune(name)) > maxClientName {
-		name = string([]rune(name)[:maxClientName])
 	}
 
 	clientID := clientPrefix + newSecret()
@@ -255,6 +228,28 @@ func checkRedirectURI(raw string) error {
 	}
 
 	return nil
+}
+
+// redirectAllowed matches a redirect URI against those registered
+// exactly, except that a loopback one may use any port, since a native app
+// listens wherever it can (RFC 8252, section 7.3).
+func redirectAllowed(registered []string, uri string) bool {
+	if slices.Contains(registered, uri) {
+		return true
+	}
+	u, err := url.Parse(uri)
+	if err != nil || u.Scheme != "http" || !isLoopback(u.Hostname()) {
+		return false
+	}
+	for _, r := range registered {
+		allowed, err := url.Parse(r)
+		if err == nil && allowed.Scheme == "http" && allowed.Hostname() == u.Hostname() &&
+			allowed.Path == u.Path && allowed.RawQuery == u.RawQuery {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isLoopback(host string) bool {

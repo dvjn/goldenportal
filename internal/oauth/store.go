@@ -20,12 +20,17 @@ type Store struct{ db auth.DB }
 
 func NewStore(db auth.DB) Store { return Store{db: db} }
 
-// Client is an application that registered itself.
+// Client is an application that registered itself or named itself by its
+// metadata document's URL.
 type Client struct {
 	ID           string
 	ClientID     string
 	Name         string
 	RedirectURIs []string
+	// Logo is a metadata document client's logo, as a PNG data URL.
+	Logo string
+	// MetadataExpires is when a metadata document client is fetched again.
+	MetadataExpires *time.Time
 }
 
 // Grant is one user's consent for one client.
@@ -57,11 +62,25 @@ func (s Store) CreateClient(ctx context.Context, clientID, name string, redirect
 func (s Store) Client(ctx context.Context, clientID string) (Client, error) {
 	c := Client{ClientID: clientID}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, redirect_uris FROM oauth_clients WHERE client_id = $1`, clientID).
-		Scan(&c.ID, &c.Name, pq.Array(&c.RedirectURIs))
+		SELECT id, name, redirect_uris, logo, metadata_expires_at FROM oauth_clients WHERE client_id = $1`, clientID).
+		Scan(&c.ID, &c.Name, pq.Array(&c.RedirectURIs), &c.Logo, &c.MetadataExpires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Client{}, errNotFound
 	}
+
+	return c, err
+}
+
+// SaveMetadataClient keeps what a client's metadata document said, until
+// expires. Its grants stay, since the client ID is the same.
+func (s Store) SaveMetadataClient(ctx context.Context, c Client, expires time.Time) (Client, error) {
+	c.MetadataExpires = &expires
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO oauth_clients (client_id, name, redirect_uris, logo, metadata_expires_at) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (client_id) DO UPDATE
+		SET name = EXCLUDED.name, redirect_uris = EXCLUDED.redirect_uris, logo = EXCLUDED.logo,
+			metadata_expires_at = EXCLUDED.metadata_expires_at
+		RETURNING id`, c.ClientID, c.Name, pq.Array(c.RedirectURIs), c.Logo, expires).Scan(&c.ID)
 
 	return c, err
 }
@@ -217,6 +236,7 @@ func (s Store) AccessPrincipal(ctx context.Context, token, resource string) (aut
 type AppGrant struct {
 	ID         string     `json:"id"`
 	Client     string     `json:"client"`
+	Logo       string     `json:"logo,omitempty"`
 	Scopes     []string   `json:"scopes"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastUsedAt *time.Time `json:"lastUsedAt"`
@@ -224,7 +244,7 @@ type AppGrant struct {
 
 func (s Store) Grants(ctx context.Context, userID string) ([]AppGrant, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT g.id, cl.name, g.scopes, g.created_at, g.last_used_at
+		SELECT g.id, cl.name, cl.logo, g.scopes, g.created_at, g.last_used_at
 		FROM oauth_grants g JOIN oauth_clients cl ON cl.id = g.client_id
 		WHERE g.user_id = $1
 		ORDER BY g.created_at DESC`, userID)
@@ -235,7 +255,7 @@ func (s Store) Grants(ctx context.Context, userID string) ([]AppGrant, error) {
 	grants := []AppGrant{}
 	for rows.Next() {
 		var g AppGrant
-		if err := rows.Scan(&g.ID, &g.Client, pq.Array(&g.Scopes), &g.CreatedAt, &g.LastUsedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Client, &g.Logo, pq.Array(&g.Scopes), &g.CreatedAt, &g.LastUsedAt); err != nil {
 			return nil, err
 		}
 		grants = append(grants, g)

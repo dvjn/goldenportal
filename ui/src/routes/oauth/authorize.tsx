@@ -1,6 +1,14 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { Check, CircleAlert, Loader2, MonitorSmartphone, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Loader2,
+  MonitorSmartphone,
+  ShieldQuestion,
+  TriangleAlert,
+} from "lucide-react";
+import { AppLogo } from "@/components/app-logo";
 import { AuthPage } from "@/components/auth-page";
 import { Code } from "@/components/code";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -91,11 +99,22 @@ function AuthorizePage() {
     );
   }
 
-  const { client, redirectHost, local, scopes, withheld, problem, redirect: back } = consent.data;
+  const {
+    client,
+    clientHost,
+    logo,
+    redirectHost,
+    local,
+    scopes,
+    withheld,
+    problem,
+    redirect: back,
+  } = consent.data;
   return (
     <AuthPage>
       <Card>
-        <CardHeader className="text-center">
+        <CardHeader className="justify-items-center text-center">
+          <AppLogo logo={logo} size="lg" />
           <CardTitle className="text-xl">Authorize {client}</CardTitle>
           <CardDescription>
             {client} wants to use {name} as {me.email}.
@@ -126,6 +145,19 @@ function AuthorizePage() {
               )}
             </>
           )}
+          <div className="grid gap-1.5">
+            <span className="text-muted-foreground">Published by</span>
+            <span className="flex flex-wrap items-center gap-2">
+              {clientHost ? (
+                <Code className="text-sm">{clientHost}</Code>
+              ) : (
+                <Badge variant="outline">
+                  <ShieldQuestion />
+                  Unverified
+                </Badge>
+              )}
+            </span>
+          </div>
           <div className="grid gap-1.5">
             <span className="text-muted-foreground">Sends you back to</span>
             <span className="flex flex-wrap items-center gap-2">

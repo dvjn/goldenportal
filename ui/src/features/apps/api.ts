@@ -12,6 +12,11 @@ export const scopeLabels: Record<string, string> = {
 // problem, when set, is why it can't be, and redirect tells the app.
 export type Consent = {
   client: string;
+  // clientHost is the domain that published the app's metadata; an app
+  // that registered itself has none, so its name is unverified.
+  clientHost?: string;
+  // logo is the app's logo from its metadata, as a PNG data URL.
+  logo?: string;
   redirectUri: string;
   redirectHost: string;
   // local is a redirect to this machine, which any app on it could claim.
@@ -47,6 +52,7 @@ export async function decideConsent(request: AuthorizeRequest, approve: boolean)
 export type AppGrant = {
   id: string;
   client: string;
+  logo?: string;
   scopes: string[];
   createdAt: string;
   lastUsedAt: string | null;

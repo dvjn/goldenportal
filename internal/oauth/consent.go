@@ -57,18 +57,21 @@ type problem struct{ code, description string }
 // check validates a request. An unknown client or redirect URI is an
 // error shown to the user, never followed: the answer could go anywhere.
 func (s Server) check(ctx *gofr.Context, p auth.Principal, req authorizeRequest) (checked, error) {
-	client, err := NewStore(ctx.SQL).Client(ctx, req.ClientID)
-	if errors.Is(err, errNotFound) {
+	client, err := s.client(ctx, NewStore(ctx.SQL), req.ClientID)
+	var unusable metadataError
+	switch {
+	case errors.Is(err, errNotFound):
 		return checked{}, httpx.Error{Code: http.StatusBadRequest, Message: "the app asking for access isn't registered"}
-	}
-	if err != nil {
+	case errors.As(err, &unusable):
+		return checked{}, httpx.Error{Code: http.StatusBadRequest, Message: unusable.Error()}
+	case err != nil:
 		return checked{}, err
 	}
 	c := checked{client: client, redirectURI: req.RedirectURI}
 	if c.redirectURI == "" && len(client.RedirectURIs) == 1 {
 		c.redirectURI = client.RedirectURIs[0]
 	}
-	if !slices.Contains(client.RedirectURIs, c.redirectURI) {
+	if !redirectAllowed(client.RedirectURIs, c.redirectURI) {
 		return checked{}, httpx.Error{Code: http.StatusBadRequest, Message: "the app's redirect URI doesn't match any it registered"}
 	}
 
@@ -113,7 +116,12 @@ func (s Server) check(ctx *gofr.Context, p auth.Principal, req authorizeRequest)
 // the answer, and what it would be allowed. Problem, when set, is why it
 // can't be, with Redirect to tell the app.
 type consentView struct {
-	Client       string   `json:"client"`
+	Client string `json:"client"`
+	// ClientHost is the domain that published the app's metadata, when it
+	// did; an app that registered itself has only the name it gave.
+	ClientHost string `json:"clientHost,omitempty"`
+	// Logo is the app's logo, from its metadata, as a PNG data URL.
+	Logo         string   `json:"logo,omitempty"`
 	RedirectURI  string   `json:"redirectUri"`
 	RedirectHost string   `json:"redirectHost"`
 	Local        bool     `json:"local"`
@@ -140,8 +148,12 @@ func (s Server) describe(ctx *gofr.Context) (any, error) {
 	}
 	u, _ := url.Parse(c.redirectURI)
 	view := consentView{
-		Client: c.client.Name, RedirectURI: c.redirectURI, RedirectHost: u.Host, Local: isLoopback(u.Hostname()),
+		Client: c.client.Name, Logo: c.client.Logo, RedirectURI: c.redirectURI, RedirectHost: u.Host, Local: isLoopback(u.Hostname()),
 		Scopes: c.scopes, Withheld: c.withheld,
+	}
+	if isMetadataClient(c.client.ClientID) {
+		clientURL, _ := url.Parse(c.client.ClientID)
+		view.ClientHost = clientURL.Host
 	}
 	if view.RedirectHost == "" {
 		// An app's own scheme has no host; its scheme is what names it.

@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppWindow, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { AppLogo } from "@/components/app-logo";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -50,7 +51,12 @@ const column = dataTableColumns<AppGrant>();
 const columns = [
   column.accessor("client", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="App" />,
-    cell: ({ getValue }) => <span className="font-medium">{getValue()}</span>,
+    cell: ({ getValue, row }) => (
+      <span className="flex items-center gap-2 font-medium">
+        <AppLogo logo={row.original.logo} size="sm" />
+        {getValue()}
+      </span>
+    ),
   }),
   column.accessor((app) => app.scopes.join(" "), {
     id: "access",

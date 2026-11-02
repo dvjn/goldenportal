@@ -52,6 +52,8 @@ describe("authorizing an app", () => {
     // A redirect to this machine is flagged.
     expect(screen.getByText("localhost:3000")).toBeInTheDocument();
     expect(screen.getByText("This device")).toBeInTheDocument();
+    // A self-registered app's name proves nothing.
+    expect(screen.getByText("Unverified")).toBeInTheDocument();
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Allow" }));
     await vi.waitFor(() =>
@@ -59,6 +61,22 @@ describe("authorizing an app", () => {
     );
     const decided = (await requests["POST oauth/authorize"].json()) as Record<string, unknown>;
     expect(decided).toMatchObject({ client_id: "gpc_1", state: "s1", approve: true });
+  });
+
+  it("names the domain that published the app's metadata", async () => {
+    stubApi({
+      "GET config": acmeConfig,
+      "GET me": ok(ada),
+      "GET oauth/authorize": ok({
+        ...consent,
+        clientHost: "claude.ai",
+        logo: "data:image/png;base64,AA==",
+      }),
+    });
+    renderRoute(request);
+
+    expect(await screen.findByText("claude.ai")).toBeInTheDocument();
+    expect(screen.queryByText("Unverified")).not.toBeInTheDocument();
   });
 
   it("explains a request it can't grant and offers to tell the app", async () => {
