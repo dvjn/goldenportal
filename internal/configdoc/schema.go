@@ -161,7 +161,7 @@ func marshalOrdered(fields map[string]json.RawMessage, first ...string) (json.Ra
 	return compact.Bytes(), nil
 }
 
-// SchemaSummary names a kind whose schema GET /api/v1/schemas/{kind} serves.
+// SchemaSummary names a kind whose schema GET /api/web/schemas/{kind} serves.
 type SchemaSummary struct {
 	Kind        string `json:"kind"`
 	Description string `json:"description"`
@@ -170,8 +170,8 @@ type SchemaSummary struct {
 // RegisterSchemas serves the documents' JSON Schemas, so authors, people or
 // agents, can see every field a document takes before writing one.
 func RegisterSchemas(app httpx.Routes) {
-	app.GET("/api/v1/schemas", listSchemas)
-	app.GET("/api/v1/schemas/{kind}", getSchema)
+	app.GET("schemas", listSchemas)
+	app.GET("schemas/{kind}", getSchema)
 }
 
 func listSchemas(ctx *gofr.Context) (any, error) {

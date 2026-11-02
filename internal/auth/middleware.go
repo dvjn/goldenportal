@@ -20,13 +20,13 @@ const (
 
 // IngestPrefix is where integrations push entities. Requests there sign in
 // with an ingestion token, which the ingest handlers check themselves.
-const IngestPrefix = "/api/v1/ingest/"
+const IngestPrefix = "/api/ingest/"
 
 // publicPaths answer without a signed-in user.
 var publicPaths = map[string]bool{
-	"/api/v1/config": true,
-	signInPath:       true,
-	callbackPath:     true,
+	httpx.WebAPI + "config": true,
+	signInPath:              true,
+	callbackPath:            true,
 }
 
 type principalResolver interface {

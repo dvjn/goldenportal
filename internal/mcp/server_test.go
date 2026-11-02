@@ -238,7 +238,7 @@ func TestChallengesSayWhereToSignIn(t *testing.T) {
 
 func TestReadToolsOnlyRead(t *testing.T) {
 	b := bridge{api: whoAmI, caller: grants["builder"]}
-	_, _, err := b.call(context.Background(), tool{name: "list_catalog", readOnly: true}, apiCall{method: http.MethodPost, path: "/api/v1/catalog"})
+	_, _, err := b.call(context.Background(), tool{name: "list_catalog", readOnly: true}, apiCall{method: http.MethodPost, path: "/api/web/catalog"})
 	if err == nil {
 		t.Error("a read tool made a POST")
 	}
@@ -263,7 +263,7 @@ func TestAuthoringBridge(t *testing.T) {
 	})), "builder")
 
 	call(t, session, "save_draft", map[string]any{"kind": "blueprints", "name": "service", "source": "kind: Blueprint"})
-	if gotMethod != http.MethodPut || gotPath != "/api/v1/blueprints/service/draft" || gotUser != "builder" ||
+	if gotMethod != http.MethodPut || gotPath != "/api/web/blueprints/service/draft" || gotUser != "builder" ||
 		!strings.Contains(gotBody, `"source":"kind: Blueprint"`) {
 		t.Errorf("save_draft sent %s %s %s as %s", gotMethod, gotPath, gotBody, gotUser)
 	}
@@ -276,11 +276,11 @@ func TestAuthoringBridge(t *testing.T) {
 		t.Error("delete without the matching confirm went through")
 	}
 	call(t, session, "create_ingestion_token", map[string]any{"integration": "push", "name": "CI"})
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/integrations/push/tokens" || !strings.Contains(gotBody, `"name":"CI"`) {
+	if gotMethod != http.MethodPost || gotPath != "/api/web/integrations/push/tokens" || !strings.Contains(gotBody, `"name":"CI"`) {
 		t.Errorf("create_ingestion_token sent %s %s %s", gotMethod, gotPath, gotBody)
 	}
 	call(t, session, "get_dashboard_data", map[string]any{"name": "services", "inputs": map[string]any{"team": []string{"payments"}, "tier": []string{}}})
-	if gotPath != "/api/v1/dashboards/services/data" || !strings.Contains(gotQuery, "input.team=payments") || !strings.Contains(gotQuery, "input.tier=") {
+	if gotPath != "/api/web/dashboards/services/data" || !strings.Contains(gotQuery, "input.team=payments") || !strings.Contains(gotQuery, "input.tier=") {
 		t.Errorf("get_dashboard_data sent %s?%s", gotPath, gotQuery)
 	}
 }

@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, webApi } from "@/lib/api";
 
 // ConfigKind is the API path of a kind of configuration document.
 export type ConfigKind = "blueprints" | "integrations" | "scorecards" | "dashboards";
@@ -131,7 +131,7 @@ export function configDocs<S>(kind: ConfigKind) {
     remove: async (identifier: string) => {
       await api.delete(path(identifier), { searchParams: { confirm: identifier } });
     },
-    exportUrl: (identifier: string) => `/api/v1/${path(identifier)}/export`,
+    exportUrl: (identifier: string) => `${webApi}/${path(identifier)}/export`,
     queries: {
       list: queryOptions({ queryKey: keys.all, queryFn: list }),
       detail: (identifier: string) =>

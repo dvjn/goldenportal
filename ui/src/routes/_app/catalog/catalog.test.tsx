@@ -9,7 +9,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -94,9 +94,9 @@ describe("catalog", () => {
     const requests = stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities": ok({ entities: [scored], total: 1 }),
+      "GET catalog/service": ok({ entities: [scored], total: 1 }),
       "GET scorecards/readiness": ok(readiness),
-      "GET entities/facets": ok([]),
+      "GET catalog/service/facets": ok([]),
     });
     renderRoute("/catalog/service");
     // A tier links to the result it comes from, as a relation to its entity.
@@ -109,14 +109,18 @@ describe("catalog", () => {
       within(screen.getByRole("columnheader", { name: /Readiness/ })).getByRole("button"),
     );
     await vi.waitFor(() =>
-      expect(new URL(requests["GET entities"].url).searchParams.get("sort")).toBe("readiness"),
+      expect(new URL(requests["GET catalog/service"].url).searchParams.get("sort")).toBe(
+        "readiness",
+      ),
     );
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(await screen.findByRole("option", { name: "Readiness" }));
     await user.click(await screen.findByRole("option", { name: "Gold" }));
     await vi.waitFor(() =>
       expect(
-        JSON.parse(new URL(requests["GET entities"].url).searchParams.get("filter") ?? "null"),
+        JSON.parse(
+          new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null",
+        ),
       ).toEqual({ and: [{ property: "readiness", op: "in", values: ["gold"] }] }),
     );
     await user.keyboard("{Escape}");
@@ -174,9 +178,9 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities": () =>
+      "GET catalog/service": () =>
         ++calls === 1 ? fail(400, "the filter names an unknown property")() : ok(page)(),
-      "GET entities/facets": ok([]),
+      "GET catalog/service/facets": ok([]),
     });
     renderRoute("/catalog/service");
 
@@ -190,8 +194,8 @@ describe("catalog", () => {
     const requests = stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities": ok(page),
-      "GET entities/facets": ok([{ value: "payments", title: "Payments", count: 1 }]),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([{ value: "payments", title: "Payments", count: 1 }]),
       "GET catalog": ok([{ identifier: "service", title: "Service", entities: 3 }]),
     });
     const { router } = renderRoute("/catalog/service");
@@ -214,7 +218,7 @@ describe("catalog", () => {
     await user.click(await screen.findByRole("option", { name: "critical" }));
 
     await vi.waitFor(() => {
-      const url = new URL(requests["GET entities"].url);
+      const url = new URL(requests["GET catalog/service"].url);
       expect(JSON.parse(url.searchParams.get("filter") ?? "null")).toEqual({
         and: [{ property: "tier", op: "in", values: ["critical"] }],
       });
@@ -229,8 +233,8 @@ describe("catalog", () => {
     const requests = stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities": ok(page),
-      "GET entities/facets": ok([{ value: "payments", title: "Payments", count: 1 }]),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([{ value: "payments", title: "Payments", count: 1 }]),
     });
     const search = (value: unknown) => encodeURIComponent(JSON.stringify(value));
     const { router } = renderRoute(
@@ -272,7 +276,7 @@ describe("catalog", () => {
     expect(router.state.location.search.f).toEqual({ tier: ["critical", "standard"] });
     await vi.waitFor(() => {
       const filter = JSON.parse(
-        new URL(requests["GET entities"].url).searchParams.get("filter") ?? "null",
+        new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null",
       );
       expect(filter).toEqual({
         and: [{ property: "tier", op: "in", values: ["critical", "standard"] }],
@@ -312,8 +316,8 @@ describe("catalog", () => {
       ...signedInMember,
       "GET blueprints/service": ok(service),
       "GET blueprints/team": ok(team),
-      "GET entities": ok(page),
-      "GET entities/facets": ok([]),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([]),
     });
     const search = (value: unknown) => encodeURIComponent(JSON.stringify(value));
     const slack = { property: "owner.slack", op: "exists" };
@@ -330,7 +334,7 @@ describe("catalog", () => {
     expect(screen.getByText("Owner › Lead:")).toBeInTheDocument();
     expect(screen.getByText("ada, grace")).toBeInTheDocument();
     const filter = () =>
-      JSON.parse(new URL(requests["GET entities"].url).searchParams.get("filter") ?? "null");
+      JSON.parse(new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null");
     await vi.waitFor(() =>
       expect(filter()).toEqual({
         and: [{ property: "version", op: "in", values: ["1.2"] }, { and: [slack, lead] }],
@@ -351,8 +355,8 @@ describe("catalog", () => {
     const requests = stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities": ok(page),
-      "GET entities/facets": ok([]),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([]),
     });
     const { router } = renderRoute("/catalog/service");
 
@@ -362,7 +366,7 @@ describe("catalog", () => {
 
     await vi.waitFor(() => {
       const filter = JSON.parse(
-        new URL(requests["GET entities"].url).searchParams.get("filter") ?? "null",
+        new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null",
       );
       expect(filter.and).toEqual([
         { property: "updatedAt", op: "lt", value: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
@@ -380,8 +384,8 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities": ok(page),
-      "GET entities/facets": ok([]),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([]),
     });
     const search = encodeURIComponent(JSON.stringify({ updatedAt: { from: "2026-10-01" } }));
     const { router } = renderRoute(`/catalog/service?d=${search}`);
@@ -400,7 +404,7 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok({ ...service, published: null }),
-      "GET entities": ok({ entities: [], total: 0 }),
+      "GET catalog/service": ok({ entities: [], total: 0 }),
     });
     renderRoute("/catalog/service");
 
@@ -416,8 +420,8 @@ describe("catalog", () => {
       "GET config": acmeConfig,
       "GET me": ok({ ...ada, role: "builder" }),
       "GET blueprints/service": ok(service),
-      "GET entities/service/ledger": ok(ledger),
-      "GET entity-scorecards": ok([]),
+      "GET catalog/service/entities/ledger": ok(ledger),
+      "GET catalog/service/scorecards": ok([]),
     });
     renderRoute("/catalog/service/ledger");
 
@@ -431,8 +435,8 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities/service/ledger": ok(ledger),
-      "GET entity-scorecards": ok([]),
+      "GET catalog/service/entities/ledger": ok(ledger),
+      "GET catalog/service/scorecards": ok([]),
     });
     writeUiState("entityTabs", { service: "yaml", team: "relations" });
     renderRoute("/catalog/service/ledger");
@@ -468,7 +472,7 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(laidOut),
-      "GET entities/service/ledger": ok({
+      "GET catalog/service/entities/ledger": ok({
         ...ledger,
         properties: {
           ...ledger.properties,
@@ -476,7 +480,7 @@ describe("catalog", () => {
           url: "https://ledger.example.com/x",
         },
       }),
-      "GET entity-scorecards": ok([]),
+      "GET catalog/service/scorecards": ok([]),
     });
     renderRoute("/catalog/service/ledger");
 
@@ -503,8 +507,8 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities/service/ledger": ok({ ...ledger, related: { owner: teams } }),
-      "GET entity-scorecards": ok([]),
+      "GET catalog/service/entities/ledger": ok({ ...ledger, related: { owner: teams } }),
+      "GET catalog/service/scorecards": ok([]),
       "GET catalog": ok([{ identifier: "team", title: "Team", entities: 8 }]),
     });
     renderRoute("/catalog/service/ledger?tab=relations");
@@ -524,8 +528,8 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET entities/service/ledger": ok(ledger),
-      "GET entity-scorecards": ok([]),
+      "GET catalog/service/entities/ledger": ok(ledger),
+      "GET catalog/service/scorecards": ok([]),
     });
     renderRoute("/catalog/service/ledger");
 

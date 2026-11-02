@@ -118,7 +118,7 @@ export async function listEntityScorecards(
 ): Promise<EntityScorecard[]> {
   return (
     await api
-      .get("entity-scorecards", { searchParams: { blueprint, identifier } })
+      .get(`catalog/${encodeURIComponent(blueprint)}/scorecards`, { searchParams: { identifier } })
       .json<ApiDataResponse<EntityScorecard[]>>()
   ).data;
 }

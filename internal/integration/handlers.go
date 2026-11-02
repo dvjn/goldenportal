@@ -27,15 +27,20 @@ var runPageSizes = []int{10, 20, 50, 100}
 
 func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
-	app.GET("/api/v1/connectors", listConnectors)
-	app.GET("/api/v1/integrations/{identifier}/tokens", listTokens)
-	app.POST("/api/v1/integrations/{identifier}/tokens", createToken)
-	app.DELETE("/api/v1/integrations/{identifier}/tokens/{id}", revokeToken)
-	app.GET("/api/v1/integrations/{identifier}/runs", listRuns)
-	app.POST("/api/v1/integrations/{identifier}/sync", syncNow)
+	app.GET("connectors", listConnectors)
+	app.GET("integrations/{identifier}/tokens", listTokens)
+	app.POST("integrations/{identifier}/tokens", createToken)
+	app.DELETE("integrations/{identifier}/tokens/{id}", revokeToken)
+	app.GET("integrations/{identifier}/runs", listRuns)
+	app.POST("integrations/{identifier}/sync", syncNow)
 	app.AddCronJob(SyncSchedule, "sync-pull-integrations", syncAll)
-	app.GET("/api/v1/blueprints/{identifier}/usage", blueprintUsage)
-	app.GET("/api/v1/integration-status", listStatus)
+	app.GET("blueprints/{identifier}/usage", blueprintUsage)
+	app.GET("integration-status", listStatus)
+}
+
+// RegisterIngest serves the push endpoints, outside the web API: callers
+// sign in with an ingestion token, not a session.
+func RegisterIngest(app *gofr.App) {
 	app.POST(auth.IngestPrefix+"{integration}", ingest)
 	app.DELETE(auth.IngestPrefix+"{integration}/entities/{blueprint}/{identifier:.+}", deleteEntity)
 }

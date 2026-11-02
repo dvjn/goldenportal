@@ -130,10 +130,8 @@ type actionResult struct {
 	Message string `json:"message"`
 }
 
-func registerSettings(app *gofr.App, oidc *auth.OIDC, scimServer *scim.Server) {
-	summary := describeConfig(app.Config, oidc, scimServer)
-
-	app.GET("/api/v1/settings/configuration", func(ctx *gofr.Context) (any, error) {
+func registerSettings(app httpx.Routes, summary serverConfig, oidc *auth.OIDC, scimServer *scim.Server) {
+	app.GET("settings/configuration", func(ctx *gofr.Context) (any, error) {
 		if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
 			return nil, err
 		}
@@ -141,7 +139,7 @@ func registerSettings(app *gofr.App, oidc *auth.OIDC, scimServer *scim.Server) {
 		return summary, nil
 	})
 
-	app.POST("/api/v1/settings/configuration/actions/{id}", func(ctx *gofr.Context) (any, error) {
+	app.POST("settings/configuration/actions/{id}", func(ctx *gofr.Context) (any, error) {
 		if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
 			return nil, err
 		}

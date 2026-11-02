@@ -17,13 +17,13 @@ import (
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
-func Register(app *gofr.App) {
-	app.GET("/api/v1/access", listGrants)
-	app.PUT("/api/v1/access/{type}/{id}", grant)
-	app.DELETE("/api/v1/access/{type}/{id}", revoke)
-	app.GET("/api/v1/users", listUsers)
-	app.GET("/api/v1/groups", listGroups)
-	app.GET("/api/v1/audit", listAudit)
+func Register(app httpx.Routes) {
+	app.GET("settings/access", listGrants)
+	app.PUT("settings/access/{type}/{id}", grant)
+	app.DELETE("settings/access/{type}/{id}", revoke)
+	app.GET("settings/access/users", listUsers)
+	app.GET("settings/access/groups", listGroups)
+	app.GET("settings/audit", listAudit)
 }
 
 func listGrants(ctx *gofr.Context) (any, error) {

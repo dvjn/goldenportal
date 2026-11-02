@@ -6,7 +6,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -57,7 +57,7 @@ const serverConfiguration = {
     clientSecretSet: true,
     scopes: ["openid"],
     groupsClaim: "groups",
-    redirectUrl: "https://portal.example.com/api/v1/auth/callback",
+    redirectUrl: "https://portal.example.com/api/web/auth/callback",
     bootstrapAdminEmail: "",
   },
   scim: { enabled: false, url: "https://portal.example.com/scim/v2" },
@@ -115,7 +115,7 @@ describe("settings", () => {
 
   it("switches tabs through links", async () => {
     const user = userEvent.setup();
-    stubApi({ ...signedInAdmin, "GET access": ok(grants), "GET audit": ok([]) });
+    stubApi({ ...signedInAdmin, "GET settings/access": ok(grants), "GET settings/audit": ok([]) });
     const { router } = renderRoute("/settings/access");
 
     await user.click(await screen.findByRole("tab", { name: "Audit Log" }));
@@ -127,7 +127,7 @@ describe("settings", () => {
 
 describe("access", () => {
   it("lists only direct grants, and not your own controls", async () => {
-    stubApi({ ...signedInAdmin, "GET access": ok(grants) });
+    stubApi({ ...signedInAdmin, "GET settings/access": ok(grants) });
     renderRoute("/settings/access");
 
     await screen.findByText("platform-engineers");
@@ -145,16 +145,16 @@ describe("access", () => {
     const user = userEvent.setup();
     const requests = stubApi({
       ...signedInAdmin,
-      "GET access": ok(grants),
-      "PUT access/group/g1": () => new Response(null, { status: 200 }),
+      "GET settings/access": ok(grants),
+      "PUT settings/access/group/g1": () => new Response(null, { status: 200 }),
     });
     renderRoute("/settings/access");
 
     await user.click(await screen.findByRole("combobox", { name: "Role for platform-engineers" }));
     await user.click(screen.getByRole("option", { name: "Admin" }));
 
-    await waitFor(() => expect(requests["PUT access/group/g1"]).toBeDefined());
-    expect(await requests["PUT access/group/g1"]?.json()).toEqual({ role: "admin" });
+    await waitFor(() => expect(requests["PUT settings/access/group/g1"]).toBeDefined());
+    expect(await requests["PUT settings/access/group/g1"]?.json()).toEqual({ role: "admin" });
     expect(await screen.findByText("platform-engineers is now admin")).toBeInTheDocument();
   });
 
@@ -162,10 +162,10 @@ describe("access", () => {
     const user = userEvent.setup();
     const requests = stubApi({
       ...signedInAdmin,
-      "GET access": ok(grants),
-      "GET users": ok(users),
-      "GET groups": ok(groups),
-      "PUT access/user/u2": () => new Response(null, { status: 200 }),
+      "GET settings/access": ok(grants),
+      "GET settings/access/users": ok(users),
+      "GET settings/access/groups": ok(groups),
+      "PUT settings/access/user/u2": () => new Response(null, { status: 200 }),
     });
     renderRoute("/settings/access");
 
@@ -175,14 +175,14 @@ describe("access", () => {
     await user.click(await screen.findByRole("option", { name: /Grace Hopper/ }));
     await user.click(screen.getByRole("button", { name: "Grant Access" }));
 
-    await waitFor(() => expect(requests["PUT access/user/u2"]).toBeDefined());
-    expect(await requests["PUT access/user/u2"]?.json()).toEqual({ role: "builder" });
+    await waitFor(() => expect(requests["PUT settings/access/user/u2"]).toBeDefined());
+    expect(await requests["PUT settings/access/user/u2"]?.json()).toEqual({ role: "builder" });
     expect(await screen.findByText("Granted builder to Grace Hopper")).toBeInTheDocument();
   });
 
   it("removes a grant after confirming", async () => {
     const user = userEvent.setup();
-    stubApi({ ...signedInAdmin, "GET access": ok(grants) });
+    stubApi({ ...signedInAdmin, "GET settings/access": ok(grants) });
     renderRoute("/settings/access");
 
     await user.click(
@@ -190,21 +190,21 @@ describe("access", () => {
     );
     const requests = stubApi({
       ...signedInAdmin,
-      "GET access": ok([grants[0]]),
-      "DELETE access/group/g1": () => new Response(null, { status: 204 }),
+      "GET settings/access": ok([grants[0]]),
+      "DELETE settings/access/group/g1": () => new Response(null, { status: 204 }),
     });
     await user.click(screen.getByRole("button", { name: "Remove access" }));
 
     expect(await screen.findByText("Removed access for platform-engineers")).toBeInTheDocument();
-    expect(requests["DELETE access/group/g1"]).toBeDefined();
+    expect(requests["DELETE settings/access/group/g1"]).toBeDefined();
   });
 
   it("tells the admin when a change fails", async () => {
     const user = userEvent.setup();
     stubApi({
       ...signedInAdmin,
-      "GET access": ok(grants),
-      "PUT access/group/g1": fail(500, "the database is unavailable"),
+      "GET settings/access": ok(grants),
+      "PUT settings/access/group/g1": fail(500, "the database is unavailable"),
     });
     renderRoute("/settings/access");
 

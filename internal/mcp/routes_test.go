@@ -24,7 +24,7 @@ import (
 type stubRoutes struct{ router *mux.Router }
 
 func (s stubRoutes) add(method, path string) {
-	s.router.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+	s.router.HandleFunc(httpx.WebAPI+path, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]string{"route": method + " " + path}})
 	}).Methods(method)

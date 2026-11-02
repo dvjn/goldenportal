@@ -34,12 +34,12 @@ type Result struct {
 // may be empty, which asks for what to start from, or none.
 type Source func(ctx *gofr.Context, p auth.Principal, text string) ([]Result, error)
 
-// Register serves GET /api/v1/search?q=, with every source's results in
+// Register serves GET /api/web/search?q=, with every source's results in
 // one list, closest first: exact matches, then those starting with the
 // text, then those containing it. Ties keep the order of sources, then go
 // by title.
 func Register(app httpx.Routes, sources ...Source) {
-	app.GET("/api/v1/search", func(ctx *gofr.Context) (any, error) {
+	app.GET("search", func(ctx *gofr.Context) (any, error) {
 		p, err := auth.Require(ctx, auth.RoleMember)
 		if err != nil {
 			return nil, err

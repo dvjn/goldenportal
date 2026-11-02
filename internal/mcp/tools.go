@@ -199,7 +199,7 @@ type (
 
 var tools = []tool{
 	read("search", "Find blueprints, entities, dashboards, scorecards and integrations by title or identifier, closest first.", auth.RoleMember, func(a searchArgs) (apiCall, error) {
-		return apiCall{method: http.MethodGet, path: "/api/v1/search", query: url.Values{"q": {a.Text}}}, nil
+		return apiCall{method: http.MethodGet, path: "search", query: url.Values{"q": {a.Text}}}, nil
 	}),
 	read("list_documents", "List configuration documents of a kind visible to the caller.", auth.RoleMember, func(a kindArgs) (apiCall, error) {
 		path, err := documentPath(a.Kind, "")
@@ -225,34 +225,34 @@ var tools = []tool{
 		return apiCall{method: http.MethodGet, path: path + "/export"}, err
 	})),
 	read("export_documents", "Export all published documents visible to the caller as multi-document YAML.", auth.RoleMember, func(empty) (apiCall, error) {
-		return apiCall{method: http.MethodGet, path: "/api/v1/export"}, nil
+		return apiCall{method: http.MethodGet, path: "documents/export"}, nil
 	}),
 	read("get_document_schema", "Read the JSON Schema of a document kind: every field, which are required, allowed values and what each means. Read it before writing a document of that kind.", auth.RoleMember, func(a kindArgs) (apiCall, error) {
 		_, err := documentPath(a.Kind, "")
-		return apiCall{method: http.MethodGet, path: "/api/v1/schemas/" + a.Kind}, err
+		return apiCall{method: http.MethodGet, path: "schemas/" + a.Kind}, err
 	}),
 	read("list_connectors", "Discover available connector types and their readable resources.", auth.RoleMember, func(empty) (apiCall, error) {
-		return apiCall{method: http.MethodGet, path: "/api/v1/connectors"}, nil
+		return apiCall{method: http.MethodGet, path: "connectors"}, nil
 	}),
 	read("list_catalog", "List published blueprints with entity counts.", auth.RoleMember, func(empty) (apiCall, error) {
-		return apiCall{method: http.MethodGet, path: "/api/v1/catalog"}, nil
+		return apiCall{method: http.MethodGet, path: "catalog"}, nil
 	}),
 	read("query_entities", "Search, filter, sort and page entities of a blueprint. Filter uses the shared JSON filter tree.", auth.RoleMember, func(a queryArgs) (apiCall, error) {
 		if !configdoc.ValidIdentifier(a.Blueprint) {
 			return apiCall{}, fmt.Errorf("choose a blueprint")
 		}
-		q := url.Values{"blueprint": {a.Blueprint}}
+		q := url.Values{}
 		for k, v := range map[string]string{"q": a.Search, "filter": a.Filter, "sort": a.Sort} {
 			if v != "" {
 				q.Set(k, v)
 			}
 		}
 		setPage(q, a.Page, a.Size)
-		return apiCall{method: http.MethodGet, path: "/api/v1/entities", query: q}, nil
+		return apiCall{method: http.MethodGet, path: "catalog/" + a.Blueprint, query: q}, nil
 	}),
 	withLinks(read("get_entity", "Read an entity, resolved properties and incoming relations. Identifiers may contain slashes.", auth.RoleMember, entityCall)),
 	read("get_home", "Read the caller's visible dashboards, rendered text and resolved input defaults.", auth.RoleMember, func(empty) (apiCall, error) {
-		return apiCall{method: http.MethodGet, path: "/api/v1/home"}, nil
+		return apiCall{method: http.MethodGet, path: "home"}, nil
 	}),
 	read("get_dashboard_data", "Read every widget's data on a dashboard the caller sees, with its inputs set as given or to their defaults.", auth.RoleMember, func(a dashboardDataArgs) (apiCall, error) {
 		path, err := requiredDocument(documentArgs{"dashboards", a.Name})
@@ -268,7 +268,10 @@ var tools = []tool{
 		return apiCall{method: http.MethodGet, path: path + "/data", query: q}, err
 	}),
 	read("get_entity_scorecards", "Read an entity's current scorecard results.", auth.RoleMember, func(a entityArgs) (apiCall, error) {
-		return apiCall{method: http.MethodGet, path: "/api/v1/entity-scorecards", query: url.Values{"blueprint": {a.Blueprint}, "identifier": {a.Identifier}}}, nil
+		if !configdoc.ValidIdentifier(a.Blueprint) {
+			return apiCall{}, fmt.Errorf("choose a blueprint")
+		}
+		return apiCall{method: http.MethodGet, path: "catalog/" + a.Blueprint + "/scorecards", query: url.Values{"identifier": {a.Identifier}}}, nil
 	}),
 	read("get_scorecard_summary", "Read how many entities reached each of a scorecard's tiers and how each criterion fares.", auth.RoleMember, func(a nameArgs) (apiCall, error) {
 		path, err := requiredDocument(documentArgs{"scorecards", a.Name})
@@ -340,7 +343,7 @@ var tools = []tool{
 		if a.DryRun != nil {
 			dry = *a.DryRun
 		}
-		return apiCall{method: http.MethodPost, path: "/api/v1/apply", query: url.Values{"dryRun": {strconv.FormatBool(dry)}}, body: map[string]any{"source": a.Source}}, nil
+		return apiCall{method: http.MethodPost, path: "documents/apply", query: url.Values{"dryRun": {strconv.FormatBool(dry)}}, body: map[string]any{"source": a.Source}}, nil
 	}),
 	author("publish_documents", "Publish multiple saved drafts atomically in dependency order after reviewing their impacts.", true, func(a publishManyArgs) (apiCall, error) {
 		if len(a.Documents) == 0 {
@@ -356,7 +359,7 @@ var tools = []tool{
 				return apiCall{}, fmt.Errorf("document kind must be Blueprint, Integration, Scorecard or Dashboard")
 			}
 		}
-		return apiCall{method: http.MethodPost, path: "/api/v1/publish", body: a}, nil
+		return apiCall{method: http.MethodPost, path: "documents/publish", body: a}, nil
 	}),
 	author("sync_integration", "Run a published pull integration now using its declared mappings.", true, func(a nameArgs) (apiCall, error) {
 		path, err := requiredDocument(documentArgs{"integrations", a.Name})
@@ -388,7 +391,7 @@ func entityCall(a entityArgs) (apiCall, error) {
 			return apiCall{}, fmt.Errorf("entity identifier cannot contain empty, dot or backslash path segments")
 		}
 	}
-	return apiCall{method: http.MethodGet, path: "/api/v1/entities/" + a.Blueprint + "/" + a.Identifier}, nil
+	return apiCall{method: http.MethodGet, path: "catalog/" + a.Blueprint + "/entities/" + a.Identifier}, nil
 }
 
 func (a documentArgs) resourceLink() *mcp.ResourceLink { return documentLink(a.Kind, a.Name) }

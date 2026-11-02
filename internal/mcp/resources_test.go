@@ -21,33 +21,33 @@ func catalogAPI() http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": v})
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/blueprints", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/web/blueprints", func(w http.ResponseWriter, _ *http.Request) {
 		data(w, []any{map[string]any{"identifier": "service"}, map[string]any{"identifier": "team"}})
 	})
-	mux.HandleFunc("GET /api/v1/blueprints/service", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/web/blueprints/service", func(w http.ResponseWriter, _ *http.Request) {
 		data(w, map[string]any{"identifier": "service"})
 	})
-	mux.HandleFunc("GET /api/v1/blueprints/service/export", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/web/blueprints/service/export", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write([]byte("kind: Blueprint\n"))
 	})
-	mux.HandleFunc("GET /api/v1/scorecards/ready/export", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/web/scorecards/ready/export", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write([]byte("kind: Scorecard\n"))
 	})
-	mux.HandleFunc("GET /api/v1/scorecards/ready/summary", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/web/scorecards/ready/summary", func(w http.ResponseWriter, _ *http.Request) {
 		data(w, map[string]any{"tiers": []any{}})
 	})
-	mux.HandleFunc("GET /api/v1/entities", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/web/catalog/{blueprint}", func(w http.ResponseWriter, r *http.Request) {
 		data(w, map[string]any{"entities": []any{
 			map[string]any{"identifier": "payments/" + r.URL.Query().Get("q")},
 			map[string]any{"identifier": "billing"},
 		}})
 	})
-	mux.HandleFunc("GET /api/v1/entities/service/{identifier...}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/web/catalog/service/entities/{identifier...}", func(w http.ResponseWriter, r *http.Request) {
 		data(w, map[string]any{"identifier": r.PathValue("identifier")})
 	})
-	mux.HandleFunc("GET /api/v1/entity-scorecards", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/web/catalog/{blueprint}/scorecards", func(w http.ResponseWriter, _ *http.Request) {
 		data(w, []any{map[string]any{"scorecard": "ready", "tier": "gold"}})
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {

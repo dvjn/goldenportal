@@ -3,7 +3,7 @@ import { vi } from "vite-plus/test";
 type Handler = (request: Request) => Response | Promise<Response>;
 
 // stubApi answers API requests by "METHOD path", where path is relative to
-// /api/v1, e.g. "GET me" or "POST auth/login". Unstubbed requests fail loudly.
+// /api/web, e.g. "GET me" or "POST auth/login". Unstubbed requests fail loudly.
 // It returns the requests it saw, keyed the same way, with readable bodies.
 // Home finds no dashboards unless a test stubs some.
 export function stubApi(stubs: Record<string, Handler>) {
@@ -13,7 +13,7 @@ export function stubApi(stubs: Record<string, Handler>) {
   };
   const requests: Record<string, Request> = {};
   const fetchMock = vi.fn(async (request: Request) => {
-    const path = new URL(request.url).pathname.replace(/^\/api\/v1\//, "");
+    const path = new URL(request.url).pathname.replace(/^\/api\/web\//, "");
     requests[`${request.method} ${path}`] = request.clone();
     const handler = routes[`${request.method} ${path}`];
     if (!handler) {

@@ -134,8 +134,8 @@ var prompts = []prompt{
 				return nil, err
 			}
 			scorecards, err := b.fetch(ctx, apiCall{
-				method: http.MethodGet, path: "/api/v1/entity-scorecards",
-				query: url.Values{"blueprint": {a["blueprint"]}, "identifier": {a["identifier"]}},
+				method: http.MethodGet, path: "catalog/" + a["blueprint"] + "/scorecards",
+				query: url.Values{"identifier": {a["identifier"]}},
 			})
 			if err != nil {
 				return nil, err

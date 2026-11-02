@@ -24,21 +24,21 @@ export const accessKeys = {
 };
 
 export async function listGrants(): Promise<Grant[]> {
-  return (await api.get("access").json<ApiDataResponse<Grant[]>>()).data;
+  return (await api.get("settings/access").json<ApiDataResponse<Grant[]>>()).data;
 }
 
 export async function grantRole(type: SubjectType, id: string, role: Role): Promise<void> {
-  await api.put(`access/${type}/${id}`, { json: { role } });
+  await api.put(`settings/access/${type}/${id}`, { json: { role } });
 }
 
 export async function revokeGrant(type: SubjectType, id: string): Promise<void> {
-  await api.delete(`access/${type}/${id}`);
+  await api.delete(`settings/access/${type}/${id}`);
 }
 
 export async function listUsers(): Promise<DirectoryUser[]> {
-  return (await api.get("users").json<ApiDataResponse<DirectoryUser[]>>()).data;
+  return (await api.get("settings/access/users").json<ApiDataResponse<DirectoryUser[]>>()).data;
 }
 
 export async function listGroups(): Promise<DirectoryGroup[]> {
-  return (await api.get("groups").json<ApiDataResponse<DirectoryGroup[]>>()).data;
+  return (await api.get("settings/access/groups").json<ApiDataResponse<DirectoryGroup[]>>()).data;
 }

@@ -20,10 +20,10 @@ const EvaluateSchedule = "* * * * *"
 
 func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
-	app.GET("/api/v1/scorecards/{identifier}/summary", summary)
-	app.GET("/api/v1/scorecards/{identifier}/results", listResults)
-	app.POST("/api/v1/scorecards/{identifier}/evaluate", evaluateNow)
-	app.GET("/api/v1/entity-scorecards", forEntity)
+	app.GET("scorecards/{identifier}/summary", summary)
+	app.GET("scorecards/{identifier}/results", listResults)
+	app.POST("scorecards/{identifier}/evaluate", evaluateNow)
+	app.GET("catalog/{blueprint}/scorecards", forEntity)
 	app.AddCronJob(EvaluateSchedule, "evaluate-scorecards", evaluateAll)
 }
 
@@ -137,7 +137,7 @@ func forEntity(ctx *gofr.Context) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	bp, identifier := ctx.Param("blueprint"), ctx.Param("identifier")
+	bp, identifier := ctx.PathParam("blueprint"), ctx.Param("identifier")
 	if bp == "" || identifier == "" {
 		return nil, badRequest("name the entity with blueprint and identifier")
 	}

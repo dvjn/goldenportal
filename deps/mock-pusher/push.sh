@@ -22,7 +22,7 @@ done
 push() {
   status=$(curl -sS -o /tmp/response -w '%{http_code}' -X POST \
     -H "Authorization: Bearer $2" -H 'Content-Type: application/json' \
-    --data-binary @"$3" "$api/api/v1/ingest/$1") || status=000
+    --data-binary @"$3" "$api/api/ingest/$1") || status=000
   echo "$(timestamp "$(date +%s)") $1: HTTP $status $(head -c 300 /tmp/response 2>/dev/null)"
 }
 

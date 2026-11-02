@@ -15,11 +15,11 @@ import (
 )
 
 func Register(app httpx.Routes) {
-	app.GET("/api/v1/catalog", catalog)
-	app.GET("/api/v1/entities", list)
-	app.GET("/api/v1/entities/facets", facets)
+	app.GET("catalog", catalog)
+	app.GET("catalog/{blueprint}", list)
+	app.GET("catalog/{blueprint}/facets", facets)
 	// Identifiers come from other systems and may contain slashes.
-	app.GET("/api/v1/entities/{blueprint}/{identifier:.+}", get)
+	app.GET("catalog/{blueprint}/entities/{identifier:.+}", get)
 }
 
 // CatalogEntry is a published blueprint and how many entities it has.
@@ -87,7 +87,7 @@ func list(ctx *gofr.Context) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	specs, spec, err := publishedBlueprint(ctx, ctx.Param("blueprint"))
+	specs, spec, err := publishedBlueprint(ctx, ctx.PathParam("blueprint"))
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func facets(ctx *gofr.Context) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	specs, spec, err := publishedBlueprint(ctx, ctx.Param("blueprint"))
+	specs, spec, err := publishedBlueprint(ctx, ctx.PathParam("blueprint"))
 	if err != nil {
 		return nil, err
 	}

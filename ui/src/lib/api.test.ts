@@ -2,7 +2,7 @@ import { HTTPError } from "ky";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createApi } from "./api";
 
-const api = createApi("http://localhost/api/v1");
+const api = createApi("http://localhost/api/web");
 
 function stubFetch(response: Response) {
   const fetchMock = vi.fn(async (_request: Request) => response);
@@ -21,7 +21,7 @@ describe("api", () => {
     await expect(api.get("config").json()).resolves.toEqual({ data: { name: "Golden Portal" } });
 
     const request = fetchMock.mock.calls[0]?.[0];
-    expect(request?.url).toBe("http://localhost/api/v1/config");
+    expect(request?.url).toBe("http://localhost/api/web/config");
     expect(request?.headers.get("Accept")).toBe("application/json");
   });
 

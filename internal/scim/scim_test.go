@@ -36,7 +36,7 @@ func TestRoutesGuardTheEndpoint(t *testing.T) {
 		token  string
 		want   int
 	}{
-		{"other paths pass through", on, "/api/v1/me", "", http.StatusTeapot},
+		{"other paths pass through", on, "/api/web/me", "", http.StatusTeapot},
 		{"SCIM is off without a token", off, "/scim/v2/Users", testToken, http.StatusNotFound},
 		{"requests need the token", on, "/scim/v2/Users", "", http.StatusUnauthorized},
 		{"a wrong token is refused", on, "/scim/v2/Users", "wrong", http.StatusUnauthorized},

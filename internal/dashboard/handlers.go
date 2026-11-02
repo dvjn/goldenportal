@@ -24,10 +24,10 @@ import (
 
 func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
-	app.GET("/api/v1/home", home)
-	app.GET("/api/v1/dashboards/{identifier}/view", dashboardView)
-	app.GET("/api/v1/dashboards/{identifier}/data", dashboardData)
-	app.GET("/api/v1/blueprints/{identifier}/pages/{page}/{tab}/data", blueprintData)
+	app.GET("home", home)
+	app.GET("dashboards/{identifier}/view", dashboardView)
+	app.GET("dashboards/{identifier}/data", dashboardData)
+	app.GET("catalog/{blueprint}/pages/{page}/{tab}", blueprintData)
 }
 
 // home lists the published dashboards, in the order Home shows them.
@@ -346,7 +346,7 @@ func blueprintData(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	src, err := source(ctx, p, blueprint.Name, ctx.PathParam("identifier"))
+	src, err := source(ctx, p, blueprint.Name, ctx.PathParam("blueprint"))
 	if err != nil {
 		return nil, err
 	}

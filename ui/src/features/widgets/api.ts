@@ -155,7 +155,7 @@ function dataPath(source: WidgetSource) {
   const parts =
     "dashboard" in source
       ? ["dashboards", source.dashboard, "data"]
-      : ["blueprints", source.blueprint, "pages", source.page, source.tab, "data"];
+      : ["catalog", source.blueprint, "pages", source.page, source.tab];
   return parts.map(encodeURIComponent).join("/");
 }
 

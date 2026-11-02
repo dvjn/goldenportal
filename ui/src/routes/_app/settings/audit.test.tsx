@@ -6,7 +6,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -29,7 +29,7 @@ function auditApi(respond: (params: URLSearchParams) => unknown) {
   const queries: URLSearchParams[] = [];
   stubApi({
     ...signedInAdmin,
-    "GET audit": (request) => {
+    "GET settings/audit": (request) => {
       const params = new URL(request.url).searchParams;
       queries.push(params);
       return Response.json({ data: respond(params) });

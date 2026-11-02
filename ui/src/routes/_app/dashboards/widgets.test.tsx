@@ -9,7 +9,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -585,9 +585,9 @@ describe("dashboards and page tabs", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(laidOut),
-      "GET entities": ok({ entities: [ledger], total: 1 }),
-      "GET entities/facets": ok([]),
-      "GET blueprints/service/pages/catalog/overview/data": loaded({
+      "GET catalog/service": ok({ entities: [ledger], total: 1 }),
+      "GET catalog/service/facets": ok([]),
+      "GET catalog/service/pages/catalog/overview": loaded({
         critical: {
           blueprint: "service",
           total: 1,
@@ -640,9 +640,9 @@ describe("dashboards and page tabs", () => {
           },
         }),
       ),
-      "GET entities/service/ledger": ok(ledger),
-      "GET entity-scorecards": ok([]),
-      "GET blueprints/service/pages/entity/overview/data": loaded({
+      "GET catalog/service/entities/ledger": ok(ledger),
+      "GET catalog/service/scorecards": ok([]),
+      "GET catalog/service/pages/entity/overview": loaded({
         about: { text: "Owned by **payments**. Hi Ada." },
       }),
     });
@@ -685,9 +685,9 @@ describe("dashboards and page tabs", () => {
       ...signedInMember,
       "GET blueprints/service": ok(laidOut),
       "GET blueprints/deployment": ok({ ...service, identifier: "deployment" }),
-      "GET entities/service/ledger": ok(ledger),
-      "GET entity-scorecards": ok([]),
-      "GET blueprints/service/pages/entity/deployments/data": loaded({
+      "GET catalog/service/entities/ledger": ok(ledger),
+      "GET catalog/service/scorecards": ok([]),
+      "GET catalog/service/pages/entity/deployments": loaded({
         total: linked(12, { property: "service", op: "eq", value: "ledger" }, "deployment"),
       }),
     });
@@ -703,7 +703,7 @@ describe("dashboards and page tabs", () => {
 
     const total = await stat(/Deployments$/, "12");
     expect(decodeURIComponent(total.getAttribute("href") ?? "")).toContain('"service":["ledger"]');
-    const url = new URL(requests["GET blueprints/service/pages/entity/deployments/data"].url);
+    const url = new URL(requests["GET catalog/service/pages/entity/deployments"].url);
     expect(url.searchParams.get("entity")).toBe("ledger");
   });
 
@@ -740,7 +740,7 @@ describe("dashboards and page tabs", () => {
       ...signedInMember,
       "GET home": ok([teams]),
       "GET blueprints/service": ok(service),
-      "GET entities": ok({
+      "GET catalog/team": ok({
         entities: [
           { ...ledger, blueprint: "team", identifier: "identity", title: "Identity" },
           { ...ledger, blueprint: "team", identifier: "payments", title: "Payments" },
@@ -838,7 +838,7 @@ describe("dashboards and page tabs", () => {
   const mineStubs = {
     ...signedInMember,
     "GET blueprints/service": ok(service),
-    "GET entities": ok({
+    "GET catalog/team": ok({
       entities: [{ ...ledger, blueprint: "team", identifier: "payments", title: "Payments" }],
       total: 1,
     }),
@@ -859,7 +859,7 @@ describe("dashboards and page tabs", () => {
     expect(url.searchParams.getAll("input.team")).toEqual(["payments"]);
     expect(screen.getByRole("button", { name: /^Team/ })).toHaveTextContent("Payments");
     // The data names the team, so its options load only once it's opened.
-    expect(requests["GET entities"]).toBeUndefined();
+    expect(requests["GET catalog/team"]).toBeUndefined();
     expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Nothing matched you/)).not.toBeInTheDocument();
   });

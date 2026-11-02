@@ -69,22 +69,23 @@ func New() *gofr.App {
 		return scimServer.Routes(c.SQL)(oauthServer.Routes(c.SQL)(mcp))
 	})
 
-	app.GET("/api/v1/config", configHandler(Config{
+	api.GET("config", configHandler(Config{
 		Name:    name,
 		LogoURL: app.Config.Get("GP_LOGO_URL"),
 	}))
-	auth.NewHandlers(secureCookies).Register(app)
-	oauthServer.Register(app)
-	access.Register(app)
+	auth.NewHandlers(secureCookies).Register(api)
+	oauthServer.Register(api)
+	access.Register(api)
 	blueprint.Register(api, dashboard.CheckPages)
 	entity.Register(api)
 	integration.Register(api)
+	integration.RegisterIngest(app)
 	scorecard.Register(api)
 	dashboard.Register(api)
 	search.Register(api, blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
 	configdoc.RegisterBulk(api)
 	configdoc.RegisterSchemas(api)
-	registerSettings(app, oidc, scimServer)
+	registerSettings(api, describeConfig(app.Config, oidc, scimServer), oidc, scimServer)
 
 	return app
 }

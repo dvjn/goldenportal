@@ -6,7 +6,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -27,7 +27,7 @@ describe("sign in", () => {
     expect(router.state.location.pathname).toBe("/sign-in");
     expect(signIn).toHaveAttribute(
       "href",
-      `/api/v1/auth/login?redirect=${encodeURIComponent("/?tab=overview")}`,
+      `/api/web/auth/login?redirect=${encodeURIComponent("/?tab=overview")}`,
     );
   });
 
@@ -37,7 +37,7 @@ describe("sign in", () => {
 
     expect(await screen.findByRole("link", { name: "Sign in with SSO" })).toHaveAttribute(
       "href",
-      "/api/v1/auth/login?redirect=%2F",
+      "/api/web/auth/login?redirect=%2F",
     );
   });
 

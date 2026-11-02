@@ -244,7 +244,7 @@ func (b bridge) fetch(ctx context.Context, c apiCall) (Output, error) {
 			return Output{}, err
 		}
 	}
-	u := &url.URL{Path: c.path, RawQuery: c.query.Encode()}
+	u := &url.URL{Path: httpx.WebAPI + c.path, RawQuery: c.query.Encode()}
 	r, err := http.NewRequestWithContext(auth.WithPrincipal(ctx, b.caller.principal), c.method, u.String(), &body)
 	if err != nil {
 		return Output{}, err
@@ -312,10 +312,10 @@ func documentPath(kind, name string) (string, error) {
 		return "", fmt.Errorf("kind must be blueprints, integrations, scorecards or dashboards")
 	}
 	if name == "" {
-		return "/api/v1/" + kind, nil
+		return kind, nil
 	}
 	if !configdoc.ValidIdentifier(name) {
 		return "", fmt.Errorf("name must be a document identifier")
 	}
-	return "/api/v1/" + kind + "/" + name, nil
+	return kind + "/" + name, nil
 }

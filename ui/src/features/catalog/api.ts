@@ -71,13 +71,17 @@ export async function listCatalog(): Promise<CatalogEntry[]> {
 }
 
 export async function listEntities(query: EntityQuery): Promise<EntityPage> {
-  const searchParams = new URLSearchParams({ blueprint: query.blueprint });
+  const searchParams = new URLSearchParams();
   if (query.q) searchParams.set("q", query.q);
   if (query.filter) searchParams.set("filter", JSON.stringify(query.filter));
   if (query.sort) searchParams.set("sort", query.sort);
   if (query.page) searchParams.set("page", String(query.page));
   if (query.size) searchParams.set("size", String(query.size));
-  return (await api.get("entities", { searchParams }).json<ApiDataResponse<EntityPage>>()).data;
+  return (
+    await api
+      .get(`catalog/${encodeURIComponent(query.blueprint)}`, { searchParams })
+      .json<ApiDataResponse<EntityPage>>()
+  ).data;
 }
 
 export async function getEntity(blueprint: string, identifier: string): Promise<EntityDetail> {
@@ -85,7 +89,7 @@ export async function getEntity(blueprint: string, identifier: string): Promise<
   const path = identifier.split("/").map(encodeURIComponent).join("/");
   return (
     await api
-      .get(`entities/${encodeURIComponent(blueprint)}/${path}`)
+      .get(`catalog/${encodeURIComponent(blueprint)}/entities/${path}`)
       .json<ApiDataResponse<EntityDetail>>()
   ).data;
 }
@@ -93,7 +97,7 @@ export async function getEntity(blueprint: string, identifier: string): Promise<
 export async function listFacets(blueprint: string, property: string): Promise<Facet[]> {
   return (
     await api
-      .get("entities/facets", { searchParams: { blueprint, property } })
+      .get(`catalog/${encodeURIComponent(blueprint)}/facets`, { searchParams: { property } })
       .json<ApiDataResponse<Facet[]>>()
   ).data;
 }

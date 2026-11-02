@@ -93,25 +93,25 @@ func TestSchemaHandlers(t *testing.T) {
 			req = req.WithContext(auth.WithPrincipal(req.Context(), auth.Principal{Role: auth.RoleMember}))
 		}
 		req = mux.SetURLVars(req, vars)
-		route := "/api/v1/schemas"
+		route := "schemas"
 		if vars != nil {
 			route += "/{kind}"
 		}
 		return r[route](&gofr.Context{Context: req.Context(), Request: gofrHTTP.NewRequest(req)})
 	}
 
-	list, err := call("/api/v1/schemas", nil, true)
+	list, err := call("/api/web/schemas", nil, true)
 	if summaries, ok := list.([]configdoc.SchemaSummary); err != nil || !ok || len(summaries) != len(configdoc.SchemaKinds) || summaries[0].Description == "" {
 		t.Errorf("list = %+v, %v", list, err)
 	}
-	got, err := call("/api/v1/schemas/blueprints", map[string]string{"kind": "blueprints"}, true)
+	got, err := call("/api/web/schemas/blueprints", map[string]string{"kind": "blueprints"}, true)
 	if want, _ := configdoc.Schema("Blueprint"); err != nil || !bytes.Equal(got.(json.RawMessage), want) {
 		t.Errorf("get = %v", err)
 	}
-	if _, err := call("/api/v1/schemas/entity", map[string]string{"kind": "entity"}, true); httpStatus(err) != http.StatusNotFound {
+	if _, err := call("/api/web/schemas/entity", map[string]string{"kind": "entity"}, true); httpStatus(err) != http.StatusNotFound {
 		t.Errorf("unknown kind = %v, want not found", err)
 	}
-	if _, err := call("/api/v1/schemas/blueprints", map[string]string{"kind": "blueprints"}, false); httpStatus(err) != http.StatusUnauthorized {
+	if _, err := call("/api/web/schemas/blueprints", map[string]string{"kind": "blueprints"}, false); httpStatus(err) != http.StatusUnauthorized {
 		t.Errorf("signed out = %v, want unauthorized", err)
 	}
 }

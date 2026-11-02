@@ -156,5 +156,5 @@ export async function listRuns(identifier: string, filters: RunFilters): Promise
 
 // ingestUrl is where systems push data for an integration.
 export function ingestUrl(identifier: string) {
-  return `${window.location.origin}/api/v1/ingest/${encodeURIComponent(identifier)}`;
+  return `${window.location.origin}/api/ingest/${encodeURIComponent(identifier)}`;
 }

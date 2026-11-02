@@ -18,7 +18,7 @@ import (
 func TestInProcessRoutesBindRequestAndPreserveResponses(t *testing.T) {
 	routes := newAPIRoutes(nil)
 	c := &container.Container{Logger: logging.NewLogger(logging.ERROR)}
-	routes.add("PUT", "/api/v1/documents/{name}", func(ctx *gofr.Context) (any, error) {
+	routes.add("PUT", "/api/web/documents/{name}", func(ctx *gofr.Context) (any, error) {
 		var body map[string]any
 		if err := ctx.Bind(&body); err != nil {
 			return nil, err
@@ -28,14 +28,14 @@ func TestInProcessRoutesBindRequestAndPreserveResponses(t *testing.T) {
 		}
 		return response.Response{Headers: map[string]string{"X-Example": "yes"}, Data: body}, nil
 	})
-	routes.add("GET", "/api/v1/export", func(*gofr.Context) (any, error) {
+	routes.add("GET", "/api/web/documents/export", func(*gofr.Context) (any, error) {
 		return response.File{Content: []byte("kind: Blueprint\n"), ContentType: "application/yaml"}, nil
 	})
-	routes.add("GET", "/api/v1/denied", func(*gofr.Context) (any, error) {
+	routes.add("GET", "/api/web/denied", func(*gofr.Context) (any, error) {
 		return nil, httpx.Error{Code: 403, Message: "denied"}
 	})
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PUT", "/api/v1/documents/example?dryRun=true", strings.NewReader(`{"source":"yaml"}`))
+	r := httptest.NewRequest("PUT", "/api/web/documents/example?dryRun=true", strings.NewReader(`{"source":"yaml"}`))
 	r.Header.Set("Content-Type", "application/json")
 	routes.handler(c).ServeHTTP(w, r)
 	var out map[string]any
@@ -46,12 +46,12 @@ func TestInProcessRoutesBindRequestAndPreserveResponses(t *testing.T) {
 		t.Fatalf("response = %d %v %s", w.Code, w.Header(), w.Body)
 	}
 	w = httptest.NewRecorder()
-	routes.handler(c).ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/export", nil))
+	routes.handler(c).ServeHTTP(w, httptest.NewRequest("GET", "/api/web/documents/export", nil))
 	if w.Header().Get("Content-Type") != "application/yaml" || w.Body.String() != "kind: Blueprint\n" {
 		t.Fatalf("file response = %v %s", w.Header(), w.Body)
 	}
 	w = httptest.NewRecorder()
-	routes.handler(c).ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/denied", nil))
+	routes.handler(c).ServeHTTP(w, httptest.NewRequest("GET", "/api/web/denied", nil))
 	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "denied") {
 		t.Fatalf("error response = %d %s", w.Code, w.Body)
 	}

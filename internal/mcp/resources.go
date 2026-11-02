@@ -159,19 +159,19 @@ func (b bridge) suggest(ctx context.Context, argument, typed string, known map[s
 	case "scorecard":
 		candidates = b.identifiers(ctx, "scorecards")
 	case "connector":
-		candidates = b.list(ctx, apiCall{method: http.MethodGet, path: "/api/v1/connectors"}, "id")
+		candidates = b.list(ctx, apiCall{method: http.MethodGet, path: "connectors"}, "id")
 	case "identifier":
 		// Entity search matches anywhere in a title or identifier, which is
 		// what someone typing part of a name wants, so its results stand.
 		blueprint := known["blueprint"]
-		if blueprint == "" {
+		if !configdoc.ValidIdentifier(blueprint) {
 			return nil
 		}
-		q := url.Values{"blueprint": {blueprint}, "size": {"20"}}
+		q := url.Values{"size": {"20"}}
 		if typed != "" {
 			q.Set("q", typed)
 		}
-		return b.list(ctx, apiCall{method: http.MethodGet, path: "/api/v1/entities", query: q}, "identifier")
+		return b.list(ctx, apiCall{method: http.MethodGet, path: "catalog/" + blueprint, query: q}, "identifier")
 	}
 	var values []string
 	for _, candidate := range candidates {

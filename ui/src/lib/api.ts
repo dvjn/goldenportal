@@ -34,4 +34,7 @@ export function createApi(prefix: string) {
   });
 }
 
-export const api = createApi("/api/v1");
+// webApi is where the server serves the web UI's API.
+export const webApi = "/api/web";
+
+export const api = createApi(webApi);

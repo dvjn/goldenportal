@@ -18,11 +18,11 @@ import (
 // Register serves the consent the browser's authorize page asks for, and
 // the apps a user has authorized, which they can revoke. These are API
 // calls the signed-in user makes in person, with their session.
-func (s Server) Register(app *gofr.App) {
-	app.GET("/api/v1/oauth/authorize", s.describe)
-	app.POST("/api/v1/oauth/authorize", s.decide)
-	app.GET("/api/v1/oauth/grants", listGrants)
-	app.DELETE("/api/v1/oauth/grants/{id}", revokeGrant)
+func (s Server) Register(app httpx.Routes) {
+	app.GET("oauth/authorize", s.describe)
+	app.POST("oauth/authorize", s.decide)
+	app.GET("account/apps", listGrants)
+	app.DELETE("account/apps/{id}", revokeGrant)
 }
 
 // authorizeRequest is an authorization request as the client sent it to

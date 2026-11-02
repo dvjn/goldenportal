@@ -52,9 +52,9 @@ func kindOrder(document string) int {
 // RegisterBulk serves apply, publish and export across every kind. Call it
 // once, after registering the kinds.
 func RegisterBulk(app httpx.Routes) {
-	app.POST("/api/v1/apply", apply)
-	app.POST("/api/v1/publish", publishMany)
-	app.GET("/api/v1/export", exportAll)
+	app.POST("documents/apply", apply)
+	app.POST("documents/publish", publishMany)
+	app.GET("documents/export", exportAll)
 }
 
 type pendingKey struct{}

@@ -61,11 +61,11 @@ export type AppGrant = {
 export const appKeys = { all: ["apps"] as const };
 
 export async function listApps(): Promise<AppGrant[]> {
-  return (await api.get("oauth/grants").json<ApiDataResponse<AppGrant[]>>()).data;
+  return (await api.get("account/apps").json<ApiDataResponse<AppGrant[]>>()).data;
 }
 
 export async function revokeApp(id: string): Promise<void> {
-  await api.delete(`oauth/grants/${encodeURIComponent(id)}`);
+  await api.delete(`account/apps/${encodeURIComponent(id)}`);
 }
 
 export const appsQueryOptions = queryOptions({ queryKey: appKeys.all, queryFn: listApps });

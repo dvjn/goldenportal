@@ -1,4 +1,4 @@
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, webApi } from "@/lib/api";
 
 export type Role = "member" | "builder" | "admin";
 
@@ -33,5 +33,5 @@ export async function signOut(): Promise<void> {
 // signInUrl starts single sign-on. It is a full-page navigation, not an API call,
 // because the identity provider takes over the browser.
 export function signInUrl(redirect: string) {
-  return `/api/v1/auth/login?${new URLSearchParams({ redirect })}`;
+  return `${webApi}/auth/login?${new URLSearchParams({ redirect })}`;
 }

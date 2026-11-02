@@ -7,7 +7,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -33,7 +33,7 @@ const configuration: ServerConfiguration = {
     clientSecretSet: true,
     scopes: ["openid", "profile", "email"],
     groupsClaim: "groups",
-    redirectUrl: "https://portal.example.com/api/v1/auth/callback",
+    redirectUrl: "https://portal.example.com/api/web/auth/callback",
     bootstrapAdminEmail: "",
   },
   scim: { enabled: false, url: "https://portal.example.com/scim/v2" },
@@ -156,7 +156,7 @@ describe("configuration", () => {
     await user.click(await screen.findByRole("button", { name: "Copy Redirect URI" }));
 
     expect(await navigator.clipboard.readText()).toBe(
-      "https://portal.example.com/api/v1/auth/callback",
+      "https://portal.example.com/api/web/auth/callback",
     );
   });
 

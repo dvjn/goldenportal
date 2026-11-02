@@ -7,7 +7,7 @@ import { configQueryOptions, useConfig } from "./queries";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const { createApi } = await importOriginal<typeof import("@/lib/api")>();
-  return { api: createApi("http://localhost/api/v1") };
+  return { api: createApi("http://localhost/api/web") };
 });
 
 function stubFetch(respond: () => Response) {
@@ -27,7 +27,7 @@ describe("configQueryOptions", () => {
     const config = await createTestQueryClient().fetchQuery(configQueryOptions);
 
     expect(config).toEqual({ name: "Acme" });
-    expect(fetchMock.mock.calls[0]?.[0].url).toBe("http://localhost/api/v1/config");
+    expect(fetchMock.mock.calls[0]?.[0].url).toBe("http://localhost/api/web/config");
   });
 
   it("reports a failed request", async () => {

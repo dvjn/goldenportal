@@ -6,7 +6,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -132,7 +132,7 @@ describe("connected apps", () => {
     const requests = stubApi({
       "GET config": acmeConfig,
       "GET me": ok(ada),
-      "GET oauth/grants": ok([
+      "GET account/apps": ok([
         {
           id: "g1",
           client: "Claude Code",
@@ -141,7 +141,7 @@ describe("connected apps", () => {
           lastUsedAt: null,
         },
       ]),
-      "DELETE oauth/grants/g1": ok(null),
+      "DELETE account/apps/g1": ok(null),
     });
     renderRoute("/account/apps");
 
@@ -153,6 +153,6 @@ describe("connected apps", () => {
     const user = userEvent.setup();
     await user.click(within(row).getByRole("button", { name: "Revoke Claude Code" }));
     await user.click(await screen.findByRole("button", { name: "Revoke Access" }));
-    await vi.waitFor(() => expect(requests["DELETE oauth/grants/g1"]).toBeDefined());
+    await vi.waitFor(() => expect(requests["DELETE account/apps/g1"]).toBeDefined());
   });
 });

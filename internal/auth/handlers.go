@@ -2,6 +2,7 @@ package auth
 
 import (
 	"github.com/dvjn/goldenportal/internal/audit"
+	"github.com/dvjn/goldenportal/internal/httpx"
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/http/response"
 )
@@ -14,12 +15,12 @@ func NewHandlers(secureCookie bool) Handlers {
 	return Handlers{secureCookie: secureCookie}
 }
 
-func (h Handlers) Register(app *gofr.App) {
-	app.POST("/api/v1/auth/logout", h.logout)
-	app.GET("/api/v1/me", h.me)
-	app.GET("/api/v1/me/tokens", h.listTokens)
-	app.POST("/api/v1/me/tokens", h.createToken)
-	app.DELETE("/api/v1/me/tokens/{id}", h.revokeToken)
+func (h Handlers) Register(app httpx.Routes) {
+	app.POST("auth/logout", h.logout)
+	app.GET("me", h.me)
+	app.GET("me/tokens", h.listTokens)
+	app.POST("me/tokens", h.createToken)
+	app.DELETE("me/tokens/{id}", h.revokeToken)
 }
 
 func (h Handlers) logout(ctx *gofr.Context) (any, error) {

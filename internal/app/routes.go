@@ -65,23 +65,23 @@ func (a *apiRoutes) add(method, path string, h gofr.Handler) {
 }
 
 func (a *apiRoutes) GET(path string, h gofr.Handler) {
-	a.App.GET(path, h)
-	a.add("GET", path, h)
+	a.App.GET(httpx.WebAPI+path, h)
+	a.add("GET", httpx.WebAPI+path, h)
 }
 
 func (a *apiRoutes) POST(path string, h gofr.Handler) {
-	a.App.POST(path, h)
-	a.add("POST", path, h)
+	a.App.POST(httpx.WebAPI+path, h)
+	a.add("POST", httpx.WebAPI+path, h)
 }
 
 func (a *apiRoutes) PUT(path string, h gofr.Handler) {
-	a.App.PUT(path, h)
-	a.add("PUT", path, h)
+	a.App.PUT(httpx.WebAPI+path, h)
+	a.add("PUT", httpx.WebAPI+path, h)
 }
 
 func (a *apiRoutes) DELETE(path string, h gofr.Handler) {
-	a.App.DELETE(path, h)
-	a.add("DELETE", path, h)
+	a.App.DELETE(httpx.WebAPI+path, h)
+	a.add("DELETE", httpx.WebAPI+path, h)
 }
 
 // newRouter answers unmatched in-process routes with the API error envelope.

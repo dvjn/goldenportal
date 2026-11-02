@@ -14,11 +14,12 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/dvjn/goldenportal/internal/audit"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 const (
-	signInPath   = "/api/v1/auth/login"
-	callbackPath = "/api/v1/auth/callback"
+	signInPath   = httpx.WebAPI + "auth/login"
+	callbackPath = httpx.WebAPI + "auth/callback"
 	// stateCookie ties a callback to the browser that started the sign-in.
 	stateCookie = "gp_sign_in"
 )
@@ -28,7 +29,7 @@ type OIDCConfig struct {
 	ClientID     string
 	ClientSecret string
 	Scopes       []string
-	// BaseURL is the portal's public URL. The identity provider redirects to BaseURL + /api/v1/auth/callback.
+	// BaseURL is the portal's public URL. The identity provider redirects to BaseURL + /api/web/auth/callback.
 	BaseURL string
 	// GroupsClaim names the ID token claim that lists the user's groups.
 	GroupsClaim string

@@ -7,7 +7,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -127,7 +127,7 @@ describe("integrations", () => {
     // Pushing shows a request to copy, aimed at the endpoint.
     await user.click(screen.getByRole("tab", { name: "Push" }));
     expect(
-      await screen.findByText(/curl -X POST ".*\/api\/v1\/ingest\/inventory"/),
+      await screen.findByText(/curl -X POST ".*\/api\/ingest\/inventory"/),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Copy push request/i })).toBeInTheDocument();
   });

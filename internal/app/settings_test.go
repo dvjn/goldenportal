@@ -40,7 +40,7 @@ func TestDescribeConfig(t *testing.T) {
 	if !slices.Equal(got.OIDC.Scopes, []string{"openid", "profile", "email"}) {
 		t.Errorf("scopes = %v, want the default scopes", got.OIDC.Scopes)
 	}
-	if got.OIDC.RedirectURL != "https://portal.example.com/api/v1/auth/callback" {
+	if got.OIDC.RedirectURL != "https://portal.example.com/api/web/auth/callback" {
 		t.Errorf("redirect URL = %q, want the callback under GP_BASE_URL", got.OIDC.RedirectURL)
 	}
 	if !got.SCIM.Enabled || got.SCIM.URL != "https://portal.example.com/scim/v2" {

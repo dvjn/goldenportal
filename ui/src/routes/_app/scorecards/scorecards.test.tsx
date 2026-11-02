@@ -7,7 +7,7 @@ import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
-  return { ...original, api: original.createApi("http://localhost/api/v1") };
+  return { ...original, api: original.createApi("http://localhost/api/web") };
 });
 
 afterEach(() => {
@@ -176,7 +176,7 @@ describe("scorecards", () => {
         draft: null,
         createdAt: "2026-10-24T10:00:00Z",
       }),
-      "GET entities/service/ledger": ok({
+      "GET catalog/service/entities/ledger": ok({
         blueprint: "service",
         identifier: "ledger",
         title: "Ledger",
@@ -187,7 +187,7 @@ describe("scorecards", () => {
         updatedAt: "2026-10-24T10:00:00Z",
         incoming: [],
       }),
-      "GET entity-scorecards": ok([
+      "GET catalog/service/scorecards": ok([
         {
           scorecard: "readiness",
           scorecardTitle: "Readiness",

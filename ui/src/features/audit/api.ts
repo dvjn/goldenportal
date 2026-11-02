@@ -79,5 +79,6 @@ export async function listAuditEvents(filters: AuditFilters): Promise<AuditPage>
   if (filters.within) searchParams.set("within", filters.within);
   if (filters.page) searchParams.set("page", String(filters.page));
   if (filters.size) searchParams.set("size", String(filters.size));
-  return (await api.get("audit", { searchParams }).json<ApiDataResponse<AuditPage>>()).data;
+  return (await api.get("settings/audit", { searchParams }).json<ApiDataResponse<AuditPage>>())
+    .data;
 }
