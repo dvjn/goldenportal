@@ -3,10 +3,10 @@ package httpx
 import "gofr.dev/pkg/gofr"
 
 // WebAPI is where the web UI's API is served. Routes are registered
-// relative to it, and MCP tools call them the same way.
+// relative to it.
 const WebAPI = "/api/web/"
 
-// Routes is the registration surface shared by HTTP and in-process API callers.
+// Routes is where packages register their web API handlers, relative to WebAPI.
 type Routes interface {
 	GET(string, gofr.Handler)
 	POST(string, gofr.Handler)

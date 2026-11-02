@@ -235,7 +235,7 @@ func TestPicked(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			query, _ := url.ParseQuery(test.query)
-			got, err := picked(spec, query)
+			got, err := picked(spec, inputsFrom(query))
 			var httpErr httpx.Error
 			switch {
 			case test.message == "" && err != nil:
@@ -367,7 +367,7 @@ func TestViewKeepsHomeUpWhenALookupFails(t *testing.T) {
 
 func TestHomeDashboardJSON(t *testing.T) {
 	spec := mustParse(t, overviewYAML)
-	encoded, err := json.Marshal(homeDashboard{Spec: spec, Defaults: map[string][]string{"tier": {"critical"}, "mine": widget.Nothing}, Problems: map[string]string{}})
+	encoded, err := json.Marshal(HomeDashboard{Spec: spec, Defaults: map[string][]string{"tier": {"critical"}, "mine": widget.Nothing}, Problems: map[string]string{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestHomeDashboardJSON(t *testing.T) {
 	if strings.Contains(string(encoded), `"problems"`) {
 		t.Errorf("home = %s, want no problems when there are none", encoded)
 	}
-	encoded, _ = json.Marshal(homeDashboard{Spec: spec, Defaults: map[string][]string{}, Problems: map[string]string{"mine": "down"}})
+	encoded, _ = json.Marshal(HomeDashboard{Spec: spec, Defaults: map[string][]string{}, Problems: map[string]string{"mine": "down"}})
 	if !strings.Contains(string(encoded), `"problems":{"mine":"down"}`) {
 		t.Errorf("home = %s, want the problem", encoded)
 	}

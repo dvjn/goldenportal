@@ -1,6 +1,7 @@
 // Package mcp serves the portal's MCP server at /mcp. Clients sign in with
-// the portal's own OAuth (see package oauth), and each tool runs an API
-// call as the signed-in user, so the API's own permission checks apply.
+// the portal's own OAuth (see package oauth), and each tool calls the
+// portal's services as the signed-in user, as the web API does, so their
+// permission checks apply.
 package mcp
 
 import (
@@ -16,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -55,13 +57,13 @@ type Tokens interface {
 }
 
 // Middleware serves the MCP endpoint. A request needs an access token the
-// portal issued for /mcp: anything else is told where to get one. api is
-// the API, which tool calls run against as the token's user; version is the
+// portal issued for /mcp: anything else is told where to get one. Tools call
+// services as the token's user, in contexts newContext makes; version is the
 // release clients see.
-func Middleware(api http.Handler, tokens Tokens, server oauth.Server, version string, limits *Limiter) func(http.Handler) http.Handler {
+func Middleware(services Services, newContext func(context.Context) *gofr.Context, tokens Tokens, server oauth.Server, version string, limits *Limiter) func(http.Handler) http.Handler {
 	transport := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		c, _ := callerFrom(r.Context())
-		return newServer(bridge{api: api, caller: c}, c, version)
+		return newServer(bridge{services: services, newContext: newContext, caller: c}, c, version)
 	}, &mcp.StreamableHTTPOptions{
 		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: maxRequestBytes,
 		// The SDK's DNS-rebinding guard rejects a public Host arriving on
@@ -199,15 +201,11 @@ func (c caller) missingScope(r *http.Request) string {
 }
 
 type (
-	// bridge runs a tool's API call in-process, as the caller.
+	// bridge calls services as the caller.
 	bridge struct {
-		api    http.Handler
-		caller caller
-	}
-	apiCall struct {
-		method, path string
-		query        url.Values
-		body         any
+		services   Services
+		newContext func(context.Context) *gofr.Context
+		caller     caller
 	}
 	Output struct {
 		Status int    `json:"status"`
@@ -215,20 +213,21 @@ type (
 		Error  any    `json:"error,omitempty"`
 		Source string `json:"source,omitempty"`
 	}
+	// yaml is a document's source, which a tool returns as written.
+	yaml string
 )
 
-// call runs c against the API signed in as the caller. Their token is
-// never passed on: the API sees the user, as the MCP spec asks of servers
-// calling further services.
-func (b bridge) call(ctx context.Context, t tool, c apiCall) (*mcp.CallToolResult, Output, error) {
-	// A tool that only reads can only make reads, whatever its arguments.
-	if t.readOnly && c.method != http.MethodGet {
-		return nil, Output{}, fmt.Errorf("%s only reads", t.name)
-	}
-	out, err := b.fetch(ctx, c)
-	if err != nil {
-		return nil, Output{}, err
-	}
+// context signs ctx in as the caller. Their token is never passed on: the
+// services see the user, as the MCP spec asks of servers calling further
+// services.
+func (b bridge) context(ctx context.Context) *gofr.Context {
+	return b.newContext(auth.WithPrincipal(ctx, b.caller.principal))
+}
+
+// call runs do as the caller, and makes what it returns a tool result: a
+// failure the caller can act on is an error result, not a protocol error.
+func (b bridge) call(ctx context.Context, do func(*gofr.Context) (any, error)) (*mcp.CallToolResult, Output, error) {
+	out := b.run(ctx, do)
 	if out.Status >= 400 {
 		raw, _ := json.Marshal(out)
 		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}}, StructuredContent: out}, out, nil
@@ -236,86 +235,34 @@ func (b bridge) call(ctx context.Context, t tool, c apiCall) (*mcp.CallToolResul
 	return nil, out, nil
 }
 
-// fetch runs c against the API as the caller.
-func (b bridge) fetch(ctx context.Context, c apiCall) (Output, error) {
-	var body bytes.Buffer
-	if c.body != nil {
-		if err := json.NewEncoder(&body).Encode(c.body); err != nil {
-			return Output{}, err
-		}
-	}
-	u := &url.URL{Path: httpx.WebAPI + c.path, RawQuery: c.query.Encode()}
-	r, err := http.NewRequestWithContext(auth.WithPrincipal(ctx, b.caller.principal), c.method, u.String(), &body)
+// run runs do as the caller and says how it went, as the web API would.
+func (b bridge) run(ctx context.Context, do func(*gofr.Context) (any, error)) Output {
+	gctx := b.context(ctx)
+	v, err := do(gctx)
 	if err != nil {
-		return Output{}, err
-	}
-	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Accept", "application/json")
-	w := &capture{header: http.Header{}}
-	b.api.ServeHTTP(w, r)
-	if w.status == 0 {
-		w.status = http.StatusOK
-	}
-	out := Output{Status: w.status}
-	switch {
-	case w.tooLarge:
-		out.Status = http.StatusRequestEntityTooLarge
-		out.Error = map[string]any{"message": "response exceeds 10 MB; use a smaller page or a single-document export"}
-	case strings.Contains(w.header.Get("Content-Type"), "yaml"):
-		out.Source = w.body.String()
-	case w.body.Len() > 0:
-		var envelope map[string]any
-		if err := json.Unmarshal(w.body.Bytes(), &envelope); err != nil {
-			out.Status = http.StatusBadGateway
-			out.Error = map[string]any{"message": "API returned an unexpected response"}
-		} else {
-			out.Data = envelope["data"]
-			out.Error = envelope["error"]
+		var status interface{ StatusCode() int }
+		if errors.As(err, &status) {
+			return Output{Status: status.StatusCode(), Error: map[string]any{"message": err.Error()}}
 		}
+		gctx.Errorf("MCP call failed: %v", err)
+		return Output{Status: http.StatusInternalServerError, Error: map[string]any{"message": "something went wrong in the portal"}}
 	}
-	if out.Status >= 400 && out.Error == nil {
-		out.Error = map[string]any{"message": http.StatusText(out.Status)}
+	out := Output{Status: http.StatusOK}
+	if source, ok := v.(yaml); ok {
+		out.Source = string(source)
+	} else {
+		out.Data = v
 	}
-	return out, nil
+	if raw, err := json.Marshal(out); err != nil || len(raw) > maxResponseBytes {
+		return Output{Status: http.StatusRequestEntityTooLarge, Error: map[string]any{"message": "response exceeds 10 MB; use a smaller page or a single-document export"}}
+	}
+	return out
 }
 
-type capture struct {
-	header   http.Header
-	status   int
-	body     bytes.Buffer
-	tooLarge bool
-}
-
-func (c *capture) Header() http.Header { return c.header }
-
-func (c *capture) WriteHeader(status int) {
-	if c.status == 0 {
-		c.status = status
+// documents is the service for a kind of document, by its plural name.
+func (b bridge) documents(kind string) (configdoc.Documents, error) {
+	if d, ok := b.services.Documents(kind); ok {
+		return d, nil
 	}
-}
-
-func (c *capture) Write(p []byte) (int, error) {
-	if c.status == 0 {
-		c.status = http.StatusOK
-	}
-	if c.tooLarge || c.body.Len()+len(p) > maxResponseBytes {
-		c.tooLarge = true
-		return len(p), nil
-	}
-	return c.body.Write(p)
-}
-
-func documentPath(kind, name string) (string, error) {
-	switch kind {
-	case "blueprints", "integrations", "scorecards", "dashboards":
-	default:
-		return "", fmt.Errorf("kind must be blueprints, integrations, scorecards or dashboards")
-	}
-	if name == "" {
-		return kind, nil
-	}
-	if !configdoc.ValidIdentifier(name) {
-		return "", fmt.Errorf("name must be a document identifier")
-	}
-	return kind + "/" + name, nil
+	return nil, badArgs("kind must be blueprints, integrations, scorecards or dashboards")
 }

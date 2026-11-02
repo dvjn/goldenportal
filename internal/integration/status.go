@@ -27,7 +27,11 @@ type Feed struct {
 	Entities  int    `json:"entities"`
 }
 
-func listStatus(ctx *gofr.Context) (any, error) {
+func listStatus(ctx *gofr.Context) (any, error) { return ListStatus(ctx) }
+
+// ListStatus says how each published integration is doing: what it wrote
+// and how its latest runs went.
+func ListStatus(ctx *gofr.Context) ([]Status, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}

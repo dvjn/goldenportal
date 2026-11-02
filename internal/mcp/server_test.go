@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -49,16 +50,16 @@ func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 const baseURL = "https://portal.example.com"
 
-func testServer(t *testing.T, api http.Handler) *httptest.Server {
+func testServer(t *testing.T, services Services) *httptest.Server {
 	t.Helper()
-	return testServerWith(t, api, NewLimiter())
+	return testServerWith(t, services, NewLimiter())
 }
 
-func testServerWith(t *testing.T, api http.Handler, limits *Limiter) *httptest.Server {
+func testServerWith(t *testing.T, services Services, limits *Limiter) *httptest.Server {
 	t.Helper()
 	server := oauth.NewServer(baseURL, "Acme")
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.NotFound(w, nil) })
-	s := httptest.NewServer(Middleware(api, fakeTokens{server.Resource()}, server, "test", limits)(next))
+	s := httptest.NewServer(Middleware(services, testContext, fakeTokens{server.Resource()}, server, "test", limits)(next))
 	t.Cleanup(s.Close)
 	return s
 }
@@ -115,15 +116,8 @@ func listed(t *testing.T, session *mcp.ClientSession) []string {
 	return names
 }
 
-// whoAmI answers each API call with the user it was made as.
-var whoAmI = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	p, _ := auth.FromContext(r.Context())
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"user": p.ID, "role": p.Role}})
-})
-
 func TestToolsFollowRoleAndScope(t *testing.T) {
-	server := testServer(t, whoAmI)
+	server := testServer(t, newFake())
 	for _, test := range []struct {
 		token                       string
 		builderReads, authoringOpen bool
@@ -148,7 +142,7 @@ func TestToolsFollowRoleAndScope(t *testing.T) {
 			}
 			// Calls run as the token's user, never another request's.
 			out := output(t, call(t, session, "list_catalog", map[string]any{}))
-			if out.Status != http.StatusOK || out.Data.(map[string]any)["user"] != test.token {
+			if out.Status != http.StatusOK || out.Data.([]any)[0].(map[string]any)["identifier"] != test.token {
 				t.Errorf("list_catalog ran as %+v", out)
 			}
 			help, err := session.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: guideURI})
@@ -160,7 +154,7 @@ func TestToolsFollowRoleAndScope(t *testing.T) {
 }
 
 func TestAuthoringAnnotations(t *testing.T) {
-	session := connect(t, testServer(t, whoAmI), "builder")
+	session := connect(t, testServer(t, newFake()), "builder")
 	result, err := session.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +190,7 @@ func post(t *testing.T, server *httptest.Server, token string, body string, head
 }
 
 func TestChallengesSayWhereToSignIn(t *testing.T) {
-	server := testServer(t, whoAmI)
+	server := testServer(t, newFake())
 	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`
 	metadata := `resource_metadata="` + baseURL + `/.well-known/oauth-protected-resource/mcp"`
 
@@ -236,51 +230,40 @@ func TestChallengesSayWhereToSignIn(t *testing.T) {
 	}
 }
 
-func TestReadToolsOnlyRead(t *testing.T) {
-	b := bridge{api: whoAmI, caller: grants["builder"]}
-	_, _, err := b.call(context.Background(), tool{name: "list_catalog", readOnly: true}, apiCall{method: http.MethodPost, path: "/api/web/catalog"})
-	if err == nil {
-		t.Error("a read tool made a POST")
-	}
-}
-
-func TestAuthoringBridge(t *testing.T) {
-	var gotMethod, gotPath, gotQuery, gotBody, gotUser string
-	session := connect(t, testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, _ := auth.FromContext(r.Context())
-		raw, _ := json.Marshal(map[string]any{})
-		if r.Body != nil {
-			var body any
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			raw, _ = json.Marshal(body)
-		}
-		gotMethod, gotPath, gotQuery, gotBody, gotUser = r.Method, r.URL.Path, r.URL.RawQuery, string(raw), p.ID
-		if r.Header.Get("Authorization") != "" {
-			t.Error("the client's token was passed on to the API")
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"ok": true}})
-	})), "builder")
+func TestToolsCallServicesAsTheCaller(t *testing.T) {
+	fake := newFake()
+	session := connect(t, testServer(t, fake), "builder")
 
 	call(t, session, "save_draft", map[string]any{"kind": "blueprints", "name": "service", "source": "kind: Blueprint"})
-	if gotMethod != http.MethodPut || gotPath != "/api/web/blueprints/service/draft" || gotUser != "builder" ||
-		!strings.Contains(gotBody, `"source":"kind: Blueprint"`) {
-		t.Errorf("save_draft sent %s %s %s as %s", gotMethod, gotPath, gotBody, gotUser)
+	if got := *fake.last; got.name != "SaveDraft" || got.user != "builder" || !slices.Equal(got.args, []any{"blueprints", "service", "kind: Blueprint"}) {
+		t.Errorf("save_draft called %+v", got)
 	}
 	call(t, session, "apply_documents", map[string]any{"source": "x"})
-	if gotQuery != "dryRun=true" {
-		t.Errorf("apply_documents defaults to a dry run, got %q", gotQuery)
-	}
-	result := call(t, session, "delete_document", map[string]any{"kind": "dashboards", "name": "home", "confirm": "nope"})
-	if !result.IsError {
-		t.Error("delete without the matching confirm went through")
+	if got := *fake.last; got.name != "Apply" || got.args[1] != true {
+		t.Errorf("apply_documents defaults to a dry run, called %+v", got)
 	}
 	call(t, session, "create_ingestion_token", map[string]any{"integration": "push", "name": "CI"})
-	if gotMethod != http.MethodPost || gotPath != "/api/web/integrations/push/tokens" || !strings.Contains(gotBody, `"name":"CI"`) {
-		t.Errorf("create_ingestion_token sent %s %s %s", gotMethod, gotPath, gotBody)
+	if got := *fake.last; got.name != "CreateIngestionToken" || !slices.Equal(got.args, []any{"push", "CI"}) {
+		t.Errorf("create_ingestion_token called %+v", got)
 	}
 	call(t, session, "get_dashboard_data", map[string]any{"name": "services", "inputs": map[string]any{"team": []string{"payments"}, "tier": []string{}}})
-	if gotPath != "/api/web/dashboards/services/data" || !strings.Contains(gotQuery, "input.team=payments") || !strings.Contains(gotQuery, "input.tier=") {
-		t.Errorf("get_dashboard_data sent %s?%s", gotPath, gotQuery)
+	if inputs, _ := fake.last.args[1].(map[string][]string); fake.last.args[0] != "services" ||
+		!slices.Equal(inputs["team"], []string{"payments"}) || inputs["tier"] == nil || len(inputs["tier"]) != 0 {
+		t.Errorf("get_dashboard_data called %+v", *fake.last)
+	}
+
+	// A service's refusal is the tool's error, with its status; anything
+	// else is the portal's problem, which the caller isn't told the details of.
+	refused := call(t, session, "delete_document", map[string]any{"kind": "blueprints", "name": "service", "confirm": "nope"})
+	if out := output(t, refused); !refused.IsError || out.Status != http.StatusBadRequest {
+		t.Errorf("refused delete = %+v", out)
+	}
+	failed := call(t, session, "sync_integration", map[string]any{"name": "source"})
+	if out := output(t, failed); !failed.IsError || out.Status != http.StatusInternalServerError || strings.Contains(fmt.Sprint(out.Error), "10.0.0.5") {
+		t.Errorf("failed sync = %+v", out)
+	}
+	unknown := call(t, session, "list_documents", map[string]any{"kind": "widgets"})
+	if out := output(t, unknown); !unknown.IsError || out.Status != http.StatusBadRequest {
+		t.Errorf("unknown kind = %+v", out)
 	}
 }

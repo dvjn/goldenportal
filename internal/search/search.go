@@ -34,26 +34,33 @@ type Result struct {
 // may be empty, which asks for what to start from, or none.
 type Source func(ctx *gofr.Context, p auth.Principal, text string) ([]Result, error)
 
-// Register serves GET /api/web/search?q=, with every source's results in
-// one list, closest first: exact matches, then those starting with the
-// text, then those containing it. Ties keep the order of sources, then go
-// by title.
-func Register(app httpx.Routes, sources ...Source) {
-	app.GET("search", func(ctx *gofr.Context) (any, error) {
-		p, err := auth.Require(ctx, auth.RoleMember)
-		if err != nil {
+// Service searches every source it was made with.
+type Service struct{ sources []Source }
+
+func New(sources ...Source) Service { return Service{sources: sources} }
+
+// Register serves GET search?q=.
+func Register(app httpx.Routes, s Service) {
+	app.GET("search", func(ctx *gofr.Context) (any, error) { return s.Search(ctx, ctx.Param("q")) })
+}
+
+// Search returns every source's results in one list, closest first: exact
+// matches, then those starting with the text, then those containing it.
+// Ties keep the order of sources, then go by title.
+func (s Service) Search(ctx *gofr.Context, text string) ([]Result, error) {
+	p, err := auth.Require(ctx, auth.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	text = strings.TrimSpace(text)
+	found := make([][]Result, len(s.sources))
+	for i, source := range s.sources {
+		if found[i], err = source(ctx, p, text); err != nil {
 			return nil, err
 		}
-		text := strings.TrimSpace(ctx.Param("q"))
-		found := make([][]Result, len(sources))
-		for i, source := range sources {
-			if found[i], err = source(ctx, p, text); err != nil {
-				return nil, err
-			}
-		}
+	}
 
-		return merge(text, found...), nil
-	})
+	return merge(text, found...), nil
 }
 
 // Match keeps the results whose title or identifier contains text,

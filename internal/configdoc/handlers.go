@@ -24,9 +24,10 @@ var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 func ValidIdentifier(s string) bool { return identifierPattern.MatchString(s) }
 
 // Register serves the documents of kind under <plural>. Members can
-// read them; builders can change them.
+// read them; builders can change them. The handlers read the request and
+// call the kind's service, which MCP calls too.
 func Register[S Spec](app httpx.Routes, kind Kind[S]) {
-	h := handlers[S]{kind: kind}
+	h := documents[S]{kind: kind}
 	kinds = append(kinds, h)
 	base := kind.Plural
 	app.GET(base, h.list)
@@ -42,11 +43,13 @@ func Register[S Spec](app httpx.Routes, kind Kind[S]) {
 	app.GET(base+"/{identifier}/export", h.export)
 }
 
-type handlers[S Spec] struct{ kind Kind[S] }
+// documents is the service for one kind's documents.
+type documents[S Spec] struct{ kind Kind[S] }
 
-func (h handlers[S]) store(ctx *gofr.Context) Store { return NewStore(ctx.SQL, h.kind.Name) }
+func (h documents[S]) store(ctx *gofr.Context) Store { return NewStore(ctx.SQL, h.kind.Name) }
 
-type summary struct {
+// Summary is a document as lists show it.
+type Summary struct {
 	Identifier string `json:"identifier"`
 	Meta
 	PublishedVersion int            `json:"publishedVersion"`
@@ -56,7 +59,10 @@ type summary struct {
 	UpdatedAt        time.Time      `json:"updatedAt"`
 }
 
-func (h handlers[S]) list(ctx *gofr.Context) (any, error) {
+func (h documents[S]) list(ctx *gofr.Context) (any, error) { return h.List(ctx) }
+
+// List summarizes the documents the caller can read.
+func (h documents[S]) List(ctx *gofr.Context) ([]Summary, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
@@ -65,7 +71,7 @@ func (h handlers[S]) list(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	summaries := make([]summary, 0, len(records))
+	summaries := make([]Summary, 0, len(records))
 	for _, record := range records {
 		if !h.canRead(ctx, record) {
 			continue
@@ -80,7 +86,7 @@ func (h handlers[S]) list(ctx *gofr.Context) (any, error) {
 		if record.HasDraft() {
 			updated = record.DraftUpdatedAt
 		}
-		s := summary{
+		s := Summary{
 			Identifier: record.Identifier, Meta: h.meta(record, spec),
 			PublishedVersion: record.PublishedVersion, HasDraft: record.HasDraft(),
 			Stats: spec.Stats(), UpdatedAt: updated,
@@ -96,7 +102,7 @@ func (h handlers[S]) list(ctx *gofr.Context) (any, error) {
 
 // current is the spec the document shows: the draft while there is one,
 // since that's what builders are working on, and otherwise the published one.
-func (h handlers[S]) current(record Record) S {
+func (h documents[S]) current(record Record) S {
 	source := record.PublishedSource
 	if record.HasDraft() {
 		source = record.DraftSource
@@ -106,7 +112,7 @@ func (h handlers[S]) current(record Record) S {
 	return spec
 }
 
-func (h handlers[S]) meta(record Record, spec S) Meta {
+func (h documents[S]) meta(record Record, spec S) Meta {
 	meta := spec.Meta()
 	if meta.Title == "" {
 		meta.Title = record.Identifier
@@ -124,7 +130,7 @@ type validation[S Spec] struct {
 	Issues []Issue `json:"issues"`
 }
 
-func (h handlers[S]) bindSource(ctx *gofr.Context) (string, error) {
+func (h documents[S]) bindSource(ctx *gofr.Context) (string, error) {
 	var req sourceRequest
 	if err := ctx.Bind(&req); err != nil {
 		return "", badRequest(`send the ` + h.kind.Name + ` YAML as {"source": "..."}`)
@@ -133,13 +139,18 @@ func (h handlers[S]) bindSource(ctx *gofr.Context) (string, error) {
 	return req.Source, nil
 }
 
-// validate checks a source without saving it.
-func (h handlers[S]) validate(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
-		return nil, err
-	}
+func (h documents[S]) validate(ctx *gofr.Context) (any, error) {
 	source, err := h.bindSource(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	return h.Validate(ctx, source)
+}
+
+// Validate checks a source without saving it.
+func (h documents[S]) Validate(ctx *gofr.Context, source string) (any, error) {
+	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return nil, err
 	}
 	spec, issues, err := h.check(ctx, source)
@@ -151,7 +162,7 @@ func (h handlers[S]) validate(ctx *gofr.Context) (any, error) {
 }
 
 // check parses source and runs the kind's cross-document checks.
-func (h handlers[S]) check(ctx *gofr.Context, source string) (S, []Issue, error) {
+func (h documents[S]) check(ctx *gofr.Context, source string) (S, []Issue, error) {
 	spec, issues := h.kind.Parse(source)
 	if HasErrors(issues) || h.kind.Check == nil {
 		return spec, orEmpty(issues), nil
@@ -188,11 +199,17 @@ type detail[S Spec] struct {
 	CreatedAt time.Time         `json:"createdAt"`
 }
 
-func (h handlers[S]) get(ctx *gofr.Context) (any, error) {
+func (h documents[S]) get(ctx *gofr.Context) (any, error) {
+	return h.Get(ctx, ctx.PathParam("identifier"))
+}
+
+// Get reads a document: its published version and, for those who may see
+// it, its draft.
+func (h documents[S]) Get(ctx *gofr.Context, identifier string) (any, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	record, err := h.load(ctx)
+	record, err := h.load(ctx, identifier)
 	if err != nil {
 		return nil, err
 	}
@@ -223,36 +240,41 @@ func (h handlers[S]) get(ctx *gofr.Context) (any, error) {
 	return out, nil
 }
 
-type saved struct {
+// Saved is a saved draft: whether it created the document, and its warnings.
+type Saved struct {
 	Created bool    `json:"created"`
 	Issues  []Issue `json:"issues"`
 }
 
-// saveDraft stores a valid source as the draft, creating the document if
-// it's new. Warnings don't stop it.
-func (h handlers[S]) saveDraft(ctx *gofr.Context) (any, error) {
-	p, err := auth.Require(ctx, auth.RoleBuilder)
-	if err != nil {
-		return nil, err
-	}
-	identifier, err := h.identifierParam(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (h documents[S]) saveDraft(ctx *gofr.Context) (any, error) {
 	source, err := h.bindSource(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	return h.SaveDraft(ctx, ctx.PathParam("identifier"), source)
+}
+
+// SaveDraft stores a valid source as the draft, creating the document if
+// it's new. Warnings don't stop it.
+func (h documents[S]) SaveDraft(ctx *gofr.Context, identifier, source string) (Saved, error) {
+	p, err := auth.Require(ctx, auth.RoleBuilder)
+	if err != nil {
+		return Saved{}, err
+	}
+	if !ValidIdentifier(identifier) {
+		return Saved{}, h.notFound()
+	}
+
 	spec, issues, err := h.check(ctx, source)
 	if err != nil {
-		return nil, err
+		return Saved{}, err
 	}
 	if err := h.invalid(issues); err != nil {
-		return nil, err
+		return Saved{}, err
 	}
 	if spec.Key() != identifier {
-		return nil, httpx.Error{
+		return Saved{}, httpx.Error{
 			Code:    http.StatusUnprocessableEntity,
 			Message: fmt.Sprintf("the YAML's identifier is %q, not %q; identifiers can't change", spec.Key(), identifier),
 		}
@@ -260,38 +282,43 @@ func (h handlers[S]) saveDraft(ctx *gofr.Context) (any, error) {
 
 	created, err := h.store(ctx).SaveDraft(ctx, identifier, source, p.ID)
 	if err != nil {
-		return nil, err
+		return Saved{}, err
 	}
 	auth.Record(ctx, p, h.kind.Action(OpDraftSave), h.target(identifier, spec), map[string]any{"created": created})
 
-	return saved{Created: created, Issues: issues}, nil
+	return Saved{Created: created, Issues: issues}, nil
 }
 
-// discardDraft drops the draft, and the document too if it was never published.
-func (h handlers[S]) discardDraft(ctx *gofr.Context) (any, error) {
+func (h documents[S]) discardDraft(ctx *gofr.Context) (any, error) {
+	return nil, h.DiscardDraft(ctx, ctx.PathParam("identifier"))
+}
+
+// DiscardDraft drops the draft, and the document too if it was never published.
+func (h documents[S]) DiscardDraft(ctx *gofr.Context, identifier string) error {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	record, err := h.load(ctx)
+	record, err := h.load(ctx, identifier)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	deleted, err := h.store(ctx).DiscardDraft(ctx, record.Identifier)
 	if errors.Is(err, ErrNoDraft) {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "this " + h.kind.Name + " has no draft"}
+		return httpx.Error{Code: http.StatusNotFound, Message: "this " + h.kind.Name + " has no draft"}
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 	auth.Record(ctx, p, h.kind.Action(OpDraftDiscard), h.target(record.Identifier, h.current(record)),
 		map[string]any{"deleted": deleted})
 
-	return nil, nil
+	return nil
 }
 
-type impactView struct {
+// Impact is what publishing a draft would change.
+type Impact struct {
 	FirstVersion bool     `json:"firstVersion"`
 	Changes      []Change `json:"changes"`
 	Breaking     bool     `json:"breaking"`
@@ -300,34 +327,35 @@ type impactView struct {
 	Issues   []Issue `json:"issues"`
 }
 
-// impact previews what publishing the draft would change.
-func (h handlers[S]) impact(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
-		return nil, err
-	}
-	record, err := h.load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	view, _, err := h.draftImpact(ctx, record)
-	if err != nil {
-		return nil, err
-	}
-
-	return view, nil
+func (h documents[S]) impact(ctx *gofr.Context) (any, error) {
+	return h.Impact(ctx, ctx.PathParam("identifier"))
 }
 
-func (h handlers[S]) draftImpact(ctx *gofr.Context, record Record) (impactView, S, error) {
+// Impact previews what publishing the draft would change.
+func (h documents[S]) Impact(ctx *gofr.Context, identifier string) (Impact, error) {
+	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
+		return Impact{}, err
+	}
+	record, err := h.load(ctx, identifier)
+	if err != nil {
+		return Impact{}, err
+	}
+	view, _, err := h.draftImpact(ctx, record)
+
+	return view, err
+}
+
+func (h documents[S]) draftImpact(ctx *gofr.Context, record Record) (Impact, S, error) {
 	var zero S
 	if !record.HasDraft() {
-		return impactView{}, zero, httpx.Error{Code: http.StatusNotFound, Message: "this " + h.kind.Name + " has no draft"}
+		return Impact{}, zero, httpx.Error{Code: http.StatusNotFound, Message: "this " + h.kind.Name + " has no draft"}
 	}
 	draft, issues, err := h.check(ctx, record.DraftSource)
 	if err != nil {
-		return impactView{}, zero, err
+		return Impact{}, zero, err
 	}
 
-	view := impactView{FirstVersion: !record.Published(), Issues: issues, Changes: []Change{}}
+	view := Impact{FirstVersion: !record.Published(), Issues: issues, Changes: []Change{}}
 	if record.Published() && h.kind.Diff != nil {
 		published, _ := h.kind.Parse(record.PublishedSource)
 		view.Changes = h.kind.Diff(published, draft)
@@ -335,7 +363,7 @@ func (h handlers[S]) draftImpact(ctx *gofr.Context, record Record) (impactView, 
 	}
 	if view.Breaking && h.kind.Affected != nil {
 		if view.Affected, err = h.kind.Affected(ctx, ctx.SQL, record.Identifier); err != nil {
-			return impactView{}, zero, err
+			return Impact{}, zero, err
 		}
 	}
 
@@ -346,45 +374,45 @@ type publishRequest struct {
 	AcknowledgeBreaking bool `json:"acknowledgeBreaking"`
 }
 
-type published struct {
-	Version int `json:"version"`
-}
-
-// publish makes the draft the next version. Breaking changes need
-// acknowledgeBreaking, so scripts can't break data by accident.
-func (h handlers[S]) publish(ctx *gofr.Context) (any, error) {
-	p, err := auth.Require(ctx, auth.RoleBuilder)
-	if err != nil {
-		return nil, err
-	}
-	identifier, err := h.identifierParam(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (h documents[S]) publish(ctx *gofr.Context) (any, error) {
 	var req publishRequest
 	// An empty body means no acknowledgement.
 	_ = ctx.Bind(&req)
 
+	return h.Publish(ctx, ctx.PathParam("identifier"), req.AcknowledgeBreaking)
+}
+
+// Publish makes the draft the next version. Breaking changes need
+// acknowledgeBreaking, so scripts can't break data by accident.
+func (h documents[S]) Publish(ctx *gofr.Context, identifier string, acknowledgeBreaking bool) (Published, error) {
+	p, err := auth.Require(ctx, auth.RoleBuilder)
+	if err != nil {
+		return Published{}, err
+	}
+	if !ValidIdentifier(identifier) {
+		return Published{}, h.notFound()
+	}
+
 	tx, err := ctx.SQL.Begin()
 	if err != nil {
-		return nil, err
+		return Published{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	out, err := h.publishDraft(ctx, tx, p, identifier, req.AcknowledgeBreaking)
+	out, err := h.publishDraft(ctx, tx, p, identifier, acknowledgeBreaking)
 	if err != nil {
-		return nil, err
+		return Published{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return Published{}, err
 	}
 	h.recordPublish(ctx, p, out)
 
-	return published{Version: out.Version}, nil
+	return out, nil
 }
 
 // publishDraft checks a draft and publishes it within tx. Checks see what
 // ctx has pending, so drafts published together can refer to each other.
-func (h handlers[S]) publishDraft(ctx *gofr.Context, tx DB, p auth.Principal, identifier string, acknowledgeBreaking bool) (Published, error) {
+func (h documents[S]) publishDraft(ctx *gofr.Context, tx DB, p auth.Principal, identifier string, acknowledgeBreaking bool) (Published, error) {
 	record, err := NewStore(ctx.SQL, h.kind.Name).Get(ctx, identifier)
 	if errors.Is(err, ErrNotFound) {
 		return Published{}, h.notFound()
@@ -433,16 +461,18 @@ func (h handlers[S]) publishDraft(ctx *gofr.Context, tx DB, p auth.Principal, id
 	}, nil
 }
 
-func (h handlers[S]) recordPublish(ctx *gofr.Context, p auth.Principal, out Published) {
+func (h documents[S]) recordPublish(ctx *gofr.Context, p auth.Principal, out Published) {
 	auth.Record(ctx, p, h.kind.Action(OpPublish), audit.Target{Type: h.kind.Name, ID: out.Name, Label: out.title},
 		map[string]any{"version": out.Version, "changes": out.changes, "breaking": out.Breaking})
 }
 
-func (h handlers[S]) documentKind() string { return h.kind.Document }
+func (h documents[S]) documentKind() string { return h.kind.Document }
+
+func (h documents[S]) plural() string { return h.kind.Plural }
 
 // plan works out what applying source would do, checking it against
 // whatever ctx has pending.
-func (h handlers[S]) plan(ctx context.Context, db DB, source string) (Planned, error) {
+func (h documents[S]) plan(ctx context.Context, db DB, source string) (Planned, error) {
 	spec, issues := h.kind.Parse(source)
 	out := Planned{Kind: h.kind.Document, Name: spec.Key(), Changes: []Change{}, source: source}
 	if !HasErrors(issues) && h.kind.Check != nil {
@@ -479,7 +509,7 @@ func (h handlers[S]) plan(ctx context.Context, db DB, source string) (Planned, e
 	return out, nil
 }
 
-func (h handlers[S]) currentSource(record Record) string {
+func (h documents[S]) currentSource(record Record) string {
 	if record.HasDraft() {
 		return record.DraftSource
 	}
@@ -487,7 +517,7 @@ func (h handlers[S]) currentSource(record Record) string {
 	return record.PublishedSource
 }
 
-func (h handlers[S]) saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, name, source string) error {
+func (h documents[S]) saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, name, source string) error {
 	created, err := NewStore(db, h.kind.Name).SaveDraft(ctx, name, source, p.ID)
 	if err != nil {
 		return err
@@ -498,7 +528,7 @@ func (h handlers[S]) saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, nam
 	return nil
 }
 
-func (h handlers[S]) publishedSources(ctx context.Context, db DB) (map[string]string, error) {
+func (h documents[S]) publishedSources(ctx context.Context, db DB) (map[string]string, error) {
 	sources, err := NewStore(db, h.kind.Name).PublishedSources(ctx)
 	if err != nil {
 		return nil, err
@@ -515,7 +545,7 @@ func (h handlers[S]) publishedSources(ctx context.Context, db DB) (map[string]st
 	return sources, nil
 }
 
-func (h handlers[S]) draftSource(ctx context.Context, db DB, name string) (string, error) {
+func (h documents[S]) draftSource(ctx context.Context, db DB, name string) (string, error) {
 	record, err := NewStore(db, h.kind.Name).Get(ctx, name)
 	if errors.Is(err, ErrNotFound) {
 		return "", httpx.Error{Code: http.StatusNotFound, Message: "no such " + h.kind.Name + " " + name}
@@ -530,11 +560,16 @@ func (h handlers[S]) draftSource(ctx context.Context, db DB, name string) (strin
 	return record.DraftSource, nil
 }
 
-func (h handlers[S]) versions(ctx *gofr.Context) (any, error) {
+func (h documents[S]) versions(ctx *gofr.Context) (any, error) {
+	return h.Versions(ctx, ctx.PathParam("identifier"))
+}
+
+// Versions lists a document's published versions.
+func (h documents[S]) Versions(ctx *gofr.Context, identifier string) ([]Version, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	record, err := h.load(ctx)
+	record, err := h.load(ctx, identifier)
 	if err != nil {
 		return nil, err
 	}
@@ -542,92 +577,112 @@ func (h handlers[S]) versions(ctx *gofr.Context) (any, error) {
 	return h.store(ctx).Versions(ctx, record.Identifier)
 }
 
-func (h handlers[S]) version(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
-		return nil, err
-	}
-	record, err := h.load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	identifier := record.Identifier
+func (h documents[S]) version(ctx *gofr.Context) (any, error) {
 	n, err := strconv.Atoi(ctx.PathParam("version"))
-	if err != nil || n < 1 {
+	if err != nil {
 		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such version"}
 	}
 
-	v, err := h.store(ctx).Version(ctx, identifier, n)
+	return h.Version(ctx, ctx.PathParam("identifier"), n)
+}
+
+// Version reads a numbered version's exact source.
+func (h documents[S]) Version(ctx *gofr.Context, identifier string, n int) (Version, error) {
+	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+		return Version{}, err
+	}
+	record, err := h.load(ctx, identifier)
+	if err != nil {
+		return Version{}, err
+	}
+	if n < 1 {
+		return Version{}, httpx.Error{Code: http.StatusNotFound, Message: "no such version"}
+	}
+
+	v, err := h.store(ctx).Version(ctx, record.Identifier, n)
 	if errors.Is(err, ErrNotFound) {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such version"}
+		return Version{}, httpx.Error{Code: http.StatusNotFound, Message: "no such version"}
 	}
 
 	if err == nil && h.kind.Readable != nil {
 		p, _ := auth.FromContext(ctx)
 		spec, issues := h.kind.Parse(v.Source)
 		if !p.Can(auth.RoleBuilder) && (HasErrors(issues) || !h.kind.Readable(spec, p)) {
-			return nil, h.notFound()
+			return Version{}, h.notFound()
 		}
 	}
 	return v, err
 }
 
-// export returns the published YAML as written, or the draft with ?draft=true.
-func (h handlers[S]) export(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
-		return nil, err
-	}
-	record, err := h.load(ctx)
+func (h documents[S]) export(ctx *gofr.Context) (any, error) {
+	source, err := h.Export(ctx, ctx.PathParam("identifier"), ctx.Param("draft") == "true")
 	if err != nil {
 		return nil, err
-	}
-
-	source := record.PublishedSource
-	if ctx.Param("draft") == "true" {
-		p, _ := auth.FromContext(ctx)
-		if h.kind.Readable != nil && !p.Can(auth.RoleBuilder) {
-			return nil, h.notFound()
-		}
-		source = record.DraftSource
-	}
-	if source == "" {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "there is nothing to export yet"}
 	}
 
 	return response.File{Content: []byte(source), ContentType: "application/yaml"}, nil
 }
 
-// remove deletes a document. The caller confirms by repeating the identifier
-// as ?confirm=.
-func (h handlers[S]) remove(ctx *gofr.Context) (any, error) {
+// Export returns the published YAML as written, or the draft.
+func (h documents[S]) Export(ctx *gofr.Context, identifier string, draft bool) (string, error) {
+	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+		return "", err
+	}
+	record, err := h.load(ctx, identifier)
+	if err != nil {
+		return "", err
+	}
+
+	source := record.PublishedSource
+	if draft {
+		p, _ := auth.FromContext(ctx)
+		if h.kind.Readable != nil && !p.Can(auth.RoleBuilder) {
+			return "", h.notFound()
+		}
+		source = record.DraftSource
+	}
+	if source == "" {
+		return "", httpx.Error{Code: http.StatusNotFound, Message: "there is nothing to export yet"}
+	}
+
+	return source, nil
+}
+
+func (h documents[S]) remove(ctx *gofr.Context) (any, error) {
+	return nil, h.Delete(ctx, ctx.PathParam("identifier"), ctx.Param("confirm"))
+}
+
+// Delete deletes a document. The caller confirms by repeating its
+// identifier.
+func (h documents[S]) Delete(ctx *gofr.Context, identifier, confirm string) error {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	record, err := h.load(ctx)
+	record, err := h.load(ctx, identifier)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if ctx.Param("confirm") != record.Identifier {
-		return nil, badRequest("confirm the deletion by passing the " + h.kind.Name + "'s identifier as confirm")
+	if confirm != record.Identifier {
+		return badRequest("confirm the deletion by passing the " + h.kind.Name + "'s identifier as confirm")
 	}
 	if h.kind.Deletable != nil {
 		if err := h.kind.Deletable(ctx, ctx.SQL, record.Identifier); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	if err := h.store(ctx).Delete(ctx, record.Identifier); err != nil {
-		return nil, err
+		return err
 	}
 	auth.Record(ctx, p, h.kind.Action(OpDelete), h.target(record.Identifier, h.current(record)), nil)
 
-	return nil, nil
+	return nil
 }
 
-func (h handlers[S]) load(ctx *gofr.Context) (Record, error) {
-	identifier, err := h.identifierParam(ctx)
-	if err != nil {
-		return Record{}, err
+func (h documents[S]) load(ctx *gofr.Context, identifier string) (Record, error) {
+	if !ValidIdentifier(identifier) {
+		return Record{}, h.notFound()
 	}
 	record, err := h.store(ctx).Get(ctx, identifier)
 	if errors.Is(err, ErrNotFound) {
@@ -640,7 +695,7 @@ func (h handlers[S]) load(ctx *gofr.Context) (Record, error) {
 	return record, err
 }
 
-func (h handlers[S]) canRead(ctx context.Context, record Record) bool {
+func (h documents[S]) canRead(ctx context.Context, record Record) bool {
 	if h.kind.Readable == nil {
 		return true
 	}
@@ -655,17 +710,8 @@ func (h handlers[S]) canRead(ctx context.Context, record Record) bool {
 	return !HasErrors(issues) && h.kind.Readable(spec, p)
 }
 
-func (h handlers[S]) identifierParam(ctx *gofr.Context) (string, error) {
-	identifier := ctx.PathParam("identifier")
-	if !ValidIdentifier(identifier) {
-		return "", h.notFound()
-	}
-
-	return identifier, nil
-}
-
 // invalid turns errors among issues into a 422 naming the first few.
-func (h handlers[S]) invalid(issues []Issue) error {
+func (h documents[S]) invalid(issues []Issue) error {
 	var messages []string
 	for _, issue := range issues {
 		if issue.Severity != SeverityError {
@@ -690,7 +736,7 @@ func (h handlers[S]) invalid(issues []Issue) error {
 	}
 }
 
-func (h handlers[S]) target(identifier string, spec S) audit.Target {
+func (h documents[S]) target(identifier string, spec S) audit.Target {
 	title := spec.Meta().Title
 	if title == "" {
 		title = identifier
@@ -699,7 +745,7 @@ func (h handlers[S]) target(identifier string, spec S) audit.Target {
 	return audit.Target{Type: h.kind.Name, ID: identifier, Label: title}
 }
 
-func (h handlers[S]) notFound() error {
+func (h documents[S]) notFound() error {
 	return httpx.Error{Code: http.StatusNotFound, Message: "no such " + h.kind.Name}
 }
 

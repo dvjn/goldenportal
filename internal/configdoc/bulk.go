@@ -17,6 +17,7 @@ import (
 // bulkKind is what apply, publish and export need from a kind, whatever its spec type.
 type bulkKind interface {
 	documentKind() string
+	plural() string
 	plan(ctx context.Context, db DB, source string) (Planned, error)
 	saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, name, source string) error
 	publishDraft(ctx *gofr.Context, db DB, p auth.Principal, name string, acknowledgeBreaking bool) (Published, error)
@@ -94,30 +95,34 @@ type applyRequest struct {
 	Source string `json:"source"`
 }
 
-type applied struct {
+func apply(ctx *gofr.Context) (any, error) {
+	var req applyRequest
+	if err := ctx.Bind(&req); err != nil {
+		return nil, badRequest(`send the YAML as {"source": "..."}`)
+	}
+
+	return Apply(ctx, req.Source, ctx.Param("dryRun") == "true")
+}
+
+// Applied is what applying a multi-document file did, or would do.
+type Applied struct {
 	DryRun    bool      `json:"dryRun"`
 	Valid     bool      `json:"valid"`
 	Documents []Planned `json:"documents"`
 }
 
-// apply checks a multi-document file as a set and, unless dryRun=true,
-// saves a draft of every document that changed, all or nothing. Documents
-// can refer to each other, so a blueprint and the integration that writes
-// it can arrive together.
-func apply(ctx *gofr.Context) (any, error) {
+// Apply checks a multi-document file as a set and, unless dryRun, saves a
+// draft of every document that changed, all or nothing. Documents can
+// refer to each other, so a blueprint and the integration that writes it
+// can arrive together.
+func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
 	if err != nil {
-		return nil, err
+		return Applied{}, err
 	}
-	var req applyRequest
-	if err := ctx.Bind(&req); err != nil {
-		return nil, badRequest(`send the YAML as {"source": "..."}`)
-	}
-	dryRun := ctx.Param("dryRun") == "true"
-
-	chunks := SplitDocuments(req.Source)
+	chunks := SplitDocuments(source)
 	if len(chunks) == 0 {
-		return nil, badRequest("there are no documents to apply")
+		return Applied{}, badRequest("there are no documents to apply")
 	}
 
 	type entry struct {
@@ -127,7 +132,7 @@ func apply(ctx *gofr.Context) (any, error) {
 	}
 	entries := make([]entry, 0, len(chunks))
 	pending := map[string]map[string]string{}
-	result := applied{DryRun: dryRun, Valid: true, Documents: []Planned{}}
+	result := Applied{DryRun: dryRun, Valid: true, Documents: []Planned{}}
 	seen := map[string]bool{}
 
 	for _, chunk := range chunks {
@@ -170,7 +175,7 @@ func apply(ctx *gofr.Context) (any, error) {
 	for _, e := range entries {
 		planned, err := e.kind.plan(checkCtx, ctx.SQL, e.chunk.Source)
 		if err != nil {
-			return nil, err
+			return Applied{}, err
 		}
 		planned.Issues = shift(planned.Issues, e.chunk.Line)
 		if HasErrors(planned.Issues) {
@@ -183,7 +188,7 @@ func apply(ctx *gofr.Context) (any, error) {
 		return result, nil
 	}
 	if !result.Valid {
-		return nil, httpx.Error{
+		return Applied{}, httpx.Error{
 			Code:    http.StatusUnprocessableEntity,
 			Message: "some documents have problems; apply with dryRun=true to see them",
 		}
@@ -191,7 +196,7 @@ func apply(ctx *gofr.Context) (any, error) {
 
 	tx, err := ctx.SQL.Begin()
 	if err != nil {
-		return nil, err
+		return Applied{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	for i, e := range entries {
@@ -199,11 +204,11 @@ func apply(ctx *gofr.Context) (any, error) {
 			continue
 		}
 		if err := e.kind.saveDraftAs(ctx, tx, p, result.Documents[i].Name, e.chunk.Source); err != nil {
-			return nil, err
+			return Applied{}, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return Applied{}, err
 	}
 
 	return result, nil
@@ -267,19 +272,27 @@ type Published struct {
 	changes  int
 }
 
-// publishMany publishes several drafts in one transaction, blueprints before
-// the integrations that write them. Their drafts see each other when checked.
 func publishMany(ctx *gofr.Context) (any, error) {
+	var req publishManyRequest
+	if err := ctx.Bind(&req); err != nil {
+		return nil, badRequest(`send the drafts to publish as {"documents": [{"kind": "Blueprint", "name": "service"}]}`)
+	}
+
+	return PublishMany(ctx, req.Documents, req.AcknowledgeBreaking)
+}
+
+// PublishMany publishes several drafts in one transaction, blueprints before
+// the integrations that write them. Their drafts see each other when checked.
+func PublishMany(ctx *gofr.Context, documents []DocumentRef, acknowledgeBreaking bool) ([]Published, error) {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
 	if err != nil {
 		return nil, err
 	}
-	var req publishManyRequest
-	if err := ctx.Bind(&req); err != nil || len(req.Documents) == 0 {
+	if len(documents) == 0 {
 		return nil, badRequest(`send the drafts to publish as {"documents": [{"kind": "Blueprint", "name": "service"}]}`)
 	}
 
-	refs := append([]DocumentRef(nil), req.Documents...)
+	refs := append([]DocumentRef(nil), documents...)
 	for _, ref := range refs {
 		if _, ok := kindFor(ref.Kind); !ok {
 			return nil, badRequest(fmt.Sprintf("unknown kind %q; use %s", ref.Kind, strings.Join(documentKinds(), " or ")))
@@ -311,7 +324,7 @@ func publishMany(ctx *gofr.Context) (any, error) {
 	out := make([]Published, 0, len(refs))
 	for _, ref := range refs {
 		k, _ := kindFor(ref.Kind)
-		published, err := k.publishDraft(&checkCtx, tx, p, ref.Name, req.AcknowledgeBreaking)
+		published, err := k.publishDraft(&checkCtx, tx, p, ref.Name, acknowledgeBreaking)
 		if err != nil {
 			return nil, err
 		}
@@ -337,25 +350,35 @@ func sortRefs(refs []DocumentRef) {
 	}
 }
 
-// exportAll returns every published document as one multi-document YAML
-// file, in dependency order, so applying it rebuilds the configuration.
 func exportAll(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+	source, err := ExportAll(ctx)
+	if err != nil {
 		return nil, err
+	}
+
+	return response.File{Content: []byte(source), ContentType: "application/yaml"}, nil
+}
+
+// ExportAll returns every published document the caller can read as one
+// multi-document YAML file, in dependency order, so applying it rebuilds
+// the configuration.
+func ExportAll(ctx *gofr.Context) (string, error) {
+	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+		return "", err
 	}
 
 	var documents []string
 	for _, k := range kinds {
 		sources, err := k.publishedSources(ctx, ctx.SQL)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		for _, name := range sortedKeys(sources) {
 			documents = append(documents, strings.TrimRight(sources[name], "\n")+"\n")
 		}
 	}
 
-	return response.File{Content: []byte(strings.Join(documents, "---\n")), ContentType: "application/yaml"}, nil
+	return strings.Join(documents, "---\n"), nil
 }
 
 func sortedKeys(m map[string]string) []string {

@@ -5,20 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/oauth"
 )
 
 // Resources are what a user attaches to a conversation, such as a
 // document's YAML. They only read, so they need portal:read, and every
-// read runs through the API as the caller, like a tool.
+// read calls services as the caller, like a tool.
 const (
 	guideURI            = "portal://guide/authoring"
 	documentTemplate    = "portal://documents/{kind}/{name}"
@@ -61,14 +62,14 @@ func addResources(s *mcp.Server, b bridge) {
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		uri := req.Params.URI
 		kind, name, _ := strings.Cut(strings.TrimPrefix(uri, documentURIPrefix), "/")
-		path, err := requiredDocument(documentArgs{kind, name})
+		d, err := b.document(documentArgs{kind, name})
 		if err != nil {
 			return nil, mcp.ResourceNotFoundError(uri)
 		}
-		out, err := b.fetch(ctx, apiCall{method: http.MethodGet, path: path + "/export"})
-		if err != nil {
-			return nil, err
-		}
+		out := b.run(ctx, func(g *gofr.Context) (any, error) {
+			source, err := d.Export(g, name, false)
+			return yaml(source), err
+		})
 		if err := readError(uri, out); err != nil {
 			return nil, err
 		}
@@ -80,14 +81,10 @@ func addResources(s *mcp.Server, b bridge) {
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		uri := req.Params.URI
 		blueprint, identifier, _ := strings.Cut(strings.TrimPrefix(uri, entityURIPrefix), "/")
-		call, err := entityCall(entityArgs{blueprint, identifier})
-		if err != nil {
+		if blueprint == "" || identifier == "" {
 			return nil, mcp.ResourceNotFoundError(uri)
 		}
-		out, err := b.fetch(ctx, call)
-		if err != nil {
-			return nil, err
-		}
+		out := b.run(ctx, func(g *gofr.Context) (any, error) { return b.services.Entity(g, blueprint, identifier) })
 		if err := readError(uri, out); err != nil {
 			return nil, err
 		}
@@ -103,7 +100,7 @@ func textResult(uri, mimeType, text string) *mcp.ReadResourceResult {
 	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: mimeType, Text: text}}}
 }
 
-// readError turns a failed API read into the error the spec asks for:
+// readError turns a failed read into the error the spec asks for:
 // what the caller can't see is as missing as what doesn't exist.
 func readError(uri string, out Output) error {
 	switch {
@@ -159,19 +156,21 @@ func (b bridge) suggest(ctx context.Context, argument, typed string, known map[s
 	case "scorecard":
 		candidates = b.identifiers(ctx, "scorecards")
 	case "connector":
-		candidates = b.list(ctx, apiCall{method: http.MethodGet, path: "connectors"}, "id")
+		connectors, _ := quietly(b, ctx, b.services.Connectors)
+		for _, c := range connectors {
+			candidates = append(candidates, c.ID)
+		}
 	case "identifier":
 		// Entity search matches anywhere in a title or identifier, which is
 		// what someone typing part of a name wants, so its results stand.
-		blueprint := known["blueprint"]
-		if !configdoc.ValidIdentifier(blueprint) {
-			return nil
+		page, _ := quietly(b, ctx, func(g *gofr.Context) (entity.Page, error) {
+			return b.services.Entities(g, known["blueprint"], entity.ListRequest{Search: typed, Size: 20})
+		})
+		var values []string
+		for _, e := range page.Entities {
+			values = append(values, e.Identifier)
 		}
-		q := url.Values{"size": {"20"}}
-		if typed != "" {
-			q.Set("q", typed)
-		}
-		return b.list(ctx, apiCall{method: http.MethodGet, path: "catalog/" + blueprint, query: q}, "identifier")
+		return values
 	}
 	var values []string
 	for _, candidate := range candidates {
@@ -183,36 +182,23 @@ func (b bridge) suggest(ctx context.Context, argument, typed string, known map[s
 }
 
 func (b bridge) identifiers(ctx context.Context, kind string) []string {
-	path, err := documentPath(kind, "")
+	d, err := b.documents(kind)
 	if err != nil {
 		return nil
 	}
-	return b.list(ctx, apiCall{method: http.MethodGet, path: path}, "identifier")
-}
-
-// list reads field from each item an API list returns, whether the list is
-// the data itself or a page of entities.
-func (b bridge) list(ctx context.Context, call apiCall, field string) []string {
-	out, err := b.fetch(ctx, call)
-	if err != nil || out.Status >= 400 {
-		return nil
-	}
-	items, ok := out.Data.([]any)
-	if paged, isPaged := out.Data.(map[string]any); isPaged {
-		items, ok = paged["entities"].([]any)
-	}
-	if !ok {
-		return nil
-	}
+	summaries, _ := quietly(b, ctx, d.List)
 	var values []string
-	for _, item := range items {
-		if m, ok := item.(map[string]any); ok {
-			if v, ok := m[field].(string); ok {
-				values = append(values, v)
-			}
-		}
+	for _, s := range summaries {
+		values = append(values, s.Identifier)
 	}
 	return values
+}
+
+// quietly calls a service as the caller for a suggestion, which is
+// nothing when the call fails.
+func quietly[T any](b bridge, ctx context.Context, do func(*gofr.Context) (T, error)) (T, bool) {
+	v, err := do(b.context(ctx))
+	return v, err == nil
 }
 
 // link points a tool's result at the resource it read, so a client can

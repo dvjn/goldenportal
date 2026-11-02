@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -21,11 +22,12 @@ import (
 	"github.com/dvjn/goldenportal/migrations"
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
+	"gofr.dev/pkg/gofr/logging"
 )
 
 func New() *gofr.App {
 	app := gofr.New()
-	api := newAPIRoutes(app)
+	api := webRoutes{app}
 	app.Migrate(migrations.All())
 
 	secureCookies := app.Config.GetOrDefault("GP_COOKIE_SECURE", "true") != "false"
@@ -60,12 +62,16 @@ func New() *gofr.App {
 	}
 	app.UseMiddleware(favicon, web.SPA(web.Dist()), httpx.WithQuery)
 	mcpLimits := portalmcp.NewLimiter()
+	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
 		backend := auth.Middleware(store)(oidc.Routes(store)(next))
-		// MCP tools run API calls in-process as the token's user, who the MCP
+		// MCP tools call the services as the token's user, who the MCP
 		// endpoint already signed in.
-		mcp := portalmcp.Middleware(httpx.WithQuery(api.handler(c)), oauth.NewStore(c.SQL), oauthServer, app.Config.Get("APP_VERSION"), mcpLimits)(backend)
+		newContext := func(ctx context.Context) *gofr.Context {
+			return &gofr.Context{Context: ctx, Container: c, ContextLogger: logging.ContextLoggerFor(ctx, c.Logger)}
+		}
+		mcp := portalmcp.Middleware(portalmcp.NewServices(searcher), newContext, oauth.NewStore(c.SQL), oauthServer, app.Config.Get("APP_VERSION"), mcpLimits)(backend)
 		return scimServer.Routes(c.SQL)(oauthServer.Routes(c.SQL)(mcp))
 	})
 
@@ -82,7 +88,7 @@ func New() *gofr.App {
 	integration.RegisterIngest(app)
 	scorecard.Register(api)
 	dashboard.Register(api)
-	search.Register(api, blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
+	search.Register(api, searcher)
 	configdoc.RegisterBulk(api)
 	configdoc.RegisterSchemas(api)
 	registerSettings(api, describeConfig(app.Config, oidc, scimServer), oidc, scimServer)

@@ -22,6 +22,8 @@ import (
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
+// Register serves dashboards and pages. The handlers read the request and
+// call the services below, which MCP calls too.
 func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
 	app.GET("home", home)
@@ -30,8 +32,11 @@ func Register(app httpx.Routes) {
 	app.GET("catalog/{blueprint}/pages/{page}/{tab}", blueprintData)
 }
 
-// home lists the published dashboards, in the order Home shows them.
-func home(ctx *gofr.Context) (any, error) {
+func home(ctx *gofr.Context) (any, error) { return Home(ctx) }
+
+// Home lists the published dashboards the caller sees, in the order Home
+// shows them.
+func Home(ctx *gofr.Context) ([]HomeDashboard, error) {
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
 		return nil, err
@@ -53,7 +58,7 @@ func home(ctx *gofr.Context) (any, error) {
 		return strings.Compare(a.Title+"\x00"+a.Identifier, b.Title+"\x00"+b.Identifier)
 	})
 
-	views := make([]homeDashboard, 0, len(specs))
+	views := make([]HomeDashboard, 0, len(specs))
 	preferred := false
 	for _, spec := range specs {
 		v, problems := view(ctx, find(ctx), spec, p)
@@ -68,16 +73,20 @@ func home(ctx *gofr.Context) (any, error) {
 	return views, nil
 }
 
-// dashboardView is one dashboard as Home would show it to whoever is
-// looking, from the draft for builders who ask, so they can preview it.
 func dashboardView(ctx *gofr.Context) (any, error) {
+	return View(ctx, ctx.PathParam("identifier"), ctx.Param("draft") == "true")
+}
+
+// View is one dashboard as Home would show it to whoever is looking, from
+// the draft for builders who ask, so they can preview it.
+func View(ctx *gofr.Context, name string, draft bool) (HomeDashboard, error) {
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
-		return nil, err
+		return HomeDashboard{}, err
 	}
-	src, err := source(ctx, p, Name, ctx.PathParam("identifier"))
+	src, err := source(ctx, p, Name, name, draft)
 	if err != nil {
-		return nil, err
+		return HomeDashboard{}, err
 	}
 	spec, _ := Parse(src)
 	v, problems := view(ctx, find(ctx), spec, p)
@@ -86,9 +95,9 @@ func dashboardView(ctx *gofr.Context) (any, error) {
 	return v, nil
 }
 
-// homeDashboard is a dashboard as Home shows it to whoever is looking,
+// HomeDashboard is a dashboard as Home shows it to whoever is looking,
 // with its text filled in for them.
-type homeDashboard struct {
+type HomeDashboard struct {
 	Spec
 	Preferred bool `json:"preferred,omitempty"`
 	// Defaults are what the inputs start at for them, by identifier, with
@@ -102,11 +111,11 @@ type homeDashboard struct {
 
 // view works out how whoever is looking sees a dashboard, and what went
 // wrong finding its defaults, for the log.
-func view(ctx context.Context, find finder, spec Spec, p auth.Principal) (homeDashboard, map[string]error) {
+func view(ctx context.Context, find finder, spec Spec, p auth.Principal) (HomeDashboard, map[string]error) {
 	me := widget.MeValues(p)
 	widget.SetToday(me, time.Now())
 	values, problems := defaults(ctx, find, spec, me, nil)
-	v := homeDashboard{Spec: spec.render(me), Defaults: map[string][]string{}, Problems: map[string]string{}}
+	v := HomeDashboard{Spec: spec.render(me), Defaults: map[string][]string{}, Problems: map[string]string{}}
 	for _, in := range spec.Inputs {
 		if value := values[widget.ValueInput+in.ID]; value != nil {
 			v.Defaults[in.ID] = value
@@ -198,11 +207,10 @@ func defaults(ctx context.Context, find finder, spec Spec, me, picked widget.Val
 	return values, problems
 }
 
-// source returns the source of a document: its draft when the request asks
-// for it with draft=true and has one, which builders can load to see
-// widgets before publishing, or else the published version.
-func source(ctx *gofr.Context, p auth.Principal, kind, name string) (string, error) {
-	draft := ctx.Param("draft") == "true"
+// source returns the source of a document: its draft when asked for and
+// there is one, which builders can load to see widgets before publishing,
+// or else the published version.
+func source(ctx *gofr.Context, p auth.Principal, kind, name string, draft bool) (string, error) {
 	if draft && !p.Can(auth.RoleBuilder) {
 		return "", httpx.Error{Code: http.StatusForbidden, Message: "drafts need the builder role"}
 	}
@@ -229,21 +237,26 @@ func source(ctx *gofr.Context, p auth.Principal, kind, name string) (string, err
 	return record.PublishedSource, nil
 }
 
-// dashboardData loads every widget on a dashboard, as Home shows it to
-// whoever is looking, with its inputs as picked.
 func dashboardData(ctx *gofr.Context) (any, error) {
+	return Data(ctx, ctx.PathParam("identifier"), inputsFrom(httpx.Query(ctx)), ctx.Param("draft") == "true")
+}
+
+// Data loads every widget on a dashboard, as Home shows it to whoever is
+// looking, with its inputs as picked, by input identifier. An empty list
+// clears an input, and an input left out takes its default.
+func Data(ctx *gofr.Context, name string, inputs map[string][]string, draft bool) (PageData, error) {
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
-		return nil, err
+		return PageData{}, err
 	}
-	src, err := source(ctx, p, Name, ctx.PathParam("identifier"))
+	src, err := source(ctx, p, Name, name, draft)
 	if err != nil {
-		return nil, err
+		return PageData{}, err
 	}
 	spec, _ := Parse(src)
-	picked, err := picked(spec, httpx.Query(ctx))
+	picked, err := picked(spec, inputs)
 	if err != nil {
-		return nil, err
+		return PageData{}, err
 	}
 	me := widget.MeValues(p)
 	widget.SetToday(me, time.Now())
@@ -252,7 +265,7 @@ func dashboardData(ctx *gofr.Context) (any, error) {
 	maps.Copy(values, me)
 	l, err := newLoader(ctx, widget.Env{Values: values}, nil)
 	if err != nil {
-		return nil, err
+		return PageData{}, err
 	}
 
 	data := l.load(spec.Widgets)
@@ -305,17 +318,25 @@ func newLoader(ctx *gofr.Context, env widget.Env, own *blueprint.Spec) (loader, 
 	}, nil
 }
 
-// picked reads what Home picked for a dashboard's inputs from the query,
-// as input.<id>=value, repeated for a multiple input. An empty value
-// clears the input, leaving it unset, and an input the query doesn't
-// mention is left out, to take its default.
-func picked(spec Spec, query url.Values) (widget.Values, error) {
-	values := widget.Values{}
-	for key, raw := range query {
-		id, ok := strings.CutPrefix(key, "input.")
-		if !ok {
-			continue
+// inputsFrom reads what Home picked for a dashboard's inputs from the
+// query, as input.<id>=value, repeated for a multiple input.
+func inputsFrom(query url.Values) map[string][]string {
+	inputs := map[string][]string{}
+	for key, values := range query {
+		if id, ok := strings.CutPrefix(key, "input."); ok {
+			inputs[id] = values
 		}
+	}
+
+	return inputs
+}
+
+// picked checks what was picked for a dashboard's inputs, by identifier.
+// An empty value clears the input, leaving it unset, and an input that
+// isn't mentioned is left out, to take its default.
+func picked(spec Spec, inputs map[string][]string) (widget.Values, error) {
+	values := widget.Values{}
+	for id, raw := range inputs {
 		i := slices.IndexFunc(spec.Inputs, func(in Input) bool { return in.ID == id })
 		if i < 0 {
 			return nil, badRequest("the dashboard has no input " + id)
@@ -339,57 +360,71 @@ func picked(spec Spec, query url.Values) (widget.Values, error) {
 	return values, nil
 }
 
-// blueprintData loads every widget on one tab of a blueprint's pages.
-// Entity pages need the entity, for $entity.
 func blueprintData(ctx *gofr.Context) (any, error) {
+	return PageTab(ctx, PageRequest{
+		Blueprint: ctx.PathParam("blueprint"), Page: ctx.PathParam("page"), Tab: ctx.PathParam("tab"),
+		Entity: ctx.Param("entity"), Draft: ctx.Param("draft") == "true",
+	})
+}
+
+// PageRequest names one tab of a blueprint's catalog or entity page, and
+// for an entity page, the entity. Draft loads the blueprint's draft.
+type PageRequest struct {
+	Blueprint, Page, Tab, Entity string
+	Draft                        bool
+}
+
+// PageTab loads every widget on one tab of a blueprint's pages. Entity
+// pages need the entity, for $entity.
+func PageTab(ctx *gofr.Context, req PageRequest) (PageData, error) {
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
-		return nil, err
+		return PageData{}, err
 	}
-	src, err := source(ctx, p, blueprint.Name, ctx.PathParam("blueprint"))
+	src, err := source(ctx, p, blueprint.Name, req.Blueprint, req.Draft)
 	if err != nil {
-		return nil, err
+		return PageData{}, err
 	}
 	spec, _ := blueprint.Parse(src)
 
 	values := widget.MeValues(p)
 	widget.SetToday(values, time.Now())
 	var page *blueprint.Page
-	switch ctx.PathParam("page") {
+	switch req.Page {
 	case "catalog":
 		page = spec.Catalog
 	case "entity":
 		page = spec.Entity
-		if ctx.Param("entity") == "" {
-			return nil, badRequest("choose the entity whose page it is")
+		if req.Entity == "" {
+			return PageData{}, badRequest("choose the entity whose page it is")
 		}
-		values[widget.ValueEntity] = []string{ctx.Param("entity")}
+		values[widget.ValueEntity] = []string{req.Entity}
 	default:
-		return nil, badRequest("page must be catalog or entity")
+		return PageData{}, badRequest("page must be catalog or entity")
 	}
 	if page == nil {
-		return nil, noTab(ctx)
+		return PageData{}, noTab(req.Tab)
 	}
-	tab, ok := widget.FindTab(page.Tabs, ctx.PathParam("tab"))
+	tab, ok := widget.FindTab(page.Tabs, req.Tab)
 	if !ok {
-		return nil, noTab(ctx)
+		return PageData{}, noTab(req.Tab)
 	}
 
 	env := widget.Env{Values: values}
 	l, err := newLoader(ctx, env, &spec)
 	if err != nil {
-		return nil, err
+		return PageData{}, err
 	}
-	if ctx.PathParam("page") == "entity" {
-		current, err := l.store.Get(ctx, spec.Identifier, ctx.Param("entity"))
+	if req.Page == "entity" {
+		current, err := l.store.Get(ctx, spec.Identifier, req.Entity)
 		if errors.Is(err, entity.ErrNotFound) {
-			return nil, httpx.Error{Code: http.StatusNotFound, Message: "no entity " + ctx.Param("entity")}
+			return PageData{}, httpx.Error{Code: http.StatusNotFound, Message: "no entity " + req.Entity}
 		}
 		if err != nil {
-			return nil, err
+			return PageData{}, err
 		}
 		if err := l.store.Resolve(ctx, l.blueprints, spec, []*entity.Entity{current}); err != nil {
-			return nil, err
+			return PageData{}, err
 		}
 		names := make([]string, 0, len(spec.Properties))
 		for _, property := range spec.Properties {
@@ -403,8 +438,8 @@ func blueprintData(ctx *gofr.Context) (any, error) {
 	return l.load(tab.Widgets), nil
 }
 
-func noTab(ctx *gofr.Context) error {
-	return httpx.Error{Code: http.StatusNotFound, Message: "no tab " + ctx.PathParam("tab")}
+func noTab(tab string) error {
+	return httpx.Error{Code: http.StatusNotFound, Message: "no tab " + tab}
 }
 
 func notFound(message string) error {

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -14,52 +13,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// catalogAPI answers the reads resources, completion and prompts make.
-func catalogAPI() http.Handler {
-	data := func(w http.ResponseWriter, v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": v})
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/web/blueprints", func(w http.ResponseWriter, _ *http.Request) {
-		data(w, []any{map[string]any{"identifier": "service"}, map[string]any{"identifier": "team"}})
-	})
-	mux.HandleFunc("GET /api/web/blueprints/service", func(w http.ResponseWriter, _ *http.Request) {
-		data(w, map[string]any{"identifier": "service"})
-	})
-	mux.HandleFunc("GET /api/web/blueprints/service/export", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/yaml")
-		_, _ = w.Write([]byte("kind: Blueprint\n"))
-	})
-	mux.HandleFunc("GET /api/web/scorecards/ready/export", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/yaml")
-		_, _ = w.Write([]byte("kind: Scorecard\n"))
-	})
-	mux.HandleFunc("GET /api/web/scorecards/ready/summary", func(w http.ResponseWriter, _ *http.Request) {
-		data(w, map[string]any{"tiers": []any{}})
-	})
-	mux.HandleFunc("GET /api/web/catalog/{blueprint}", func(w http.ResponseWriter, r *http.Request) {
-		data(w, map[string]any{"entities": []any{
-			map[string]any{"identifier": "payments/" + r.URL.Query().Get("q")},
-			map[string]any{"identifier": "billing"},
-		}})
-	})
-	mux.HandleFunc("GET /api/web/catalog/service/entities/{identifier...}", func(w http.ResponseWriter, r *http.Request) {
-		data(w, map[string]any{"identifier": r.PathValue("identifier")})
-	})
-	mux.HandleFunc("GET /api/web/catalog/{blueprint}/scorecards", func(w http.ResponseWriter, _ *http.Request) {
-		data(w, []any{map[string]any{"scorecard": "ready", "tier": "gold"}})
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"error":{"message":"not found"}}`))
-	})
-	return mux
-}
-
 func TestInstructionsFollowWhatTheCallerMayDo(t *testing.T) {
-	server := testServer(t, whoAmI)
+	server := testServer(t, newFake())
 	for token, authoring := range map[string]bool{"member": false, "builder-reader": false, "builder": true} {
 		got := connect(t, server, token).InitializeResult().Instructions
 		if !strings.Contains(got, "get_entity") || strings.Contains(got, "portal://guide/authoring") != authoring {
@@ -69,7 +24,7 @@ func TestInstructionsFollowWhatTheCallerMayDo(t *testing.T) {
 }
 
 func TestResourcesReadAsTheCaller(t *testing.T) {
-	session := connect(t, testServer(t, catalogAPI()), "member")
+	session := connect(t, testServer(t, newFake()), "member")
 	ctx := context.Background()
 
 	doc, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "portal://documents/blueprints/service"})
@@ -104,7 +59,7 @@ func TestResourcesReadAsTheCaller(t *testing.T) {
 }
 
 func TestCompletionSuggestsWhatTheCallerSees(t *testing.T) {
-	session := connect(t, testServer(t, catalogAPI()), "member")
+	session := connect(t, testServer(t, newFake()), "member")
 	ctx := context.Background()
 	resource := &mcp.CompleteReference{Type: "ref/resource", URI: documentTemplate}
 	for _, test := range []struct {
@@ -132,7 +87,7 @@ func TestCompletionSuggestsWhatTheCallerSees(t *testing.T) {
 }
 
 func TestPromptsFollowRoleAndScope(t *testing.T) {
-	server := testServer(t, catalogAPI())
+	server := testServer(t, newFake())
 	reads := []string{"explain_entity", "scorecard_gaps"}
 	for token, want := range map[string][]string{
 		"member":         reads,
@@ -157,7 +112,7 @@ func TestPromptsFollowRoleAndScope(t *testing.T) {
 }
 
 func TestPromptsCarryWhatTheTaskNeeds(t *testing.T) {
-	server := testServer(t, catalogAPI())
+	server := testServer(t, newFake())
 	ctx := context.Background()
 	builder := connect(t, server, "builder")
 
@@ -193,7 +148,7 @@ func TestPromptsCarryWhatTheTaskNeeds(t *testing.T) {
 }
 
 func TestReadsLinkToTheirResource(t *testing.T) {
-	session := connect(t, testServer(t, catalogAPI()), "member")
+	session := connect(t, testServer(t, newFake()), "member")
 	result := call(t, session, "get_document", map[string]any{"kind": "blueprints", "name": "service"})
 	if len(result.Content) != 2 {
 		t.Fatalf("content = %+v", result.Content)
@@ -243,7 +198,7 @@ func TestTooManyRequestsSaysWhenToRetry(t *testing.T) {
 	for range requestBurst {
 		limits.allow("member")
 	}
-	srv := testServerWith(t, whoAmI, limits)
+	srv := testServerWith(t, newFake(), limits)
 	response := post(t, srv, "member", `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, nil)
 	if response.StatusCode != http.StatusTooManyRequests || response.Header.Get("Retry-After") != "1" {
 		t.Errorf("limited: %d, Retry-After %q", response.StatusCode, response.Header.Get("Retry-After"))

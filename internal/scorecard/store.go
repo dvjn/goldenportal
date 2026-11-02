@@ -331,14 +331,14 @@ func scanResult(scan func(...any) error, extra ...any) (EntityResult, error) {
 	return r, err
 }
 
-// scorecardResult is an entity's result on one scorecard, for its page.
-type scorecardResult struct {
+// EntityScorecard is an entity's result on one scorecard, for its page.
+type EntityScorecard struct {
 	Scorecard      string `json:"scorecard"`
 	ScorecardTitle string `json:"scorecardTitle"`
 	EntityResult
 }
 
-func entityResults(ctx context.Context, db configdoc.DB, blueprintIdentifier, identifier string) ([]scorecardResult, error) {
+func entityResults(ctx context.Context, db configdoc.DB, blueprintIdentifier, identifier string) ([]EntityScorecard, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT s.identifier, b.identifier, e.identifier, e.title, r.evaluated_at, r.tier, r.score,
 			r.passed, r.failed, r.skipped, r.errored, r.criteria
@@ -353,9 +353,9 @@ func entityResults(ctx context.Context, db configdoc.DB, blueprintIdentifier, id
 	}
 	defer rows.Close()
 
-	out := []scorecardResult{}
+	out := []EntityScorecard{}
 	for rows.Next() {
-		var sr scorecardResult
+		var sr EntityScorecard
 		r, err := scanResult(func(dest ...any) error { return rows.Scan(append([]any{&sr.Scorecard}, dest...)...) })
 		if err != nil {
 			return nil, err

@@ -174,7 +174,10 @@ func RegisterSchemas(app httpx.Routes) {
 	app.GET("schemas/{kind}", getSchema)
 }
 
-func listSchemas(ctx *gofr.Context) (any, error) {
+func listSchemas(ctx *gofr.Context) (any, error) { return ListSchemas(ctx) }
+
+// ListSchemas names the document kinds that have a schema.
+func ListSchemas(ctx *gofr.Context) ([]SchemaSummary, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
@@ -193,11 +196,13 @@ func listSchemas(ctx *gofr.Context) (any, error) {
 	return summaries, nil
 }
 
-func getSchema(ctx *gofr.Context) (any, error) {
+func getSchema(ctx *gofr.Context) (any, error) { return GetSchema(ctx, ctx.PathParam("kind")) }
+
+// GetSchema returns a document kind's JSON Schema, by its plural name.
+func GetSchema(ctx *gofr.Context, kind string) (json.RawMessage, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	kind := ctx.PathParam("kind")
 	schema, ok := Schema(kind)
 	if !ok {
 		return nil, httpx.Error{

@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -133,13 +132,9 @@ var prompts = []prompt{
 			if err != nil {
 				return nil, err
 			}
-			scorecards, err := b.fetch(ctx, apiCall{
-				method: http.MethodGet, path: "catalog/" + a["blueprint"] + "/scorecards",
-				query: url.Values{"identifier": {a["identifier"]}},
+			scorecards := b.run(ctx, func(g *gofr.Context) (any, error) {
+				return b.services.EntityScorecards(g, a["blueprint"], a["identifier"])
 			})
-			if err != nil {
-				return nil, err
-			}
 			messages := []*mcp.PromptMessage{
 				text(fmt.Sprintf("Explain %s %s: what it is, what it relates to, and where it falls short on its scorecards, "+
 					"with what would fix each gap.", a["blueprint"], a["identifier"])),
@@ -154,21 +149,19 @@ var prompts = []prompt{
 	reading("scorecard_gaps", "Find scorecard gaps", "Where entities fall short on a scorecard, and what would help most",
 		[]*mcp.PromptArgument{argument("scorecard", "The scorecard to look into", true)},
 		func(ctx context.Context, b bridge, a args) ([]*mcp.PromptMessage, error) {
-			path, err := requiredDocument(documentArgs{"scorecards", a["scorecard"]})
+			name := a["scorecard"]
+			d, err := b.document(documentArgs{"scorecards", name})
 			if err != nil {
 				return nil, invalidParams(err.Error())
 			}
-			document, err := b.fetch(ctx, apiCall{method: http.MethodGet, path: path + "/export"})
-			if err != nil {
-				return nil, err
-			}
+			document := b.run(ctx, func(g *gofr.Context) (any, error) {
+				source, err := d.Export(g, name, false)
+				return yaml(source), err
+			})
 			if document.Status >= 400 {
-				return nil, invalidParams("scorecard " + a["scorecard"] + ": " + apiMessage(document))
+				return nil, invalidParams("scorecard " + name + ": " + apiMessage(document))
 			}
-			summary, err := b.fetch(ctx, apiCall{method: http.MethodGet, path: path + "/summary"})
-			if err != nil {
-				return nil, err
-			}
+			summary := b.run(ctx, func(g *gofr.Context) (any, error) { return b.services.ScorecardSummary(g, name) })
 			messages := []*mcp.PromptMessage{
 				text(fmt.Sprintf("Explain where entities fall short on the %s scorecard: which criteria fail most, "+
 					"and the changes that would lift the most entities a tier. Use list_scorecard_results for examples.", a["scorecard"])),
@@ -198,14 +191,7 @@ func required(req *mcp.GetPromptRequest, arguments []*mcp.PromptArgument) (args,
 
 // fetchJSON reads an entity as indented JSON, for embedding.
 func (b bridge) fetchJSON(ctx context.Context, a entityArgs) (string, error) {
-	call, err := entityCall(a)
-	if err != nil {
-		return "", invalidParams(err.Error())
-	}
-	out, err := b.fetch(ctx, call)
-	if err != nil {
-		return "", err
-	}
+	out := b.run(ctx, func(g *gofr.Context) (any, error) { return b.services.Entity(g, a.Blueprint, a.Identifier) })
 	if out.Status >= 400 {
 		return "", invalidParams(a.Blueprint + " " + a.Identifier + ": " + apiMessage(out))
 	}

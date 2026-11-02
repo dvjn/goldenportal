@@ -14,6 +14,8 @@ import (
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
+// Register serves the catalog. The handlers read the request and call the
+// services below, which MCP calls too.
 func Register(app httpx.Routes) {
 	app.GET("catalog", catalog)
 	app.GET("catalog/{blueprint}", list)
@@ -32,8 +34,10 @@ type CatalogEntry struct {
 	Entities    int    `json:"entities"`
 }
 
-// catalog lists the published blueprints, which are what the catalog shows.
-func catalog(ctx *gofr.Context) (any, error) {
+func catalog(ctx *gofr.Context) (any, error) { return Catalog(ctx) }
+
+// Catalog lists the published blueprints, which are what the catalog shows.
+func Catalog(ctx *gofr.Context) ([]CatalogEntry, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
@@ -81,95 +85,136 @@ func catalog(ctx *gofr.Context) (any, error) {
 
 var pageSizes = []int{10, 20, 50, 100}
 
-// list returns a page of one blueprint's entities: searched by q, filtered by
-// filter (see Filter) and sorted by sort, a path.
+// ListRequest asks for a page of a blueprint's entities: searched by
+// Search, filtered by Filter (see Filter) and sorted by Sort, a path. A
+// zero Page or Size means the first page or the smallest size.
+type ListRequest struct {
+	Search, Filter, Sort string
+	Page, Size           int
+}
+
 func list(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
-		return nil, err
+	req := ListRequest{Search: ctx.Param("q"), Filter: ctx.Param("filter"), Sort: ctx.Param("sort")}
+	var err error
+	if req.Page, err = intParam(ctx, "page"); err != nil {
+		return nil, badRequest("page must be a whole number from 1")
 	}
-	specs, spec, err := publishedBlueprint(ctx, ctx.PathParam("blueprint"))
-	if err != nil {
-		return nil, err
+	if req.Size, err = intParam(ctx, "size"); err != nil {
+		return nil, badRequest("size must be 10, 20, 50 or 100")
 	}
 
-	q := Query{Blueprint: spec, Blueprints: specs, Search: ctx.Param("q"), Sort: ctx.Param("sort"), Page: 1, PageSize: pageSizes[0]}
-	if value := ctx.Param("page"); value != "" {
-		page, err := strconv.Atoi(value)
-		if err != nil || page < 1 {
-			return nil, badRequest("page must be a whole number from 1")
-		}
-		q.Page = page
+	return List(ctx, ctx.PathParam("blueprint"), req)
+}
+
+// List returns a page of one blueprint's entities.
+func List(ctx *gofr.Context, blueprintID string, req ListRequest) (Page, error) {
+	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+		return Page{}, err
 	}
-	if value := ctx.Param("size"); value != "" {
-		size, err := strconv.Atoi(value)
-		if err != nil || !slices.Contains(pageSizes, size) {
-			return nil, badRequest("size must be 10, 20, 50 or 100")
-		}
-		q.PageSize = size
+	specs, spec, err := publishedBlueprint(ctx, blueprintID)
+	if err != nil {
+		return Page{}, err
 	}
-	if q.Filter, err = ParseFilter(ctx.Param("filter")); err != nil {
-		return nil, badRequest(err.Error())
+
+	q := Query{Blueprint: spec, Blueprints: specs, Search: req.Search, Sort: req.Sort, Page: 1, PageSize: pageSizes[0]}
+	if req.Page != 0 {
+		if req.Page < 1 {
+			return Page{}, badRequest("page must be a whole number from 1")
+		}
+		q.Page = req.Page
+	}
+	if req.Size != 0 {
+		if !slices.Contains(pageSizes, req.Size) {
+			return Page{}, badRequest("size must be 10, 20, 50 or 100")
+		}
+		q.PageSize = req.Size
+	}
+	if q.Filter, err = ParseFilter(req.Filter); err != nil {
+		return Page{}, badRequest(err.Error())
 	}
 	if q.Ladders, err = blueprint.Ladders(ctx, ctx.SQL); err != nil {
-		return nil, err
+		return Page{}, err
 	}
 
 	store := NewStore(ctx.SQL)
 	page, err := store.List(ctx, q)
 	var filterErr FilterError
 	if errors.As(err, &filterErr) {
-		return nil, badRequest(filterErr.Error())
+		return Page{}, badRequest(filterErr.Error())
 	}
 	if err != nil {
-		return nil, err
+		return Page{}, err
 	}
 	if err := store.Resolve(ctx, specs, spec, page.Entities); err != nil {
-		return nil, err
+		return Page{}, err
 	}
 
 	return page, nil
 }
 
-// detail is an entity with the entities that point at it.
-type detail struct {
+// intParam reads a whole-number query parameter, zero when it's absent.
+func intParam(ctx *gofr.Context, name string) (int, error) {
+	value := ctx.Param(name)
+	if value == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err == nil && n == 0 {
+		err = strconv.ErrRange
+	}
+
+	return n, err
+}
+
+// Detail is an entity with the entities that point at it.
+type Detail struct {
 	*Entity
 	Incoming []Incoming `json:"incoming"`
 }
 
 func get(ctx *gofr.Context) (any, error) {
+	return Get(ctx, ctx.PathParam("blueprint"), ctx.PathParam("identifier"))
+}
+
+// Get reads an entity with its resolved properties and incoming relations.
+func Get(ctx *gofr.Context, blueprintID, identifier string) (Detail, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
-		return nil, err
+		return Detail{}, err
 	}
-	specs, spec, err := publishedBlueprint(ctx, ctx.PathParam("blueprint"))
+	specs, spec, err := publishedBlueprint(ctx, blueprintID)
 	if err != nil {
-		return nil, err
+		return Detail{}, err
 	}
 
 	store := NewStore(ctx.SQL)
-	e, err := store.Get(ctx, spec.Identifier, ctx.PathParam("identifier"))
+	e, err := store.Get(ctx, spec.Identifier, identifier)
 	if errors.Is(err, ErrNotFound) {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such entity"}
+		return Detail{}, httpx.Error{Code: http.StatusNotFound, Message: "no such entity"}
 	}
 	if err != nil {
-		return nil, err
+		return Detail{}, err
 	}
 	if err := store.Resolve(ctx, specs, spec, []*Entity{e}); err != nil {
-		return nil, err
+		return Detail{}, err
 	}
 	incoming, err := store.Incoming(ctx, specs, spec.Identifier, e.Identifier)
 	if err != nil {
-		return nil, err
+		return Detail{}, err
 	}
 
-	return detail{Entity: e, Incoming: incoming}, nil
+	return Detail{Entity: e, Incoming: incoming}, nil
 }
 
-// facets counts a property's values, for filter options.
 func facets(ctx *gofr.Context) (any, error) {
+	return Facets(ctx, ctx.PathParam("blueprint"), ctx.Param("property"))
+}
+
+// Facets counts a property's values, for filter options.
+func Facets(ctx *gofr.Context, blueprintID, property string) ([]Facet, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
-	specs, spec, err := publishedBlueprint(ctx, ctx.PathParam("blueprint"))
+	specs, spec, err := publishedBlueprint(ctx, blueprintID)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +223,7 @@ func facets(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	values, err := NewStore(ctx.SQL).Facets(ctx, Query{Blueprint: spec, Blueprints: specs, Ladders: ladders}, ctx.Param("property"))
+	values, err := NewStore(ctx.SQL).Facets(ctx, Query{Blueprint: spec, Blueprints: specs, Ladders: ladders}, property)
 	var filterErr FilterError
 	if errors.As(err, &filterErr) {
 		return nil, badRequest(filterErr.Error())

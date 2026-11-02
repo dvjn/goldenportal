@@ -25,6 +25,8 @@ const (
 
 var runPageSizes = []int{10, 20, 50, 100}
 
+// Register serves integrations. The handlers read the request and call the
+// services below, which MCP calls too.
 func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
 	app.GET("connectors", listConnectors)
@@ -45,7 +47,10 @@ func RegisterIngest(app *gofr.App) {
 	app.DELETE(auth.IngestPrefix+"{integration}/entities/{blueprint}/{identifier:.+}", deleteEntity)
 }
 
-func listConnectors(ctx *gofr.Context) (any, error) {
+func listConnectors(ctx *gofr.Context) (any, error) { return ListConnectors(ctx) }
+
+// ListConnectors lists the connector types and what each reads.
+func ListConnectors(ctx *gofr.Context) ([]Connector, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}
@@ -53,28 +58,30 @@ func listConnectors(ctx *gofr.Context) (any, error) {
 	return Connectors, nil
 }
 
-// integrationID returns the row ID of the integration in the path. Tokens
-// and runs belong to it, so it needs to exist, though not be published.
-func integrationID(ctx *gofr.Context) (string, string, error) {
-	identifier := ctx.PathParam("identifier")
+// integrationID returns an integration's row ID. Tokens and runs belong to
+// it, so it needs to exist, though not be published.
+func integrationID(ctx *gofr.Context, identifier string) (string, error) {
 	if !configdoc.ValidIdentifier(identifier) {
-		return "", "", notFound()
+		return "", notFound()
 	}
 	var id string
 	err := ctx.SQL.QueryRowContext(ctx, `SELECT id FROM config_documents WHERE kind = $1 AND identifier = $2`,
 		Name, identifier).Scan(&id)
 	if err != nil {
-		return "", "", notFound()
+		return "", notFound()
 	}
 
-	return id, identifier, nil
+	return id, nil
 }
 
-func listTokens(ctx *gofr.Context) (any, error) {
+func listTokens(ctx *gofr.Context) (any, error) { return ListTokens(ctx, ctx.PathParam("identifier")) }
+
+// ListTokens lists a push integration's ingestion tokens, without secrets.
+func ListTokens(ctx *gofr.Context, integration string) ([]Token, error) {
 	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return nil, err
 	}
-	id, _, err := integrationID(ctx)
+	id, err := integrationID(ctx, integration)
 	if err != nil {
 		return nil, err
 	}
@@ -86,122 +93,171 @@ type createTokenRequest struct {
 	Name string `json:"name"`
 }
 
-type createdToken struct {
+// CreatedToken is a new ingestion token with its secret, which is shown
+// once, now.
+type CreatedToken struct {
 	Token
-	// Secret is shown once, now.
 	Secret string `json:"secret"`
 }
 
 func createToken(ctx *gofr.Context) (any, error) {
-	p, err := auth.Require(ctx, auth.RoleBuilder)
-	if err != nil {
-		return nil, err
-	}
-	id, identifier, err := integrationID(ctx)
-	if err != nil {
-		return nil, err
-	}
 	var req createTokenRequest
 	if err := ctx.Bind(&req); err != nil {
 		return nil, badRequest("the request body is not valid JSON")
 	}
-	name := strings.TrimSpace(req.Name)
+
+	return CreateToken(ctx, ctx.PathParam("identifier"), req.Name)
+}
+
+// CreateToken creates an ingestion token for a push integration.
+func CreateToken(ctx *gofr.Context, integration, name string) (CreatedToken, error) {
+	p, err := auth.Require(ctx, auth.RoleBuilder)
+	if err != nil {
+		return CreatedToken{}, err
+	}
+	id, err := integrationID(ctx, integration)
+	if err != nil {
+		return CreatedToken{}, err
+	}
+	name = strings.TrimSpace(name)
 	if name == "" || len(name) > maxTokenName {
-		return nil, badRequest("give the token a name of up to 100 characters")
+		return CreatedToken{}, badRequest("give the token a name of up to 100 characters")
 	}
 
-	if pulls(ctx, identifier) {
-		return nil, httpx.Error{Code: http.StatusConflict, Message: "the " + identifier + " integration pulls its data, so it has no ingestion tokens"}
+	if pulls(ctx, integration) {
+		return CreatedToken{}, httpx.Error{Code: http.StatusConflict, Message: "the " + integration + " integration pulls its data, so it has no ingestion tokens"}
 	}
 
 	secret := tokenPrefix + auth.NewSecret()
 	token, err := NewStore(ctx.SQL).CreateToken(ctx, id, name, secret[:tokenDisplayLength], auth.HashSecret(secret), p.ID)
 	if err != nil {
-		return nil, err
+		return CreatedToken{}, err
 	}
-	auth.Record(ctx, p, audit.IngestionTokenCreate, audit.Target{Type: Name, ID: identifier, Label: identifier},
+	auth.Record(ctx, p, audit.IngestionTokenCreate, audit.Target{Type: Name, ID: integration, Label: integration},
 		map[string]any{"token": name})
 
-	return createdToken{Token: token, Secret: secret}, nil
+	return CreatedToken{Token: token, Secret: secret}, nil
 }
 
 func revokeToken(ctx *gofr.Context) (any, error) {
+	return nil, RevokeToken(ctx, ctx.PathParam("identifier"), ctx.PathParam("id"))
+}
+
+// RevokeToken revokes an ingestion token, so pushes with it stop being accepted.
+func RevokeToken(ctx *gofr.Context, integration, tokenID string) error {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	id, identifier, err := integrationID(ctx)
+	id, err := integrationID(ctx, integration)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	tokenID := ctx.PathParam("id")
 	if _, err := uuid.Parse(tokenID); err != nil {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such token"}
+		return httpx.Error{Code: http.StatusNotFound, Message: "no such token"}
 	}
 
 	name, err := NewStore(ctx.SQL).RevokeToken(ctx, id, tokenID)
 	if errors.Is(err, ErrTokenNotFound) {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such token"}
+		return httpx.Error{Code: http.StatusNotFound, Message: "no such token"}
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
-	auth.Record(ctx, p, audit.IngestionTokenRevoke, audit.Target{Type: Name, ID: identifier, Label: identifier},
+	auth.Record(ctx, p, audit.IngestionTokenRevoke, audit.Target{Type: Name, ID: integration, Label: integration},
 		map[string]any{"token": name})
 
-	return nil, nil
+	return nil
 }
 
-// listRuns returns a page of an integration's runs, newest first. It filters
-// by free text (q), triggers and outcomes (comma-separated lists), and pages
-// with page and size.
+// RunsRequest asks for a page of an integration's runs, searched by Search
+// and narrowed to Triggers and Outcomes. A zero Page or Size means the
+// first page or the smallest size.
+type RunsRequest struct {
+	Search             string
+	Triggers, Outcomes []string
+	Page, Size         int
+}
+
 func listRuns(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
-		return nil, err
+	// trigger and outcome are comma-separated lists.
+	req := RunsRequest{Search: ctx.Param("q"), Triggers: listParam(ctx, "trigger"), Outcomes: listParam(ctx, "outcome")}
+	var err error
+	if req.Page, err = intParam(ctx, "page"); err != nil {
+		return nil, badRequest("page must be a whole number from 1")
 	}
-	id, _, err := integrationID(ctx)
-	if err != nil {
-		return nil, err
+	if req.Size, err = intParam(ctx, "size"); err != nil {
+		return nil, badRequest("size must be 10, 20, 50 or 100")
 	}
 
-	q := RunQuery{Search: ctx.Param("q"), Page: 1, PageSize: runPageSizes[0]}
-	if value := ctx.Param("page"); value != "" {
-		page, err := strconv.Atoi(value)
-		if err != nil || page < 1 {
-			return nil, badRequest("page must be a whole number from 1")
+	return Runs(ctx, ctx.PathParam("identifier"), req)
+}
+
+// Runs returns a page of an integration's runs, newest first.
+func Runs(ctx *gofr.Context, integration string, req RunsRequest) (RunPage, error) {
+	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
+		return RunPage{}, err
+	}
+	id, err := integrationID(ctx, integration)
+	if err != nil {
+		return RunPage{}, err
+	}
+
+	q := RunQuery{Search: req.Search, Page: 1, PageSize: runPageSizes[0]}
+	if req.Page != 0 {
+		if req.Page < 1 {
+			return RunPage{}, badRequest("page must be a whole number from 1")
 		}
-		q.Page = page
+		q.Page = req.Page
 	}
-	if value := ctx.Param("size"); value != "" {
-		size, err := strconv.Atoi(value)
-		if err != nil || !slices.Contains(runPageSizes, size) {
-			return nil, badRequest("size must be 10, 20, 50 or 100")
+	if req.Size != 0 {
+		if !slices.Contains(runPageSizes, req.Size) {
+			return RunPage{}, badRequest("size must be 10, 20, 50 or 100")
 		}
-		q.PageSize = size
+		q.PageSize = req.Size
 	}
-	if q.Triggers, err = listParam(ctx, "trigger", TriggerSchedule, TriggerManual, TriggerPush); err != nil {
-		return nil, err
+	if q.Triggers, err = oneOf("trigger", req.Triggers, TriggerSchedule, TriggerManual, TriggerPush); err != nil {
+		return RunPage{}, err
 	}
-	if q.Outcomes, err = listParam(ctx, "outcome", OutcomeSucceeded, OutcomeWarnings, OutcomeFailed); err != nil {
-		return nil, err
+	if q.Outcomes, err = oneOf("outcome", req.Outcomes, OutcomeSucceeded, OutcomeWarnings, OutcomeFailed); err != nil {
+		return RunPage{}, err
 	}
 
 	return NewStore(ctx.SQL).Runs(ctx, id, q)
 }
 
-// listParam reads a comma-separated list of the allowed values.
-func listParam(ctx *gofr.Context, name string, allowed ...string) ([]string, error) {
-	var values []string
+// listParam reads a comma-separated list.
+func listParam(ctx *gofr.Context, name string) []string {
 	if value := ctx.Param(name); value != "" {
-		for v := range strings.SplitSeq(value, ",") {
-			if !slices.Contains(allowed, v) {
-				return nil, badRequest("unknown " + name + " " + strconv.Quote(v))
-			}
-			values = append(values, v)
+		return strings.Split(value, ",")
+	}
+
+	return nil
+}
+
+// oneOf checks that every value is allowed.
+func oneOf(name string, values []string, allowed ...string) ([]string, error) {
+	for _, v := range values {
+		if !slices.Contains(allowed, v) {
+			return nil, badRequest("unknown " + name + " " + strconv.Quote(v))
 		}
 	}
 
 	return values, nil
+}
+
+// intParam reads a whole-number query parameter, zero when it's absent.
+func intParam(ctx *gofr.Context, name string) (int, error) {
+	value := ctx.Param(name)
+	if value == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err == nil && n == 0 {
+		err = strconv.ErrRange
+	}
+
+	return n, err
 }
 
 func notFound() error {

@@ -29,25 +29,29 @@ type Usage struct {
 	References []blueprint.Reference `json:"references"`
 }
 
-// blueprintUsage counts a blueprint's entities and lists who writes them and
-// which blueprints relate to it. It lives here because only this package
-// knows both blueprints and integrations.
+// blueprintUsage lives here because only this package knows both
+// blueprints and integrations.
 func blueprintUsage(ctx *gofr.Context) (any, error) {
+	return BlueprintUsage(ctx, ctx.PathParam("identifier"))
+}
+
+// BlueprintUsage counts a blueprint's entities and lists who writes them
+// and which blueprints relate to it.
+func BlueprintUsage(ctx *gofr.Context, identifier string) (Usage, error) {
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
-		return nil, err
+		return Usage{}, err
 	}
-	identifier := ctx.PathParam("identifier")
 
 	published, err := blueprint.Published(ctx, ctx.SQL)
 	if err != nil {
-		return nil, err
+		return Usage{}, err
 	}
 	usage := Usage{Writers: []Writer{}, References: blueprint.References(published, identifier)}
 
 	writers := map[string]*Writer{}
 	sources, err := configdoc.NewStore(ctx.SQL, Name).PublishedSources(ctx)
 	if err != nil {
-		return nil, err
+		return Usage{}, err
 	}
 	for id, source := range sources {
 		spec, _ := Parse(source)
@@ -64,7 +68,7 @@ func blueprintUsage(ctx *gofr.Context) (any, error) {
 		WHERE b.kind = $1 AND b.identifier = $2
 		GROUP BY i.id, i.identifier`, blueprint.Name, identifier)
 	if err != nil {
-		return nil, err
+		return Usage{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -73,7 +77,7 @@ func blueprintUsage(ctx *gofr.Context) (any, error) {
 			count int
 		)
 		if err := rows.Scan(&id, &count); err != nil {
-			return nil, err
+			return Usage{}, err
 		}
 		w, ok := writers[id]
 		if !ok {
@@ -84,7 +88,7 @@ func blueprintUsage(ctx *gofr.Context) (any, error) {
 		usage.Entities += count
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return Usage{}, err
 	}
 
 	runs, err := ctx.SQL.QueryContext(ctx, `
@@ -92,7 +96,7 @@ func blueprintUsage(ctx *gofr.Context) (any, error) {
 		JOIN config_documents i ON i.id = r.integration_id
 		GROUP BY i.identifier`)
 	if err != nil {
-		return nil, err
+		return Usage{}, err
 	}
 	defer runs.Close()
 	for runs.Next() {
@@ -101,14 +105,14 @@ func blueprintUsage(ctx *gofr.Context) (any, error) {
 			lastRun time.Time
 		)
 		if err := runs.Scan(&id, &lastRun); err != nil {
-			return nil, err
+			return Usage{}, err
 		}
 		if w, ok := writers[id]; ok {
 			w.LastRunAt = &lastRun
 		}
 	}
 	if err := runs.Err(); err != nil {
-		return nil, err
+		return Usage{}, err
 	}
 
 	for _, w := range writers {

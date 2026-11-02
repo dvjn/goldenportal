@@ -182,13 +182,14 @@ func syncAll(ctx *gofr.Context) {
 	}
 }
 
-// syncNow syncs one integration straight away.
-func syncNow(ctx *gofr.Context) (any, error) {
+func syncNow(ctx *gofr.Context) (any, error) { return SyncNow(ctx, ctx.PathParam("identifier")) }
+
+// SyncNow syncs one published pull integration straight away.
+func SyncNow(ctx *gofr.Context, identifier string) (*Run, error) {
 	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return nil, err
 	}
-	_, identifier, err := integrationID(ctx)
-	if err != nil {
+	if _, err := integrationID(ctx, identifier); err != nil {
 		return nil, err
 	}
 

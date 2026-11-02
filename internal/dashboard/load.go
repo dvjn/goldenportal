@@ -111,10 +111,10 @@ type result struct {
 	Error string `json:"error,omitempty"`
 }
 
-// pageData is every widget's data on a page, by identifier, and on a
+// PageData is every widget's data on a page, by identifier, and on a
 // dashboard, the entities its relation inputs are set to, with their
 // titles, by input.
-type pageData struct {
+type PageData struct {
 	Widgets map[string]result        `json:"widgets"`
 	Inputs  map[string][]entity.Link `json:"inputs,omitempty"`
 }
@@ -181,7 +181,7 @@ type documents struct {
 // load works out what every widget on a page shows for whoever is
 // looking. Widgets that read the same query share its plan, and the
 // statements run a few at a time.
-func (l loader) load(widgets []widget.Widget) pageData {
+func (l loader) load(widgets []widget.Widget) PageData {
 	plans := map[string]*plan{}
 	planFor := func(q *widget.Query, f *filter.Filter) *plan {
 		bp, ok := l.blueprints[q.Blueprint]
@@ -216,7 +216,7 @@ func (l loader) load(widgets []widget.Widget) pageData {
 	}
 	run(tasks)
 
-	out := pageData{Widgets: map[string]result{}}
+	out := PageData{Widgets: map[string]result{}}
 	for _, w := range widgets {
 		fn, ok := assemble[w.ID]
 		if !ok {
