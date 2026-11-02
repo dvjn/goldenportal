@@ -37,6 +37,10 @@ func SPA(files fs.FS) func(http.Handler) http.Handler {
 			}
 
 			setCacheControl(w, name)
+			// No other site may frame the portal, so pages like the OAuth
+			// consent can't be clicked through from under another page.
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 			http.ServeFileFS(w, r, files, name)
 		})
 	}

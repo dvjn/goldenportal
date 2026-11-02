@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  AppWindow,
   ChevronsUpDown,
   KeyRound,
   LogOut,
@@ -108,6 +109,12 @@ export function NavUser() {
           <Link to="/account/tokens">
             <KeyRound />
             API tokens
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/account/apps">
+            <AppWindow />
+            Connected apps
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={handleSignOut}>

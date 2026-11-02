@@ -20,6 +20,8 @@ const (
 	AccessGrant    = "access.grant"
 	AccessRevoke   = "access.revoke"
 	BootstrapAdmin = "access.bootstrap_admin"
+	AppAuthorize   = "app.authorize"
+	AppRevoke      = "app.revoke"
 
 	SCIMUserProvision  = "scim.user_provision"
 	SCIMUserDeactivate = "scim.user_deactivate"
@@ -48,6 +50,7 @@ const (
 // Actions lists every action, for filters.
 var Actions = []string{
 	SignIn, SignOut, TokenCreate, TokenRevoke, AccessGrant, AccessRevoke, BootstrapAdmin,
+	AppAuthorize, AppRevoke,
 	SCIMUserProvision, SCIMUserDeactivate, SCIMUserReactivate, SCIMGroupProvision, SCIMGroupDelete,
 	BlueprintDraftSave, BlueprintDraftDiscard, BlueprintPublish, BlueprintDelete,
 	IntegrationDraftSave, IntegrationDraftDiscard, IntegrationPublish, IntegrationDelete,

@@ -35,6 +35,8 @@ export const auditActions: Record<string, string> = {
   "auth.sign_out": "Signed out",
   "token.create": "Created API token",
   "token.revoke": "Revoked API token",
+  "app.authorize": "Authorized app",
+  "app.revoke": "Revoked app access",
   "access.grant": "Granted access",
   "access.revoke": "Removed access",
   "access.bootstrap_admin": "Made bootstrap admin",

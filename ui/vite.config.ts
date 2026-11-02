@@ -38,6 +38,13 @@ export default defineConfig({
       "/favicon.ico": {
         target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",
       },
+      // OAuth for MCP clients; /oauth/authorize is the consent page, so it stays here.
+      "/.well-known": {
+        target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",
+      },
+      "^/oauth/(token|register|revoke)$": {
+        target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",
+      },
     },
   },
   test: {

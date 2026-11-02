@@ -86,3 +86,11 @@ func FromContext(ctx context.Context) (Principal, bool) {
 	info, ok := authFromContext(ctx)
 	return info.principal, ok
 }
+
+// InSession reports whether the request was signed in with a browser
+// session, rather than a token: consenting on someone's behalf, for one,
+// is for them to do in person.
+func InSession(ctx context.Context) bool {
+	info, _ := authFromContext(ctx)
+	return info.sessionHash != nil
+}

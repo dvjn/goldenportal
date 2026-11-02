@@ -136,3 +136,13 @@ func TestSPAWithoutIndexPassesThrough(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusTeapot)
 	}
 }
+
+func TestSPAForbidsFraming(t *testing.T) {
+	files := fstest.MapFS{"index.html": {Data: []byte("<html>shell</html>")}}
+	handler := SPA(files)(http.NotFoundHandler())
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/oauth/authorize?client_id=x", nil))
+	if w.Header().Get("X-Frame-Options") != "DENY" || w.Header().Get("Content-Security-Policy") != "frame-ancestors 'none'" {
+		t.Errorf("pages can be framed: %v", w.Header())
+	}
+}

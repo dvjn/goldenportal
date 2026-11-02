@@ -12,6 +12,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
+	"github.com/dvjn/goldenportal/internal/oauth"
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/search"
@@ -42,6 +43,13 @@ func New() *gofr.App {
 		app.Logger().Warn("Single sign-on is not set up, so nobody can sign in. Set GP_OIDC_ISSUER, GP_OIDC_CLIENT_ID and GP_OIDC_CLIENT_SECRET.")
 	}
 
+	// The portal is its own OAuth server, for MCP clients, at its public URL.
+	name := app.Config.GetOrDefault("GP_NAME", "Golden Portal")
+	oauthServer := oauth.NewServer(app.Config.Get("GP_BASE_URL"), name)
+	if app.Config.Get("GP_BASE_URL") == "" {
+		app.Logger().Warn("MCP clients can't sign in until GP_BASE_URL is set to the portal's public URL.")
+	}
+
 	// The favicon falls back to the logo.
 	favicon, err := web.Favicon(app.Config.GetOrDefault("GP_FAVICON_URL", app.Config.Get("GP_LOGO_URL")))
 	if err != nil {
@@ -51,14 +59,16 @@ func New() *gofr.App {
 	app.UseMiddleware(favicon, web.SPA(web.Dist()), httpx.WithQuery)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
-		return scimServer.Routes(c.SQL)(auth.Middleware(store)(oidc.Routes(store)(next)))
+		backend := auth.Middleware(store)(oidc.Routes(store)(next))
+		return scimServer.Routes(c.SQL)(oauthServer.Routes(c.SQL)(backend))
 	})
 
 	app.GET("/api/v1/config", configHandler(Config{
-		Name:    app.Config.GetOrDefault("GP_NAME", "Golden Portal"),
+		Name:    name,
 		LogoURL: app.Config.Get("GP_LOGO_URL"),
 	}))
 	auth.NewHandlers(secureCookies).Register(app)
+	oauthServer.Register(app)
 	access.Register(app)
 	blueprint.Register(app, dashboard.CheckPages)
 	entity.Register(app)

@@ -16,6 +16,8 @@ import { Route as AppBlueprintsRouteImport } from "./routes/_app/blueprints";
 import { Route as AppDashboardsRouteImport } from "./routes/_app/dashboards";
 import { Route as AppIntegrationsRouteImport } from "./routes/_app/integrations";
 import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
+import { Route as OauthAuthorizeRouteImport } from "./routes/oauth/authorize";
+import { Route as AppAccountAppsRouteImport } from "./routes/_app/account/apps";
 import { Route as AppAccountTokensRouteImport } from "./routes/_app/account/tokens";
 import { Route as AppBlueprintsIndexRouteImport } from "./routes/_app/blueprints/index";
 import { Route as AppBlueprintsIdentifierRouteImport } from "./routes/_app/blueprints/$identifier";
@@ -69,6 +71,16 @@ const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: "/settings",
   path: "/settings",
+  getParentRoute: () => AppRoute,
+} as any);
+const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
+  id: "/oauth/authorize",
+  path: "/oauth/authorize",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AppAccountAppsRoute = AppAccountAppsRouteImport.update({
+  id: "/account/apps",
+  path: "/account/apps",
   getParentRoute: () => AppRoute,
 } as any);
 const AppAccountTokensRoute = AppAccountTokensRouteImport.update({
@@ -183,6 +195,8 @@ export interface FileRoutesByFullPath {
   "/dashboards": typeof AppDashboardsRouteWithChildren;
   "/integrations": typeof AppIntegrationsRouteWithChildren;
   "/settings": typeof AppSettingsRouteWithChildren;
+  "/oauth/authorize": typeof OauthAuthorizeRoute;
+  "/account/apps": typeof AppAccountAppsRoute;
   "/account/tokens": typeof AppAccountTokensRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
@@ -206,7 +220,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/sign-in": typeof SignInRoute;
+  "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/": typeof AppIndexRoute;
+  "/account/apps": typeof AppAccountAppsRoute;
   "/account/tokens": typeof AppAccountTokensRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
@@ -236,7 +252,9 @@ export interface FileRoutesById {
   "/_app/dashboards": typeof AppDashboardsRouteWithChildren;
   "/_app/integrations": typeof AppIntegrationsRouteWithChildren;
   "/_app/settings": typeof AppSettingsRouteWithChildren;
+  "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/_app/": typeof AppIndexRoute;
+  "/_app/account/apps": typeof AppAccountAppsRoute;
   "/_app/account/tokens": typeof AppAccountTokensRoute;
   "/_app/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/_app/blueprints/new": typeof AppBlueprintsNewRoute;
@@ -267,6 +285,8 @@ export interface FileRouteTypes {
     | "/dashboards"
     | "/integrations"
     | "/settings"
+    | "/oauth/authorize"
+    | "/account/apps"
     | "/account/tokens"
     | "/blueprints/$identifier"
     | "/blueprints/new"
@@ -290,7 +310,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/sign-in"
+    | "/oauth/authorize"
     | "/"
+    | "/account/apps"
     | "/account/tokens"
     | "/blueprints/$identifier"
     | "/blueprints/new"
@@ -319,7 +341,9 @@ export interface FileRouteTypes {
     | "/_app/dashboards"
     | "/_app/integrations"
     | "/_app/settings"
+    | "/oauth/authorize"
     | "/_app/"
+    | "/_app/account/apps"
     | "/_app/account/tokens"
     | "/_app/blueprints/$identifier"
     | "/_app/blueprints/new"
@@ -345,6 +369,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren;
   SignInRoute: typeof SignInRoute;
+  OauthAuthorizeRoute: typeof OauthAuthorizeRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -396,6 +421,20 @@ declare module "@tanstack/react-router" {
       path: "/settings";
       fullPath: "/settings";
       preLoaderRoute: typeof AppSettingsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/oauth/authorize": {
+      id: "/oauth/authorize";
+      path: "/oauth/authorize";
+      fullPath: "/oauth/authorize";
+      preLoaderRoute: typeof OauthAuthorizeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/_app/account/apps": {
+      id: "/_app/account/apps";
+      path: "/account/apps";
+      fullPath: "/account/apps";
+      preLoaderRoute: typeof AppAccountAppsRouteImport;
       parentRoute: typeof AppRoute;
     };
     "/_app/account/tokens": {
@@ -613,6 +652,7 @@ interface AppRouteChildren {
   AppIntegrationsRoute: typeof AppIntegrationsRouteWithChildren;
   AppSettingsRoute: typeof AppSettingsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
+  AppAccountAppsRoute: typeof AppAccountAppsRoute;
   AppAccountTokensRoute: typeof AppAccountTokensRoute;
   AppScorecardsIdentifierRoute: typeof AppScorecardsIdentifierRoute;
   AppScorecardsNewRoute: typeof AppScorecardsNewRoute;
@@ -628,6 +668,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIntegrationsRoute: AppIntegrationsRouteWithChildren,
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
+  AppAccountAppsRoute: AppAccountAppsRoute,
   AppAccountTokensRoute: AppAccountTokensRoute,
   AppScorecardsIdentifierRoute: AppScorecardsIdentifierRoute,
   AppScorecardsNewRoute: AppScorecardsNewRoute,
@@ -642,6 +683,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren);
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   SignInRoute: SignInRoute,
+  OauthAuthorizeRoute: OauthAuthorizeRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
