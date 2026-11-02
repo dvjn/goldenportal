@@ -30,7 +30,7 @@ func parseAudience(r *configdoc.Reader, node *yaml.Node, path string) *Audience 
 	if node == nil {
 		return nil
 	}
-	fields, ok := r.Fields(node, path, "roles", "groups")
+	fields, ok := r.Fields(node, path, AudienceFields...)
 	if !ok {
 		return nil
 	}

@@ -10,6 +10,7 @@ import (
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 // Limit is how many results each source returns, and twice it how many a
@@ -37,7 +38,7 @@ type Source func(ctx *gofr.Context, p auth.Principal, text string) ([]Result, er
 // one list, closest first: exact matches, then those starting with the
 // text, then those containing it. Ties keep the order of sources, then go
 // by title.
-func Register(app *gofr.App, sources ...Source) {
+func Register(app httpx.Routes, sources ...Source) {
 	app.GET("/api/v1/search", func(ctx *gofr.Context) (any, error) {
 		p, err := auth.Require(ctx, auth.RoleMember)
 		if err != nil {

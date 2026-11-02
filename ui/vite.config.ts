@@ -45,6 +45,9 @@ export default defineConfig({
       "^/oauth/(token|register|revoke)$": {
         target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",
       },
+      "/mcp": {
+        target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",
+      },
     },
   },
   test: {

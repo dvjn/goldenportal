@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dashboard",
+  "description": "A dashboard is a tab on Home: widgets over the catalog's entities, with inputs above them that viewers set to narrow what the widgets show. Its title, description and widget titles can hold {{ }} jq with $me, such as {{ $me.name }}.",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "Dashboard" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "required": ["kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "$defs": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "order": { "type": "integer", "description": "Sorts Home's tabs, lowest first." },
+        "visibility": {
+          "$ref": "#/$defs/audience",
+          "description": "Who can see the dashboard. Left out, everyone."
+        },
+        "defaultFor": {
+          "$ref": "#/$defs/audience",
+          "description": "Whose Home opens on this dashboard."
+        },
+        "inputs": {
+          "type": "object",
+          "description": "Values viewers set above the dashboard, keyed by identifier. A filter compares with one as $input.<id>, and while it's unset the conditions on it drop.",
+          "propertyNames": {
+            "$ref": "#/$defs/name",
+            "not": { "const": "d" }
+          },
+          "additionalProperties": { "$ref": "#/$defs/input" }
+        },
+        "queries": { "$ref": "#/$defs/queries" },
+        "widgets": {
+          "$ref": "#/$defs/widgets",
+          "additionalProperties": { "$ref": "#/$defs/homeWidget" }
+        }
+      },
+      "required": ["widgets"],
+      "additionalProperties": false
+    },
+    "homeWidget": {
+      "description": "Home has no blueprint of its own, so every query names one, and properties widgets, which show one entity, aren't here.",
+      "allOf": [
+        { "not": { "properties": { "type": { "const": "properties" } }, "required": ["type"] } },
+        {
+          "if": { "properties": { "type": { "enum": ["bar", "donut", "table"] } }, "required": ["type"] },
+          "then": { "required": ["query"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "stat" } }, "required": ["type"] },
+          "then": { "properties": { "value": { "required": ["query"] } } }
+        }
+      ]
+    },
+    "audience": {
+      "type": "object",
+      "description": "Matches people with any of the roles or in any of the groups.",
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": { "enum": ["member", "builder", "admin"] }
+        },
+        "groups": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "\\S" },
+          "description": "Group names from the identity provider."
+        }
+      },
+      "anyOf": [
+        { "properties": { "roles": { "minItems": 1 } }, "required": ["roles"] },
+        { "properties": { "groups": { "minItems": 1 } }, "required": ["groups"] }
+      ],
+      "additionalProperties": false
+    },
+    "input": {
+      "description": "A value Home asks for above the dashboard. type decides what it offers.",
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        { "$ref": "#/$defs/enumInput" },
+        { "$ref": "#/$defs/stringInput" },
+        { "$ref": "#/$defs/relationInput" }
+      ],
+      "if": { "properties": { "multiple": { "const": true } }, "required": ["multiple"] },
+      "else": { "properties": { "default": { "type": "string" } } }
+    },
+    "inputTitle": { "type": "string", "description": "The input's label. Defaults to its identifier." },
+    "multiple": { "type": "boolean", "description": "Viewers can pick several values, which $input.<id> then holds; compare with op: in and values: $input.<id>." },
+    "defaultValue": {
+      "description": "What the input starts at: one value, or with multiple: true a list.",
+      "oneOf": [
+        { "type": "string", "pattern": "\\S" },
+        { "type": "array", "items": { "type": "string", "pattern": "\\S" } }
+      ]
+    },
+    "enumInput": {
+      "type": "object",
+      "description": "Offers a fixed list of values.",
+      "properties": {
+        "title": { "$ref": "#/$defs/inputTitle" },
+        "type": { "const": "enum" },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "The values offered, in order."
+        },
+        "multiple": { "$ref": "#/$defs/multiple" },
+        "default": { "$ref": "#/$defs/defaultValue", "description": "What the input starts at, from its values." }
+      },
+      "required": ["type", "values"],
+      "additionalProperties": false
+    },
+    "stringInput": {
+      "type": "object",
+      "description": "Takes any text.",
+      "properties": {
+        "title": { "$ref": "#/$defs/inputTitle" },
+        "type": { "const": "string" },
+        "multiple": { "$ref": "#/$defs/multiple" },
+        "default": { "$ref": "#/$defs/defaultValue" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "relationInput": {
+      "type": "object",
+      "description": "Offers the entities of a blueprint; its value is their identifiers.",
+      "properties": {
+        "title": { "$ref": "#/$defs/inputTitle" },
+        "type": { "const": "relation" },
+        "relation": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it offers." },
+        "multiple": { "$ref": "#/$defs/multiple" },
+        "default": {
+          "description": "What the input starts at: identifiers, or with multiple: true a query finding them for whoever is looking.",
+          "oneOf": [
+            { "$ref": "#/$defs/defaultValue" },
+            { "$ref": "#/$defs/defaultQuery" }
+          ]
+        }
+      },
+      "required": ["type", "relation"],
+      "additionalProperties": false
+    },
+    "defaultQuery": {
+      "type": "object",
+      "description": "Starts the input at the entities a query finds when the dashboard loads, such as the viewer's teams.",
+      "properties": {
+        "query": {
+          "type": "object",
+          "properties": {
+            "blueprint": { "$ref": "#/$defs/identifier", "description": "The input's relation blueprint." },
+            "filter": {
+              "$ref": "#/$defs/filter",
+              "description": "Can compare with $me and $me.<attribute>, such as {property: members, op: contains, value: $me}, but not with $entity or inputs."
+            }
+          },
+          "required": ["blueprint"],
+          "additionalProperties": false
+        },
+        "otherwise": {
+          "enum": ["nothing", "everything"],
+          "description": "What the input starts at when the query finds nothing: no values, or everything, as if it had no default. Left out, nothing."
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    }
+  }
+}

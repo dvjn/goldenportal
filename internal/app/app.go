@@ -12,6 +12,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
+	portalmcp "github.com/dvjn/goldenportal/internal/mcp"
 	"github.com/dvjn/goldenportal/internal/oauth"
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/scorecard"
@@ -24,6 +25,7 @@ import (
 
 func New() *gofr.App {
 	app := gofr.New()
+	api := newAPIRoutes(app)
 	app.Migrate(migrations.All())
 
 	secureCookies := app.Config.GetOrDefault("GP_COOKIE_SECURE", "true") != "false"
@@ -57,10 +59,14 @@ func New() *gofr.App {
 		favicon, _ = web.Favicon("")
 	}
 	app.UseMiddleware(favicon, web.SPA(web.Dist()), httpx.WithQuery)
+	mcpLimits := portalmcp.NewLimiter()
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
 		backend := auth.Middleware(store)(oidc.Routes(store)(next))
-		return scimServer.Routes(c.SQL)(oauthServer.Routes(c.SQL)(backend))
+		// MCP tools run API calls in-process as the token's user, who the MCP
+		// endpoint already signed in.
+		mcp := portalmcp.Middleware(httpx.WithQuery(api.handler(c)), oauth.NewStore(c.SQL), oauthServer, app.Config.Get("APP_VERSION"), mcpLimits)(backend)
+		return scimServer.Routes(c.SQL)(oauthServer.Routes(c.SQL)(mcp))
 	})
 
 	app.GET("/api/v1/config", configHandler(Config{
@@ -70,13 +76,14 @@ func New() *gofr.App {
 	auth.NewHandlers(secureCookies).Register(app)
 	oauthServer.Register(app)
 	access.Register(app)
-	blueprint.Register(app, dashboard.CheckPages)
-	entity.Register(app)
-	integration.Register(app)
-	scorecard.Register(app)
-	dashboard.Register(app)
-	search.Register(app, blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
-	configdoc.RegisterBulk(app)
+	blueprint.Register(api, dashboard.CheckPages)
+	entity.Register(api)
+	integration.Register(api)
+	scorecard.Register(api)
+	dashboard.Register(api)
+	search.Register(api, blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
+	configdoc.RegisterBulk(api)
+	configdoc.RegisterSchemas(api)
 	registerSettings(app, oidc, scimServer)
 
 	return app

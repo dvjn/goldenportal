@@ -62,7 +62,7 @@ var (
 // parseHTTPConfig reads and checks the http connector's config.
 func parseHTTPConfig(r *configdoc.Reader, node *yaml.Node, path string) *HTTPConfig {
 	config := &HTTPConfig{Resources: map[string]HTTPResource{}}
-	fields, ok := r.Fields(node, path, "resources")
+	fields, ok := r.Fields(node, path, HTTPConfigFields...)
 	if !ok {
 		return config
 	}
@@ -73,7 +73,7 @@ func parseHTTPConfig(r *configdoc.Reader, node *yaml.Node, path string) *HTTPCon
 			return
 		}
 		resource := HTTPResource{Headers: map[string]HeaderValue{}}
-		resourceFields, ok := r.Fields(value, resourcePath, "url", "next", "headers")
+		resourceFields, ok := r.Fields(value, resourcePath, HTTPResourceFields...)
 		if !ok {
 			return
 		}
@@ -97,7 +97,7 @@ func parseHTTPConfig(r *configdoc.Reader, node *yaml.Node, path string) *HTTPCon
 				resource.Headers[header] = HeaderValue{Value: value.Value}
 				return
 			}
-			envFields, ok := r.Fields(value, headerPath, "env")
+			envFields, ok := r.Fields(value, headerPath, HTTPHeaderFields...)
 			if !ok {
 				return
 			}

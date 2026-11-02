@@ -81,6 +81,19 @@ const (
 	DefaultSyncInterval = 15 * time.Minute
 )
 
+// The keys each mapping of an integration takes, exported so the documents'
+// JSON Schema can be checked against them.
+var (
+	SpecFields         = []string{"connector", "sync", "mappings"}
+	ConnectorFields    = []string{"type", "config"}
+	SyncFields         = []string{"interval"}
+	MappingFields      = []string{"resource", "blueprint", "items", "filter", "entity"}
+	EntityFields       = []string{"identifier", "title", "properties"}
+	HTTPConfigFields   = []string{"resources"}
+	HTTPResourceFields = []string{"url", "next", "headers"}
+	HTTPHeaderFields   = []string{"env"}
+)
+
 func (s Spec) Key() string { return s.Identifier }
 
 func (s Spec) Meta() configdoc.Meta {
@@ -116,7 +129,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	if doc.Spec == nil {
 		return spec, r.Issues
 	}
-	fields, ok := r.Fields(doc.Spec, "spec", "connector", "sync", "mappings")
+	fields, ok := r.Fields(doc.Spec, "spec", SpecFields...)
 	if !ok {
 		return spec, r.Issues
 	}
@@ -140,7 +153,7 @@ func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) Co
 		r.Errorf(parent, "spec.connector", "add a connector, such as connector: {type: push}")
 		return Connector{}
 	}
-	fields, ok := r.Fields(node, "spec.connector", "type", "config")
+	fields, ok := r.Fields(node, "spec.connector", ConnectorFields...)
 	if !ok {
 		return Connector{}
 	}
@@ -178,7 +191,7 @@ func parseSync(r *configdoc.Reader, spec *Spec, node *yaml.Node, c Connector) {
 		r.Errorf(node, "spec.sync", "push integrations don't sync; other systems send them data")
 		return
 	}
-	fields, ok := r.Fields(node, "spec.sync", "interval")
+	fields, ok := r.Fields(node, "spec.sync", SyncFields...)
 	if !ok {
 		return
 	}
@@ -197,7 +210,7 @@ func parseSync(r *configdoc.Reader, spec *Spec, node *yaml.Node, c Connector) {
 
 func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, c Connector) Mapping {
 	m := Mapping{Items: ".", line: node.Line, Entity: EntityMapping{Properties: []Field{}}}
-	fields, ok := r.Fields(node, path, "resource", "blueprint", "items", "filter", "entity")
+	fields, ok := r.Fields(node, path, MappingFields...)
 	if !ok {
 		return m
 	}
@@ -227,7 +240,7 @@ func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, c Connector
 		return m
 	}
 	entityPath := path + ".entity"
-	entityFields, ok := r.Fields(entity, entityPath, "identifier", "title", "properties")
+	entityFields, ok := r.Fields(entity, entityPath, EntityFields...)
 	if !ok {
 		return m
 	}

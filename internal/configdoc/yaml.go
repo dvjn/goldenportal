@@ -58,6 +58,13 @@ type Document struct {
 	Root *yaml.Node
 }
 
+// The keys a document's envelope and its metadata take, exported so the
+// documents' JSON Schemas can be checked against them.
+var (
+	DocumentFields = []string{"kind", "metadata", "spec"}
+	MetadataFields = []string{"name", "title", "description", "icon", "color"}
+)
+
 // ReadDocument reads a document's envelope, kind / metadata / spec,
 // expecting kind. Issues go to r; the spec is nil when there's none to read.
 func ReadDocument(r *Reader, source, kind string) Document {
@@ -68,7 +75,7 @@ func ReadDocument(r *Reader, source, kind string) Document {
 	}
 
 	doc := Document{Root: root}
-	fields, ok := r.Fields(root, "", "kind", "metadata", "spec")
+	fields, ok := r.Fields(root, "", DocumentFields...)
 	if !ok {
 		return doc
 	}
@@ -84,7 +91,7 @@ func ReadDocument(r *Reader, source, kind string) Document {
 	metadata := fields["metadata"]
 	if metadata == nil {
 		r.Errorf(root, "metadata", "add metadata with a name and a title")
-	} else if meta, ok := r.Fields(metadata, "metadata", "name", "title", "description", "icon", "color"); ok {
+	} else if meta, ok := r.Fields(metadata, "metadata", MetadataFields...); ok {
 		doc.Name = r.Text(meta["name"], "metadata.name")
 		if !ValidIdentifier(doc.Name) {
 			r.Errorf(OrNode(meta["name"], metadata), "metadata.name",

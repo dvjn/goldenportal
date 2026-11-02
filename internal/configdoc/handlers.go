@@ -25,7 +25,7 @@ func ValidIdentifier(s string) bool { return identifierPattern.MatchString(s) }
 
 // Register serves the documents of kind under /api/v1/<plural>. Members can
 // read them; builders can change them.
-func Register[S Spec](app *gofr.App, kind Kind[S]) {
+func Register[S Spec](app httpx.Routes, kind Kind[S]) {
 	h := handlers[S]{kind: kind}
 	kinds = append(kinds, h)
 	base := "/api/v1/" + kind.Plural

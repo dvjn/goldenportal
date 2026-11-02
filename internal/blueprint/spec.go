@@ -141,6 +141,23 @@ var (
 	BuiltIns = []string{"identifier", "title", "blueprint", "integration", "createdAt", "updatedAt"}
 )
 
+// The keys each mapping of a blueprint takes, exported so the documents'
+// JSON Schema can be checked against them.
+var (
+	SpecFields     = []string{"properties", "catalog", "entity"}
+	PropertyFields = []string{
+		"title", "description", "type", "format", "enum", "required", "pattern", "minLength", "maxLength",
+		"minimum", "maximum", "items", "relation", "many", "lookup", "compute", "scorecard", "display",
+	}
+	ItemsFields   = []string{"type", "format", "enum"}
+	CatalogFields = []string{"columns", "queries", "tabs"}
+	EntityFields  = []string{"header", "sections", "queries", "tabs"}
+	// DisplayFields keeps column, which moved, to say where it went.
+	DisplayFields = []string{"as", "unit", "colors", "column", "filter", "hidden", "empty"}
+	HeaderFields  = []string{"subtitle", "badges", "link"}
+	SectionFields = []string{"title", "properties"}
+)
+
 // ValidIdentifier reports whether s can name a blueprint.
 func ValidIdentifier(s string) bool { return configdoc.ValidIdentifier(s) }
 
@@ -160,7 +177,7 @@ func Parse(source string) (Spec, []Issue) {
 		return spec, p.Issues
 	}
 
-	if fields, ok := p.Fields(doc.Spec, "spec", "properties", "catalog", "entity"); ok {
+	if fields, ok := p.Fields(doc.Spec, "spec", SpecFields...); ok {
 		p.Each(fields["properties"], "spec.properties", func(id string, key, value *yaml.Node) {
 			spec.Properties = append(spec.Properties, p.property(id, "spec.properties."+id, key, value))
 		})
@@ -193,9 +210,7 @@ type parser struct{ configdoc.Reader }
 
 func (p *parser) property(id, path string, key, node *yaml.Node) Property {
 	prop := Property{ID: id, Title: id, line: key.Line}
-	fields, ok := p.Fields(node, path, "title", "description", "type", "format", "enum", "required",
-		"pattern", "minLength", "maxLength", "minimum", "maximum", "items", "relation", "many", "lookup", "compute",
-		"scorecard", "display")
+	fields, ok := p.Fields(node, path, PropertyFields...)
 	if !ok {
 		return prop
 	}
@@ -295,7 +310,7 @@ func (p *parser) shape(prop Property, path string, key *yaml.Node, fields map[st
 
 func (p *parser) items(node *yaml.Node, path string) *Items {
 	items := &Items{}
-	fields, ok := p.Fields(node, path, "type", "format", "enum")
+	fields, ok := p.Fields(node, path, ItemsFields...)
 	if !ok {
 		return items
 	}
@@ -413,7 +428,7 @@ func (p *parser) page(node *yaml.Node, path string, scope widget.Scope, reserved
 	if node == nil {
 		return nil
 	}
-	fields, ok := p.Fields(node, path, "columns", "queries", "tabs")
+	fields, ok := p.Fields(node, path, CatalogFields...)
 	if !ok {
 		return nil
 	}
@@ -476,7 +491,7 @@ func (p *parser) entityPage(node *yaml.Node, path string, spec Spec) *Page {
 	if node == nil {
 		return nil
 	}
-	fields, ok := p.Fields(node, path, "header", "sections", "queries", "tabs")
+	fields, ok := p.Fields(node, path, EntityFields...)
 	if !ok {
 		return nil
 	}

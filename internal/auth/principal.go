@@ -87,6 +87,13 @@ func FromContext(ctx context.Context) (Principal, bool) {
 	return info.principal, ok
 }
 
+// WithPrincipal signs in a call the server makes on p's behalf, such as an
+// MCP tool's API request, which the client authorized with its own token
+// rather than a session or API token.
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return withAuth(ctx, authInfo{principal: p, viaToken: true})
+}
+
 // InSession reports whether the request was signed in with a browser
 // session, rather than a token: consenting on someone's behalf, for one,
 // is for them to do in person.

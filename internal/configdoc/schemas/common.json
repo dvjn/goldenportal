@@ -1,0 +1,417 @@
+{
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+      "description": "A document's identifier, such as service or team-directory: a lowercase letter, then lowercase letters, digits, - and _ (up to 63)."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,62}$",
+      "description": "A letter, then letters, digits, - and _ (up to 63)."
+    },
+    "color": {
+      "enum": ["gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose"]
+    },
+    "icon": {
+      "type": "string",
+      "description": "A Lucide icon name in kebab case, such as server, users or circle-check."
+    },
+    "jq": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A jq expression. Quote it, or use a |- block scalar, when YAML would read it as a list or mapping, such as [.a]. Entities are flat: properties sit beside identifier and title, so write .owner, not .properties.owner."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*(\\.[a-zA-Z][a-zA-Z0-9_-]*)*$",
+      "description": "A field's path: a property or built-in field (identifier, title, blueprint, integration, createdAt, updatedAt), followed through relations and scorecard properties with dots, such as owner.title or readiness.tier. No $."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "What identifies the document and how it's shown in lists.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier",
+          "description": "The document's identifier. It can't change once published, since other documents and data refer to it."
+        },
+        "title": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "The human-readable name shown in the portal."
+        },
+        "description": {
+          "type": "string",
+          "description": "One or two sentences saying what this is for."
+        },
+        "icon": {
+          "$ref": "#/$defs/icon"
+        },
+        "color": {
+          "$ref": "#/$defs/color",
+          "description": "Tints the icon's tile, so it needs an icon."
+        }
+      },
+      "required": ["name", "title"],
+      "dependentRequired": {
+        "color": ["icon"]
+      },
+      "additionalProperties": false
+    },
+    "scalar": {
+      "type": ["string", "number", "boolean"]
+    },
+    "filter": {
+      "type": "object",
+      "description": "A condition on entities: a comparison {property, op, value or values}, or and, or and not combining conditions. A value starting with $ is a variable: $entity is the entity whose page it is (entity pages only); $me is the viewer's email and $me.email, $me.name, $me.role and $me.groups their attributes; $input.<id> is a dashboard input (Home only); $today is the date.",
+      "properties": {
+        "and": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/filter" },
+          "description": "Matches entities every condition matches."
+        },
+        "or": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/filter" },
+          "description": "Matches entities any condition matches."
+        },
+        "not": {
+          "$ref": "#/$defs/filter",
+          "description": "Matches entities the condition doesn't."
+        },
+        "property": {
+          "$ref": "#/$defs/path",
+          "description": "The path of the field to compare, such as tier, owner.title or createdAt."
+        },
+        "op": {
+          "enum": ["eq", "ne", "in", "contains", "exists", "gt", "gte", "lt", "lte", "within"],
+          "description": "How to compare. in takes values; exists takes nothing; contains matches a list item, a related entity or text within a string; within matches dates in the last duration given as value, such as 30m, 12h, 7d or 2w; the rest take value."
+        },
+        "value": {
+          "$ref": "#/$defs/scalar",
+          "description": "What to compare with, or a variable such as $entity, $me or $input.team."
+        },
+        "values": {
+          "description": "What in compares with: a list, or a variable holding several, such as $input.team.",
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/scalar" } },
+            { "type": "string", "pattern": "^\\$" }
+          ]
+        }
+      },
+      "dependentRequired": {
+        "property": ["op"],
+        "op": ["property"]
+      },
+      "additionalProperties": false
+    },
+    "query": {
+      "type": "object",
+      "description": "Picks entities: those of a blueprint that match a filter.",
+      "properties": {
+        "blueprint": {
+          "$ref": "#/$defs/identifier",
+          "description": "The blueprint whose entities it picks. On a blueprint's pages it defaults to that blueprint; on Home it's required."
+        },
+        "filter": {
+          "$ref": "#/$defs/filter",
+          "description": "Keeps the entities that match. Left out, every entity of the blueprint."
+        }
+      },
+      "additionalProperties": false
+    },
+    "queries": {
+      "type": "object",
+      "description": "Named queries the page's widgets share, keyed by name, which widgets write in place of a query.",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/query" }
+    },
+    "queryRef": {
+      "description": "The entities it shows: the name of one of the page's queries, or a query written in place. On a blueprint's pages, left out it's every entity of the blueprint; on Home it's required.",
+      "oneOf": [
+        { "$ref": "#/$defs/name" },
+        { "$ref": "#/$defs/query" }
+      ]
+    },
+    "template": {
+      "type": "string",
+      "description": "A template whose {{ }} hold jq, run on the widget's or row's entity, with $me, $input.<id>, $today and on entity pages $entity. What each gives is URL-escaped."
+    },
+    "link": {
+      "type": "object",
+      "description": "What clicking the widget opens: the catalog showing a query's entities, a URL, or a page in the portal. Exactly one of query, url and path.",
+      "properties": {
+        "query": {
+          "$ref": "#/$defs/queryRef",
+          "description": "Opens the catalog showing this query's entities."
+        },
+        "filter": {
+          "$ref": "#/$defs/filter",
+          "description": "Narrows the query's entities for the link only."
+        },
+        "group": {
+          "type": "boolean",
+          "description": "Bars and donuts only: each group opens its own entities."
+        },
+        "url": {
+          "allOf": [{ "$ref": "#/$defs/template" }],
+          "pattern": "^https?://",
+          "description": "An http or https URL template, such as https://grafana.example.com/d/{{ .identifier }}."
+        },
+        "path": {
+          "allOf": [{ "$ref": "#/$defs/template" }],
+          "pattern": "^/[^/\\\\]",
+          "description": "A path in the portal template, starting with one /, such as /scorecards/service-readiness."
+        }
+      },
+      "oneOf": [
+        { "required": ["query"] },
+        { "required": ["url"] },
+        { "required": ["path"] }
+      ],
+      "dependentRequired": {
+        "filter": ["query"],
+        "group": ["query"]
+      },
+      "additionalProperties": false
+    },
+    "rowLink": {
+      "type": "object",
+      "description": "What each table row opens instead of its entity's page: one of url and path, templated on the row's entity.",
+      "properties": {
+        "url": { "$ref": "#/$defs/link/properties/url" },
+        "path": { "$ref": "#/$defs/link/properties/path" }
+      },
+      "oneOf": [
+        { "required": ["url"] },
+        { "required": ["path"] }
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "type": "object",
+      "description": "The number a stat shows, worked out from a query's entities: how many there are, unless it has one of sum, avg, min, max, share or jq.",
+      "properties": {
+        "query": { "$ref": "#/$defs/queryRef" },
+        "unit": {
+          "type": "string",
+          "description": "Follows the number, such as ms. sum, avg, min and max take their field's unit unless this says otherwise; share is always %, so takes none."
+        },
+        "sum": { "$ref": "#/$defs/path", "description": "The path of a number field to total." },
+        "avg": { "$ref": "#/$defs/path", "description": "The path of a number field to average." },
+        "min": { "$ref": "#/$defs/path", "description": "The path of a number field to take the lowest of." },
+        "max": { "$ref": "#/$defs/path", "description": "The path of a number field to take the highest of." },
+        "share": {
+          "$ref": "#/$defs/filter",
+          "description": "Shows the percent of the query's entities matching this condition."
+        },
+        "jq": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over the query's entities, as a list, that gives a number. Slower than the others, so prefer them."
+        }
+      },
+      "dependentSchemas": {
+        "share": { "properties": { "unit": false } }
+      },
+      "additionalProperties": false
+    },
+    "column": {
+      "description": "A table column: a field's path, or a titled column with a path or jq over the row's entity.",
+      "oneOf": [
+        { "$ref": "#/$defs/path" },
+        {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string", "description": "The column's heading. A path column defaults to its field's title." },
+            "path": { "$ref": "#/$defs/path" },
+            "jq": { "$ref": "#/$defs/jq", "description": "jq over the row's entity, giving the cell's value." },
+            "unit": { "type": "string", "description": "Follows numbers in the column, such as ms." }
+          },
+          "oneOf": [
+            { "required": ["path"] },
+            { "required": ["jq", "title"] }
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "widgetTitle": {
+      "type": "string",
+      "description": "Shown on the widget. On Home it can hold {{ }} jq, such as {{ $me.name }}; a blueprint's pages can't."
+    },
+    "widgetDescription": {
+      "type": "string",
+      "description": "A line under the title saying what the widget shows."
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12,
+      "description": "How many of the page's 12 grid columns the widget spans."
+    },
+    "statWidget": {
+      "type": "object",
+      "description": "A single number, such as how many services are critical. Default width 3.",
+      "properties": {
+        "type": { "const": "stat" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "value": { "$ref": "#/$defs/value" },
+        "link": { "$ref": "#/$defs/link" },
+        "icon": { "$ref": "#/$defs/icon" },
+        "color": { "$ref": "#/$defs/color", "description": "Tints the icon, so it needs an icon." }
+      },
+      "required": ["type", "title", "value"],
+      "dependentRequired": { "color": ["icon"] },
+      "additionalProperties": false
+    },
+    "groupBy": {
+      "type": "string",
+      "description": "The path of the field to count entities by, such as tier or owner."
+    },
+    "barWidget": {
+      "type": "object",
+      "description": "Bars counting a query's entities by a field. Default width 6.",
+      "properties": {
+        "type": { "const": "bar" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "query": { "$ref": "#/$defs/queryRef" },
+        "groupBy": { "$ref": "#/$defs/groupBy" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many groups to show, largest first. Default 8." },
+        "link": { "$ref": "#/$defs/link" }
+      },
+      "required": ["type", "title", "groupBy"],
+      "additionalProperties": false
+    },
+    "donutWidget": {
+      "type": "object",
+      "description": "A donut counting a query's entities by a field. Default width 4.",
+      "properties": {
+        "type": { "const": "donut" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "query": { "$ref": "#/$defs/queryRef" },
+        "groupBy": { "$ref": "#/$defs/groupBy" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many groups to show, largest first. Default 8." },
+        "link": { "$ref": "#/$defs/link" }
+      },
+      "required": ["type", "title", "groupBy"],
+      "additionalProperties": false
+    },
+    "tableWidget": {
+      "type": "object",
+      "description": "A table of a query's entities, each row opening its entity. Default width 12.",
+      "properties": {
+        "type": { "const": "table" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "query": { "$ref": "#/$defs/queryRef" },
+        "columns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/column" },
+          "description": "The columns after the title column, which always comes first."
+        },
+        "sort": {
+          "type": "string",
+          "description": "The path of the field to sort by, with a leading - for descending, such as -updatedAt."
+        },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "How many rows to show. Default 10." },
+        "link": { "$ref": "#/$defs/link" },
+        "rowLink": { "$ref": "#/$defs/rowLink" }
+      },
+      "required": ["type", "title"],
+      "additionalProperties": false
+    },
+    "scorecardWidget": {
+      "type": "object",
+      "description": "How a scorecard's entities spread across its tiers. Default width 6.",
+      "properties": {
+        "type": { "const": "scorecard" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "scorecard": { "$ref": "#/$defs/identifier", "description": "The scorecard to show." },
+        "query": {
+          "$ref": "#/$defs/queryRef",
+          "description": "Narrows the scorecard's entities. The scorecard decides the blueprint, so this can leave it out."
+        },
+        "link": { "$ref": "#/$defs/link" }
+      },
+      "required": ["type", "title", "scorecard"],
+      "additionalProperties": false
+    },
+    "markdownWidget": {
+      "type": "object",
+      "description": "Text in Markdown, such as notes or links. Its {{ }} hold jq with $me, and on entity pages $entity. Default width 6.",
+      "properties": {
+        "type": { "const": "markdown" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "text": { "type": "string", "pattern": "\\S", "description": "The Markdown to show." }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+    "propertiesWidget": {
+      "type": "object",
+      "description": "Entity pages only: some of the entity's properties, in order. Default width 6.",
+      "properties": {
+        "type": { "const": "properties" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "properties": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The properties to show, by name."
+        }
+      },
+      "required": ["type", "title"],
+      "additionalProperties": false
+    },
+    "widget": {
+      "description": "A tile on a page. type decides which other fields it takes.",
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        { "$ref": "#/$defs/statWidget" },
+        { "$ref": "#/$defs/barWidget" },
+        { "$ref": "#/$defs/donutWidget" },
+        { "$ref": "#/$defs/tableWidget" },
+        { "$ref": "#/$defs/scorecardWidget" },
+        { "$ref": "#/$defs/markdownWidget" },
+        { "$ref": "#/$defs/propertiesWidget" }
+      ]
+    },
+    "widgets": {
+      "type": "object",
+      "description": "The widgets, keyed by identifier, laid out in the order written, left to right on a 12-column grid.",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/widget" },
+      "minProperties": 1
+    },
+    "tab": {
+      "type": "object",
+      "description": "A tab of widgets.",
+      "properties": {
+        "title": { "type": "string", "description": "The tab's label. Defaults to its identifier." },
+        "icon": { "$ref": "#/$defs/icon" },
+        "widgets": { "$ref": "#/$defs/widgets" }
+      },
+      "required": ["widgets"],
+      "additionalProperties": false
+    },
+    "tabs": {
+      "type": "object",
+      "description": "Tabs of widgets, keyed by identifier, shown after the tabs every page has, in the order written.",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/tab" }
+    }
+  }
+}

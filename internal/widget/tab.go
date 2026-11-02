@@ -30,7 +30,7 @@ func ParseTabs(r *configdoc.Reader, node *yaml.Node, path string, scope Scope, r
 			r.Errorf(key, tabPath, "%s are tabs every page has, so tabs can't be named after them", strings.Join(reserved, " and "))
 		}
 		tab := Tab{ID: id, Title: id, Widgets: []Widget{}}
-		fields, ok := r.Fields(value, tabPath, "title", "icon", "widgets")
+		fields, ok := r.Fields(value, tabPath, TabFields...)
 		if !ok {
 			tabs = append(tabs, tab)
 			return

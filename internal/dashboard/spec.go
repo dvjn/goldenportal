@@ -81,6 +81,15 @@ const (
 
 var inputTypes = []string{InputEnum, InputString, InputRelation}
 
+// The keys each mapping of a dashboard takes, exported so the documents'
+// JSON Schema can be checked against them.
+var (
+	SpecFields     = []string{"order", "inputs", "queries", "widgets", "visibility", "defaultFor"}
+	InputFields    = []string{"title", "type", "values", "relation", "multiple", "default"}
+	DefaultFields  = []string{"query", "otherwise"}
+	AudienceFields = []string{"roles", "groups"}
+)
+
 // reservedInputs can't name an input, since Home's URL uses them.
 var reservedInputs = []string{"d"}
 
@@ -129,7 +138,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 		r.Errorf(n, "spec.filters", "filters are now inputs: rename spec.filters to spec.inputs, and $filter.<id> to $input.<id>")
 		return spec, r.Issues
 	}
-	fields, ok := r.Fields(doc.Spec, "spec", "order", "inputs", "queries", "widgets", "visibility", "defaultFor")
+	fields, ok := r.Fields(doc.Spec, "spec", SpecFields...)
 	if !ok {
 		return spec, r.Issues
 	}
@@ -202,7 +211,7 @@ func parseInput(r *configdoc.Reader, path, id string, key, node *yaml.Node) Inpu
 	case slices.Contains(reservedInputs, id):
 		r.Errorf(key, path, "%s picks the open dashboard in Home's URL, so inputs can't be named %s", id, id)
 	}
-	fields, ok := r.Fields(node, path, "title", "type", "values", "relation", "multiple", "default")
+	fields, ok := r.Fields(node, path, InputFields...)
 	if !ok {
 		return f
 	}
@@ -266,7 +275,7 @@ func parseDefaultQuery(r *configdoc.Reader, node *yaml.Node, path string, f Inpu
 		r.Errorf(node, path, "a default query picks entities, so only a relation input with multiple: true can have one")
 		return nil
 	}
-	fields, ok := r.Fields(node, path, "query", "otherwise")
+	fields, ok := r.Fields(node, path, DefaultFields...)
 	if !ok {
 		return nil
 	}
@@ -282,7 +291,7 @@ func parseDefaultQuery(r *configdoc.Reader, node *yaml.Node, path string, f Inpu
 		r.Errorf(node, path+".query", "add the query whose entities the input starts at, as blueprint and filter")
 		return d
 	}
-	queryFields, ok := r.Fields(n, path+".query", "blueprint", "filter")
+	queryFields, ok := r.Fields(n, path+".query", widget.QueryFields...)
 	if !ok {
 		return d
 	}

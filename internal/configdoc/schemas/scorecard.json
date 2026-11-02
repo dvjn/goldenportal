@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scorecard",
+  "description": "A scorecard rates the entities of one blueprint against a ladder of tiers, such as bronze, silver and gold, each a set of jq checks. To show results in the catalog, the blueprint declares a property with type: scorecard naming it.",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "Scorecard" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "required": ["kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "$defs": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "blueprint": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it scores." },
+        "filter": {
+          "$ref": "#/$defs/filter",
+          "description": "Scores only the entities that match. There's no viewer or page, so variables such as $me don't apply."
+        },
+        "tiers": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The tiers, lowest first. An entity reaches a tier by meeting its criteria and every tier's below.",
+          "items": { "$ref": "#/$defs/tier" }
+        }
+      },
+      "required": ["blueprint", "tiers"],
+      "additionalProperties": false
+    },
+    "tier": {
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "#/$defs/name", "description": "The tier's identifier, unique in the scorecard, such as gold. Paths read it as <property>.tier." },
+        "title": { "type": "string", "description": "The tier's label. Defaults to its name." },
+        "color": { "$ref": "#/$defs/color", "description": "Colors the tier's badge." },
+        "criteria": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "The checks for this tier, keyed by identifier, unique across all tiers.",
+          "propertyNames": { "$ref": "#/$defs/name" },
+          "additionalProperties": { "$ref": "#/$defs/criterion" }
+        }
+      },
+      "required": ["name", "criteria"],
+      "additionalProperties": false
+    },
+    "criterion": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "What the check asks, such as Has an owner. Defaults to its identifier." },
+        "description": { "type": "string", "description": "Why the check matters." },
+        "check": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over the entity giving true or false, such as .owner != null. Lookups and scorecard properties are there too."
+        },
+        "when": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over the entity; the check only applies to entities it's true for, such as .critical."
+        },
+        "fix": { "type": "string", "description": "What to do when the check fails, shown to the entity's owners." }
+      },
+      "required": ["check"],
+      "additionalProperties": false
+    }
+  }
+}

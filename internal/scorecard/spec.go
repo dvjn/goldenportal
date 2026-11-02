@@ -57,6 +57,14 @@ type Criterion struct {
 	line int
 }
 
+// The keys each mapping of a scorecard takes, exported so the documents'
+// JSON Schema can be checked against them.
+var (
+	SpecFields      = []string{"blueprint", "filter", "tiers"}
+	TierFields      = []string{"name", "title", "color", "criteria"}
+	CriterionFields = []string{"title", "description", "check", "when", "fix"}
+)
+
 var namePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
 
 func (s Spec) Key() string { return s.Identifier }
@@ -86,7 +94,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	if doc.Spec == nil {
 		return spec, r.Issues
 	}
-	fields, ok := r.Fields(doc.Spec, "spec", "blueprint", "filter", "tiers")
+	fields, ok := r.Fields(doc.Spec, "spec", SpecFields...)
 	if !ok {
 		return spec, r.Issues
 	}
@@ -121,7 +129,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 
 func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map[string]bool) Tier {
 	tier := Tier{Criteria: []Criterion{}}
-	fields, ok := r.Fields(node, path, "name", "title", "color", "criteria")
+	fields, ok := r.Fields(node, path, TierFields...)
 	if !ok {
 		return tier
 	}
@@ -155,7 +163,7 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 			r.Errorf(key, criterionPath, "another criterion is already named %q; criteria are named across tiers", id)
 		}
 		ids[id] = true
-		criterionFields, ok := r.Fields(value, criterionPath, "title", "description", "check", "when", "fix")
+		criterionFields, ok := r.Fields(value, criterionPath, CriterionFields...)
 		if !ok {
 			tier.Criteria = append(tier.Criteria, c)
 			return

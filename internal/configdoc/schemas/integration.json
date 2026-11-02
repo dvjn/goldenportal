@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Integration",
+  "description": "An integration writes entities into the catalog: a connector brings in data, pushed by another system or pulled on a schedule, and mappings turn it into entities of blueprints with jq.",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "Integration" },
+    "metadata": {
+      "$ref": "#/$defs/metadata",
+      "description": "What identifies the integration. Its icon and color come from its connector, so it takes neither.",
+      "properties": { "icon": false, "color": false }
+    },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "required": ["kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "$defs": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "connector": { "$ref": "#/$defs/connector" },
+        "sync": { "$ref": "#/$defs/sync" },
+        "mappings": {
+          "type": "array",
+          "minItems": 1,
+          "description": "One mapping for each kind of entity the integration writes. They're also the only blueprints it can write.",
+          "items": { "$ref": "#/$defs/mapping" }
+        }
+      },
+      "required": ["connector", "mappings"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "connector": { "properties": { "type": { "const": "push" } }, "required": ["type"] } },
+            "required": ["connector"]
+          },
+          "then": {
+            "properties": {
+              "sync": false,
+              "mappings": { "items": { "properties": { "resource": false } } }
+            }
+          },
+          "else": {
+            "properties": { "mappings": { "items": { "required": ["resource"] } } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "connector": { "properties": { "type": { "const": "portal" } }, "required": ["type"] } },
+            "required": ["connector"]
+          },
+          "then": {
+            "properties": {
+              "mappings": { "items": { "properties": { "resource": { "enum": ["users", "groups", "blueprints", "integrations"] } } } }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "connector": {
+      "type": "object",
+      "description": "Where the data comes from.",
+      "properties": {
+        "type": {
+          "enum": ["push", "portal", "http"],
+          "description": "push: other systems send JSON to the ingest API with an ingestion token. portal: the portal's own users, groups, blueprints and integrations, synced one way. http: JSON fetched from URLs on a schedule, following pages."
+        },
+        "config": { "$ref": "#/$defs/httpConfig" }
+      },
+      "required": ["type"],
+      "if": { "properties": { "type": { "const": "http" } } },
+      "then": { "required": ["config"] },
+      "else": { "properties": { "config": false } },
+      "additionalProperties": false
+    },
+    "httpConfig": {
+      "type": "object",
+      "description": "The http connector's config. Only it takes one.",
+      "properties": {
+        "resources": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "The JSON documents to fetch, keyed by the resource name mappings use.",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,62}$" },
+          "additionalProperties": { "$ref": "#/$defs/httpResource" }
+        }
+      },
+      "required": ["resources"],
+      "additionalProperties": false
+    },
+    "httpResource": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "pattern": "^https?://[^/]", "description": "The http or https URL of the first page." },
+        "next": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over a page giving the next page's URL, absolute or relative to the page, or null on the last page. Left out, there's one page."
+        },
+        "headers": {
+          "type": "object",
+          "description": "Request headers, keyed by name. Write secrets as {env: GP_SECRET_...}, read from the server's environment, never inline.",
+          "propertyNames": { "pattern": "^[A-Za-z0-9-]+$" },
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "env": {
+                    "type": "string",
+                    "pattern": "^GP_SECRET_",
+                    "description": "An environment variable of the server, starting with GP_SECRET_."
+                  }
+                },
+                "required": ["env"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    },
+    "sync": {
+      "type": "object",
+      "description": "Pull connectors only: how often to sync. Push integrations don't sync.",
+      "properties": {
+        "interval": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "description": "A Go duration of at least 1m, such as 5m or 1h. Defaults to 15m."
+        }
+      },
+      "required": ["interval"],
+      "additionalProperties": false
+    },
+    "mapping": {
+      "type": "object",
+      "description": "Turns items of the incoming data into entities of one blueprint. Every expression is jq.",
+      "properties": {
+        "resource": {
+          "type": "string",
+          "description": "Pull connectors only, and required there: what to fetch for this mapping, one of the connector's resources (portal: users, groups, blueprints or integrations; http: a key of config.resources)."
+        },
+        "blueprint": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it writes." },
+        "items": {
+          "$ref": "#/$defs/jq",
+          "description": "jq picking the items from the data, the pushed body or each fetched page, such as .services[]. Each result is one entity. Defaults to ., the data itself."
+        },
+        "filter": { "$ref": "#/$defs/jq", "description": "jq over each item; keeps the items it's true for." },
+        "entity": { "$ref": "#/$defs/entityMapping" }
+      },
+      "required": ["blueprint", "entity"],
+      "additionalProperties": false
+    },
+    "entityMapping": {
+      "type": "object",
+      "description": "Makes an entity from an item, with jq over the item.",
+      "properties": {
+        "identifier": { "$ref": "#/$defs/jq", "description": "jq giving the entity's identifier, such as .id." },
+        "title": { "$ref": "#/$defs/jq", "description": "jq giving the entity's title. Defaults to its identifier." },
+        "properties": {
+          "type": "object",
+          "description": "jq giving each property's value, keyed by the blueprint's stored property or relation. A relation takes the identifier, or a list of them, of the related entities.",
+          "additionalProperties": { "$ref": "#/$defs/jq" }
+        }
+      },
+      "required": ["identifier"],
+      "additionalProperties": false
+    }
+  }
+}

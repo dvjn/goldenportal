@@ -42,7 +42,7 @@ var displays = map[string][]string{
 
 func (p *parser) display(node *yaml.Node, path string, prop Property) *Display {
 	d := &Display{}
-	fields, ok := p.Fields(node, path, "as", "unit", "colors", "column", "filter", "hidden", "empty")
+	fields, ok := p.Fields(node, path, DisplayFields...)
 	if !ok {
 		return d
 	}

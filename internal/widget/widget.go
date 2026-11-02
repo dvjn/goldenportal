@@ -141,6 +141,30 @@ const (
 	TypeProperties = "properties"
 )
 
+// The keys each mapping of a widget takes, beside its type's own, exported
+// so the documents' JSON Schemas can be checked against them.
+var (
+	TabFields    = []string{"title", "icon", "widgets"}
+	QueryFields  = []string{"blueprint", "filter"}
+	WidgetFields = []string{"type", "title", "description", "width"}
+	ValueFields  = slices.Concat([]string{"query", "unit"}, valueOps)
+	// RowLinkFields leave out what needs a query, since rows have none.
+	RowLinkFields = []string{"url", "path"}
+	LinkFields    = slices.Concat(RowLinkFields, []string{"query", "filter", "group"})
+	ColumnFields  = []string{"title", "path", "jq", "unit"}
+)
+
+// TypeFields lists the keys a widget of a type takes, or nil for a type
+// there isn't.
+func TypeFields(widgetType string) []string {
+	kind, ok := types[widgetType]
+	if !ok {
+		return nil
+	}
+
+	return slices.Concat(WidgetFields, kind.fields)
+}
+
 // types lists each type's own fields and default width.
 var types = map[string]struct {
 	fields []string
@@ -238,7 +262,7 @@ func readQuery(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sco
 	if !optional {
 		q.Blueprint = scope.Blueprint
 	}
-	fields, ok := r.Fields(node, path, "blueprint", "filter")
+	fields, ok := r.Fields(node, path, QueryFields...)
 	if !ok {
 		return q
 	}
@@ -307,7 +331,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 	w.Type = r.Text(typeNode, path+".type")
 	kind, known := types[w.Type]
 	if !known {
-		r.Errorf(configdoc.OrNode(typeNode, key), path+".type", "type must be one of %s", strings.Join(typeNames(), ", "))
+		r.Errorf(configdoc.OrNode(typeNode, key), path+".type", "type must be one of %s", strings.Join(Types(), ", "))
 		return w
 	}
 	current := *node
@@ -319,7 +343,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		}
 		current.Content = append(current.Content, node.Content[i], node.Content[i+1])
 	}
-	fields, ok := r.Fields(&current, path, append([]string{"type", "title", "description", "width"}, kind.fields...)...)
+	fields, ok := r.Fields(&current, path, TypeFields(w.Type)...)
 	if !ok {
 		return w
 	}
@@ -414,7 +438,7 @@ func parseValue(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sc
 			return nil
 		}
 	}
-	fields, ok := r.Fields(node, path, append([]string{"query", "unit"}, valueOps...)...)
+	fields, ok := r.Fields(node, path, ValueFields...)
 	if !ok {
 		return nil
 	}
@@ -476,9 +500,9 @@ func parseLink(r *configdoc.Reader, node *yaml.Node, path, widgetType string, sc
 		return nil
 	}
 	row := widgetType == ""
-	allowed := []string{"url", "path"}
-	if !row {
-		allowed = append(allowed, "query", "filter", "group")
+	allowed := LinkFields
+	if row {
+		allowed = RowLinkFields
 	}
 	fields, ok := r.Fields(node, path, allowed...)
 	if !ok {
@@ -557,7 +581,7 @@ func parseColumns(r *configdoc.Reader, node *yaml.Node, path string, scope Scope
 			r.Errorf(n, itemPath+".value", "value is now jq, beside a path column's path")
 			return
 		}
-		fields, ok := r.Fields(item, itemPath, "title", "path", "jq", "unit")
+		fields, ok := r.Fields(item, itemPath, ColumnFields...)
 		if !ok {
 			return
 		}
@@ -687,7 +711,8 @@ func checkText(r *configdoc.Reader, node *yaml.Node, path string, scope Scope) {
 	}
 }
 
-func typeNames() []string {
+// Types lists the widget types, sorted.
+func Types() []string {
 	names := make([]string, 0, len(types))
 	for t := range types {
 		names = append(names, t)

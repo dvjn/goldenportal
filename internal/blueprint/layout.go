@@ -24,7 +24,7 @@ type Section struct {
 }
 
 func (p *parser) header(node *yaml.Node, path string, spec Spec) *Header {
-	fields, ok := p.Fields(node, path, "subtitle", "badges", "link")
+	fields, ok := p.Fields(node, path, HeaderFields...)
 	if !ok {
 		return nil
 	}
@@ -52,7 +52,7 @@ func (p *parser) sections(node *yaml.Node, path string, spec Spec) []Section {
 	placed := map[string]bool{}
 	p.List(node, path, func(i int, item *yaml.Node) {
 		at := fmt.Sprintf("%s[%d]", path, i)
-		fields, ok := p.Fields(item, at, "title", "properties")
+		fields, ok := p.Fields(item, at, SectionFields...)
 		if !ok {
 			return
 		}

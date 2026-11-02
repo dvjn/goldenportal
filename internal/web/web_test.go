@@ -146,3 +146,15 @@ func TestSPAForbidsFraming(t *testing.T) {
 		t.Errorf("pages can be framed: %v", w.Header())
 	}
 }
+
+func TestSPALeavesMCPToTheServer(t *testing.T) {
+	files := fstest.MapFS{"index.html": {Data: []byte("<html>shell</html>")}}
+	handler := SPA(files)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/mcp", nil))
+	if w.Code != http.StatusTeapot {
+		t.Errorf("GET /mcp got the app shell: %d", w.Code)
+	}
+}

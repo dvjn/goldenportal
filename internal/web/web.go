@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -17,6 +18,10 @@ const (
 )
 
 var passthroughPrefixes = []string{"/api/", "/scim/", "/.well-known/"}
+
+// passthroughPaths are served by the server alone, like the prefixes: the
+// MCP endpoint answers GET itself.
+var passthroughPaths = []string{"/mcp"}
 
 func Dist() fs.FS {
 	dist, err := fs.Sub(embedded, "dist")
@@ -69,7 +74,7 @@ func resolve(files fs.FS, r *http.Request) (string, bool) {
 }
 
 func isPassthrough(urlPath string) bool {
-	if urlPath == "/api" {
+	if urlPath == "/api" || slices.Contains(passthroughPaths, urlPath) {
 		return true
 	}
 	for _, prefix := range passthroughPrefixes {

@@ -14,7 +14,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
-func Register(app *gofr.App) {
+func Register(app httpx.Routes) {
 	app.GET("/api/v1/catalog", catalog)
 	app.GET("/api/v1/entities", list)
 	app.GET("/api/v1/entities/facets", facets)

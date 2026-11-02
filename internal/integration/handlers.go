@@ -25,7 +25,7 @@ const (
 
 var runPageSizes = []int{10, 20, 50, 100}
 
-func Register(app *gofr.App) {
+func Register(app httpx.Routes) {
 	configdoc.Register(app, Kind)
 	app.GET("/api/v1/connectors", listConnectors)
 	app.GET("/api/v1/integrations/{identifier}/tokens", listTokens)
