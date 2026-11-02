@@ -84,7 +84,7 @@ func TestMiddleware(t *testing.T) {
 
 			req := httptest.NewRequest(tt.method, tt.path, nil)
 			if tt.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: sessionCookie, Value: tt.cookie})
+				req.AddCookie(&http.Cookie{Name: sessionCookie(true), Value: tt.cookie})
 			}
 			if tt.bearer != "" {
 				req.Header.Set("Authorization", "Bearer "+tt.bearer)
@@ -94,7 +94,7 @@ func TestMiddleware(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 
-			Middleware(resolver)(next).ServeHTTP(rec, req)
+			Middleware(resolver, true)(next).ServeHTTP(rec, req)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d (body %s)", rec.Code, tt.wantStatus, rec.Body)
@@ -212,5 +212,18 @@ func TestRequireChecksTheRole(t *testing.T) {
 	_, err = Require(context.Background(), RoleMember)
 	if !errors.As(err, &httpErr) || httpErr.Code != http.StatusUnauthorized {
 		t.Fatalf("Require() without a user = %v, want a 401", err)
+	}
+}
+
+// Browsers drop a __Host- cookie that isn't Secure, for the whole site and
+// without a domain, so a wrong attribute would sign nobody in.
+func TestSessionCookieMeetsItsPrefix(t *testing.T) {
+	c := newCookie(sessionCookie(true), "s", 60, true, http.SameSiteStrictMode)
+	if !strings.HasPrefix(c.Name, "__Host-Http-") || !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" ||
+		c.SameSite != http.SameSiteStrictMode {
+		t.Errorf("session cookie = %+v", c)
+	}
+	if strings.HasPrefix(sessionCookie(false), "__Host-") {
+		t.Error("an insecure session cookie can't carry the __Host- prefix")
 	}
 }

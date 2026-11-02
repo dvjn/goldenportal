@@ -10,13 +10,23 @@ import (
 )
 
 const (
-	sessionCookie = "gp_session"
 	// csrfHeader must be present on every state-changing web API request.
 	// Browsers cannot send a custom header cross-site without a CORS
 	// preflight, so requiring it stops cross-site requests from riding on the
 	// session cookie.
 	csrfHeader = "X-GP-CSRF"
 )
+
+// sessionCookie names the session cookie. With secure cookies it carries
+// the __Host-Http- prefix (RFC 10017 §6.1.3.2), so browsers only take it
+// from this host, over HTTPS, for the whole site, and never from script:
+// a sibling subdomain or an injected script can't plant a session.
+func sessionCookie(secure bool) string {
+	if secure {
+		return "__Host-Http-gp_session"
+	}
+	return "gp_session"
+}
 
 // IngestPrefix is where integrations push entities. Requests there sign in
 // with an ingestion token, which the ingest handlers check themselves.
@@ -37,7 +47,7 @@ type principalResolver interface {
 // the web API a browser session, and ingest an ingestion token, which its
 // handlers check. It rejects web API requests that need a user and don't
 // have one, and API paths that serve nothing. Other requests pass through.
-func Middleware(resolver principalResolver) func(http.Handler) http.Handler {
+func Middleware(resolver principalResolver, secureCookies bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
@@ -58,7 +68,7 @@ func Middleware(resolver principalResolver) func(http.Handler) http.Handler {
 				return
 			}
 
-			info, status, msg := cookieAuth(r, resolver)
+			info, status, msg := cookieAuth(r, resolver, sessionCookie(secureCookies))
 			if status != 0 {
 				httpx.WriteError(w, status, msg)
 				return
@@ -76,12 +86,12 @@ func Middleware(resolver principalResolver) func(http.Handler) http.Handler {
 	}
 }
 
-func cookieAuth(r *http.Request, resolver principalResolver) (authInfo, int, string) {
+func cookieAuth(r *http.Request, resolver principalResolver, name string) (authInfo, int, string) {
 	if !isSafeMethod(r.Method) && r.Header.Get(csrfHeader) == "" {
 		return authInfo{}, http.StatusForbidden, "the " + csrfHeader + " header is required"
 	}
 
-	cookie, err := r.Cookie(sessionCookie)
+	cookie, err := r.Cookie(name)
 	if err != nil || cookie.Value == "" {
 		return authInfo{}, 0, ""
 	}

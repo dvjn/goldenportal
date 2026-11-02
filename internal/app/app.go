@@ -65,7 +65,7 @@ func New() *gofr.App {
 	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
-		backend := auth.Middleware(store)(oidc.Routes(store)(next))
+		backend := auth.Middleware(store, secureCookies)(oidc.Routes(store)(next))
 		// MCP tools call the services as the token's user, who the MCP
 		// endpoint already signed in.
 		newContext := func(ctx context.Context) *gofr.Context {

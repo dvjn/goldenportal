@@ -126,7 +126,7 @@ func (o *OIDC) signIn(w http.ResponseWriter, r *http.Request, store Store) {
 		return
 	}
 
-	http.SetCookie(w, o.cookie(stateCookie, state, int(signInTimeout.Seconds())))
+	http.SetCookie(w, o.cookie(stateCookie, state, int(signInTimeout.Seconds()), http.SameSiteLaxMode))
 	http.Redirect(w, r, o.oauth(provider).AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), http.StatusFound)
 }
 
@@ -150,7 +150,7 @@ func (c idClaims) displayName() string {
 func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 	ctx := r.Context()
 	query := r.URL.Query()
-	http.SetCookie(w, o.cookie(stateCookie, "", -1))
+	http.SetCookie(w, o.cookie(stateCookie, "", -1, http.SameSiteLaxMode))
 
 	if code := query.Get("error"); code != "" {
 		message := query.Get("error_description")
@@ -253,7 +253,7 @@ func (o *OIDC) callback(w http.ResponseWriter, r *http.Request, store Store) {
 	o.record(ctx, store, audit.Actor{ID: userID, Label: claims.Email}, audit.SignIn,
 		audit.Target{Type: "user", ID: userID, Label: claims.Email}, nil)
 
-	http.SetCookie(w, o.cookie(sessionCookie, secret, int(sessionMaxAge.Seconds())))
+	http.SetCookie(w, o.cookie(sessionCookie(o.cfg.SecureCookies), secret, int(sessionMaxAge.Seconds()), http.SameSiteStrictMode))
 	http.Redirect(w, r, req.redirect, http.StatusFound)
 }
 
@@ -291,11 +291,15 @@ func failSignIn(w http.ResponseWriter, r *http.Request, message string) {
 	http.Redirect(w, r, "/sign-in?error="+url.QueryEscape(message), http.StatusFound)
 }
 
-func (o *OIDC) cookie(name, value string, maxAge int) *http.Cookie {
-	return newCookie(name, value, maxAge, o.cfg.SecureCookies)
+func (o *OIDC) cookie(name, value string, maxAge int, sameSite http.SameSite) *http.Cookie {
+	return newCookie(name, value, maxAge, o.cfg.SecureCookies, sameSite)
 }
 
-func newCookie(name, value string, maxAge int, secure bool) *http.Cookie {
+// newCookie makes a cookie for the whole site that script can't read. The
+// session's is Strict, since only the portal's own pages use it; the
+// sign-in state's is Lax, so it comes back on the identity provider's
+// redirect, which is a navigation from another site.
+func newCookie(name, value string, maxAge int, secure bool, sameSite http.SameSite) *http.Cookie {
 	return &http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -303,7 +307,7 @@ func newCookie(name, value string, maxAge int, secure bool) *http.Cookie {
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 	}
 }
 

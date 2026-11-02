@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"net/http"
+
 	"github.com/dvjn/goldenportal/internal/audit"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"gofr.dev/pkg/gofr"
@@ -30,7 +32,7 @@ func (h Handlers) logout(ctx *gofr.Context) (any, error) {
 	}
 
 	return response.Response{
-		Headers: map[string]string{"Set-Cookie": newCookie(sessionCookie, "", -1, h.secureCookie).String()},
+		Headers: map[string]string{"Set-Cookie": newCookie(sessionCookie(h.secureCookie), "", -1, h.secureCookie, http.SameSiteStrictMode).String()},
 	}, nil
 }
 
