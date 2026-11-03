@@ -59,6 +59,45 @@ var (
 	httpClient          = &http.Client{Timeout: httpTimeout}
 )
 
+// ReadHeaders reads headers, each written out or read from an environment
+// variable starting with SecretEnvPrefix. Issues go to r.
+func ReadHeaders(r *configdoc.Reader, node *yaml.Node, path string) map[string]HeaderValue {
+	headers := map[string]HeaderValue{}
+	r.Each(node, path, func(header string, key, value *yaml.Node) {
+		headerPath := path + "." + header
+		if !headerNamePattern.MatchString(header) {
+			r.Errorf(key, headerPath, "%q is not a header name", header)
+			return
+		}
+		if value.Kind == yaml.ScalarNode {
+			headers[header] = HeaderValue{Value: value.Value}
+			return
+		}
+		envFields, ok := r.Fields(value, headerPath, HTTPHeaderFields...)
+		if !ok {
+			return
+		}
+		env := r.Text(envFields["env"], headerPath+".env")
+		if !strings.HasPrefix(env, SecretEnvPrefix) {
+			r.Errorf(configdoc.OrNode(envFields["env"], value), headerPath+".env",
+				"env must name a variable starting with %s", SecretEnvPrefix)
+			return
+		}
+		headers[header] = HeaderValue{Env: env}
+	})
+
+	return headers
+}
+
+// Resolve is the header's value, read from the environment when it names a variable.
+func (h HeaderValue) Resolve() string {
+	if h.Env != "" {
+		return os.Getenv(h.Env)
+	}
+
+	return h.Value
+}
+
 // parseHTTPConfig reads and checks the http connector's config.
 func parseHTTPConfig(r *configdoc.Reader, node *yaml.Node, path string) *HTTPConfig {
 	config := &HTTPConfig{Resources: map[string]HTTPResource{}}
@@ -72,7 +111,7 @@ func parseHTTPConfig(r *configdoc.Reader, node *yaml.Node, path string) *HTTPCon
 			r.Errorf(key, resourcePath, "%q must start with a lowercase letter and use only lowercase letters, digits, - and _", name)
 			return
 		}
-		resource := HTTPResource{Headers: map[string]HeaderValue{}}
+		var resource HTTPResource
 		resourceFields, ok := r.Fields(value, resourcePath, HTTPResourceFields...)
 		if !ok {
 			return
@@ -87,28 +126,7 @@ func parseHTTPConfig(r *configdoc.Reader, node *yaml.Node, path string) *HTTPCon
 				r.Errorf(n, resourcePath+".next", "next is not valid jq: %v", err)
 			}
 		}
-		r.Each(resourceFields["headers"], resourcePath+".headers", func(header string, key, value *yaml.Node) {
-			headerPath := resourcePath + ".headers." + header
-			if !headerNamePattern.MatchString(header) {
-				r.Errorf(key, headerPath, "%q is not a header name", header)
-				return
-			}
-			if value.Kind == yaml.ScalarNode {
-				resource.Headers[header] = HeaderValue{Value: value.Value}
-				return
-			}
-			envFields, ok := r.Fields(value, headerPath, HTTPHeaderFields...)
-			if !ok {
-				return
-			}
-			env := r.Text(envFields["env"], headerPath+".env")
-			if !strings.HasPrefix(env, SecretEnvPrefix) {
-				r.Errorf(configdoc.OrNode(envFields["env"], value), headerPath+".env",
-					"env must name a variable starting with %s", SecretEnvPrefix)
-				return
-			}
-			resource.Headers[header] = HeaderValue{Env: env}
-		})
+		resource.Headers = ReadHeaders(r, resourceFields["headers"], resourcePath+".headers")
 		config.Resources[name] = resource
 		config.order = append(config.order, name)
 	})
@@ -207,11 +225,7 @@ func fetchJSON(ctx context.Context, address string, headers map[string]HeaderVal
 	}
 	req.Header.Set("Accept", "application/json")
 	for name, header := range headers {
-		value := header.Value
-		if header.Env != "" {
-			value = os.Getenv(header.Env)
-		}
-		req.Header.Set(name, value)
+		req.Header.Set(name, header.Resolve())
 	}
 
 	resp, err := httpClient.Do(req)
