@@ -71,8 +71,10 @@ export type Widget = {
   link?: WidgetLink;
   // rowLink is what a table's rows open instead of their entity's page.
   rowLink?: WidgetLink;
-  // actions are what an actions widget offers to run, in order.
+  // actions and then workflows are what an actions widget offers to run, in
+  // order.
   actions?: string[];
+  workflows?: string[];
 };
 
 // Tab is a page tab of widgets.

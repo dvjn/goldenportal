@@ -347,7 +347,7 @@
     },
     "actionsWidget": {
       "type": "object",
-      "description": "Buttons that run actions. On an entity page they run on its entity, showing only those the viewer can run there; elsewhere people pick the entity in the action's form. Default width 4.",
+      "description": "Buttons that run actions and workflows, showing only those the viewer can run. On an entity page actions run on its entity; elsewhere people pick the entity in the action's form. Default width 4.",
       "properties": {
         "type": { "const": "actions" },
         "title": { "$ref": "#/$defs/widgetTitle" },
@@ -358,9 +358,16 @@
           "minItems": 1,
           "items": { "$ref": "#/$defs/identifier" },
           "description": "The actions to offer, by identifier, in order."
+        },
+        "workflows": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/identifier" },
+          "description": "The workflows to offer after the actions, by identifier, in order."
         }
       },
-      "required": ["type", "title", "actions"],
+      "required": ["type", "title"],
+      "anyOf": [{ "required": ["actions"] }, { "required": ["workflows"] }],
       "additionalProperties": false
     },
     "markdownWidget": {

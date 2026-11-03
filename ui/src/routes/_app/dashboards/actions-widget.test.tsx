@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { Action, Available } from "@/features/actions";
+import type { Available, Offer } from "@/features/actions";
 import type { Blueprint } from "@/features/blueprints";
 import type { EntityDetail } from "@/features/catalog";
 import type { HomeDashboard } from "@/features/dashboards";
@@ -29,20 +29,21 @@ const restart: Available = {
 
 const scale: Available = { identifier: "scale", title: "Scale", destructive: false, inputs: [] };
 
-// published is an action document as members read it.
-const published = (action: Available): Action => ({
-  identifier: action.identifier,
-  title: action.title,
-  published: {
-    version: 1,
-    source: "",
-    spec: { ...action, blueprint: "service", run: { roles: ["member"] }, steps: [], outputs: [] },
-    publishedAt: "2026-10-24T10:00:00Z",
-    publishedBy: "",
-  },
-  draft: null,
-  createdAt: "2026-10-24T10:00:00Z",
+// offer is an action as the Self-Service catalog lists it.
+const offer = (action: Available): Offer => ({
+  ...action,
+  kind: "action",
+  blueprint: "service",
+  blueprintTitle: "Service",
 });
+
+const restartServices: Offer = {
+  kind: "workflow",
+  identifier: "restart-services",
+  title: "Restart Services",
+  destructive: false,
+  inputs: [],
+};
 
 const operations: HomeDashboard = {
   identifier: "operations",
@@ -57,6 +58,7 @@ const operations: HomeDashboard = {
       title: "Respond",
       width: 4,
       actions: ["scale", "gone", "restart"],
+      workflows: ["restart-services"],
     },
   ],
 };
@@ -64,9 +66,9 @@ const operations: HomeDashboard = {
 const dashboard = {
   ...member,
   "GET home": ok([operations]),
-  "GET actions/scale": ok(published(scale)),
-  "GET actions/restart": ok(published(restart)),
-  "GET actions/gone": fail(404, "no action gone"),
+  "GET self-service": ok({
+    groups: [{ title: "Operate", items: [offer(restart), offer(scale), restartServices] }],
+  }),
   "GET catalog": ok([{ identifier: "service", title: "Service", entities: 2 }]),
   "GET catalog/service": ok({
     entities: [{ blueprint: "service", identifier: "ledger", title: "Ledger" }],
@@ -75,7 +77,7 @@ const dashboard = {
 };
 
 describe("actions widget", () => {
-  it("offers a dashboard's published actions in order, marking destructive ones", async () => {
+  it("offers a dashboard's actions and then its workflows in order, marking destructive ones", async () => {
     stubApi(dashboard);
     renderRoute("/");
 
@@ -83,7 +85,11 @@ describe("actions widget", () => {
       "[data-slot=card]",
     ) as HTMLElement;
     const buttons = within(card).getAllByRole("button");
-    expect(buttons.map((button) => button.textContent)).toEqual(["Scale", "RestartDestructive"]);
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "Scale",
+      "RestartDestructive",
+      "Restart Services",
+    ]);
   });
 
   it("asks for the entity first, and shows why the server turned the run down", async () => {
@@ -108,11 +114,24 @@ describe("actions widget", () => {
     expect(await requests["POST actions/scale/runs"].json()).toMatchObject({ entity: "ledger" });
   });
 
+  it("opens a workflow's form without asking for an entity", async () => {
+    const user = userEvent.setup();
+    stubApi(dashboard);
+    renderRoute("/");
+
+    await user.click(await screen.findByRole("button", { name: "Restart Services" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("combobox", { name: "Service" })).not.toBeInTheDocument();
+  });
+
   it("says so when there's nothing to run", async () => {
     stubApi({
       ...dashboard,
       "GET home": ok([
-        { ...operations, widgets: [{ ...operations.widgets[0], actions: ["gone"] }] },
+        {
+          ...operations,
+          widgets: [{ ...operations.widgets[0], actions: ["gone"], workflows: undefined }],
+        },
       ]),
     });
     renderRoute("/");
@@ -159,11 +178,12 @@ describe("actions widget", () => {
       "GET catalog/service/entities/ledger": ok(ledger),
       "GET catalog/service/scorecards": ok([]),
       "GET catalog/service/actions": ok([restart]),
+      "GET self-service": dashboard["GET self-service"],
       "GET runs": ok({ runs: [], total: 0 }),
     });
     renderRoute("/catalog/service/ledger?tab=incidents");
 
-    const run = await screen.findByRole("button", { name: /Restart/ });
+    const run = await screen.findByRole("button", { name: /^Restart(Destructive)?$/ });
     const card = run.closest("[data-slot=card]") as HTMLElement;
     expect(within(card).queryByRole("button", { name: "Scale" })).not.toBeInTheDocument();
     await user.click(run);

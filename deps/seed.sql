@@ -315,6 +315,7 @@ spec:
             title: Respond
             width: 6
             actions: [open-incident, restart, scale]
+            workflows: [restart-services]
           bySeverity:
             type: donut
             title: By Severity
@@ -1143,6 +1144,7 @@ spec:
       type: actions
       title: Respond
       actions: [open-incident, scale, restart]
+      workflows: [restart-services]
     bySeverity:
       type: donut
       width: 4

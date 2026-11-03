@@ -39,6 +39,8 @@ type Widget struct {
 	// Actions are what an actions widget offers to run, in order: on the
 	// page's entity, or on one people pick.
 	Actions []string `json:"actions,omitempty"`
+	// Workflows are what an actions widget offers after its actions.
+	Workflows []string `json:"workflows,omitempty"`
 	// Icon and Color mark a stat widget's card. Color is one of
 	// configdoc.Colors and tints the icon.
 	Icon  string `json:"icon,omitempty"`
@@ -181,7 +183,7 @@ var types = map[string]struct {
 	TypeScorecard:  {[]string{"scorecard", "query", "link"}, 6},
 	TypeMarkdown:   {[]string{"text"}, 6},
 	TypeProperties: {[]string{"properties"}, 6},
-	TypeActions:    {[]string{"actions"}, 4},
+	TypeActions:    {[]string{"actions", "workflows"}, 4},
 }
 
 // moved are fields widgets used to have, and where what they said goes now.
@@ -422,18 +424,27 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		}
 		w.Properties = texts(r, fields["properties"], path+".properties")
 	case TypeActions:
-		w.Actions = texts(r, fields["actions"], path+".actions")
-		if len(w.Actions) == 0 {
-			r.Errorf(configdoc.OrNode(fields["actions"], key), path+".actions", "name the actions to offer, such as actions: [restart]")
-		}
-		for _, name := range w.Actions {
-			if !configdoc.ValidIdentifier(name) {
-				r.Errorf(fields["actions"], path+".actions", "%q isn't an action's identifier", name)
-			}
+		w.Actions = identifiers(r, fields["actions"], path+".actions", "an action's")
+		w.Workflows = identifiers(r, fields["workflows"], path+".workflows", "a workflow's")
+		if len(w.Actions) == 0 && len(w.Workflows) == 0 {
+			r.Errorf(configdoc.OrNode(fields["actions"], key), path+".actions", "name the actions or workflows to offer, such as actions: [restart]")
 		}
 	}
 
 	return w
+}
+
+// identifiers reads a list of what the widget offers, each named by
+// identifier.
+func identifiers(r *configdoc.Reader, n *yaml.Node, path, whose string) []string {
+	names := texts(r, n, path)
+	for _, name := range names {
+		if !configdoc.ValidIdentifier(name) {
+			r.Errorf(n, path, "%q isn't %s identifier", name, whose)
+		}
+	}
+
+	return names
 }
 
 // valueOps are the ways a value can sum up its entities besides counting
