@@ -345,6 +345,24 @@
       "required": ["type", "title", "scorecard"],
       "additionalProperties": false
     },
+    "actionsWidget": {
+      "type": "object",
+      "description": "Buttons that run actions. On an entity page they run on its entity, showing only those the viewer can run there; elsewhere people pick the entity in the action's form. Default width 4.",
+      "properties": {
+        "type": { "const": "actions" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/identifier" },
+          "description": "The actions to offer, by identifier, in order."
+        }
+      },
+      "required": ["type", "title", "actions"],
+      "additionalProperties": false
+    },
     "markdownWidget": {
       "type": "object",
       "description": "Text in Markdown, such as notes or links. Its {{ }} hold jq with $me, and on entity pages $entity. Default width 6.",
@@ -386,7 +404,8 @@
         { "$ref": "#/$defs/tableWidget" },
         { "$ref": "#/$defs/scorecardWidget" },
         { "$ref": "#/$defs/markdownWidget" },
-        { "$ref": "#/$defs/propertiesWidget" }
+        { "$ref": "#/$defs/propertiesWidget" },
+        { "$ref": "#/$defs/actionsWidget" }
       ]
     },
     "widgets": {

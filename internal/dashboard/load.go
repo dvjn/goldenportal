@@ -239,6 +239,10 @@ func (l loader) need(w widget.Widget, planFor func(*widget.Query, *filter.Filter
 	switch w.Type {
 	case widget.TypeMarkdown:
 		return func() (any, error) { return textData{Text: widget.Render(w.Text, l.env.Values)}, nil }
+	case widget.TypeActions:
+		// The page asks for the actions itself, as it does on entity pages,
+		// since who can run one depends on the entity.
+		return nil
 	case widget.TypeStat:
 		if w.Value == nil {
 			return nil

@@ -206,6 +206,10 @@ func (c *widgetCheck) check(page string) {
 	switch w.Type {
 	case widget.TypeMarkdown:
 		return
+	case widget.TypeActions:
+		// Actions can be published after the page that offers them, which
+		// leaves out those it can't find.
+		return
 	case widget.TypeProperties:
 		if bp, ok := c.blueprints[page]; ok {
 			for _, property := range w.Properties {

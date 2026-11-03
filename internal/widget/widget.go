@@ -36,6 +36,9 @@ type Widget struct {
 	Text      string   `json:"text,omitempty"`
 	// Properties picks what a properties widget shows, in order.
 	Properties []string `json:"properties,omitempty"`
+	// Actions are what an actions widget offers to run, in order: on the
+	// page's entity, or on one people pick.
+	Actions []string `json:"actions,omitempty"`
 	// Icon and Color mark a stat widget's card. Color is one of
 	// configdoc.Colors and tints the icon.
 	Icon  string `json:"icon,omitempty"`
@@ -139,6 +142,7 @@ const (
 	TypeScorecard  = "scorecard"
 	TypeMarkdown   = "markdown"
 	TypeProperties = "properties"
+	TypeActions    = "actions"
 )
 
 // The keys each mapping of a widget takes, beside its type's own, exported
@@ -177,6 +181,7 @@ var types = map[string]struct {
 	TypeScorecard:  {[]string{"scorecard", "query", "link"}, 6},
 	TypeMarkdown:   {[]string{"text"}, 6},
 	TypeProperties: {[]string{"properties"}, 6},
+	TypeActions:    {[]string{"actions"}, 4},
 }
 
 // moved are fields widgets used to have, and where what they said goes now.
@@ -416,6 +421,16 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 			r.Errorf(typeNode, path+".type", "properties widgets show one entity, so they go on entity pages")
 		}
 		w.Properties = texts(r, fields["properties"], path+".properties")
+	case TypeActions:
+		w.Actions = texts(r, fields["actions"], path+".actions")
+		if len(w.Actions) == 0 {
+			r.Errorf(configdoc.OrNode(fields["actions"], key), path+".actions", "name the actions to offer, such as actions: [restart]")
+		}
+		for _, name := range w.Actions {
+			if !configdoc.ValidIdentifier(name) {
+				r.Errorf(fields["actions"], path+".actions", "%q isn't an action's identifier", name)
+			}
+		}
 	}
 
 	return w
