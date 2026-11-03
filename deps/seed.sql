@@ -233,6 +233,15 @@ spec:
           and:
             - {property: service, op: eq, value: $entity}
             - {property: environment, op: eq, value: production}
+      incidents:
+        blueprint: incident
+        filter: {property: service, op: eq, value: $entity}
+      openIncidents:
+        blueprint: incident
+        filter:
+          and:
+            - {property: service, op: eq, value: $entity}
+            - {property: status, op: eq, value: open}
     tabs:
       deployments:
         title: Deployments
@@ -283,6 +292,44 @@ spec:
             query: deployments
             groupBy: status
             link: {query: deployments, group: true}
+      incidents:
+        title: Incidents
+        icon: siren
+        widgets:
+          open:
+            type: stat
+            title: Open
+            icon: siren
+            color: rose
+            value: {query: openIncidents}
+            link: {query: openIncidents}
+          total:
+            type: stat
+            title: Incidents
+            icon: history
+            color: gray
+            value: {query: incidents}
+            link: {query: incidents}
+          respond:
+            type: actions
+            title: Respond
+            width: 6
+            actions: [open-incident, restart, scale]
+          bySeverity:
+            type: donut
+            title: By Severity
+            query: incidents
+            groupBy: severity
+            link: {query: incidents, group: true}
+          list:
+            type: table
+            title: Incidents
+            width: 8
+            query: incidents
+            columns: [severity, status, openedBy, openedAt, resolvedAt]
+            sort: -openedAt
+            limit: 8
+            link: {query: incidents}
 $yaml$),
   ('user', $yaml$kind: Blueprint
 metadata:
@@ -380,6 +427,149 @@ spec:
       relation: blueprint
       many: true
 $yaml$),
+  ('incident', $yaml$kind: Blueprint
+metadata:
+  name: incident
+  title: Incident
+  description: Something broken that people are fixing. The Open incident action adds them.
+  icon: siren
+  color: rose
+spec:
+  properties:
+    severity:
+      title: Severity
+      type: string
+      enum: [sev1, sev2, sev3]
+      required: true
+      display:
+        as: badge
+        colors: {sev1: rose, sev2: orange, sev3: amber}
+    status:
+      title: Status
+      type: string
+      enum: [open, resolved]
+      required: true
+      display:
+        as: badge
+        colors: {open: rose, resolved: emerald}
+    service:
+      title: Service
+      relation: service
+    channel:
+      title: Channel
+      type: string
+      format: uri
+    openedBy:
+      title: Opened By
+      relation: user
+    openedAt:
+      title: Opened
+      type: string
+      format: date-time
+    resolvedAt:
+      title: Resolved
+      type: string
+      format: date-time
+  catalog:
+    columns: [severity, status, service, openedBy, openedAt]
+$yaml$),
+  ('action', $yaml$kind: Blueprint
+metadata:
+  name: action
+  title: Action
+  description: Something people run on an entity from its page, such as a restart. The Portal integration keeps these up to date.
+  icon: zap
+  color: amber
+spec:
+  properties:
+    description:
+      title: Description
+      type: string
+    runsOn:
+      title: Runs On
+      relation: blueprint
+    destructive:
+      title: Destructive
+      type: boolean
+    version:
+      title: Version
+      type: integer
+    steps:
+      title: Steps
+      type: integer
+    approvals:
+      title: Approval Steps
+      type: integer
+    runs:
+      title: Runs
+      description: In the last 30 days.
+      type: integer
+    lastRunAt:
+      title: Last Run
+      type: string
+      format: date-time
+    lastRunStatus:
+      title: Last Run Status
+      type: string
+      enum: [queued, running, waiting, succeeded, failed, rejected, cancelled, interrupted]
+      display:
+        as: badge
+        colors: {queued: gray, running: blue, waiting: indigo, succeeded: emerald, failed: red, rejected: rose, cancelled: gray, interrupted: amber}
+  catalog:
+    columns: [runsOn, steps, approvals, runs, lastRunStatus, lastRunAt]
+$yaml$),
+  ('run', $yaml$kind: Blueprint
+metadata:
+  name: run
+  title: Run
+  description: One run of an action in the last 30 days, without its inputs or outputs. The Portal integration keeps these up to date.
+  icon: play
+  color: sky
+spec:
+  properties:
+    action:
+      title: Action
+      relation: action
+    entityBlueprint:
+      title: Entity Blueprint
+      relation: blueprint
+    entity:
+      title: Entity
+      type: string
+    requester:
+      title: Requested By
+      relation: user
+    via:
+      title: Via
+      type: string
+      enum: [web, mcp]
+      display:
+        as: badge
+        colors: {web: gray, mcp: violet}
+    status:
+      title: Status
+      type: string
+      enum: [queued, running, waiting, succeeded, failed, rejected, cancelled, interrupted]
+      required: true
+      display:
+        as: badge
+        colors: {queued: gray, running: blue, waiting: indigo, succeeded: emerald, failed: red, rejected: rose, cancelled: gray, interrupted: amber}
+    startedAt:
+      title: Started
+      type: string
+      format: date-time
+    finishedAt:
+      title: Finished
+      type: string
+      format: date-time
+    seconds:
+      title: Took
+      type: number
+      display:
+        unit: s
+  catalog:
+    columns: [action, entity, requester, status, startedAt, seconds]
+$yaml$),
   ('deployment', $yaml$kind: Blueprint
 metadata:
   name: deployment
@@ -460,9 +650,10 @@ $yaml$)
 INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
--- Example integrations: two push integrations, where each mapping is jq over
--- the JSON its system sends; the Portal, which syncs the portal's own objects;
--- and an http integration pulling from the mock deploy tracker.
+-- Example integrations: push integrations, where each mapping is jq over the
+-- JSON its system sends, and Incidents, which the example actions write; the
+-- Portal, which syncs the portal's own objects; and an http integration
+-- pulling from the mock deploy tracker.
 WITH example (identifier, source) AS (VALUES
   ('team-directory', $yaml$kind: Integration
 metadata:
@@ -507,11 +698,46 @@ spec:
           owner: .owner
           dependsOn: .dependencies
 $yaml$),
+  ('incidents', $yaml$kind: Integration
+metadata:
+  name: incidents
+  title: Incidents
+  description: Incidents, which the Open incident and Resolve actions write.
+spec:
+  connector:
+    type: push
+  mappings:
+    - blueprint: incident
+      items: .incidents[]
+      entity:
+        identifier: .id
+        title: .summary
+        properties:
+          severity: .severity
+          status: .status
+          service: .service
+          channel: .channel
+$yaml$),
+  ('workflows', $yaml$kind: Integration
+metadata:
+  name: workflows
+  title: Workflows
+  description: Entities workflows create, such as services people register from Self-Service.
+spec:
+  connector:
+    type: push
+  mappings:
+    - blueprint: service
+      items: .services[]
+      entity:
+        identifier: .name
+        title: .title
+$yaml$),
   ('portal', $yaml$kind: Integration
 metadata:
   name: portal
   title: Portal
-  description: The portal's own users, groups, blueprints and integrations.
+  description: The portal's own users, groups, blueprints, integrations, actions and recent runs.
 spec:
   connector:
     type: portal
@@ -557,6 +783,36 @@ spec:
           lastRunAt: .lastRunAt
           lastRunOutcome: .lastRunOutcome
           writes: .blueprints
+    - resource: actions
+      blueprint: action
+      entity:
+        identifier: .identifier
+        title: .title
+        properties:
+          description: .description
+          runsOn: .blueprint
+          destructive: .destructive
+          version: .version
+          steps: .steps
+          approvals: .approvals
+          runs: .runs
+          lastRunAt: .lastRunAt
+          lastRunStatus: .lastRunStatus
+    - resource: runs
+      blueprint: run
+      entity:
+        identifier: .id
+        title: .title + " on " + .entityTitle
+        properties:
+          action: .action
+          entityBlueprint: .blueprint
+          entity: .entityTitle
+          requester: .requester
+          via: .via
+          status: .status
+          startedAt: .createdAt
+          finishedAt: .finishedAt
+          seconds: .seconds
 $yaml$),
   ('deploy-tracker', $yaml$kind: Integration
 metadata:
@@ -818,6 +1074,129 @@ spec:
       limit: 8
       link: {query: deployments}
 $yaml$),
+  ('operations', $yaml$kind: Dashboard
+metadata:
+  name: operations
+  title: Operations
+  description: Incidents, and the actions people run on services.
+  icon: activity
+  color: rose
+spec:
+  order: 2
+  queries:
+    incidents:
+      blueprint: incident
+    open:
+      blueprint: incident
+      filter: {property: status, op: eq, value: open}
+    openSev1:
+      blueprint: incident
+      filter:
+        and:
+          - {property: status, op: eq, value: open}
+          - {property: severity, op: eq, value: sev1}
+    runs:
+      blueprint: run
+      filter: {property: startedAt, op: within, value: 7d}
+    waiting:
+      blueprint: run
+      filter: {property: status, op: eq, value: waiting}
+    failed:
+      blueprint: run
+      filter:
+        and:
+          - {property: status, op: in, values: [failed, rejected, interrupted]}
+          - {property: startedAt, op: within, value: 7d}
+    actions:
+      blueprint: action
+  widgets:
+    open:
+      type: stat
+      title: Open Incidents
+      icon: siren
+      color: rose
+      value: {query: open}
+      link: {query: open}
+    sev1:
+      type: stat
+      title: Open Sev1
+      icon: flame
+      color: red
+      value: {query: openSev1}
+      link: {query: openSev1}
+    waiting:
+      type: stat
+      title: Waiting for Approval
+      icon: hourglass
+      color: indigo
+      value: {query: waiting}
+      link: {query: waiting}
+    failed:
+      type: stat
+      title: Failed Runs
+      description: Failed, rejected or interrupted, last 7 days
+      icon: circle-x
+      color: red
+      value: {query: failed}
+      link: {query: failed}
+    respond:
+      type: actions
+      title: Respond
+      actions: [open-incident, scale, restart]
+    bySeverity:
+      type: donut
+      width: 4
+      title: Incidents by Severity
+      query: incidents
+      groupBy: severity
+      link: {query: incidents, group: true}
+    byStatus:
+      type: donut
+      width: 4
+      title: Runs by Status
+      query: runs
+      groupBy: status
+      link: {query: runs, group: true}
+    byService:
+      type: bar
+      width: 6
+      title: Incidents by Service
+      query: incidents
+      groupBy: service
+      link: {query: incidents, group: true}
+    byAction:
+      type: bar
+      width: 6
+      title: Runs by Action
+      query: runs
+      groupBy: action
+      link: {query: runs, group: true}
+    openList:
+      type: table
+      width: 6
+      title: Open Incidents
+      query: open
+      columns: [severity, service, openedBy, openedAt]
+      sort: -openedAt
+      limit: 8
+      link: {query: open}
+    actionList:
+      type: table
+      width: 6
+      title: Actions
+      query: actions
+      columns: [runsOn, approvals, runs, lastRunStatus]
+      sort: -runs
+      link: {query: actions}
+    recent:
+      type: table
+      title: Recent Runs
+      query: runs
+      columns: [action, entity, requester, status, startedAt]
+      sort: -startedAt
+      limit: 8
+      link: {query: runs}
+$yaml$),
   ('portal', $yaml$kind: Dashboard
 metadata:
   name: portal
@@ -826,7 +1205,7 @@ metadata:
   icon: database
   color: cyan
 spec:
-  order: 2
+  order: 3
   visibility: {roles: [builder, admin]}
   queries:
     activeUsers:
@@ -883,3 +1262,474 @@ $yaml$)
 )
 INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
+
+-- Example actions, which call the mock ops API in deps.dev.yaml. Restart is
+-- for builders and the service's owners, and destructive, so agents can't
+-- run it; the others are for everyone. Scale waits for a platform engineer
+-- or another of the service's owners to approve the change. Open incident
+-- and Resolve write incidents to the catalog as the Incidents integration.
+WITH example (identifier, source) AS (VALUES
+  ('restart', $yaml$kind: Action
+metadata:
+  name: restart
+  title: Restart
+  description: Restarts the service in one environment.
+  icon: rotate-cw
+  color: amber
+spec:
+  blueprint: service
+  group: Operate
+  run:
+    roles: [builder]
+    filter: {property: owner.members, op: contains, value: $me}
+  destructive: true
+  inputs:
+    environment:
+      title: Environment
+      type: string
+      enum: [production, staging]
+      required: true
+    reason:
+      title: Reason
+      description: Why it needs a restart, for the people watching the service.
+      type: string
+      minLength: 5
+      required: true
+  steps:
+    - id: restart
+      title: Restart the service
+      http:
+        method: POST
+        url: http://localhost:47802/cgi-bin/ops/services/{{ $entity }}/restart
+        headers:
+          Authorization: {env: GP_SECRET_OPS}
+        body:
+          environment: $input.environment
+          reason: $input.reason
+          requestedBy: $me
+          run: $run.url
+        output:
+          job: .body.id
+      retry: {attempts: 2, backoff: 3s}
+    - output:
+        summary: "Restarted {{ $entity.title }} in {{ $input.environment }}"
+        links:
+          Job: http://localhost:47802/cgi-bin/ops/jobs/{{ $step.restart.job }}
+  outputs:
+    job: $step.restart.job
+$yaml$),
+  ('scale', $yaml$kind: Action
+metadata:
+  name: scale
+  title: Scale
+  description: Sets how many replicas the service runs in one environment.
+  icon: scaling
+  color: sky
+spec:
+  blueprint: service
+  group: Operate
+  scope: {property: tier, op: ne, value: experimental}
+  run:
+    roles: [member]
+  inputs:
+    environment:
+      title: Environment
+      type: string
+      enum: [production, staging]
+      required: true
+    replicas:
+      title: Replicas
+      type: integer
+      minimum: 1
+      maximum: 20
+      required: true
+  steps:
+    - id: approve
+      title: Approve the change
+      approval:
+        approvers:
+          groups: [platform-engineers]
+          filter: {property: owner.members, op: contains, value: $me}
+        require: 1
+        timeout: 24h
+        message: "Scale {{ $entity.title }} to {{ $input.replicas }} replicas in {{ $input.environment }}?"
+        review:
+          - title: Change
+            markdown: |-
+              | Service | Environment | Replicas | Tier | Owner |
+              | --- | --- | --- | --- | --- |
+              | {{ $entity.title }} | {{ $input.environment }} | **{{ $input.replicas }}** | {{ $entity.tier }} | {{ $entity.owner }} |
+
+              Requested by {{ $me.name }} ({{ $me.email }}).
+    - id: scale
+      title: Scale the service
+      http:
+        method: POST
+        url: http://localhost:47802/cgi-bin/ops/services/{{ $entity }}/scale
+        headers:
+          Authorization: {env: GP_SECRET_OPS}
+        body:
+          environment: $input.environment
+          replicas: $input.replicas
+        output:
+          replicas: .body.replicas
+      retry: {attempts: 3, backoff: 2s}
+    - output:
+        summary: "{{ $entity.title }} runs {{ $step.scale.replicas }} replicas in {{ $input.environment }}"
+  outputs:
+    replicas: $step.scale.replicas
+    approvedBy: $step.approve.approvedBy
+$yaml$),
+  ('open-incident', $yaml$kind: Action
+metadata:
+  name: open-incident
+  title: Open incident
+  description: Opens an incident on the service with its own channel, and adds it to the catalog.
+  icon: siren
+  color: rose
+spec:
+  blueprint: service
+  group: Respond
+  run:
+    roles: [member]
+  inputs:
+    severity:
+      title: Severity
+      type: string
+      enum: [sev1, sev2, sev3]
+      required: true
+    summary:
+      title: Summary
+      description: What's broken, as people will see it.
+      type: string
+      minLength: 10
+      required: true
+  steps:
+    - title: Check the service has an owner
+      check:
+        blueprint: service
+        filter:
+          and:
+            - {property: identifier, op: eq, value: $entity}
+            - {property: owner, op: exists}
+        expect: {count: 1}
+        message: "{{ $entity.title }} has no owner to page; set one in the service registry first."
+    - id: create
+      title: Open the incident
+      http:
+        method: POST
+        url: http://localhost:47802/cgi-bin/ops/incidents
+        headers:
+          Authorization: {env: GP_SECRET_OPS}
+        body:
+          service: $entity
+          owner: $entity.owner
+          severity: $input.severity
+          summary: $input.summary
+        output:
+          id: .body.id
+          channel: .body.channel
+          at: .body.at
+    - id: incident
+      title: Add it to the catalog
+      entity:
+        operation: upsert
+        integration: incidents
+        blueprint: incident
+        identifier: $step.create.id
+        title: $input.summary
+        properties:
+          severity: $input.severity
+          status: open
+          service: $entity
+          channel: $step.create.channel
+          openedBy: $me
+          openedAt: $step.create.at
+    - output:
+        summary: "Opened {{ $step.create.id }} on {{ $entity.title }}"
+        links:
+          Incident: $step.incident.url
+          Channel: $step.create.channel
+  outputs:
+    incident: $step.create.id
+$yaml$),
+  ('resolve-incident', $yaml$kind: Action
+metadata:
+  name: resolve-incident
+  title: Resolve
+  description: Resolves an open incident.
+  icon: circle-check
+  color: emerald
+spec:
+  blueprint: incident
+  group: Respond
+  scope: {property: status, op: eq, value: open}
+  run:
+    roles: [member]
+  steps:
+    - id: resolve
+      title: Resolve the incident
+      http:
+        method: POST
+        url: http://localhost:47802/cgi-bin/ops/incidents/{{ $entity }}/resolve
+        headers:
+          Authorization: {env: GP_SECRET_OPS}
+        output:
+          at: .body.at
+    - title: Mark it resolved
+      entity:
+        operation: upsert
+        integration: incidents
+        blueprint: incident
+        identifier: $entity
+        properties:
+          status: resolved
+          resolvedAt: $step.resolve.at
+    - output:
+        summary: "Resolved {{ $entity.title }}"
+$yaml$)
+), created AS (
+  INSERT INTO config_documents (kind, identifier, published_version)
+  SELECT 'action', identifier, 1 FROM example
+  ON CONFLICT (kind, identifier) DO NOTHING
+  RETURNING id, identifier
+)
+INSERT INTO config_versions (document_id, version, source)
+SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
+
+-- Example workflows, in the Self-Service catalog beside the actions of the
+-- same group. Restart services runs the Restart action on each service
+-- picked, which checks the requester may restart each one. Register a
+-- service waits for a platform engineer, creates its repository and adds it
+-- to the catalog as the Workflows integration.
+WITH example (identifier, source) AS (VALUES
+  ('restart-services', $yaml$kind: Workflow
+metadata:
+  name: restart-services
+  title: Restart services
+  description: Restarts several services in one environment, each only where you can restart it.
+  icon: rotate-cw
+  color: amber
+spec:
+  group: Operate
+  run:
+    roles: [member]
+  destructive: true
+  inputs:
+    services:
+      title: Services
+      relation: service
+      many: true
+      required: true
+    environment:
+      title: Environment
+      type: string
+      enum: [production, staging]
+      required: true
+    reason:
+      title: Reason
+      type: string
+      minLength: 5
+      required: true
+  steps:
+    - id: restart
+      title: Restart each service
+      action:
+        name: restart
+        entities: $input.services
+        inputs:
+          environment: $input.environment
+          reason: $input.reason
+        maxFailures: 0
+    - output:
+        summary: "Restarted {{ $step.restart.succeeded }} services in {{ $input.environment }}"
+  outputs:
+    restarted: $step.restart.succeeded
+$yaml$),
+  ('register-service', $yaml$kind: Workflow
+metadata:
+  name: register-service
+  title: Register a service
+  description: Creates a repository for a new service and adds the service to the catalog, once a platform engineer approves.
+  icon: package-plus
+  color: emerald
+spec:
+  group: Create
+  run:
+    roles: [member]
+  inputs:
+    name:
+      title: Name
+      description: Lowercase letters, digits and dashes, such as billing-api.
+      type: string
+      pattern: ^[a-z][a-z0-9-]{2,40}$
+      required: true
+    title:
+      title: Title
+      type: string
+      required: true
+    owner:
+      title: Owner
+      relation: team
+      required: true
+    language:
+      title: Language
+      type: string
+      enum: [go, python, typescript, java]
+      required: true
+    tier:
+      title: Tier
+      type: string
+      enum: [critical, standard, experimental]
+      required: true
+  steps:
+    - title: Check the name is free
+      check:
+        blueprint: service
+        filter: {property: identifier, op: eq, value: $input.name}
+        expect: {count: 0}
+        message: "There's already a service called {{ $input.name }}; pick another name."
+    - id: approve
+      title: Platform approves
+      approval:
+        approvers:
+          groups: [platform-engineers]
+        require: 1
+        timeout: 72h
+        message: "Register {{ $input.title }} for {{ $input.owner }}?"
+        review:
+          - title: Service
+            markdown: |-
+              | Name | Title | Owner | Language | Tier |
+              | --- | --- | --- | --- | --- |
+              | `{{ $input.name }}` | {{ $input.title }} | {{ $input.owner }} | {{ $input.language }} | {{ $input.tier }} |
+
+              Requested by {{ $me.name }} ({{ $me.email }}).
+    - id: repo
+      title: Create the repository
+      http:
+        method: POST
+        url: http://localhost:47802/cgi-bin/ops/repos
+        headers:
+          Authorization: {env: GP_SECRET_OPS}
+        body:
+          name: $input.name
+          owner: $input.owner
+        output:
+          url: .body.url
+    - id: service
+      title: Add it to the catalog
+      entity:
+        operation: upsert
+        integration: workflows
+        blueprint: service
+        identifier: $input.name
+        title: $input.title
+        properties:
+          language: $input.language
+          tier: $input.tier
+          repository: $step.repo.url
+          owner: $input.owner
+    - output:
+        summary: "Registered {{ $input.title }}"
+        links:
+          Service: $step.service.url
+          Repository: $step.repo.url
+  outputs:
+    repository: $step.repo.url
+$yaml$)
+), created AS (
+  INSERT INTO config_documents (kind, identifier, published_version)
+  SELECT 'workflow', identifier, 1 FROM example
+  ON CONFLICT (kind, identifier) DO NOTHING
+  RETURNING id, identifier
+)
+INSERT INTO config_versions (document_id, version, source)
+SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
+
+-- Example incidents, as if the Open incident action had opened them over the
+-- last two weeks, so the Operations dashboard has something to show.
+INSERT INTO entities (blueprint_id, integration_id, identifier, title, properties, relations)
+SELECT b.id, i.id, e.identifier, e.title,
+  jsonb_strip_nulls(jsonb_build_object(
+    'severity', e.severity, 'status', e.status,
+    'channel', 'https://slack.example.com/archives/' || e.identifier,
+    'openedAt', to_char((now() - e.opened) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'resolvedAt', to_char((now() - e.resolved) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))),
+  jsonb_build_object('service', e.service, 'openedBy', e.opened_by)
+FROM (VALUES
+  ('inc-101', 'Card payments time out for some customers', 'sev1', 'resolved', 'payments-api', 'ada@example.com', interval '13 days', interval '13 days' - interval '3 hours'),
+  ('inc-102', 'Ledger reconciliation lags by an hour', 'sev3', 'resolved', 'ledger', 'grace@example.com', interval '9 days', interval '8 days'),
+  ('inc-103', 'Search results miss new products', 'sev2', 'resolved', 'search-api', 'member@example.com', interval '6 days', interval '5 days'),
+  ('inc-104', 'Checkout shows a blank page on Safari', 'sev2', 'open', 'checkout-web', 'grace@example.com', interval '2 days', NULL),
+  ('inc-105', 'Indexer falls behind during the nightly import', 'sev3', 'open', 'indexer', 'member@example.com', interval '20 hours', NULL),
+  ('inc-106', 'Payments API errors spike after the deploy', 'sev1', 'open', 'payments-api', 'ada@example.com', interval '35 minutes', NULL)
+) AS e (identifier, title, severity, status, service, opened_by, opened, resolved)
+JOIN config_documents b ON b.kind = 'blueprint' AND b.identifier = 'incident'
+JOIN config_documents i ON i.kind = 'integration' AND i.identifier = 'incidents'
+ON CONFLICT (blueprint_id, identifier) DO NOTHING;
+
+-- Example runs of the Restart and Scale actions over the last week, so the
+-- dashboards and run lists have history. Their ids are fixed, so this adds
+-- them once. Scale runs show the approval each passed.
+WITH example (n, action, service, email, status, error, summary, inputs, started, took) AS (VALUES
+  (1, 'scale', 'search-api', 'member@example.com', 'succeeded', '', 'Search API runs 4 replicas in production', '{"environment": "production", "replicas": 4}', interval '6 days', 3),
+  (2, 'restart', 'payments-api', 'ada@example.com', 'succeeded', '', 'Restarted Payments API in production', '{"environment": "production", "reason": "memory climbs after the deploy"}', interval '5 days', 4),
+  (3, 'scale', 'checkout-web', 'grace@example.com', 'failed', 'Scale the service: localhost:47802 answered 503 Service Unavailable', '', '{"environment": "production", "replicas": 6}', interval '4 days', 9),
+  (4, 'scale', 'checkout-web', 'grace@example.com', 'succeeded', '', 'Checkout runs 6 replicas in production', '{"environment": "production", "replicas": 6}', interval '4 days' - interval '10 minutes', 2),
+  (5, 'restart', 'ledger', 'builder@example.com', 'succeeded', '', 'Restarted Ledger in staging', '{"environment": "staging", "reason": "pick up the new certificate"}', interval '3 days', 3),
+  (6, 'restart', 'payments-api', 'ada@example.com', 'cancelled', '', '', '{"environment": "staging", "reason": "wrong environment"}', interval '2 days', 1),
+  (7, 'scale', 'indexer', 'member@example.com', 'succeeded', '', 'Indexer runs 3 replicas in staging', '{"environment": "staging", "replicas": 3}', interval '20 hours', 2),
+  (8, 'restart', 'payments-api', 'ada@example.com', 'succeeded', '', 'Restarted Payments API in production', '{"environment": "production", "reason": "errors spike after the deploy"}', interval '30 minutes', 4)
+), runs_added AS (
+  INSERT INTO runs (id, document_id, version, title, entity_id, entity_blueprint, entity_identifier, entity_title,
+    requested_by, requester, via, inputs, status, summary, error, created_at, started_at, finished_at)
+  SELECT md5('example-run-' || e.n)::uuid, d.id, 1, initcap(e.action), en.id, 'service', e.service,
+    coalesce(en.title, e.service), u.id,
+    jsonb_build_object('id', u.id, 'email', u.email, 'name', u.display_name, 'role', 'member', 'groups', '[]'::jsonb),
+    'web', e.inputs::jsonb, e.status, e.summary, e.error,
+    now() - e.started, now() - e.started, now() - e.started + e.took * interval '1 second'
+  FROM example e
+  JOIN config_documents d ON d.kind = 'action' AND d.identifier = e.action
+  JOIN users u ON u.oidc_issuer = :'issuer' AND u.oidc_subject = e.email
+  LEFT JOIN entities en ON en.identifier = e.service
+    AND en.blueprint_id = (SELECT id FROM config_documents WHERE kind = 'blueprint' AND identifier = 'service')
+  ON CONFLICT (id) DO NOTHING
+  RETURNING id, title, status, error, inputs, entity_title, started_at, finished_at
+)
+INSERT INTO run_steps (run_id, position, step, type, title, status, attempts, output, error, detail, started_at, finished_at)
+SELECT r.id, s.position, s.step, s.type, s.title,
+  CASE
+    WHEN s.type = 'approval' THEN 'done'
+    WHEN s.type = 'http' AND r.status IN ('failed', 'cancelled') THEN 'failed'
+    WHEN s.type = 'output' AND r.status <> 'succeeded' THEN 'pending'
+    ELSE 'done'
+  END,
+  CASE WHEN s.type = 'output' AND r.status <> 'succeeded' THEN 0 WHEN s.type = 'http' AND r.status = 'failed' THEN 4 ELSE 1 END,
+  CASE WHEN s.type = 'approval' THEN '{"approvedBy": ["builder@example.com"], "comments": []}'::jsonb END,
+  CASE
+    WHEN s.type = 'http' AND r.status = 'failed' THEN '503 Service Unavailable after 4 attempts'
+    WHEN s.type = 'http' AND r.status = 'cancelled' THEN 'The run was cancelled during this step.'
+    ELSE ''
+  END,
+  CASE WHEN s.type = 'approval' THEN jsonb_build_object('require', 1,
+    'message', 'Scale ' || r.entity_title || ' to ' || (r.inputs->>'replicas') || ' replicas in ' || (r.inputs->>'environment') || '?',
+    'review', '[]'::jsonb) END,
+  CASE WHEN s.type = 'output' AND r.status <> 'succeeded' THEN NULL ELSE r.started_at END,
+  CASE WHEN s.type = 'output' AND r.status <> 'succeeded' THEN NULL ELSE r.finished_at END
+FROM runs_added r
+JOIN (VALUES
+  ('Scale', 0, 'approve', 'approval', 'Approve the change'),
+  ('Scale', 1, 'scale', 'http', 'Scale the service'),
+  ('Scale', 2, '', 'output', 'Output'),
+  ('Restart', 0, 'restart', 'http', 'Restart the service'),
+  ('Restart', 1, '', 'output', 'Output')
+) AS s (action, position, step, type, title) ON s.action = r.title;
+
+-- A platform engineer approved each example Scale run.
+INSERT INTO run_approvals (run_id, position, user_id, email, name, decision, decided_at)
+SELECT r.id, 0, u.id, u.email, u.display_name, 'approve', r.started_at
+FROM runs r
+JOIN users u ON u.oidc_issuer = :'issuer' AND u.oidc_subject = 'builder@example.com'
+WHERE r.id IN (SELECT md5('example-run-' || n)::uuid FROM generate_series(1, 8) n) AND r.title = 'Scale'
+ON CONFLICT (run_id, position, email) DO NOTHING;

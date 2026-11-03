@@ -103,3 +103,14 @@ services:
       - "${MOCK_DEPLOY_TRACKER_PORT:-47801}:8080"
     volumes:
       - ./deps/mock-deploy-tracker:/app:ro
+
+  # A pretend operations API for the example actions in deps/seed.sql to
+  # call. deps/mock-ops has the server.
+  mock-ops:
+    image: ${BUSYBOX_IMAGE:-docker.io/library/busybox:1.37.0}
+    container_name: goldenportal-mock-ops
+    entrypoint: ["/bin/sh", "/app/serve.sh"]
+    ports:
+      - "${MOCK_OPS_PORT:-47802}:8080"
+    volumes:
+      - ./deps/mock-ops:/app:ro

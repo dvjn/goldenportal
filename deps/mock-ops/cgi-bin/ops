@@ -1,0 +1,88 @@
+#!/bin/sh
+# Answers the example actions as an operations API would, slowly enough to
+# watch runs go, and failing now and then so retries and failed runs show:
+#
+#   POST /services/<name>/restart   restarts it as a job; 1 in 4 answer 503
+#   POST /services/<name>/scale     sets replicas from {"replicas": n}; 1 in 3 answer 503
+#   POST /repos                     creates a repository from {"name": ...}
+#   POST /incidents                 opens an incident with a channel
+#   POST /incidents/<id>/resolve    resolves it
+#   GET  /jobs/<id>                 a restart job
+#
+# It reads the Authorization header the actions send but doesn't check it.
+set -u
+state=/tmp/ops
+path="${PATH_INFO:-/}"
+method="${REQUEST_METHOD:-GET}"
+body=""
+if [ "${CONTENT_LENGTH:-0}" -gt 0 ] 2>/dev/null; then
+  body=$(head -c "$CONTENT_LENGTH")
+fi
+
+reply() {
+  printf 'Status: %s\r\nContent-Type: application/json\r\n' "$1"
+  [ -n "${3:-}" ] && printf 'Retry-After: %s\r\n' "$3"
+  printf '\r\n%s\n' "$2"
+  exit 0
+}
+
+next_id() {
+  n=$(($(cat "$state/$1" 2>/dev/null || echo 0) + 1))
+  echo "$n" >"$state/$1"
+  echo "$n"
+}
+
+# field reads a top-level string or number field from the JSON body.
+field() {
+  echo "$body" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p"
+}
+
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+case "$method $path" in
+"POST /services/"*/restart)
+  service=${path#/services/}
+  service=${service%/restart}
+  sleep 2
+  [ $((RANDOM % 4)) -eq 0 ] && reply "503 Service Unavailable" '{"error": "the scheduler is busy, try again"}' 2
+  id="job-$(next_id job-count)"
+  job="{\"id\": \"$id\", \"service\": \"$service\", \"environment\": \"$(field environment)\", \"status\": \"restarted\", \"at\": \"$now\"}"
+  echo "$job" >"$state/jobs/$id.json"
+  reply "202 Accepted" "$job"
+  ;;
+"POST /services/"*/scale)
+  service=${path#/services/}
+  service=${service%/scale}
+  replicas=$(field replicas)
+  [ -z "$replicas" ] && reply "400 Bad Request" '{"error": "send {\"replicas\": n}"}'
+  sleep 1
+  [ $((RANDOM % 3)) -eq 0 ] && reply "503 Service Unavailable" '{"error": "the cluster is rebalancing"}' 1
+  reply "200 OK" "{\"service\": \"$service\", \"replicas\": $replicas, \"at\": \"$now\"}"
+  ;;
+"POST /repos")
+  name=$(field name)
+  [ -z "$name" ] && reply "400 Bad Request" '{"error": "send {\"name\": ...}"}'
+  sleep 2
+  reply "201 Created" "{\"name\": \"$name\", \"url\": \"https://git.example.com/$name\", \"at\": \"$now\"}"
+  ;;
+"POST /incidents")
+  n=$(next_id incident-count)
+  id="inc-$n"
+  sleep 1
+  echo "open" >"$state/incidents/$id"
+  reply "201 Created" "{\"id\": \"$id\", \"channel\": \"https://slack.example.com/archives/$id\", \"at\": \"$now\"}"
+  ;;
+"POST /incidents/"*/resolve)
+  id=${path#/incidents/}
+  id=${id%/resolve}
+  [ -f "$state/incidents/$id" ] || reply "404 Not Found" "{\"error\": \"no incident $id\"}"
+  echo "resolved" >"$state/incidents/$id"
+  reply "200 OK" "{\"id\": \"$id\", \"status\": \"resolved\", \"at\": \"$now\"}"
+  ;;
+"GET /jobs/"*)
+  id=${path#/jobs/}
+  [ -f "$state/jobs/$id.json" ] || reply "404 Not Found" "{\"error\": \"no job $id\"}"
+  reply "200 OK" "$(cat "$state/jobs/$id.json")"
+  ;;
+esac
+reply "404 Not Found" "{\"error\": \"nothing answers $method $path\"}"
