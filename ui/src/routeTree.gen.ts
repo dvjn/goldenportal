@@ -12,12 +12,18 @@ import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AppRouteImport } from "./routes/_app";
 import { Route as SignInRouteImport } from "./routes/sign-in";
 import { Route as AppIndexRouteImport } from "./routes/_app/index";
+import { Route as AppActionsRouteImport } from "./routes/_app/actions";
+import { Route as AppApprovalsRouteImport } from "./routes/_app/approvals";
 import { Route as AppBlueprintsRouteImport } from "./routes/_app/blueprints";
 import { Route as AppDashboardsRouteImport } from "./routes/_app/dashboards";
 import { Route as AppIntegrationsRouteImport } from "./routes/_app/integrations";
 import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
+import { Route as AppWorkflowsRouteImport } from "./routes/_app/workflows";
 import { Route as OauthAuthorizeRouteImport } from "./routes/oauth/authorize";
 import { Route as AppAccountAppsRouteImport } from "./routes/_app/account/apps";
+import { Route as AppActionsIndexRouteImport } from "./routes/_app/actions/index";
+import { Route as AppActionsIdentifierRouteImport } from "./routes/_app/actions/$identifier";
+import { Route as AppActionsNewRouteImport } from "./routes/_app/actions/new";
 import { Route as AppBlueprintsIndexRouteImport } from "./routes/_app/blueprints/index";
 import { Route as AppBlueprintsIdentifierRouteImport } from "./routes/_app/blueprints/$identifier";
 import { Route as AppBlueprintsNewRouteImport } from "./routes/_app/blueprints/new";
@@ -28,13 +34,19 @@ import { Route as AppDashboardsNewRouteImport } from "./routes/_app/dashboards/n
 import { Route as AppIntegrationsIndexRouteImport } from "./routes/_app/integrations/index";
 import { Route as AppIntegrationsIdentifierRouteImport } from "./routes/_app/integrations/$identifier";
 import { Route as AppIntegrationsNewRouteImport } from "./routes/_app/integrations/new";
+import { Route as AppRunsIndexRouteImport } from "./routes/_app/runs/index";
+import { Route as AppRunsIdRouteImport } from "./routes/_app/runs/$id";
 import { Route as AppScorecardsIndexRouteImport } from "./routes/_app/scorecards/index";
 import { Route as AppScorecardsIdentifierRouteImport } from "./routes/_app/scorecards/$identifier";
 import { Route as AppScorecardsNewRouteImport } from "./routes/_app/scorecards/new";
+import { Route as AppSelfServiceIndexRouteImport } from "./routes/_app/self-service/index";
 import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings/index";
 import { Route as AppSettingsAccessRouteImport } from "./routes/_app/settings/access";
 import { Route as AppSettingsAuditRouteImport } from "./routes/_app/settings/audit";
 import { Route as AppSettingsConfigurationRouteImport } from "./routes/_app/settings/configuration";
+import { Route as AppWorkflowsIndexRouteImport } from "./routes/_app/workflows/index";
+import { Route as AppWorkflowsIdentifierRouteImport } from "./routes/_app/workflows/$identifier";
+import { Route as AppWorkflowsNewRouteImport } from "./routes/_app/workflows/new";
 import { Route as AppCatalogBlueprintIndexRouteImport } from "./routes/_app/catalog/$blueprint/index";
 import { Route as AppCatalogBlueprintSplatRouteImport } from "./routes/_app/catalog/$blueprint/$";
 
@@ -50,6 +62,16 @@ const SignInRoute = SignInRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => AppRoute,
+} as any);
+const AppActionsRoute = AppActionsRouteImport.update({
+  id: "/actions",
+  path: "/actions",
+  getParentRoute: () => AppRoute,
+} as any);
+const AppApprovalsRoute = AppApprovalsRouteImport.update({
+  id: "/approvals",
+  path: "/approvals",
   getParentRoute: () => AppRoute,
 } as any);
 const AppBlueprintsRoute = AppBlueprintsRouteImport.update({
@@ -72,6 +94,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: "/settings",
   getParentRoute: () => AppRoute,
 } as any);
+const AppWorkflowsRoute = AppWorkflowsRouteImport.update({
+  id: "/workflows",
+  path: "/workflows",
+  getParentRoute: () => AppRoute,
+} as any);
 const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
   id: "/oauth/authorize",
   path: "/oauth/authorize",
@@ -81,6 +108,21 @@ const AppAccountAppsRoute = AppAccountAppsRouteImport.update({
   id: "/account/apps",
   path: "/account/apps",
   getParentRoute: () => AppRoute,
+} as any);
+const AppActionsIndexRoute = AppActionsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => AppActionsRoute,
+} as any);
+const AppActionsIdentifierRoute = AppActionsIdentifierRouteImport.update({
+  id: "/$identifier",
+  path: "/$identifier",
+  getParentRoute: () => AppActionsRoute,
+} as any);
+const AppActionsNewRoute = AppActionsNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => AppActionsRoute,
 } as any);
 const AppBlueprintsIndexRoute = AppBlueprintsIndexRouteImport.update({
   id: "/",
@@ -133,6 +175,16 @@ const AppIntegrationsNewRoute = AppIntegrationsNewRouteImport.update({
   path: "/new",
   getParentRoute: () => AppIntegrationsRoute,
 } as any);
+const AppRunsIndexRoute = AppRunsIndexRouteImport.update({
+  id: "/runs/",
+  path: "/runs/",
+  getParentRoute: () => AppRoute,
+} as any);
+const AppRunsIdRoute = AppRunsIdRouteImport.update({
+  id: "/runs/$id",
+  path: "/runs/$id",
+  getParentRoute: () => AppRoute,
+} as any);
 const AppScorecardsIndexRoute = AppScorecardsIndexRouteImport.update({
   id: "/scorecards/",
   path: "/scorecards/",
@@ -146,6 +198,11 @@ const AppScorecardsIdentifierRoute = AppScorecardsIdentifierRouteImport.update({
 const AppScorecardsNewRoute = AppScorecardsNewRouteImport.update({
   id: "/scorecards/new",
   path: "/scorecards/new",
+  getParentRoute: () => AppRoute,
+} as any);
+const AppSelfServiceIndexRoute = AppSelfServiceIndexRouteImport.update({
+  id: "/self-service/",
+  path: "/self-service/",
   getParentRoute: () => AppRoute,
 } as any);
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
@@ -169,6 +226,21 @@ const AppSettingsConfigurationRoute =
     path: "/configuration",
     getParentRoute: () => AppSettingsRoute,
   } as any);
+const AppWorkflowsIndexRoute = AppWorkflowsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => AppWorkflowsRoute,
+} as any);
+const AppWorkflowsIdentifierRoute = AppWorkflowsIdentifierRouteImport.update({
+  id: "/$identifier",
+  path: "/$identifier",
+  getParentRoute: () => AppWorkflowsRoute,
+} as any);
+const AppWorkflowsNewRoute = AppWorkflowsNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => AppWorkflowsRoute,
+} as any);
 const AppCatalogBlueprintIndexRoute =
   AppCatalogBlueprintIndexRouteImport.update({
     id: "/catalog/$blueprint/",
@@ -185,54 +257,76 @@ const AppCatalogBlueprintSplatRoute =
 export interface FileRoutesByFullPath {
   "/": typeof AppIndexRoute;
   "/sign-in": typeof SignInRoute;
+  "/actions": typeof AppActionsRouteWithChildren;
+  "/approvals": typeof AppApprovalsRoute;
   "/blueprints": typeof AppBlueprintsRouteWithChildren;
   "/dashboards": typeof AppDashboardsRouteWithChildren;
   "/integrations": typeof AppIntegrationsRouteWithChildren;
   "/settings": typeof AppSettingsRouteWithChildren;
+  "/workflows": typeof AppWorkflowsRouteWithChildren;
   "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/account/apps": typeof AppAccountAppsRoute;
+  "/actions/$identifier": typeof AppActionsIdentifierRoute;
+  "/actions/new": typeof AppActionsNewRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
   "/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
   "/dashboards/new": typeof AppDashboardsNewRoute;
   "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
   "/integrations/new": typeof AppIntegrationsNewRoute;
+  "/runs/$id": typeof AppRunsIdRoute;
   "/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
   "/scorecards/new": typeof AppScorecardsNewRoute;
   "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
+  "/workflows/$identifier": typeof AppWorkflowsIdentifierRoute;
+  "/workflows/new": typeof AppWorkflowsNewRoute;
+  "/actions/": typeof AppActionsIndexRoute;
   "/blueprints/": typeof AppBlueprintsIndexRoute;
   "/catalog/": typeof AppCatalogIndexRoute;
   "/dashboards/": typeof AppDashboardsIndexRoute;
   "/integrations/": typeof AppIntegrationsIndexRoute;
+  "/runs/": typeof AppRunsIndexRoute;
   "/scorecards/": typeof AppScorecardsIndexRoute;
+  "/self-service/": typeof AppSelfServiceIndexRoute;
   "/settings/": typeof AppSettingsIndexRoute;
+  "/workflows/": typeof AppWorkflowsIndexRoute;
   "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
 }
 export interface FileRoutesByTo {
   "/sign-in": typeof SignInRoute;
+  "/approvals": typeof AppApprovalsRoute;
   "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/": typeof AppIndexRoute;
   "/account/apps": typeof AppAccountAppsRoute;
+  "/actions/$identifier": typeof AppActionsIdentifierRoute;
+  "/actions/new": typeof AppActionsNewRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
   "/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
   "/dashboards/new": typeof AppDashboardsNewRoute;
   "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
   "/integrations/new": typeof AppIntegrationsNewRoute;
+  "/runs/$id": typeof AppRunsIdRoute;
   "/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
   "/scorecards/new": typeof AppScorecardsNewRoute;
   "/settings/access": typeof AppSettingsAccessRoute;
   "/settings/audit": typeof AppSettingsAuditRoute;
   "/settings/configuration": typeof AppSettingsConfigurationRoute;
+  "/workflows/$identifier": typeof AppWorkflowsIdentifierRoute;
+  "/workflows/new": typeof AppWorkflowsNewRoute;
+  "/actions": typeof AppActionsIndexRoute;
   "/blueprints": typeof AppBlueprintsIndexRoute;
   "/catalog": typeof AppCatalogIndexRoute;
   "/dashboards": typeof AppDashboardsIndexRoute;
   "/integrations": typeof AppIntegrationsIndexRoute;
+  "/runs": typeof AppRunsIndexRoute;
   "/scorecards": typeof AppScorecardsIndexRoute;
+  "/self-service": typeof AppSelfServiceIndexRoute;
   "/settings": typeof AppSettingsIndexRoute;
+  "/workflows": typeof AppWorkflowsIndexRoute;
   "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/catalog/$blueprint": typeof AppCatalogBlueprintIndexRoute;
 }
@@ -240,30 +334,42 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/_app": typeof AppRouteWithChildren;
   "/sign-in": typeof SignInRoute;
+  "/_app/actions": typeof AppActionsRouteWithChildren;
+  "/_app/approvals": typeof AppApprovalsRoute;
   "/_app/blueprints": typeof AppBlueprintsRouteWithChildren;
   "/_app/dashboards": typeof AppDashboardsRouteWithChildren;
   "/_app/integrations": typeof AppIntegrationsRouteWithChildren;
   "/_app/settings": typeof AppSettingsRouteWithChildren;
+  "/_app/workflows": typeof AppWorkflowsRouteWithChildren;
   "/oauth/authorize": typeof OauthAuthorizeRoute;
   "/_app/": typeof AppIndexRoute;
   "/_app/account/apps": typeof AppAccountAppsRoute;
+  "/_app/actions/$identifier": typeof AppActionsIdentifierRoute;
+  "/_app/actions/new": typeof AppActionsNewRoute;
   "/_app/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/_app/blueprints/new": typeof AppBlueprintsNewRoute;
   "/_app/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
   "/_app/dashboards/new": typeof AppDashboardsNewRoute;
   "/_app/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
   "/_app/integrations/new": typeof AppIntegrationsNewRoute;
+  "/_app/runs/$id": typeof AppRunsIdRoute;
   "/_app/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
   "/_app/scorecards/new": typeof AppScorecardsNewRoute;
   "/_app/settings/access": typeof AppSettingsAccessRoute;
   "/_app/settings/audit": typeof AppSettingsAuditRoute;
   "/_app/settings/configuration": typeof AppSettingsConfigurationRoute;
+  "/_app/workflows/$identifier": typeof AppWorkflowsIdentifierRoute;
+  "/_app/workflows/new": typeof AppWorkflowsNewRoute;
+  "/_app/actions/": typeof AppActionsIndexRoute;
   "/_app/blueprints/": typeof AppBlueprintsIndexRoute;
   "/_app/catalog/": typeof AppCatalogIndexRoute;
   "/_app/dashboards/": typeof AppDashboardsIndexRoute;
   "/_app/integrations/": typeof AppIntegrationsIndexRoute;
+  "/_app/runs/": typeof AppRunsIndexRoute;
   "/_app/scorecards/": typeof AppScorecardsIndexRoute;
+  "/_app/self-service/": typeof AppSelfServiceIndexRoute;
   "/_app/settings/": typeof AppSettingsIndexRoute;
+  "/_app/workflows/": typeof AppWorkflowsIndexRoute;
   "/_app/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/_app/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
 }
@@ -272,84 +378,118 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/sign-in"
+    | "/actions"
+    | "/approvals"
     | "/blueprints"
     | "/dashboards"
     | "/integrations"
     | "/settings"
+    | "/workflows"
     | "/oauth/authorize"
     | "/account/apps"
+    | "/actions/$identifier"
+    | "/actions/new"
     | "/blueprints/$identifier"
     | "/blueprints/new"
     | "/dashboards/$identifier"
     | "/dashboards/new"
     | "/integrations/$identifier"
     | "/integrations/new"
+    | "/runs/$id"
     | "/scorecards/$identifier"
     | "/scorecards/new"
     | "/settings/access"
     | "/settings/audit"
     | "/settings/configuration"
+    | "/workflows/$identifier"
+    | "/workflows/new"
+    | "/actions/"
     | "/blueprints/"
     | "/catalog/"
     | "/dashboards/"
     | "/integrations/"
+    | "/runs/"
     | "/scorecards/"
+    | "/self-service/"
     | "/settings/"
+    | "/workflows/"
     | "/catalog/$blueprint/$"
     | "/catalog/$blueprint/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/sign-in"
+    | "/approvals"
     | "/oauth/authorize"
     | "/"
     | "/account/apps"
+    | "/actions/$identifier"
+    | "/actions/new"
     | "/blueprints/$identifier"
     | "/blueprints/new"
     | "/dashboards/$identifier"
     | "/dashboards/new"
     | "/integrations/$identifier"
     | "/integrations/new"
+    | "/runs/$id"
     | "/scorecards/$identifier"
     | "/scorecards/new"
     | "/settings/access"
     | "/settings/audit"
     | "/settings/configuration"
+    | "/workflows/$identifier"
+    | "/workflows/new"
+    | "/actions"
     | "/blueprints"
     | "/catalog"
     | "/dashboards"
     | "/integrations"
+    | "/runs"
     | "/scorecards"
+    | "/self-service"
     | "/settings"
+    | "/workflows"
     | "/catalog/$blueprint/$"
     | "/catalog/$blueprint";
   id:
     | "__root__"
     | "/_app"
     | "/sign-in"
+    | "/_app/actions"
+    | "/_app/approvals"
     | "/_app/blueprints"
     | "/_app/dashboards"
     | "/_app/integrations"
     | "/_app/settings"
+    | "/_app/workflows"
     | "/oauth/authorize"
     | "/_app/"
     | "/_app/account/apps"
+    | "/_app/actions/$identifier"
+    | "/_app/actions/new"
     | "/_app/blueprints/$identifier"
     | "/_app/blueprints/new"
     | "/_app/dashboards/$identifier"
     | "/_app/dashboards/new"
     | "/_app/integrations/$identifier"
     | "/_app/integrations/new"
+    | "/_app/runs/$id"
     | "/_app/scorecards/$identifier"
     | "/_app/scorecards/new"
     | "/_app/settings/access"
     | "/_app/settings/audit"
     | "/_app/settings/configuration"
+    | "/_app/workflows/$identifier"
+    | "/_app/workflows/new"
+    | "/_app/actions/"
     | "/_app/blueprints/"
     | "/_app/catalog/"
     | "/_app/dashboards/"
     | "/_app/integrations/"
+    | "/_app/runs/"
     | "/_app/scorecards/"
+    | "/_app/self-service/"
     | "/_app/settings/"
+    | "/_app/workflows/"
     | "/_app/catalog/$blueprint/$"
     | "/_app/catalog/$blueprint/";
   fileRoutesById: FileRoutesById;
@@ -383,6 +523,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppIndexRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/actions": {
+      id: "/_app/actions";
+      path: "/actions";
+      fullPath: "/actions";
+      preLoaderRoute: typeof AppActionsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/_app/approvals": {
+      id: "/_app/approvals";
+      path: "/approvals";
+      fullPath: "/approvals";
+      preLoaderRoute: typeof AppApprovalsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/_app/blueprints": {
       id: "/_app/blueprints";
       path: "/blueprints";
@@ -411,6 +565,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppSettingsRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/workflows": {
+      id: "/_app/workflows";
+      path: "/workflows";
+      fullPath: "/workflows";
+      preLoaderRoute: typeof AppWorkflowsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/oauth/authorize": {
       id: "/oauth/authorize";
       path: "/oauth/authorize";
@@ -424,6 +585,27 @@ declare module "@tanstack/react-router" {
       fullPath: "/account/apps";
       preLoaderRoute: typeof AppAccountAppsRouteImport;
       parentRoute: typeof AppRoute;
+    };
+    "/_app/actions/": {
+      id: "/_app/actions/";
+      path: "/";
+      fullPath: "/actions/";
+      preLoaderRoute: typeof AppActionsIndexRouteImport;
+      parentRoute: typeof AppActionsRoute;
+    };
+    "/_app/actions/$identifier": {
+      id: "/_app/actions/$identifier";
+      path: "/$identifier";
+      fullPath: "/actions/$identifier";
+      preLoaderRoute: typeof AppActionsIdentifierRouteImport;
+      parentRoute: typeof AppActionsRoute;
+    };
+    "/_app/actions/new": {
+      id: "/_app/actions/new";
+      path: "/new";
+      fullPath: "/actions/new";
+      preLoaderRoute: typeof AppActionsNewRouteImport;
+      parentRoute: typeof AppActionsRoute;
     };
     "/_app/blueprints/": {
       id: "/_app/blueprints/";
@@ -495,6 +677,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppIntegrationsNewRouteImport;
       parentRoute: typeof AppIntegrationsRoute;
     };
+    "/_app/runs/": {
+      id: "/_app/runs/";
+      path: "/runs";
+      fullPath: "/runs/";
+      preLoaderRoute: typeof AppRunsIndexRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/_app/runs/$id": {
+      id: "/_app/runs/$id";
+      path: "/runs/$id";
+      fullPath: "/runs/$id";
+      preLoaderRoute: typeof AppRunsIdRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/_app/scorecards/": {
       id: "/_app/scorecards/";
       path: "/scorecards";
@@ -514,6 +710,13 @@ declare module "@tanstack/react-router" {
       path: "/scorecards/new";
       fullPath: "/scorecards/new";
       preLoaderRoute: typeof AppScorecardsNewRouteImport;
+      parentRoute: typeof AppRoute;
+    };
+    "/_app/self-service/": {
+      id: "/_app/self-service/";
+      path: "/self-service";
+      fullPath: "/self-service/";
+      preLoaderRoute: typeof AppSelfServiceIndexRouteImport;
       parentRoute: typeof AppRoute;
     };
     "/_app/settings/": {
@@ -544,6 +747,27 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppSettingsConfigurationRouteImport;
       parentRoute: typeof AppSettingsRoute;
     };
+    "/_app/workflows/": {
+      id: "/_app/workflows/";
+      path: "/";
+      fullPath: "/workflows/";
+      preLoaderRoute: typeof AppWorkflowsIndexRouteImport;
+      parentRoute: typeof AppWorkflowsRoute;
+    };
+    "/_app/workflows/$identifier": {
+      id: "/_app/workflows/$identifier";
+      path: "/$identifier";
+      fullPath: "/workflows/$identifier";
+      preLoaderRoute: typeof AppWorkflowsIdentifierRouteImport;
+      parentRoute: typeof AppWorkflowsRoute;
+    };
+    "/_app/workflows/new": {
+      id: "/_app/workflows/new";
+      path: "/new";
+      fullPath: "/workflows/new";
+      preLoaderRoute: typeof AppWorkflowsNewRouteImport;
+      parentRoute: typeof AppWorkflowsRoute;
+    };
     "/_app/catalog/$blueprint/": {
       id: "/_app/catalog/$blueprint/";
       path: "/catalog/$blueprint";
@@ -560,6 +784,22 @@ declare module "@tanstack/react-router" {
     };
   }
 }
+
+interface AppActionsRouteChildren {
+  AppActionsIdentifierRoute: typeof AppActionsIdentifierRoute;
+  AppActionsNewRoute: typeof AppActionsNewRoute;
+  AppActionsIndexRoute: typeof AppActionsIndexRoute;
+}
+
+const AppActionsRouteChildren: AppActionsRouteChildren = {
+  AppActionsIdentifierRoute: AppActionsIdentifierRoute,
+  AppActionsNewRoute: AppActionsNewRoute,
+  AppActionsIndexRoute: AppActionsIndexRoute,
+};
+
+const AppActionsRouteWithChildren = AppActionsRoute._addFileChildren(
+  AppActionsRouteChildren,
+);
 
 interface AppBlueprintsRouteChildren {
   AppBlueprintsIdentifierRoute: typeof AppBlueprintsIdentifierRoute;
@@ -627,32 +867,60 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
   AppSettingsRouteChildren,
 );
 
+interface AppWorkflowsRouteChildren {
+  AppWorkflowsIdentifierRoute: typeof AppWorkflowsIdentifierRoute;
+  AppWorkflowsNewRoute: typeof AppWorkflowsNewRoute;
+  AppWorkflowsIndexRoute: typeof AppWorkflowsIndexRoute;
+}
+
+const AppWorkflowsRouteChildren: AppWorkflowsRouteChildren = {
+  AppWorkflowsIdentifierRoute: AppWorkflowsIdentifierRoute,
+  AppWorkflowsNewRoute: AppWorkflowsNewRoute,
+  AppWorkflowsIndexRoute: AppWorkflowsIndexRoute,
+};
+
+const AppWorkflowsRouteWithChildren = AppWorkflowsRoute._addFileChildren(
+  AppWorkflowsRouteChildren,
+);
+
 interface AppRouteChildren {
+  AppActionsRoute: typeof AppActionsRouteWithChildren;
+  AppApprovalsRoute: typeof AppApprovalsRoute;
   AppBlueprintsRoute: typeof AppBlueprintsRouteWithChildren;
   AppDashboardsRoute: typeof AppDashboardsRouteWithChildren;
   AppIntegrationsRoute: typeof AppIntegrationsRouteWithChildren;
   AppSettingsRoute: typeof AppSettingsRouteWithChildren;
+  AppWorkflowsRoute: typeof AppWorkflowsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
   AppAccountAppsRoute: typeof AppAccountAppsRoute;
+  AppRunsIdRoute: typeof AppRunsIdRoute;
   AppScorecardsIdentifierRoute: typeof AppScorecardsIdentifierRoute;
   AppScorecardsNewRoute: typeof AppScorecardsNewRoute;
   AppCatalogIndexRoute: typeof AppCatalogIndexRoute;
+  AppRunsIndexRoute: typeof AppRunsIndexRoute;
   AppScorecardsIndexRoute: typeof AppScorecardsIndexRoute;
+  AppSelfServiceIndexRoute: typeof AppSelfServiceIndexRoute;
   AppCatalogBlueprintSplatRoute: typeof AppCatalogBlueprintSplatRoute;
   AppCatalogBlueprintIndexRoute: typeof AppCatalogBlueprintIndexRoute;
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppActionsRoute: AppActionsRouteWithChildren,
+  AppApprovalsRoute: AppApprovalsRoute,
   AppBlueprintsRoute: AppBlueprintsRouteWithChildren,
   AppDashboardsRoute: AppDashboardsRouteWithChildren,
   AppIntegrationsRoute: AppIntegrationsRouteWithChildren,
   AppSettingsRoute: AppSettingsRouteWithChildren,
+  AppWorkflowsRoute: AppWorkflowsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppAccountAppsRoute: AppAccountAppsRoute,
+  AppRunsIdRoute: AppRunsIdRoute,
   AppScorecardsIdentifierRoute: AppScorecardsIdentifierRoute,
   AppScorecardsNewRoute: AppScorecardsNewRoute,
   AppCatalogIndexRoute: AppCatalogIndexRoute,
+  AppRunsIndexRoute: AppRunsIndexRoute,
   AppScorecardsIndexRoute: AppScorecardsIndexRoute,
+  AppSelfServiceIndexRoute: AppSelfServiceIndexRoute,
   AppCatalogBlueprintSplatRoute: AppCatalogBlueprintSplatRoute,
   AppCatalogBlueprintIndexRoute: AppCatalogBlueprintIndexRoute,
 };

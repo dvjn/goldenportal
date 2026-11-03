@@ -11,7 +11,8 @@ export type WidgetType =
   | "table"
   | "scorecard"
   | "markdown"
-  | "properties";
+  | "properties"
+  | "actions";
 
 // Query picks entities: a blueprint's that match a filter. name is set for
 // one of the page's named queries.
@@ -70,6 +71,8 @@ export type Widget = {
   link?: WidgetLink;
   // rowLink is what a table's rows open instead of their entity's page.
   rowLink?: WidgetLink;
+  // actions are what an actions widget offers to run, in order.
+  actions?: string[];
 };
 
 // Tab is a page tab of widgets.

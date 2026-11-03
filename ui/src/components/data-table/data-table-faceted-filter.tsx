@@ -60,28 +60,7 @@ export function DataTableFacetedOptions({
               onSelect={() => toggle(option.value)}
               aria-selected={chosen.has(option.value)}
             >
-              {multiple ? (
-                <span
-                  className={`flex size-4 items-center justify-center rounded-sm border ${
-                    chosen.has(option.value)
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input [&_svg]:invisible"
-                  }`}
-                >
-                  <Check className="size-3" />
-                </span>
-              ) : (
-                // A radio for a single value, round despite the squircle default.
-                <span
-                  className={`flex size-4 items-center justify-center rounded-full border [corner-shape:round] ${
-                    chosen.has(option.value) ? "border-primary" : "border-input"
-                  }`}
-                >
-                  {chosen.has(option.value) && (
-                    <span className="size-2 rounded-full bg-primary [corner-shape:round]" />
-                  )}
-                </span>
-              )}
+              <OptionMark multiple={multiple} checked={chosen.has(option.value)} />
               {option.label}
               {option.count !== undefined && (
                 <CommandShortcut className="font-mono tracking-normal tabular-nums">
@@ -103,5 +82,36 @@ export function DataTableFacetedOptions({
         )}
       </CommandList>
     </Command>
+  );
+}
+
+// OptionMark marks an option of a list as picked or not: a checkbox where
+// several can be, and a radio where one can.
+export function OptionMark({
+  multiple,
+  checked,
+}: Readonly<{ multiple: boolean; checked: boolean }>) {
+  if (multiple) {
+    return (
+      <span
+        className={`flex size-4 items-center justify-center rounded-sm border ${
+          checked
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-input [&_svg]:invisible"
+        }`}
+      >
+        <Check className="size-3" />
+      </span>
+    );
+  }
+  // A radio for a single value, round despite the squircle default.
+  return (
+    <span
+      className={`flex size-4 items-center justify-center rounded-full border [corner-shape:round] ${
+        checked ? "border-primary" : "border-input"
+      }`}
+    >
+      {checked && <span className="size-2 rounded-full bg-primary [corner-shape:round]" />}
+    </span>
   );
 }

@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery, useSuspenseQuery } from "@tanstack/react-qu
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Columns3, FileCode, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
 import type { ReactNode } from "react";
+import { RowActions, useRowActions } from "@/components/actions/entity-actions";
 import { BlueprintIcon, IconTile } from "@/components/catalog/blueprint-icon";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { EmptyValue, PropertyValue } from "@/components/catalog/property-value";
@@ -243,6 +244,10 @@ function BlueprintCatalogPage() {
     placeholderData: keepPreviousData,
   });
   const whereFilters = useWhereFilters(blueprint, search.where);
+  const rowActions = useRowActions(
+    blueprint,
+    (page.data?.entities ?? []).map((entity) => entity.identifier),
+  );
 
   if (!spec) return <UnpublishedBlueprint blueprint={blueprint} title={doc.title} />;
 
@@ -323,6 +328,18 @@ function BlueprintCatalogPage() {
           ),
         }),
       ];
+    }),
+    column.display({
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <div className="text-right">
+          <RowActions
+            entity={{ blueprint, identifier: row.original.identifier, title: row.original.title }}
+            actions={rowActions(row.original.identifier)}
+          />
+        </div>
+      ),
     }),
   ];
 

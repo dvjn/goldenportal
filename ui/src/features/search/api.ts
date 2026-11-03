@@ -2,7 +2,14 @@ import { queryOptions } from "@tanstack/react-query";
 import { type ApiDataResponse, api } from "@/lib/api";
 
 // SearchKind is what a search result is, which says where it opens.
-export type SearchKind = "blueprint" | "entity" | "dashboard" | "scorecard" | "integration";
+export type SearchKind =
+  | "blueprint"
+  | "entity"
+  | "dashboard"
+  | "scorecard"
+  | "integration"
+  | "action"
+  | "workflow";
 
 // SearchResult is something a search found, as the server shows it: an
 // entity has its blueprint, and detail, that blueprint's title.

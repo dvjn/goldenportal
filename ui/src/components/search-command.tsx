@@ -78,6 +78,15 @@ const kinds: Record<SearchKind, { label: string; open: (r: SearchResult) => Navi
     label: "Integration",
     open: (r) => ({ to: "/integrations/$identifier", params: { identifier: r.identifier } }),
   },
+  action: {
+    label: "Action",
+    open: (r) => ({ to: "/actions/$identifier", params: { identifier: r.identifier } }),
+  },
+  // Members find a workflow to run it, so it opens in the catalog's form.
+  workflow: {
+    label: "Workflow",
+    open: (r) => ({ to: "/self-service", search: { workflow: r.identifier } }),
+  },
 };
 
 function SearchResults({ onDone }: Readonly<{ onDone: () => void }>) {

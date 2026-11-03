@@ -4,6 +4,7 @@ import { type ApiDataResponse, api } from "@/lib/api";
 // scopeLabels say what each OAuth scope lets an app do, in the user's words.
 export const scopeLabels: Record<string, string> = {
   "portal:read": "Read the catalog, scorecards, dashboards and configuration",
+  "portal:run": "Run actions as you, except destructive ones",
   "portal:author": "Change, publish and delete configuration, and run syncs",
 };
 

@@ -1,5 +1,7 @@
 import {
   AppWindow,
+  ConciergeBell,
+  History,
   House,
   LayoutDashboard,
   Library,
@@ -7,7 +9,10 @@ import {
   Plug,
   Settings,
   Shapes,
+  Stamp,
   Trophy,
+  Workflow,
+  Zap,
 } from "lucide-react";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 
@@ -16,10 +21,15 @@ import { IconTile } from "@/components/catalog/blueprint-icon";
 export const pageIcons = {
   home: House,
   catalog: Library,
+  selfService: ConciergeBell,
   scorecards: Trophy,
+  runs: History,
+  approvals: Stamp,
   blueprints: Shapes,
   integrations: Plug,
   dashboards: LayoutDashboard,
+  actions: Zap,
+  workflows: Workflow,
   settings: Settings,
   apps: AppWindow,
 } as const satisfies Record<string, LucideIcon>;
@@ -31,10 +41,15 @@ export type PageName = keyof typeof pageIcons;
 const sectionPages: Record<string, PageName> = {
   "/": "home",
   "/catalog": "catalog",
+  "/self-service": "selfService",
   "/scorecards": "scorecards",
+  "/runs": "runs",
+  "/approvals": "approvals",
   "/blueprints": "blueprints",
   "/integrations": "integrations",
   "/dashboards": "dashboards",
+  "/actions": "actions",
+  "/workflows": "workflows",
   "/settings": "settings",
   "/account/apps": "apps",
 };

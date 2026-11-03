@@ -20,6 +20,7 @@ import {
   type WidgetSource,
   widgetsQueryOptions,
 } from "@/features/widgets";
+import { ActionsWidget } from "./actions-widget";
 import { GroupWidget } from "./group-widget";
 import { PropertiesWidget } from "./properties-widget";
 import { ScorecardWidget } from "./scorecard-widget";
@@ -46,10 +47,10 @@ const spans = [
 ];
 
 // loads reports whether a widget's data comes from the server. Properties
-// widgets show the page's entity, and a dashboard's markdown comes with it
-// already filled in.
+// and actions widgets read what they show themselves, and a dashboard's
+// markdown comes with it already filled in.
 function loads(widget: Widget, source: WidgetSource) {
-  if (widget.type === "properties") return false;
+  if (widget.type === "properties" || widget.type === "actions") return false;
   return widget.type !== "markdown" || "blueprint" in source;
 }
 
@@ -135,6 +136,8 @@ function WidgetBody(props: WidgetProps) {
       return <ScorecardWidget {...(props as WidgetProps<TierData>)} />;
     case "properties":
       return <PropertiesWidget {...props} />;
+    case "actions":
+      return <ActionsWidget {...props} />;
     case "markdown":
       return <MarkdownWidget {...(props as WidgetProps<TextData>)} />;
   }

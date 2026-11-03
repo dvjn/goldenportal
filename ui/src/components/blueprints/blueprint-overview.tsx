@@ -148,7 +148,9 @@ const builtIns = [
   { identifier: "updatedAt", title: "Updated", type: "date-time", rule: "Set when changed" },
 ];
 
-function Rules({ property }: Readonly<{ property: Property }>) {
+// Rules lists what a value must be: required, its allowed values, its
+// bounds and pattern.
+export function Rules({ property }: Readonly<{ property: Property }>) {
   const rules: ReactNode[] = [];
   if (property.required) {
     rules.push(

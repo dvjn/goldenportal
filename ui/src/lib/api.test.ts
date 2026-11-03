@@ -1,6 +1,6 @@
 import { HTTPError } from "ky";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { createApi } from "./api";
+import { apiProblems, createApi } from "./api";
 
 const api = createApi("http://localhost/api/web");
 
@@ -42,5 +42,18 @@ describe("api", () => {
     stubFetch(new Response("bad gateway", { status: 502 }));
 
     await expect(api.get("config").json()).rejects.toThrow(/502/);
+  });
+
+  it("reads the problems by field from a turned down request", async () => {
+    const problems = { reason: ["is shorter than 5 characters"], "": ["there's no input x"] };
+    stubFetch(Response.json({ error: { message: "check the inputs", problems } }, { status: 422 }));
+
+    const error = await api
+      .post("actions/restart/runs")
+      .json()
+      .catch((caught: unknown) => caught);
+
+    expect(apiProblems(error)).toEqual(problems);
+    expect(apiProblems(new Error("offline"))).toBeUndefined();
   });
 });

@@ -1,7 +1,11 @@
 export { DataTable } from "./data-table";
 export { DataTableColumnHeader } from "./data-table-column-header";
 export { type DateRange, dateRangeBounds, isDuration } from "./data-table-date-filter";
-export { DataTableFacetedOptions, type DataTableOption } from "./data-table-faceted-filter";
+export {
+  DataTableFacetedOptions,
+  type DataTableOption,
+  OptionMark,
+} from "./data-table-faceted-filter";
 export { DataTableFilterBox } from "./data-table-filter-box";
 export {
   type DataTableFilterChange,

@@ -1,4 +1,5 @@
 import { cn } from "cn";
+import { RowActions, useRowActions } from "@/components/actions/entity-actions";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { EmptyValue, formatNumber, PropertyValue } from "@/components/catalog/property-value";
 import { tableCellClass } from "@/components/data-table";
@@ -20,6 +21,14 @@ import { linkable, WidgetLink } from "./widget-link";
 // TableWidget lists the first entities that match, with a link to the rest.
 // The server reads each column and says how to show it.
 export function TableWidget({ widget, context, data, error }: WidgetProps<TableData>) {
+  const live = !context.draft;
+  // Rows that open something else aren't entities to act on.
+  const entities = !widget.rowLink;
+  const rowActions = useRowActions(
+    data?.blueprint ?? "",
+    entities ? (data?.rows ?? []).map((row) => row.identifier) : [],
+    live,
+  );
   if (error) return <WidgetError widget={widget} error={error} />;
   if (!data) return <WidgetLoading widget={widget} height="h-40" />;
 
@@ -27,7 +36,6 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
   const columns = data.columns.flatMap((column, index) =>
     column.path === "title" ? [] : [{ column, index }],
   );
-  const live = !context.draft;
 
   return (
     <WidgetCard widget={widget} action={live && <ViewAll link={data.link} />} flush>
@@ -43,6 +51,11 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
                   {column.title}
                 </TableHead>
               ))}
+              {entities && live && (
+                <TableHead className={tableCellClass}>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -70,6 +83,18 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
                       />
                     </TableCell>
                   ))}
+                  {entities && live && (
+                    <TableCell className={cn(tableCellClass, "text-right")}>
+                      <RowActions
+                        entity={{
+                          blueprint: data.blueprint,
+                          identifier: row.identifier,
+                          title: row.title,
+                        }}
+                        actions={rowActions(row.identifier)}
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}

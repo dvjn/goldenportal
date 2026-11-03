@@ -108,7 +108,7 @@ describe("settings", () => {
     stubApi({ "GET config": acmeConfig, "GET me": ok({ ...ada, role: "member" }) });
     renderRoute("/");
 
-    expect(await screen.findByRole("link", { name: "Catalog" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Scorecards" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
   });
 

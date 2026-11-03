@@ -1,4 +1,13 @@
 import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 // Elements are styled one by one, since there's no typography plugin.
 const components: Components = {
@@ -22,13 +31,29 @@ const components: Components = {
   pre: ({ node: _, ...props }) => (
     <pre className="my-3 overflow-x-auto rounded-md bg-muted p-3 text-xs" {...props} />
   ),
+  table: ({ node: _, ...props }) => (
+    <div className="my-3 rounded-md border">
+      <Table {...props} />
+    </div>
+  ),
+  thead: ({ node: _, ...props }) => <TableHeader {...props} />,
+  tbody: ({ node: _, ...props }) => <TableBody {...props} />,
+  tr: ({ node: _, ...props }) => <TableRow {...props} />,
+  th: ({ node: _, ...props }) => <TableHead {...props} />,
+  td: ({ node: _, ...props }) => <TableCell {...props} />,
 };
 
-// Markdown shows text written in Markdown, without raw HTML.
+// GitHub's flavor adds tables, task lists and strikethrough, as in its comments.
+const plugins = [remarkGfm];
+
+// Markdown shows text written in Markdown. Raw HTML in it shows as text
+// rather than running, since no plugin parses it.
 export function Markdown({ children }: Readonly<{ children: string }>) {
   return (
     <div className="text-sm">
-      <ReactMarkdown components={components}>{children}</ReactMarkdown>
+      <ReactMarkdown components={components} remarkPlugins={plugins}>
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }

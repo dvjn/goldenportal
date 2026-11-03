@@ -3,7 +3,11 @@ import { noticeNewBuild } from "./new-build";
 
 export type ApiDataResponse<T> = { data: T };
 
-type ApiErrorBody = { error?: { message?: string } };
+// Problems are what's wrong with each field of a request the server turned
+// down, by field; "" holds those that aren't about one field.
+export type Problems = Record<string, string[]>;
+
+type ApiErrorBody = { error?: { message?: string; problems?: Problems } };
 
 const adoptEnvelopeMessage: BeforeErrorHook = ({ error }) => {
   if (error instanceof HTTPError) {
@@ -13,6 +17,12 @@ const adoptEnvelopeMessage: BeforeErrorHook = ({ error }) => {
   }
   return error;
 };
+
+export function apiProblems(error: unknown): Problems | undefined {
+  if (!(error instanceof HTTPError)) return undefined;
+  const body = error.data as ApiErrorBody | string | undefined;
+  return typeof body === "object" ? body.error?.problems : undefined;
+}
 
 export function isUnauthorized(error: unknown) {
   return error instanceof HTTPError && error.response.status === 401;

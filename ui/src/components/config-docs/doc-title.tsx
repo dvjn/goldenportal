@@ -5,7 +5,9 @@ import { IconTile } from "@/components/catalog/blueprint-icon";
 export type DocPath =
   | "/blueprints/$identifier"
   | "/integrations/$identifier"
-  | "/dashboards/$identifier";
+  | "/dashboards/$identifier"
+  | "/actions/$identifier"
+  | "/workflows/$identifier";
 
 // DocTitle opens a configuration document from a table: its icon, then its
 // title over its identifier.

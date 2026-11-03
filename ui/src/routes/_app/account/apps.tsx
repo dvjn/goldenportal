@@ -44,6 +44,7 @@ export const Route = createFileRoute("/_app/account/apps")({
 // scopeNames are the short names access shows as, with the full label on hover.
 const scopeNames: Record<string, string> = {
   "portal:read": "Read",
+  "portal:run": "Run",
   "portal:author": "Author",
 };
 

@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
   type ErrorComponentProps,
@@ -8,6 +8,8 @@ import {
 import { ArrowLeft, ExternalLink, Plug } from "lucide-react";
 import type { ReactNode } from "react";
 import { stringify } from "yaml";
+import { EntityActions } from "@/components/actions/entity-actions";
+import { type RunsSearch, RunsTable, validateRunsSearch } from "@/components/actions/runs-table";
 import { CardSection, CardTitleBar } from "@/components/card-sections";
 import { BlueprintLabel } from "@/components/catalog/blueprint-label";
 import { EntityLink } from "@/components/catalog/entity-link";
@@ -31,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import { WidgetGrid } from "@/components/widgets/widget-grid";
+import { availableQueryOptions, runsQueryOptions } from "@/features/actions";
 import { hasRole, useMe } from "@/features/auth";
 import { type BlueprintSpec, blueprints } from "@/features/blueprints";
 import {
@@ -46,11 +49,16 @@ import { formatAbsolute, formatRelative } from "@/lib/format";
 // The blueprint's entity tabs and each scorecard that scores the entity get
 // a tab, between Overview and the system tabs. A blueprint tab named
 // overview takes the built-in Overview's place.
-const systemTabs = ["relations", "yaml"] as const;
+const systemTabs = ["runs", "relations", "yaml"] as const;
+
+// The runs tab keeps its table's state beside the open tab.
+function validateEntitySearch(search: Record<string, unknown>): RunsSearch & { tab?: string } {
+  const tab = typeof search.tab === "string" && search.tab !== "" ? search.tab : undefined;
+  return { ...(tab ? { tab } : {}), ...(tab === "runs" ? validateRunsSearch(search) : {}) };
+}
 
 export const Route = createFileRoute("/_app/catalog/$blueprint/$")({
-  validateSearch: (search: Record<string, unknown>): { tab?: string } =>
-    typeof search.tab === "string" && search.tab !== "" ? { tab: search.tab } : {},
+  validateSearch: validateEntitySearch,
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(blueprints.queries.detail(params.blueprint)),
@@ -72,12 +80,15 @@ function EntityPage() {
   // Without a tab in the URL, the page opens the one last opened for its
   // blueprint.
   const [lastTabs, setLastTabs] = useUiState("entityTabs", noTabs);
-  const { tab = lastTabs[blueprint] ?? "overview" } = Route.useSearch();
+  const { tab = lastTabs[blueprint] ?? "overview", ...runsSearch } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const builder = hasRole(useMe().role, "builder");
   const { data: doc } = useSuspenseQuery(blueprints.queries.detail(blueprint));
   const { data: entity } = useSuspenseQuery(entityQueryOptions(blueprint, identifier));
   const { data: results } = useSuspenseQuery(entityScorecardsQueryOptions(blueprint, identifier));
+  // Runs get a tab once there's something to run or something ran.
+  const { data: available = [] } = useQuery(availableQueryOptions(blueprint, identifier));
+  const runs = useQuery(runsQueryOptions({ blueprint, entity: identifier })).data?.total ?? 0;
   const spec = doc.published?.spec;
   if (!spec) {
     return <UnpublishedBlueprint blueprint={blueprint} title={doc.title} page={entity.title} />;
@@ -163,14 +174,19 @@ function EntityPage() {
           </div>
         }
         actions={
-          link && (
-            <Button variant="outline" asChild>
-              <a href={link} target="_blank" rel="noreferrer" title={link}>
-                <ExternalLink />
-                Open
-              </a>
-            </Button>
-          )
+          <>
+            <EntityActions
+              entity={{ blueprint, identifier: entity.identifier, title: entity.title }}
+            />
+            {link && (
+              <Button variant="outline" asChild>
+                <a href={link} target="_blank" rel="noreferrer" title={link}>
+                  <ExternalLink />
+                  Open
+                </a>
+              </Button>
+            )}
+          </>
         }
         tabs={
           <TabsList variant="line" aria-label="Entity">
@@ -185,6 +201,12 @@ function EntityPage() {
                 <ScorecardTab result={result} />
               </PageTab>
             ))}
+            {(available.length > 0 || runs > 0) && (
+              <PageTab value="runs">
+                Runs
+                <span className="text-xs text-muted-foreground tabular-nums">{runs}</span>
+              </PageTab>
+            )}
             <PageTab value="relations">
               Relations
               <span className="text-xs text-muted-foreground tabular-nums">
@@ -220,6 +242,17 @@ function EntityPage() {
           <ScorecardResult result={result} />
         </TabsContent>
       ))}
+      <TabsContent value="runs" className="pt-2">
+        <RunsTable
+          scope={{ blueprint, entity: identifier }}
+          search={runsSearch}
+          hide={["entity"]}
+          empty={{
+            title: "Nothing has run here yet",
+            description: "Runs of actions on this entity show up here.",
+          }}
+        />
+      </TabsContent>
       <TabsContent value="relations" className="pt-2">
         <Relations spec={spec} entity={entity} />
       </TabsContent>

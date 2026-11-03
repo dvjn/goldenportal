@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import { NavUser } from "@/components/nav-user";
 import { pageIcons } from "@/components/page-icons";
@@ -10,26 +11,37 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { approvalsQueryOptions } from "@/features/actions";
 import { hasRole, useMe } from "@/features/auth";
 import { useConfig } from "@/features/config";
 
 const mainItems = [
   { to: "/", label: "Home", icon: pageIcons.home, exact: true },
   { to: "/catalog", label: "Catalog", icon: pageIcons.catalog, exact: false },
+  { to: "/self-service", label: "Self-Service", icon: pageIcons.selfService, exact: false },
   { to: "/scorecards", label: "Scorecards", icon: pageIcons.scorecards, exact: false },
+] as const;
+
+const activityItems = [
+  { to: "/runs", label: "Runs", icon: pageIcons.runs },
+  { to: "/approvals", label: "Approvals", icon: pageIcons.approvals },
 ] as const;
 
 const buildItems = [
   { to: "/blueprints", label: "Blueprints", icon: pageIcons.blueprints },
   { to: "/integrations", label: "Integrations", icon: pageIcons.integrations },
   { to: "/dashboards", label: "Dashboards", icon: pageIcons.dashboards },
+  { to: "/actions", label: "Actions", icon: pageIcons.actions },
+  { to: "/workflows", label: "Workflows", icon: pageIcons.workflows },
 ] as const;
 
-// AppSidebar is the app's navigation. Members get Home, the catalog and scorecards;
+// AppSidebar is the app's navigation. Members get Home, the catalog, self-service and
+// scorecards, and their activity: their runs and what waits on their approval, counted;
 // builders also get what they build, and admins Settings.
 export function AppSidebar() {
   const { name, logoUrl } = useConfig();
@@ -37,6 +49,7 @@ export function AppSidebar() {
   const matchRoute = useMatchRoute();
   const active = (to: string, fuzzy = true) => Boolean(matchRoute({ to, fuzzy }));
   const builder = hasRole(role, "builder");
+  const waiting = useQuery(approvalsQueryOptions).data?.length ?? 0;
 
   return (
     <Sidebar collapsible="icon">
@@ -72,6 +85,26 @@ export function AppSidebar() {
                     <span>{label}</span>
                   </Link>
                 </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Activity</SidebarGroupLabel>
+          <SidebarMenu className="gap-1">
+            {activityItems.map(({ to, label, icon: Icon }) => (
+              <SidebarMenuItem key={to}>
+                <SidebarMenuButton asChild isActive={active(to)} tooltip={label}>
+                  <Link to={to}>
+                    <Icon />
+                    <span>{label}</span>
+                  </Link>
+                </SidebarMenuButton>
+                {to === "/approvals" && waiting > 0 && (
+                  <SidebarMenuBadge aria-label={`${waiting} waiting on you`}>
+                    {waiting}
+                  </SidebarMenuBadge>
+                )}
               </SidebarMenuItem>
             ))}
           </SidebarMenu>

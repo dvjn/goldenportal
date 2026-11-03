@@ -63,6 +63,20 @@ export const auditActions: Record<string, string> = {
   "dashboard.draft_discard": "Discarded dashboard draft",
   "dashboard.publish": "Published dashboard",
   "dashboard.delete": "Deleted dashboard",
+  "action.draft_save": "Saved action draft",
+  "action.draft_discard": "Discarded action draft",
+  "action.publish": "Published action",
+  "action.delete": "Deleted action",
+  "action.run": "Ran action",
+  "action.run_cancel": "Cancelled run",
+  "action.run_retry": "Retried run",
+  "action.run_resolve": "Resolved run",
+  "action.run_approve": "Approved run",
+  "action.run_reject": "Rejected run",
+  "workflow.draft_save": "Saved workflow draft",
+  "workflow.draft_discard": "Discarded workflow draft",
+  "workflow.publish": "Published workflow",
+  "workflow.delete": "Deleted workflow",
 };
 
 export const auditKeys = {
