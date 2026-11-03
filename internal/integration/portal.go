@@ -67,14 +67,29 @@ type portalIntegration struct {
 	PublishedAt    time.Time `json:"publishedAt"`
 }
 
+// portalReaders read the portal's objects that other packages add to the
+// Portal connector, such as actions and their runs, by resource.
+var portalReaders = map[string]func(context.Context, configdoc.DB) (any, error){}
+
+// AddPortalResource lets the Portal connector read another of the portal's
+// own objects. Call it at start-up, before any sync.
+func AddPortalResource(name string, read func(context.Context, configdoc.DB) (any, error)) {
+	portalReaders[name] = read
+	for i := range Connectors {
+		if Connectors[i].ID == "portal" && !slices.Contains(Connectors[i].Resources, name) {
+			Connectors[i].Resources = append(Connectors[i].Resources, name)
+		}
+	}
+}
+
 // lastRun is when an integration last ran, and how it went.
 type lastRun struct {
 	at      time.Time
 	outcome string
 }
 
-// portalSnapshot reads the resources asked for: users, groups, and published
-// blueprints and integrations. Users are named by email and groups by name,
+// portalSnapshot reads the resources asked for: users, groups, published
+// blueprints and integrations, and those other packages added. Users are named by email and groups by name,
 // so mappings can relate them to each other.
 func portalSnapshot(ctx context.Context, db configdoc.DB, _ Spec, resources []string) (map[string]any, error) {
 	data := portalData{
@@ -106,7 +121,18 @@ func portalSnapshot(ctx context.Context, db configdoc.DB, _ Spec, resources []st
 	all, _ := value.(map[string]any)
 	out := map[string]any{}
 	for _, resource := range resources {
-		out[resource] = all[resource]
+		read, ok := portalReaders[resource]
+		if !ok {
+			out[resource] = all[resource]
+			continue
+		}
+		objects, err := read(ctx, db)
+		if err != nil {
+			return nil, err
+		}
+		if out[resource], err = toJSONValue(objects); err != nil {
+			return nil, err
+		}
 	}
 
 	return out, nil

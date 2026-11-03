@@ -51,7 +51,7 @@
           },
           "then": {
             "properties": {
-              "mappings": { "items": { "properties": { "resource": { "enum": ["users", "groups", "blueprints", "integrations"] } } } }
+              "mappings": { "items": { "properties": { "resource": { "enum": ["users", "groups", "blueprints", "integrations", "actions", "runs"] } } } }
             }
           }
         }
@@ -64,7 +64,7 @@
       "properties": {
         "type": {
           "enum": ["push", "portal", "http"],
-          "description": "push: other systems send JSON to the ingest API with an ingestion token. portal: the portal's own users, groups, blueprints and integrations, synced one way. http: JSON fetched from URLs on a schedule, following pages."
+          "description": "push: other systems send JSON to the ingest API with an ingestion token. portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages."
         },
         "config": { "$ref": "#/$defs/httpConfig" }
       },
@@ -142,7 +142,7 @@
       "properties": {
         "resource": {
           "type": "string",
-          "description": "Pull connectors only, and required there: what to fetch for this mapping, one of the connector's resources (portal: users, groups, blueprints or integrations; http: a key of config.resources)."
+          "description": "Pull connectors only, and required there: what to fetch for this mapping, one of the connector's resources (portal: users, groups, blueprints, integrations, actions or runs; http: a key of config.resources)."
         },
         "blueprint": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it writes." },
         "items": {

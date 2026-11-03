@@ -58,7 +58,7 @@ var Connectors = []Connector{
 		Icon:        "panels-top-left",
 		Color:       "indigo",
 		Title:       "Portal",
-		Description: "The portal's own users, groups, blueprints and integrations, synced one way. Changes to the entities never flow back.",
+		Description: "The portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. Changes to the entities never flow back.",
 		Mode:        ModePull,
 		Resources:   []string{"users", "groups", "blueprints", "integrations"},
 	},
