@@ -11,6 +11,7 @@ import {
 } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import { Button } from "@/components/ui/button";
 import { type BlueprintSummary, blueprints, useBlueprints } from "@/features/blueprints";
 import { catalogQueryOptions } from "@/features/catalog";
@@ -62,7 +63,11 @@ function BlueprintsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Blueprints" actions={<NewBlueprintButton />} />
+      <PageHeader
+        title="Blueprints"
+        icon={<PageIcon page="blueprints" />}
+        actions={<NewBlueprintButton />}
+      />
       <DataTable
         data={rows}
         columns={columns}

@@ -4,6 +4,7 @@ import { Plus, Trophy } from "lucide-react";
 import { EmptyCard } from "@/components/empty-state";
 import { LinkCard } from "@/components/link-card";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import { ChecksPassing, checkTotals } from "@/components/scorecards/checks-passing";
 import { TierDistribution } from "@/components/scorecards/tier-distribution";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,7 @@ function ScorecardsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Scorecards" actions={newButton} />
+      <PageHeader title="Scorecards" icon={<PageIcon page="scorecards" />} actions={newButton} />
       {shown.length === 0 ? (
         <EmptyCard
           icon={<Trophy />}

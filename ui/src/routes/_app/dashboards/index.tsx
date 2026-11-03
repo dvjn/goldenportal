@@ -12,6 +12,7 @@ import {
 } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import { Button } from "@/components/ui/button";
 import { type DashboardSummary, dashboards } from "@/features/dashboards";
 
@@ -71,7 +72,11 @@ function DashboardsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Dashboards" actions={<NewDashboardButton />} />
+      <PageHeader
+        title="Dashboards"
+        icon={<PageIcon page="dashboards" />}
+        actions={<NewDashboardButton />}
+      />
       <DataTable
         data={rows}
         columns={columns}

@@ -9,7 +9,6 @@ import { ArrowLeft, ExternalLink, Plug } from "lucide-react";
 import type { ReactNode } from "react";
 import { stringify } from "yaml";
 import { CardSection, CardTitleBar } from "@/components/card-sections";
-import { IconTile } from "@/components/catalog/blueprint-icon";
 import { BlueprintLabel } from "@/components/catalog/blueprint-label";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { ListValue } from "@/components/catalog/list-value";
@@ -110,7 +109,6 @@ function EntityPage() {
       <PageHeader
         title={entity.title}
         heading={<SplitTitle title={entity.title} />}
-        icon={<IconTile icon={spec.icon} color={spec.color} size="lg" />}
         breadcrumbs={
           <PageBreadcrumbs page={entity.title}>
             <Link to="/catalog">Catalog</Link>

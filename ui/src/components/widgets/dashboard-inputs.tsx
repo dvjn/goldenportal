@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, ListFilter, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { DataTableFacetedOptions, type DataTableOption } from "@/components/data-table";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -21,13 +22,14 @@ export type InputValues = Record<string, string[] | null>;
 // relationOptions is how many entities a relation input offers to pick from.
 const relationOptions = 100;
 
-// DashboardInputs is the bar above a dashboard's widgets where its inputs
-// are set. It sticks under the page bar, so what the widgets are narrowed by
-// stays in sight while scrolling. Each input shows its label and value.
-// Reset shows while any input is away from its default. An input set to
-// nothing says so, and offers to show everything instead; one whose default
-// query failed says why, since problems is what went wrong by input. links
-// name the entities relation inputs are set to, by input.
+// DashboardInputs is the row above a dashboard's widgets where its inputs
+// are set. Each input shows its label and value. Reset shows while any
+// input is away from its default. An input set to nothing says so, and
+// offers to show everything instead; one whose default query failed says
+// why, since problems is what went wrong by input. links name the entities
+// relation inputs are set to, by input. Compact, it's the page bar's, where
+// it keeps what the widgets are narrowed by in sight while scrolling; when
+// the bar is too narrow for every control, they fold into one button.
 export function DashboardInputs({
   inputs,
   values,
@@ -35,6 +37,7 @@ export function DashboardInputs({
   links,
   onChange,
   onReset,
+  compact = false,
 }: Readonly<{
   inputs: DashboardInput[];
   values: InputValues;
@@ -42,13 +45,10 @@ export function DashboardInputs({
   links?: Record<string, Link[]>;
   onChange: (input: DashboardInput, values: string[]) => void;
   onReset?: () => void;
+  compact?: boolean;
 }>) {
-  return (
-    <div
-      className="sticky top-12 z-10 -my-2 flex flex-wrap items-center gap-2 bg-background py-2"
-      role="group"
-      aria-label="Inputs"
-    >
+  const controls = (
+    <>
       {inputs.map((input) => (
         <InputControl
           key={input.identifier}
@@ -64,6 +64,41 @@ export function DashboardInputs({
           <X />
         </Button>
       )}
+    </>
+  );
+
+  if (compact) {
+    const set = inputs.filter((input) => (values[input.identifier]?.length ?? 0) > 0).length;
+    return (
+      <>
+        <div className="hidden items-center gap-2 xl:flex" role="group" aria-label="Inputs">
+          {controls}
+        </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="xl:hidden">
+              <ListFilter />
+              Inputs
+              {set > 0 && (
+                <Badge variant="secondary" className="tabular-nums" aria-label={`${set} set`}>
+                  {set}
+                </Badge>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-auto">
+            <div className="flex flex-col items-start gap-2" role="group" aria-label="Inputs">
+              {controls}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Inputs">
+      {controls}
       {inputs
         .filter((input) => values[input.identifier] === null)
         .map((input) => (
@@ -202,7 +237,7 @@ function LabelledPicker({
           <ChevronDown className="text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-60 p-0" align="start">
+      <PopoverContent className="w-60 gap-0 p-0" align="start">
         {children}
       </PopoverContent>
     </Popover>

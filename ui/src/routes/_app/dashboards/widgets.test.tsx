@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Blueprint, BlueprintSpec } from "@/features/blueprints";
@@ -705,6 +705,62 @@ describe("dashboards and page tabs", () => {
     expect(decodeURIComponent(total.getAttribute("href") ?? "")).toContain('"service":["ledger"]');
     const url = new URL(requests["GET catalog/service/pages/entity/deployments"].url);
     expect(url.searchParams.get("entity")).toBe("ledger");
+  });
+
+  it("moves a dashboard's inputs into the page bar with its tabs once scrolled", async () => {
+    let scrolledPast: (past: boolean) => void = () => {};
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          scrolledPast = (past) =>
+            callback(
+              [
+                {
+                  isIntersecting: !past,
+                  boundingClientRect: { top: past ? -200 : 80 },
+                } as IntersectionObserverEntry,
+              ],
+              this as unknown as IntersectionObserver,
+            );
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const tiers: HomeDashboard = {
+      identifier: "tiers",
+      title: "Tiers",
+      order: 1,
+      defaults: { tier: ["critical"] },
+      inputs: [
+        {
+          identifier: "tier",
+          title: "Tier",
+          type: "enum",
+          values: ["critical", "standard"],
+          multiple: true,
+          default: ["critical"],
+        },
+      ],
+      widgets: [],
+    };
+    stubApi({ ...signedInMember, "GET home": ok([tiers]) });
+    renderRoute("/");
+
+    // Before scrolling they're a row of the page, not a strip of their own.
+    const row = await screen.findByRole("group", { name: "Inputs" });
+    expect(row).not.toHaveClass("sticky");
+    const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]') as HTMLElement;
+    expect(within(bar).queryByRole("group", { name: "Inputs" })).not.toBeInTheDocument();
+
+    act(() => scrolledPast(true));
+    // The bar shows every control where there's room, and else one button
+    // counting those set; the page's own row steps aside.
+    expect(within(bar).getByRole("group", { name: "Inputs" })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: /^Inputs/ })).toHaveTextContent("1");
+    expect(row.parentElement).toHaveAttribute("inert");
   });
 
   it("sets a dashboard's inputs from its bar, keeping them in the URL", async () => {

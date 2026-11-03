@@ -51,11 +51,17 @@ export function PageBar() {
     >
       <div className="mx-auto flex h-12 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
         <SidebarTrigger className="-ml-1.5" />
+        {/* A top-level page has no trail, so nothing follows the trigger to set apart. */}
         <Separator
           orientation="vertical"
-          className="mr-1 data-vertical:h-4 data-vertical:self-center"
+          className="mr-1 data-vertical:h-4 data-vertical:self-center [[data-slot=page-bar]:not([data-collapsed]):has([data-slot=page-crumbs]:empty)_&]:hidden"
         />
-        <div ref={bar?.setCrumbs} hidden={collapsed} className={cn("min-w-0 flex-1", fade)} />
+        <div
+          ref={bar?.setCrumbs}
+          data-slot="page-crumbs"
+          hidden={collapsed}
+          className={cn("min-w-0 flex-1", fade)}
+        />
         <div
           ref={bar?.setCompact}
           hidden={!collapsed}

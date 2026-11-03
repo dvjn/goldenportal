@@ -11,6 +11,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { RunStatus } from "@/components/integrations/run-status";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import { Button } from "@/components/ui/button";
 import {
   type IntegrationSummary,
@@ -82,7 +83,11 @@ function IntegrationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Integrations" actions={<NewIntegrationButton />} />
+      <PageHeader
+        title="Integrations"
+        icon={<PageIcon page="integrations" />}
+        actions={<NewIntegrationButton />}
+      />
       <DataTable
         data={list}
         columns={columns}

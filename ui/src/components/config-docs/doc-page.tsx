@@ -78,7 +78,7 @@ export function DocPage<S>(props: DocPageProps<S>) {
       <div className="flex flex-col gap-6">
         <PageHeader
           title={doc.title}
-          icon={doc.icon && <IconTile icon={doc.icon} color={doc.color} size="lg" />}
+          icon={<IconTile icon={doc.icon} color={doc.color} size="lg" />}
           description={doc.description}
           breadcrumbs={<PageBreadcrumbs page={doc.title}>{props.parent}</PageBreadcrumbs>}
         />
@@ -145,7 +145,7 @@ function DocWorkspace<S>({
     <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as DocTab)}>
       <PageHeader
         title={doc.title}
-        icon={doc.icon && <IconTile icon={doc.icon} color={doc.color} size="lg" />}
+        icon={<IconTile icon={doc.icon} color={doc.color} size="lg" />}
         breadcrumbs={<PageBreadcrumbs page={doc.title}>{parent}</PageBreadcrumbs>}
         description={<code className="font-mono">{identifier}</code>}
         badges={badges}

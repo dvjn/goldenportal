@@ -1,14 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  AppWindow,
-  ChevronsUpDown,
-  LogOut,
-  type LucideIcon,
-  Monitor,
-  Moon,
-  Sun,
-} from "lucide-react";
+import { ChevronsUpDown, LogOut, type LucideIcon, Monitor, Moon, Sun } from "lucide-react";
+import { pageIcons } from "@/components/page-icons";
 import { type Theme, useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -106,7 +99,7 @@ export function NavUser() {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link to="/account/apps">
-            <AppWindow />
+            <pageIcons.apps />
             Connected apps
           </Link>
         </DropdownMenuItem>

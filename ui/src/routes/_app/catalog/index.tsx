@@ -5,6 +5,7 @@ import { useState } from "react";
 import { EmptyCard } from "@/components/empty-state";
 import { LinkCard } from "@/components/link-card";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import { Input } from "@/components/ui/input";
 import { catalogQueryOptions } from "@/features/catalog";
 
@@ -29,6 +30,7 @@ function CatalogPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Catalog"
+        icon={<PageIcon page="catalog" />}
         actions={
           entries.length > 0 && (
             <div className="relative w-64">

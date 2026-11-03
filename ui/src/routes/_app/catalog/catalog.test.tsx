@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Blueprint } from "@/features/blueprints";
@@ -148,16 +148,15 @@ describe("catalog", () => {
     expect(
       within(link.closest("[data-slot=card]") as HTMLElement).getByText("1.2K"),
     ).toBeInTheDocument();
-    // The sidebar links here, and the bar names the top-level page alone.
+    // The sidebar links here. A top-level page has nothing above it, and the
+    // header names it, so the bar shows no trail.
     const links = screen.getAllByRole("link", { name: "Catalog" });
     expect(links.some((link) => link.getAttribute("href") === "/catalog")).toBe(true);
     const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]');
-    const crumbs = within(bar as HTMLElement).getByRole("navigation", { name: "breadcrumb" });
-    expect(within(crumbs).getAllByRole("listitem")).toHaveLength(1);
-    expect(within(crumbs).getByRole("link", { name: "Catalog" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(
+      within(bar as HTMLElement).queryByRole("navigation", { name: "breadcrumb" }),
+    ).not.toBeInTheDocument();
+    expect(bar?.querySelector('[data-slot="page-crumbs"]')).toBeEmptyDOMElement();
   });
 
   it("keeps the navigation when a blueprint doesn't exist", async () => {
@@ -429,6 +428,25 @@ describe("catalog", () => {
       "href",
       "/integrations/registry",
     );
+  });
+
+  it("leads every crumb of an entity's trail with its icon", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok({ ...service, icon: "server", color: "blue" }),
+      "GET catalog/service/entities/ledger": ok(ledger),
+      "GET catalog/service/scorecards": ok([]),
+    });
+    renderRoute("/catalog/service/ledger");
+
+    await screen.findByRole("heading", { level: 1, name: "Ledger" });
+    const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]') as HTMLElement;
+    const crumb = (name: string) =>
+      within(bar).getByRole("link", { name }).parentElement?.querySelector("span.size-6");
+    expect(crumb("Catalog")).toHaveClass("bg-gray-500/15");
+    // The blueprint's crumb is tinted as the blueprint is.
+    await waitFor(() => expect(crumb("Service")?.querySelector(".lucide-server")).not.toBeNull());
+    expect(crumb("Service")).toHaveClass("bg-blue-500/15");
   });
 
   it("opens an entity on the tab last opened for its blueprint", async () => {

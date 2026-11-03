@@ -49,22 +49,18 @@ function same(a: string[], b: string[]) {
   return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
-// DashboardView is a dashboard's input bar and widgets. Every widget on it
-// loads with the same input values, in the request that also names what
-// relation inputs are set to.
-export function DashboardView({
-  view,
-  picked,
-  onPick,
-  draft,
-}: Readonly<{
+type DashboardProps = Readonly<{
   view: HomeDashboard;
   picked: Picked;
   onPick: (patch: Picked) => void;
   draft?: boolean;
-}>) {
+}>;
+
+// useDashboard is what a dashboard's inputs and widgets load against: the
+// inputs' values, and in the same request the widgets make, what relation
+// inputs are set to.
+function useDashboard(view: HomeDashboard, picked: Picked, draft?: boolean) {
   const values = inputValues(view, picked);
-  const changed = view.inputs.some((input) => picked[input.identifier] !== undefined);
   const source = { dashboard: view.identifier };
   const context = { inputs: values, draft };
   const { data: links } = useQuery({
@@ -72,23 +68,50 @@ export function DashboardView({
     enabled: view.inputs.some((input) => input.type === "relation"),
     select: (data) => data.inputs,
   });
+  return { values, source, context, links };
+}
+
+// DashboardInputBar is a dashboard's inputs, with Reset while any is away
+// from its default. Compact, it fits the page bar, as the page's tabs do.
+export function DashboardInputBar({
+  view,
+  picked,
+  onPick,
+  draft,
+  compact,
+}: DashboardProps & { compact?: boolean }) {
+  const { values, links } = useDashboard(view, picked, draft);
+  if (view.inputs.length === 0) return null;
+  const changed = view.inputs.some((input) => picked[input.identifier] !== undefined);
+  return (
+    <DashboardInputs
+      inputs={view.inputs}
+      values={values}
+      problems={view.problems}
+      links={links}
+      compact={compact}
+      onChange={(input, next) => onPick({ [input.identifier]: toPicked(view, input, next) })}
+      onReset={
+        changed
+          ? () => onPick(Object.fromEntries(view.inputs.map((f) => [f.identifier, undefined])))
+          : undefined
+      }
+    />
+  );
+}
+
+// DashboardView is a dashboard's widgets, after its inputs unless the page
+// shows them itself, as Home does in its header. Every widget on it loads
+// with the same input values.
+export function DashboardView({
+  withInputs = true,
+  ...props
+}: DashboardProps & { withInputs?: boolean }) {
+  const { source, context } = useDashboard(props.view, props.picked, props.draft);
   return (
     <>
-      {view.inputs.length > 0 && (
-        <DashboardInputs
-          inputs={view.inputs}
-          values={values}
-          problems={view.problems}
-          links={links}
-          onChange={(input, next) => onPick({ [input.identifier]: toPicked(view, input, next) })}
-          onReset={
-            changed
-              ? () => onPick(Object.fromEntries(view.inputs.map((f) => [f.identifier, undefined])))
-              : undefined
-          }
-        />
-      )}
-      <WidgetGrid widgets={view.widgets} source={source} context={context} />
+      {withInputs && <DashboardInputBar {...props} />}
+      <WidgetGrid widgets={props.view.widgets} source={source} context={context} />
     </>
   );
 }

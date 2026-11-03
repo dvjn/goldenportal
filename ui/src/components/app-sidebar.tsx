@@ -1,6 +1,6 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
-import { House, LayoutDashboard, Library, Plug, Settings, Shapes, Trophy } from "lucide-react";
 import { NavUser } from "@/components/nav-user";
+import { pageIcons } from "@/components/page-icons";
 import { SearchCommand } from "@/components/search-command";
 import {
   Sidebar,
@@ -18,15 +18,15 @@ import { hasRole, useMe } from "@/features/auth";
 import { useConfig } from "@/features/config";
 
 const mainItems = [
-  { to: "/", label: "Home", icon: House, exact: true },
-  { to: "/catalog", label: "Catalog", icon: Library, exact: false },
-  { to: "/scorecards", label: "Scorecards", icon: Trophy, exact: false },
+  { to: "/", label: "Home", icon: pageIcons.home, exact: true },
+  { to: "/catalog", label: "Catalog", icon: pageIcons.catalog, exact: false },
+  { to: "/scorecards", label: "Scorecards", icon: pageIcons.scorecards, exact: false },
 ] as const;
 
 const buildItems = [
-  { to: "/blueprints", label: "Blueprints", icon: Shapes },
-  { to: "/integrations", label: "Integrations", icon: Plug },
-  { to: "/dashboards", label: "Dashboards", icon: LayoutDashboard },
+  { to: "/blueprints", label: "Blueprints", icon: pageIcons.blueprints },
+  { to: "/integrations", label: "Integrations", icon: pageIcons.integrations },
+  { to: "/dashboards", label: "Dashboards", icon: pageIcons.dashboards },
 ] as const;
 
 // AppSidebar is the app's navigation. Members get Home, the catalog and scorecards;
@@ -49,7 +49,7 @@ export function AppSidebar() {
                   <img src={logoUrl} alt="" className="size-8 shrink-0 object-contain" />
                 ) : (
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                    <House className="size-4" />
+                    <pageIcons.home className="size-4" />
                   </span>
                 )}
                 <span className="truncate font-semibold">{name}</span>
@@ -100,7 +100,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={active("/settings")} tooltip="Settings">
                   <Link to="/settings">
-                    <Settings />
+                    <pageIcons.settings />
                     <span>Settings</span>
                   </Link>
                 </SidebarMenuButton>

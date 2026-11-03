@@ -1,10 +1,13 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { FileClock } from "lucide-react";
+import { IconTile } from "@/components/catalog/blueprint-icon";
 import { EmptyCard } from "@/components/empty-state";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { hasRole, useMe } from "@/features/auth";
+import { blueprints } from "@/features/blueprints";
 
 // UnpublishedBlueprint stands in for a catalog or entity page whose
 // blueprint has no published version yet, under the page's own header.
@@ -15,10 +18,12 @@ export function UnpublishedBlueprint({
   page = title,
 }: Readonly<{ blueprint: string; title: string; page?: string }>) {
   const builder = hasRole(useMe().role, "builder");
+  const { data: doc } = useQuery(blueprints.queries.detail(blueprint));
   return (
     <>
       <PageHeader
         title={page}
+        icon={<IconTile icon={doc?.icon} color={doc?.color} size="lg" />}
         breadcrumbs={
           <PageBreadcrumbs page={page}>
             <Link to="/catalog">Catalog</Link>

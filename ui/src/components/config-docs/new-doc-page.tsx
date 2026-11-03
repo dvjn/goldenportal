@@ -4,7 +4,7 @@ import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { CardTitleBar } from "@/components/card-sections";
 import { DocEditor, useLiveValidation } from "@/components/config-docs/doc-editor";
-import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
+import { LinkIcon, PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
@@ -54,6 +54,8 @@ export function NewDocPage<S extends { identifier: string }>({
     <div className="flex flex-col gap-6">
       <PageHeader
         title={title}
+        // A new document has no icon yet, so it takes its kind's.
+        icon={<LinkIcon link={parent} />}
         breadcrumbs={<PageBreadcrumbs page={title}>{parent}</PageBreadcrumbs>}
         description="Write it in YAML. It's saved as a draft until you publish it."
       />

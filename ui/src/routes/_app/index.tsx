@@ -4,10 +4,11 @@ import { LayoutDashboard, Plus } from "lucide-react";
 import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
 import { EmptyCard } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import { PageTab } from "@/components/page-tabs";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
-import { DashboardView, type Picked } from "@/components/widgets/dashboard-view";
+import { DashboardInputBar, DashboardView, type Picked } from "@/components/widgets/dashboard-view";
 import { hasRole, useMe } from "@/features/auth";
 import { homeQueryOptions } from "@/features/dashboards";
 
@@ -48,7 +49,7 @@ function HomePage() {
   if (views.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader title="Home" />
+        <PageHeader title="Home" icon={<PageIcon page="home" />} />
         <EmptyCard
           icon={<LayoutDashboard />}
           title="Nothing on Home yet"
@@ -73,6 +74,8 @@ function HomePage() {
 
   const active =
     views.find((v) => v.identifier === search.d) ?? views.find((v) => v.preferred) ?? views[0];
+  const onPick = (patch: Picked) =>
+    navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
   return (
     <Tabs
       value={active.identifier}
@@ -80,7 +83,22 @@ function HomePage() {
     >
       <PageHeader
         title="Home"
+        icon={<PageIcon page="home" />}
         headless
+        // The open dashboard's inputs sit with its tabs, so they join the
+        // bar together rather than sticking on their own.
+        toolbar={
+          active.inputs.length > 0
+            ? (compact) => (
+                <DashboardInputBar
+                  view={active}
+                  picked={search}
+                  onPick={onPick}
+                  compact={compact}
+                />
+              )
+            : undefined
+        }
         tabs={
           <TabsList variant="line" aria-label="Dashboards">
             {views.map((v) => (
@@ -94,17 +112,7 @@ function HomePage() {
       />
       {views.map((v) => (
         <TabsContent key={v.identifier} value={v.identifier} className="grid gap-4 pt-2">
-          <DashboardView
-            view={v}
-            picked={search}
-            onPick={(patch) =>
-              navigate({
-                search: (prev) => ({ ...prev, ...patch }),
-                replace: true,
-                resetScroll: false,
-              })
-            }
-          />
+          <DashboardView view={v} picked={search} onPick={onPick} withInputs={false} />
         </TabsContent>
       ))}
     </Tabs>

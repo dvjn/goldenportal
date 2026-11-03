@@ -12,6 +12,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { IconButton } from "@/components/icon-button";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -155,7 +156,7 @@ function AppsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Connected Apps" />
+      <PageHeader title="Connected Apps" icon={<PageIcon page="apps" />} />
       <DataTable
         data={apps}
         columns={columns}

@@ -2,7 +2,7 @@ import { cn } from "cn";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { pageBarHeight, usePageBar } from "@/components/page-bar";
-import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
+import { CompactBreadcrumbs, PageBreadcrumbs, PageCrumbIcon } from "@/components/page-breadcrumbs";
 import { Separator } from "@/components/ui/separator";
 import { usePageTitle } from "@/lib/page-title";
 
@@ -22,6 +22,9 @@ type PageHeaderProps = {
   icon?: ReactNode;
   // tabs is the page's TabsList, so PageHeader must sit inside its Tabs.
   tabs?: ReactNode;
+  // toolbar is a row of controls under the tabs, such as a dashboard's
+  // inputs, which joins the bar with them. compact says it's the bar's.
+  toolbar?: (compact: boolean) => ReactNode;
   // headless leaves the heading out, for a page its tabs lead. The title
   // still names the page in the document title, breadcrumbs and bar.
   headless?: boolean;
@@ -29,7 +32,7 @@ type PageHeaderProps = {
 
 // PageHeader is the header every page starts with, so titles look the same
 // everywhere. Its breadcrumbs go in the page bar, and once it's scrolled
-// past, its title, tabs and actions move up into the bar as one row.
+// past, its trail, tabs, toolbar and actions move up into the bar as one row.
 export function PageHeader({
   title,
   heading,
@@ -39,6 +42,7 @@ export function PageHeader({
   breadcrumbs,
   icon,
   tabs,
+  toolbar,
   headless,
 }: PageHeaderProps) {
   usePageTitle(title);
@@ -46,7 +50,9 @@ export function PageHeader({
   const ref = useRef<HTMLDivElement>(null);
   useScrolledPast(ref, bar?.setCollapsed);
   const collapsed = bar?.collapsed ?? false;
-  const crumbs = breadcrumbs ?? <PageBreadcrumbs page={title} />;
+  const crumbs = (
+    <PageCrumbIcon value={icon}>{breadcrumbs ?? <PageBreadcrumbs page={title} />}</PageCrumbIcon>
+  );
 
   return (
     <>
@@ -54,11 +60,11 @@ export function PageHeader({
       {collapsed &&
         bar?.compact &&
         createPortal(
-          <CompactHeader title={title} icon={icon} tabs={tabs} actions={actions} />,
+          <CompactHeader crumbs={crumbs} tabs={tabs} toolbar={toolbar?.(true)} actions={actions} />,
           bar.compact,
         )}
       <div ref={ref} className="grid gap-6">
-        {!bar && breadcrumbs}
+        {!bar && breadcrumbs && crumbs}
         {headless ? (
           <h1 className="sr-only">{title}</h1>
         ) : (
@@ -94,29 +100,33 @@ export function PageHeader({
             {tabs}
           </div>
         )}
+        {toolbar && (
+          <div className={cn(collapsed && "invisible")} aria-hidden={collapsed} inert={collapsed}>
+            {toolbar(false)}
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-// CompactHeader is the page header squeezed into the bar: tabs fill its
-// height so the active line sits on its border, scroll sideways when they
-// don't fit, and the title truncates before it can crowd them.
+// CompactHeader is the page header squeezed into the bar: its trail, which
+// still leads back up and ends in the page's icon and title, then its tabs,
+// which fill its height so the active line sits on its border and scroll
+// sideways when they don't fit, then its toolbar. The trail truncates before
+// it can crowd them.
 function CompactHeader({
-  title,
-  icon,
+  crumbs,
   tabs,
+  toolbar,
   actions,
-}: Readonly<Pick<PageHeaderProps, "title" | "icon" | "tabs" | "actions">>) {
+}: Readonly<
+  Pick<PageHeaderProps, "tabs" | "actions"> & { crumbs: ReactNode; toolbar?: ReactNode }
+>) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3 duration-200 animate-in slide-in-from-top-1 motion-reduce:animate-none">
       <div className="flex max-w-2/5 min-w-0 shrink-0 items-center gap-2">
-        {icon && (
-          <span className="contents [&>span]:size-7 [&>span]:rounded-md [&_svg]:size-4">
-            {icon}
-          </span>
-        )}
-        <span className="truncate text-sm font-semibold">{title}</span>
+        <CompactBreadcrumbs value>{crumbs}</CompactBreadcrumbs>
       </div>
       {tabs ? (
         <>
@@ -131,6 +141,7 @@ function CompactHeader({
       ) : (
         <div className="flex-1" />
       )}
+      {toolbar && <div className="flex shrink-0 items-center gap-2">{toolbar}</div>}
       {actions && <div className="hidden shrink-0 items-center gap-2 sm:flex">{actions}</div>}
     </div>
   );

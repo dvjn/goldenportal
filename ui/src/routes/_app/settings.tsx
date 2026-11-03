@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { PageHeader } from "@/components/page-header";
+import { PageIcon } from "@/components/page-icons";
 import { PageTab } from "@/components/page-tabs";
 import { settingsSections } from "@/components/settings-sections";
 import { Tabs, TabsList } from "@/components/ui/tabs";
@@ -18,6 +19,7 @@ function SettingsLayout() {
     <Tabs value={active} className="gap-4">
       <PageHeader
         title="Settings"
+        icon={<PageIcon page="settings" />}
         tabs={
           <TabsList variant="line" aria-label="Settings">
             {settingsSections.map((section) => (

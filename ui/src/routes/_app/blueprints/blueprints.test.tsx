@@ -204,20 +204,30 @@ describe("blueprints", () => {
       "href",
       "/blueprints",
     );
-    expect(within(crumbs).getByRole("link", { name: "Service" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    // The header right below names the page, so the trail stops above it.
+    expect(within(crumbs).queryByText("Service")).not.toBeInTheDocument();
+    // A section's crumb leads with its tile, in gray.
+    const section = within(crumbs).getByRole("link", { name: "Blueprints" }).parentElement;
+    expect(section?.querySelector("span.size-6")).toHaveClass("bg-gray-500/15");
     expect(within(bar).queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
 
-    // Scrolled past, the bar trades the trail for the title, tabs and
-    // actions, and the page's own tabs step aside.
+    // Scrolled past, the bar keeps the trail, still leading back up, beside
+    // the tabs and actions, and the page's own tabs step aside.
     act(() => scrolledPast(true));
     expect(bar).toHaveAttribute("data-collapsed");
-    expect(within(bar).queryByRole("navigation", { name: "breadcrumb" })).not.toBeInTheDocument();
-    const titles = within(bar).getAllByText("Service");
-    expect(titles.filter((title) => title.closest("[hidden]") === null)).toHaveLength(1);
+    const compact = within(bar).getByRole("navigation", { name: "breadcrumb" });
+    expect(within(compact).getByRole("link", { name: "Blueprints" })).toHaveAttribute(
+      "href",
+      "/blueprints",
+    );
+    // With the header gone, the trail ends in the page.
+    expect(within(compact).getByRole("link", { name: "Service" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    // The trail's last crumb carries the page's icon, so the bar doesn't repeat it.
+    expect(compact.parentElement?.querySelectorAll(":scope > span")).toHaveLength(0);
     expect(within(bar).getByRole("link", { name: "Export" })).toBeInTheDocument();
     expect(screen.getAllByRole("tab")).toHaveLength(3);
     await user.click(within(bar).getByRole("tab", { name: "Versions" }));
