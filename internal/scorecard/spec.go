@@ -234,12 +234,6 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: "spec.filter", Message: err.Error()})
 		}
 	}
-	if !slices.ContainsFunc(bp.Properties, func(p blueprint.Property) bool { return p.Scorecard == spec.Identifier }) {
-		issues = append(issues, configdoc.Issue{
-			Severity: configdoc.SeverityWarning, Path: "spec.blueprint", Line: spec.line,
-			Message: fmt.Sprintf("%s declares no property for this scorecard, so its results only show on the scorecard's pages; add one, such as readiness: {type: scorecard, scorecard: %s}", bp.Identifier, spec.Identifier),
-		})
-	}
 
 	return issues, nil
 }

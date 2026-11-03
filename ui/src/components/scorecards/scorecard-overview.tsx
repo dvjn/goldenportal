@@ -24,6 +24,7 @@ import { TierBadge } from "@/components/scorecards/tier-badge";
 import { TierDistribution } from "@/components/scorecards/tier-distribution";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { blueprints } from "@/features/blueprints";
 import {
   type EntityResult,
   evaluateScorecard,
@@ -141,6 +142,10 @@ function TiersCard({
 }
 
 function AboutCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary?: Summary }>) {
+  const { data: blueprint } = useQuery(blueprints.queries.detail(spec.blueprint));
+  const property = blueprint?.published?.spec.properties.find(
+    (p) => p.scorecard === spec.identifier,
+  );
   return (
     <Card>
       <CardTitleBar title="About" />
@@ -156,6 +161,15 @@ function AboutCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary?: 
               <BlueprintLabel blueprint={spec.blueprint} />
             </Link>
           </Detail>
+          {blueprint && (
+            <Detail label="Property">
+              {property ? (
+                <Code>{property.identifier}</Code>
+              ) : (
+                <EmptyValue label="None, so results show only here" />
+              )}
+            </Detail>
+          )}
           {summary && (
             <Detail label="Entities">
               <span className="font-medium tabular-nums">{summary.entities}</span>
