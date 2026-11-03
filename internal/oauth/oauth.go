@@ -21,14 +21,16 @@ import (
 )
 
 // Scopes split what a client may do: read the catalog and configuration,
-// or author configuration, which also needs the builder role.
+// run actions as the user, or author configuration, which also needs the
+// builder role.
 const (
 	ScopeRead   = "portal:read"
+	ScopeRun    = "portal:run"
 	ScopeAuthor = "portal:author"
 )
 
 // Scopes are every scope the portal issues, least first.
-var Scopes = []string{ScopeRead, ScopeAuthor}
+var Scopes = []string{ScopeRead, ScopeRun, ScopeAuthor}
 
 // RoleScopes are the scopes a role can grant: a member can't hand a client
 // more than they could do themselves.
@@ -36,7 +38,7 @@ func RoleScopes(role auth.Role) []string {
 	if (auth.Principal{Role: role}).Can(auth.RoleBuilder) {
 		return Scopes
 	}
-	return []string{ScopeRead}
+	return []string{ScopeRead, ScopeRun}
 }
 
 const (

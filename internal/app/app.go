@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dvjn/goldenportal/internal/access"
+	"github.com/dvjn/goldenportal/internal/action"
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -62,7 +63,7 @@ func New() *gofr.App {
 	}
 	app.UseMiddleware(favicon, web.SPA(web.Dist()), web.BuildHeader(web.Build(web.Dist())), httpx.WithQuery)
 	mcpLimits := portalmcp.NewLimiter()
-	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search)
+	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search, action.Search)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
 		backend := auth.Middleware(store, secureCookies)(oidc.Routes(store)(next))
@@ -88,6 +89,7 @@ func New() *gofr.App {
 	integration.RegisterIngest(app)
 	scorecard.Register(api)
 	dashboard.Register(api)
+	action.Register(api, app.Config.Get("GP_BASE_URL"))
 	search.Register(api, searcher)
 	configdoc.RegisterBulk(api)
 	configdoc.RegisterSchemas(api)

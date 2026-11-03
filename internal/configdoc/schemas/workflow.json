@@ -1,0 +1,443 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Workflow",
+  "description": "A workflow is something people run from the Self-Service catalog that isn't tied to one entity, such as registering a service or restarting several: steps that call other systems over HTTP, write the catalog, wait for approval, and run actions on many entities. Every run is recorded, and people follow it on its run page.",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "Workflow" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "required": ["kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "$defs": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "The group it shows under in the Self-Service catalog, such as Create or Operate. Actions in the same group show beside it."
+        },
+        "run": {
+          "$ref": "#/$defs/requesters",
+          "description": "Who can run it. Admins always can. Each action it runs checks its own access on each entity, as whoever asked."
+        },
+        "destructive": { "type": "boolean", "description": "Marks an action that removes or disrupts something. Agents can't run destructive actions." },
+        "inputs": {
+          "type": "object",
+          "description": "What people enter to run it, keyed by identifier, written as blueprint properties are. Steps read them as $input.<id>.",
+          "propertyNames": { "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,62}$" },
+          "additionalProperties": { "$ref": "#/$defs/input" }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "description": "What a run does, in order. A value can refer to what the run knows: $input.<id> an input, $me the requester's email and $me.id, .email, .name, .role and .groups, $run.id and $run.url, and $step.<id>.<field> what an earlier step gave. A string that is one reference becomes its value; {{ ref }} inside longer text becomes text.",
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "outputs": {
+          "type": "object",
+          "description": "What a run gives when it's done, keyed by name, as references such as $step.create.url.",
+          "propertyNames": { "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,62}$" }
+        }
+      },
+      "required": ["group", "run", "steps"],
+      "additionalProperties": false
+    },
+    "input": {
+      "description": "A value people enter. It's a relation when it has relation, otherwise a typed value.",
+      "oneOf": [
+        { "$ref": "#/$defs/storedInput" },
+        { "$ref": "#/$defs/relationInput" }
+      ]
+    },
+    "storedInput": {
+      "type": "object",
+      "description": "A value people enter, checked against its type and constraints.",
+      "properties": {
+        "title": { "$ref": "#/$defs/inputTitle" },
+        "description": { "$ref": "#/$defs/inputDescription" },
+        "type": { "$ref": "#/$defs/valueType" },
+        "format": { "$ref": "#/$defs/format" },
+        "enum": { "$ref": "#/$defs/enum" },
+        "required": { "type": "boolean", "description": "People must enter a value." },
+        "pattern": { "type": "string", "description": "String properties only: a regular expression (Go RE2 syntax) values must match." },
+        "minLength": { "type": "integer", "minimum": 0, "description": "String properties only: the fewest characters." },
+        "maxLength": { "type": "integer", "minimum": 0, "description": "String properties only: the most characters." },
+        "minimum": { "type": "number", "description": "Number and integer properties only: the lowest value." },
+        "maximum": { "type": "number", "description": "Number and integer properties only: the highest value." },
+        "items": { "$ref": "#/$defs/items" }
+      },
+      "required": ["type"],
+      "allOf": [
+        { "$ref": "#/$defs/typedValues" },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "string" }
+            }
+          },
+          "else": {
+            "properties": { "pattern": false, "minLength": false, "maxLength": false }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["number", "integer"] }
+            }
+          },
+          "else": {
+            "properties": { "minimum": false, "maximum": false }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["array", "object", "boolean"] }
+            }
+          },
+          "then": {
+            "properties": { "enum": false }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "relationInput": {
+      "type": "object",
+      "description": "Identifiers of entities of a blueprint, which people pick.",
+      "properties": {
+        "title": { "$ref": "#/$defs/inputTitle" },
+        "description": { "$ref": "#/$defs/inputDescription" },
+        "relation": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it points at." },
+        "many": { "type": "boolean", "description": "Holds a list of identifiers rather than one." },
+        "required": { "type": "boolean", "description": "People must pick one." }
+      },
+      "required": ["relation"],
+      "additionalProperties": false
+    },
+    "inputTitle": { "type": "string", "description": "The input's label. Defaults to its identifier." },
+    "inputDescription": { "type": "string", "description": "Help shown beside the input, saying what to enter." },
+    "valueType": {
+      "enum": ["string", "number", "integer", "boolean", "array", "object"],
+      "description": "The JSON type of the values. Dates and URLs are strings with a format."
+    },
+    "format": {
+      "enum": ["date", "date-time", "uri", "email", "markdown"],
+      "description": "String values only: what the text is, which decides how it's checked and shown."
+    },
+    "enum": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "The only values allowed, of the property's type. String, number and integer properties only.",
+      "items": { "type": ["string", "number"] }
+    },
+    "items": {
+      "type": "object",
+      "description": "Array properties only: what each value in the list is. Defaults to strings.",
+      "properties": {
+        "type": { "enum": ["string", "number", "integer", "boolean", "object"] },
+        "format": { "$ref": "#/$defs/format" },
+        "enum": { "$ref": "#/$defs/enum" }
+      },
+      "required": ["type"],
+      "allOf": [
+        { "$ref": "#/$defs/typedValues" },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["boolean", "object"] }
+            }
+          },
+          "then": {
+            "properties": { "enum": false }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "typedValues": {
+      "description": "Ties format, items and enum values to the property's type.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "string" }
+            }
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": { "type": "string" }
+              }
+            }
+          },
+          "else": {
+            "properties": { "format": false }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "number" }
+            }
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": { "type": "number" }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "integer" }
+            }
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": { "type": "integer" }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "array" }
+            }
+          },
+          "else": {
+            "properties": { "items": false }
+          }
+        }
+      ]
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ms|s|m|h)([0-9]+(\\.[0-9]+)?(ms|s|m|h))*$",
+      "description": "A duration, such as 30s or 2m."
+    },
+    "step": {
+      "type": "object",
+      "description": "One thing the run does. It takes exactly one of http, entity, check, output, approval and action.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,62}$",
+          "description": "Names the step, so later steps can read what it gave as $step.<id>.<field>."
+        },
+        "title": { "type": "string", "description": "The step's label on the run page. Defaults to what it does." },
+        "timeout": {
+          "$ref": "#/$defs/duration",
+          "description": "How long one attempt may take, up to 10m. Defaults to 30s. Approval steps take approval.timeout instead."
+        },
+        "retry": { "$ref": "#/$defs/retry" },
+        "onFailure": { "enum": ["stop", "continue"], "description": "What the run does when the step fails. Defaults to stop." },
+        "http": { "$ref": "#/$defs/httpStep" },
+        "entity": { "$ref": "#/$defs/entityStep" },
+        "check": { "$ref": "#/$defs/checkStep" },
+        "output": { "$ref": "#/$defs/outputStep" },
+        "approval": { "$ref": "#/$defs/approvalStep" },
+        "action": { "$ref": "#/$defs/actionStep" }
+      },
+      "oneOf": [
+        { "required": ["http"] },
+        { "required": ["entity"] },
+        { "required": ["check"] },
+        { "required": ["output"] },
+        {
+          "required": ["approval"],
+          "properties": { "timeout": false, "onFailure": false, "retry": false }
+        },
+        {
+          "required": ["action"],
+          "properties": { "timeout": false, "retry": false }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "retry": {
+      "type": "object",
+      "description": "HTTP steps only: tries again after a network error, a 5xx or a 429, honouring Retry-After. Setting it says the other side takes repeats, so an interrupted step runs again.",
+      "properties": {
+        "attempts": { "type": "integer", "minimum": 1, "maximum": 5, "description": "How many more tries to make." },
+        "backoff": { "$ref": "#/$defs/duration", "description": "How long to wait before each, up to 5m." }
+      },
+      "required": ["attempts", "backoff"],
+      "additionalProperties": false
+    },
+    "httpStep": {
+      "type": "object",
+      "description": "Calls a URL with a JSON body. It gives {status, body}, or what output picks. Every attempt sends the same Idempotency-Key header.",
+      "properties": {
+        "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+        "url": { "type": "string", "pattern": "^https?://", "description": "The http or https URL. It can hold {{ }} references." },
+        "headers": {
+          "type": "object",
+          "description": "Request headers, keyed by name. Write secrets as {env: GP_SECRET_...}, read from the server's environment, never inline.",
+          "propertyNames": { "pattern": "^[A-Za-z0-9-]+$" },
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "env": { "type": "string", "pattern": "^GP_SECRET_", "description": "An environment variable of the server, starting with GP_SECRET_." }
+                },
+                "required": ["env"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "body": { "description": "The JSON body, with references filled in. Not for GET." },
+        "success": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "integer", "minimum": 100, "maximum": 599 },
+          "description": "The statuses that count as working. Defaults to any 2xx."
+        },
+        "output": {
+          "type": "object",
+          "description": "What the step gives, keyed by name: jq over {status, headers, body}.",
+          "propertyNames": { "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,62}$" },
+          "additionalProperties": { "$ref": "#/$defs/jq" }
+        }
+      },
+      "required": ["method", "url"],
+      "additionalProperties": false
+    },
+    "entityStep": {
+      "type": "object",
+      "description": "Writes or deletes an entity as a push integration. It gives identifier, title, blueprint and url.",
+      "properties": {
+        "operation": {
+          "enum": ["upsert", "delete"],
+          "description": "upsert creates the entity or updates the properties given, keeping the rest; delete removes it."
+        },
+        "integration": { "$ref": "#/$defs/identifier", "description": "The push integration the entity is written as. Only it can change the entity after." },
+        "blueprint": { "$ref": "#/$defs/identifier" },
+        "identifier": { "type": "string", "description": "The entity's identifier, such as $entity or $input.name." },
+        "title": { "type": "string" },
+        "properties": { "type": "object", "description": "Property values, keyed by property." }
+      },
+      "required": ["operation", "integration", "blueprint", "identifier"],
+      "additionalProperties": false
+    },
+    "checkStep": {
+      "type": "object",
+      "description": "Counts the entities matching a filter and fails with the message unless the count is as expected. It gives count.",
+      "properties": {
+        "blueprint": { "$ref": "#/$defs/identifier" },
+        "filter": { "$ref": "#/$defs/filter" },
+        "expect": {
+          "type": "object",
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "min": { "type": "integer", "minimum": 0 },
+            "max": { "type": "integer", "minimum": 0 }
+          },
+          "minProperties": 1,
+          "additionalProperties": false
+        },
+        "message": { "type": "string", "pattern": "\\S", "description": "What to tell people when the check fails, saying what to do." }
+      },
+      "required": ["blueprint", "expect", "message"],
+      "additionalProperties": false
+    },
+    "outputStep": {
+      "type": "object",
+      "description": "Sets the summary and links the run page shows when the run is done.",
+      "properties": {
+        "summary": { "type": "string" },
+        "links": {
+          "type": "object",
+          "description": "Links, keyed by label.",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "approvalStep": {
+      "type": "object",
+      "description": "Pauses the run until enough approvers approve, showing them what to review, such as a plan an earlier step made. One rejection ends the run. Whoever asked for the run can't approve it, and agents can't approve. It gives approvedBy and comments.",
+      "properties": {
+        "approvers": { "$ref": "#/$defs/requesters", "description": "Who can approve: roles or groups. Admins always can." },
+        "require": { "type": "integer", "minimum": 1, "description": "How many approvals it needs." },
+        "timeout": { "$ref": "#/$defs/duration", "description": "How long to wait, up to 720h. Then the run fails." },
+        "message": { "type": "string", "description": "What approvers are asked, which can hold {{ }} references." },
+        "review": {
+          "type": "array",
+          "description": "What approvers see before deciding, in order.",
+          "items": { "$ref": "#/$defs/review" }
+        }
+      },
+      "required": ["approvers", "require", "timeout"],
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "description": "One thing approvers see: markdown, such as a plan's summary, or a value shown as JSON.",
+      "properties": {
+        "title": { "type": "string" },
+        "markdown": { "type": "string", "description": "Markdown text, which can hold {{ }} references or be one, such as $step.plan.body.summary." },
+        "json": { "description": "A value shown as JSON, such as $step.plan.body.changes." }
+      },
+      "oneOf": [
+        { "required": ["markdown"] },
+        { "required": ["json"] }
+      ],
+      "additionalProperties": false
+    },
+    "requesters": {
+      "type": "object",
+      "description": "Matches people with any of the roles or in any of the groups.",
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": { "enum": ["member", "builder", "admin"] }
+        },
+        "groups": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "\\S" },
+          "description": "Group names from the identity provider."
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "roles": { "minItems": 1 }
+          },
+          "required": ["roles"]
+        },
+        {
+          "properties": {
+            "groups": { "minItems": 1 }
+          },
+          "required": ["groups"]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "actionStep": {
+      "type": "object",
+      "description": "Runs an action on each of the entities given, as whoever asked, who needs the action's run access on each, and waits for them all. It fails when more than maxFailures fail, and gives runs, succeeded and failed.",
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier", "description": "The action to run." },
+        "entities": { "description": "The entities to run it on, of the action's blueprint: an identifier or a list, such as $input.services. At most 100." },
+        "inputs": { "type": "object", "description": "Values for the action's inputs, by input, which can refer to this run's, such as $input.reason." },
+        "maxFailures": { "type": "integer", "minimum": 0, "description": "How many runs may fail before the step does. Defaults to 0." }
+      },
+      "required": ["name", "entities"],
+      "additionalProperties": false
+    }
+  }
+}

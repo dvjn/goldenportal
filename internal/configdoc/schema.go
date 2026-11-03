@@ -25,7 +25,7 @@ var schemaFiles embed.FS
 
 // SchemaKinds are the document kinds with a JSON Schema, in the order
 // documents depend on each other.
-var SchemaKinds = []string{"Blueprint", "Integration", "Scorecard", "Dashboard"}
+var SchemaKinds = []string{"Blueprint", "Integration", "Scorecard", "Dashboard", "Action", "Workflow"}
 
 var schemas = sync.OnceValue(func() map[string]json.RawMessage {
 	out, err := loadSchemas()

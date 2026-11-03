@@ -197,7 +197,7 @@ func TestChallengesSayWhereToSignIn(t *testing.T) {
 	missing := post(t, server, "", initialize, nil)
 	challenge := missing.Header.Get("WWW-Authenticate")
 	if missing.StatusCode != http.StatusUnauthorized || !strings.Contains(challenge, metadata) ||
-		!strings.Contains(challenge, `scope="portal:read portal:author"`) {
+		!strings.Contains(challenge, `scope="portal:read portal:run portal:author"`) {
 		t.Errorf("no token: %d %q", missing.StatusCode, challenge)
 	}
 	invalid := post(t, server, "stolen", initialize, nil)

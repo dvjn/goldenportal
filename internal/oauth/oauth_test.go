@@ -178,7 +178,7 @@ func TestPKCEAndResources(t *testing.T) {
 }
 
 func TestRolesCapScopes(t *testing.T) {
-	if got := RoleScopes(auth.RoleMember); !slices.Equal(got, []string{ScopeRead}) {
+	if got := RoleScopes(auth.RoleMember); !slices.Equal(got, []string{ScopeRead, ScopeRun}) {
 		t.Errorf("member can grant %v", got)
 	}
 	if got := RoleScopes(auth.RoleAdmin); !slices.Equal(got, Scopes) {

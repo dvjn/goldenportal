@@ -29,7 +29,7 @@ const (
 	maxCompletionValues = 20
 )
 
-var documentKinds = []string{"blueprints", "integrations", "scorecards", "dashboards"}
+var documentKinds = []string{"blueprints", "integrations", "scorecards", "dashboards", "actions", "workflows"}
 
 func schemaURI(kind string) string { return "portal://schemas/" + kind }
 
@@ -58,7 +58,7 @@ func addResources(s *mcp.Server, b bridge) {
 	}
 	s.AddResourceTemplate(&mcp.ResourceTemplate{
 		URITemplate: documentTemplate, Name: "document", Title: "Document", MIMEType: "application/yaml",
-		Description: "A blueprint, integration, scorecard or dashboard as published, in YAML",
+		Description: "A blueprint, integration, scorecard, dashboard, action or workflow as published, in YAML",
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		uri := req.Params.URI
 		kind, name, _ := strings.Cut(strings.TrimPrefix(uri, documentURIPrefix), "/")

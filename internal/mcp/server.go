@@ -35,7 +35,9 @@ const (
 const (
 	readingInstructions = `Golden Portal is the organization's software catalog. Blueprints define kinds of things, such as services, teams or repositories; entities are the things themselves, kept up to date by integrations. Scorecards grade entities against standards in tiers, and dashboards summarize them.
 
-To answer a question, find what it's about with search, then read it: get_entity for one entity with its relations, query_entities to filter, sort and page a blueprint's entities, get_entity_scorecards for how one entity fares, get_scorecard_summary and list_scorecard_results for a scorecard across entities, and get_dashboard_data for a dashboard's numbers. Use get_home for the dashboards the user sees first. Answer from the portal's data, name the entities you mean by title and identifier, and say when the catalog doesn't hold something rather than guessing.`
+To answer a question, find what it's about with search, then read it: get_entity for one entity with its relations, query_entities to filter, sort and page a blueprint's entities, get_entity_scorecards for how one entity fares, get_scorecard_summary and list_scorecard_results for a scorecard across entities, and get_dashboard_data for a dashboard's numbers. Use get_home for the dashboards the user sees first. Answer from the portal's data, name the entities you mean by title and identifier, and say when the catalog doesn't hold something rather than guessing.
+
+Actions do things to one entity, such as restarting a service. list_entity_actions shows what the user can run on an entity and the inputs each takes. Run one with run_action only when the user asks, then follow it with get_run until it finishes and report what it gave. list_self_service shows the Self-Service catalog, whose workflows run_workflow starts the same way.`
 	authoringInstructions = `
 
 You may also change configuration. Read portal://guide/authoring and the kind's schema before writing documents, and list_connectors for what integrations can read. Configure blueprints before the integrations, scorecards and dashboards that use them, and never invent blueprints that don't exist. Validate, save drafts and preview impact, then publish only when the user agrees. Bulk apply saves drafts; publish_documents publishes them in dependency order.`
@@ -264,5 +266,5 @@ func (b bridge) documents(kind string) (configdoc.Documents, error) {
 	if d, ok := b.services.Documents(kind); ok {
 		return d, nil
 	}
-	return nil, badArgs("kind must be blueprints, integrations, scorecards or dashboards")
+	return nil, badArgs("kind must be blueprints, integrations, scorecards, dashboards, actions or workflows")
 }

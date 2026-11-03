@@ -45,6 +45,22 @@ const (
 	ScorecardDraftDiscard = "scorecard.draft_discard"
 	ScorecardPublish      = "scorecard.publish"
 	ScorecardDelete       = "scorecard.delete"
+
+	ActionDraftSave    = "action.draft_save"
+	ActionDraftDiscard = "action.draft_discard"
+	ActionPublish      = "action.publish"
+	ActionDelete       = "action.delete"
+	ActionRun          = "action.run"
+	ActionRunCancel    = "action.run_cancel"
+	ActionRunRetry     = "action.run_retry"
+	ActionRunResolve   = "action.run_resolve"
+	ActionRunApprove   = "action.run_approve"
+	ActionRunReject    = "action.run_reject"
+
+	WorkflowDraftSave    = "workflow.draft_save"
+	WorkflowDraftDiscard = "workflow.draft_discard"
+	WorkflowPublish      = "workflow.publish"
+	WorkflowDelete       = "workflow.delete"
 )
 
 // Actions lists every action, for filters.
@@ -58,6 +74,9 @@ var Actions = []string{
 	IntegrationDraftSave, IntegrationDraftDiscard, IntegrationPublish, IntegrationDelete,
 	IngestionTokenCreate, IngestionTokenRevoke,
 	ScorecardDraftSave, ScorecardDraftDiscard, ScorecardPublish, ScorecardDelete,
+	ActionDraftSave, ActionDraftDiscard, ActionPublish, ActionDelete,
+	ActionRun, ActionRunCancel, ActionRunRetry, ActionRunResolve, ActionRunApprove, ActionRunReject,
+	WorkflowDraftSave, WorkflowDraftDiscard, WorkflowPublish, WorkflowDelete,
 }
 
 type DB interface {

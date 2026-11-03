@@ -5,6 +5,7 @@ import (
 
 	"gofr.dev/pkg/gofr"
 
+	"github.com/dvjn/goldenportal/internal/action"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
@@ -44,6 +45,14 @@ type Services interface {
 	IngestionTokens(ctx *gofr.Context, name string) ([]integration.Token, error)
 	CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (integration.CreatedToken, error)
 	RevokeIngestionToken(ctx *gofr.Context, name, id string) error
+
+	EntityActions(ctx *gofr.Context, blueprint, identifier string) ([]action.Available, error)
+	RunAction(ctx *gofr.Context, name string, req action.RunRequest) (action.Run, error)
+	Run(ctx *gofr.Context, id string) (action.Run, error)
+	Runs(ctx *gofr.Context, req action.RunsRequest) (action.RunPage, error)
+	CancelRun(ctx *gofr.Context, id string) (action.Run, error)
+	SelfServiceCatalog(ctx *gofr.Context) (action.Catalog, error)
+	RunWorkflow(ctx *gofr.Context, name string, req action.RunRequest) (action.Run, error)
 }
 
 // NewServices are the portal's own services, searching with searcher.
@@ -133,4 +142,30 @@ func (portal) CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (i
 
 func (portal) RevokeIngestionToken(ctx *gofr.Context, name, id string) error {
 	return integration.RevokeToken(ctx, name, id)
+}
+
+func (portal) EntityActions(ctx *gofr.Context, blueprint, identifier string) ([]action.Available, error) {
+	return action.ForEntity(ctx, blueprint, identifier)
+}
+
+func (portal) RunAction(ctx *gofr.Context, name string, req action.RunRequest) (action.Run, error) {
+	return action.Start(ctx, name, req, action.ViaMCP)
+}
+
+func (portal) Run(ctx *gofr.Context, id string) (action.Run, error) { return action.GetRun(ctx, id) }
+
+func (portal) Runs(ctx *gofr.Context, req action.RunsRequest) (action.RunPage, error) {
+	return action.Runs(ctx, req)
+}
+
+func (portal) CancelRun(ctx *gofr.Context, id string) (action.Run, error) {
+	return action.CancelRun(ctx, id)
+}
+
+func (portal) SelfServiceCatalog(ctx *gofr.Context) (action.Catalog, error) {
+	return action.SelfServiceCatalog(ctx)
+}
+
+func (portal) RunWorkflow(ctx *gofr.Context, name string, req action.RunRequest) (action.Run, error) {
+	return action.StartWorkflow(ctx, name, req, action.ViaMCP)
 }

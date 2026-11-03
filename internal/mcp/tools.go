@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gofr.dev/pkg/gofr"
 
+	"github.com/dvjn/goldenportal/internal/action"
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
@@ -113,10 +114,10 @@ func newServer(b bridge, c caller, version string) *mcp.Server {
 type (
 	empty    struct{}
 	kindArgs struct {
-		Kind string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards or dashboards"`
+		Kind string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards, dashboards, actions or workflows"`
 	}
 	documentArgs struct {
-		Kind string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards or dashboards"`
+		Kind string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards, dashboards, actions or workflows"`
 		Name string `json:"name"`
 	}
 	sourceArgs struct {
@@ -148,7 +149,7 @@ type (
 		DryRun *bool  `json:"dryRun,omitempty" jsonschema:"Defaults to true; set false explicitly to save drafts"`
 	}
 	documentRef struct {
-		Kind string `json:"kind" jsonschema:"Blueprint, Integration, Scorecard or Dashboard"`
+		Kind string `json:"kind" jsonschema:"Blueprint, Integration, Scorecard, Dashboard, Action or Workflow"`
 		Name string `json:"name"`
 	}
 	publishManyArgs struct {
@@ -186,6 +187,30 @@ type (
 	tokenArgs struct {
 		Integration string `json:"integration"`
 		Name        string `json:"name" jsonschema:"What the token is for, such as the system that pushes with it"`
+	}
+	runActionArgs struct {
+		Action         string         `json:"action"`
+		Entity         string         `json:"entity" jsonschema:"Identifier of the entity to run it on, of the action's blueprint"`
+		Inputs         map[string]any `json:"inputs,omitempty" jsonschema:"Values for the action's inputs, by input identifier, as list_entity_actions describes them"`
+		IdempotencyKey string         `json:"idempotencyKey,omitempty" jsonschema:"Any unique text; asking again with the same key returns the first run instead of starting another"`
+	}
+	workflowArgs struct {
+		Name           string         `json:"name" jsonschema:"The workflow's identifier, from list_self_service"`
+		Inputs         map[string]any `json:"inputs,omitempty" jsonschema:"Values for its inputs, by input identifier"`
+		IdempotencyKey string         `json:"idempotencyKey,omitempty" jsonschema:"Any unique text; asking again with the same key returns the first run instead of starting another"`
+	}
+	runArgs struct {
+		ID string `json:"id" jsonschema:"The run's id"`
+	}
+	runsArgs struct {
+		Action    string `json:"action,omitempty"`
+		Blueprint string `json:"blueprint,omitempty" jsonschema:"With entity, the runs on one entity"`
+		Entity    string `json:"entity,omitempty"`
+		Status    string `json:"status,omitempty" jsonschema:"Comma-separated: queued, running, succeeded, failed, cancelled or interrupted"`
+		Search    string `json:"search,omitempty" jsonschema:"Words in the action, entity or requester"`
+		Mine      bool   `json:"mine,omitempty" jsonschema:"Only runs the caller asked for; members only ever see their own"`
+		Page      int    `json:"page,omitempty"`
+		Size      int    `json:"size,omitempty"`
 	}
 	revokeTokenArgs struct {
 		Integration string `json:"integration"`
@@ -301,6 +326,30 @@ var tools = []tool{
 		return b.services.IngestionTokens(ctx, a.Name)
 	}),
 
+	read("list_entity_actions", "List the actions the caller can run on an entity, with the inputs each takes.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a entityArgs) (any, error) {
+		return b.services.EntityActions(ctx, a.Blueprint, a.Identifier)
+	}),
+	read("get_run", "Read an action run: its status, each step's outcome and output, and what it gave.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
+		return b.services.Run(ctx, a.ID)
+	}),
+	read("list_runs", "Page action runs, newest first, of an action, on an entity or by the caller.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a runsArgs) (any, error) {
+		return b.services.Runs(ctx, action.RunsRequest{
+			Action: a.Action, Blueprint: a.Blueprint, Entity: a.Entity, Status: a.Status, Search: a.Search, Mine: a.Mine, Page: a.Page, Size: a.Size,
+		})
+	}),
+	define("run_action", "Run an action on an entity as the caller. It starts the run and returns it; poll get_run until it finishes. Destructive actions can only be run in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a runActionArgs) (any, error) {
+		return b.services.RunAction(ctx, a.Action, action.RunRequest{Entity: a.Entity, Inputs: a.Inputs, Key: a.IdempotencyKey})
+	}),
+	read("list_self_service", "List the Self-Service catalog: the workflows the caller can run, and the actions they can run on entities they pick, by group, with their inputs.", auth.RoleMember, func(b bridge, ctx *gofr.Context, _ empty) (any, error) {
+		return b.services.SelfServiceCatalog(ctx)
+	}),
+	define("run_workflow", "Run a workflow as the caller, such as registering a service. It starts the run and returns it; poll get_run until it finishes. Destructive workflows can only be run in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a workflowArgs) (any, error) {
+		return b.services.RunWorkflow(ctx, a.Name, action.RunRequest{Inputs: a.Inputs, Key: a.IdempotencyKey})
+	}),
+	define("cancel_run", "Cancel an action run that hasn't finished. A step already under way may still take effect.", auth.RoleMember, oauth.ScopeRun, false, true, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
+		return b.services.CancelRun(ctx, a.ID)
+	}),
+
 	author("validate_document", "Validate a complete YAML document and return parsed configuration and structured issues, without saving.", false, func(b bridge, ctx *gofr.Context, a sourceArgs) (any, error) {
 		d, err := b.documents(a.Kind)
 		if err != nil {
@@ -383,10 +432,12 @@ func (a entityArgs) resourceLink() *mcp.ResourceLink {
 	return link(entityURI(a.Blueprint, a.Identifier), a.Blueprint+"/"+a.Identifier, "application/json")
 }
 
-const authoringHelp = `Documents are YAML with kind (Blueprint, Integration, Scorecard or Dashboard), metadata and spec. Every field, its allowed values and what it means are in each kind's JSON Schema: read portal://schemas/<kind> or get_document_schema before writing one. Names are immutable URL identifiers. Blueprints come first: integrations fill them with entities, scorecards grade those entities and dashboards summarize them. Look at existing documents of the same kind for conventions.
+const authoringHelp = `Documents are YAML with kind (Blueprint, Integration, Scorecard, Dashboard, Action or Workflow), metadata and spec. Every field, its allowed values and what it means are in each kind's JSON Schema: read portal://schemas/<kind> or get_document_schema before writing one. Names are immutable URL identifiers. Blueprints come first: integrations fill them with entities, scorecards grade those entities, dashboards summarize them and actions run steps on one entity at a time. Look at existing documents of the same kind for conventions.
 
 Workflow: search or list/read existing documents; validate proposed YAML; save_draft or apply_documents(dryRun=true) then apply_documents(dryRun=false); preview_impact; publish_document or publish_documents in one atomic batch; inspect catalog/entities and sync runs. Validation returns issues with severity/path/line. An error blocks saving/publishing; warnings may refer to dependencies not published yet. Export includes only published configuration unless reading a draft explicitly through get_document.
 
 Integrations map what a connector reads into entities with JQ expressions; list_connectors says what each connector reads. Secrets use {env: GP_SECRET_*}; never put secret values in configuration. A push integration needs an ingestion token: create_ingestion_token shows its secret once.
 
-Tools follow the caller's role and the access they granted this client: members browse, builders also author. Permissions are checked again on every call.`
+An action's steps call URLs, write entities as a push integration, check the catalog and set what the run shows, reading $input, $entity, $me, $run and $step references. Say who can run it with run, and mark actions that remove or disrupt things destructive. A Workflow takes the same steps but no blueprint, and its action steps run an action on many entities, each checked against whoever asked. Both show under their group in the Self-Service catalog.
+
+Tools follow the caller's role and the access they granted this client: members browse and run actions, builders also author. Permissions are checked again on every call.`
