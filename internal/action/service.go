@@ -725,13 +725,23 @@ func CancelRun(ctx *gofr.Context, id string) (Run, error) {
 
 // RetryRun carries a failed or interrupted run on from the step it stopped
 // at, with the same inputs and version, keeping what earlier steps gave.
-func RetryRun(ctx *gofr.Context, id string) (Run, error) {
+// Through MCP it refuses destructive ones, as starting them does.
+func RetryRun(ctx *gofr.Context, id, via string) (Run, error) {
 	run, p, err := visible(ctx, id)
 	if err != nil {
 		return Run{}, err
 	}
 	if err := mayChange(run, p); err != nil {
 		return Run{}, err
+	}
+	if via == ViaMCP {
+		source, err := NewStore(ctx.SQL).source(ctx, run.documentID, run.Version)
+		if err != nil {
+			return Run{}, err
+		}
+		if spec, _ := parseAny(source); spec.Destructive {
+			return Run{}, httpx.Error{Code: http.StatusForbidden, Message: run.Title + " is destructive, so retry it in the portal"}
+		}
 	}
 	ok, err := NewStore(ctx.SQL).requeue(ctx, id, []string{RunFailed, RunInterrupted}, false, "", "")
 	if err != nil {

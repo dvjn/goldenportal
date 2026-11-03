@@ -51,6 +51,8 @@ type Services interface {
 	Run(ctx *gofr.Context, id string) (action.Run, error)
 	Runs(ctx *gofr.Context, req action.RunsRequest) (action.RunPage, error)
 	CancelRun(ctx *gofr.Context, id string) (action.Run, error)
+	RetryRun(ctx *gofr.Context, id string) (action.Run, error)
+	Approvals(ctx *gofr.Context) ([]action.Run, error)
 	SelfServiceCatalog(ctx *gofr.Context) (action.Catalog, error)
 	RunWorkflow(ctx *gofr.Context, name string, req action.RunRequest) (action.Run, error)
 }
@@ -161,6 +163,12 @@ func (portal) Runs(ctx *gofr.Context, req action.RunsRequest) (action.RunPage, e
 func (portal) CancelRun(ctx *gofr.Context, id string) (action.Run, error) {
 	return action.CancelRun(ctx, id)
 }
+
+func (portal) RetryRun(ctx *gofr.Context, id string) (action.Run, error) {
+	return action.RetryRun(ctx, id, action.ViaMCP)
+}
+
+func (portal) Approvals(ctx *gofr.Context) ([]action.Run, error) { return action.Approvals(ctx) }
 
 func (portal) SelfServiceCatalog(ctx *gofr.Context) (action.Catalog, error) {
 	return action.SelfServiceCatalog(ctx)

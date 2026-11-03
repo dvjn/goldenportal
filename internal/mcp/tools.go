@@ -349,6 +349,12 @@ var tools = []tool{
 	define("cancel_run", "Cancel an action run that hasn't finished. A step already under way may still take effect.", auth.RoleMember, oauth.ScopeRun, false, true, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
 		return b.services.CancelRun(ctx, a.ID)
 	}),
+	define("retry_run", "Retry a failed or interrupted run from the step it stopped at, with the same inputs. It returns the run; poll get_run until it finishes. Destructive runs can only be retried in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
+		return b.services.RetryRun(ctx, a.ID)
+	}),
+	read("list_approvals", "List the runs waiting on the caller's approval, oldest first, with what each step gave so far. Approving and rejecting happen only in the portal.", auth.RoleMember, func(b bridge, ctx *gofr.Context, _ empty) (any, error) {
+		return b.services.Approvals(ctx)
+	}),
 
 	author("validate_document", "Validate a complete YAML document and return parsed configuration and structured issues, without saving.", false, func(b bridge, ctx *gofr.Context, a sourceArgs) (any, error) {
 		d, err := b.documents(a.Kind)
