@@ -4,7 +4,6 @@ import { useState } from "react";
 import { RunActionDialog } from "@/components/actions/run-action-dialog";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 import { EmptyState } from "@/components/empty-state";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   availableQueryOptions,
@@ -111,11 +110,6 @@ function OfferList({
             >
               <IconTile icon={offer.icon} color={offer.color} size="sm" />
               <span className="truncate">{offer.title}</span>
-              {offer.destructive && (
-                <Badge variant="destructive" className="ml-auto">
-                  Destructive
-                </Badge>
-              )}
             </Button>
           </li>
         ))}

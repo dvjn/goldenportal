@@ -30,7 +30,6 @@ type Available struct {
 	Description string               `json:"description,omitempty"`
 	Icon        string               `json:"icon,omitempty"`
 	Color       string               `json:"color,omitempty"`
-	Destructive bool                 `json:"destructive"`
 	Inputs      []blueprint.Property `json:"inputs"`
 }
 
@@ -196,7 +195,7 @@ func ForEntity(ctx *gofr.Context, blueprintName, identifier string) ([]Available
 			s := a.spec
 			available = append(available, Available{
 				Identifier: s.Identifier, Title: s.Title, Description: s.Description, Icon: s.Icon, Color: s.Color,
-				Destructive: s.Destructive, Inputs: s.Inputs,
+				Inputs: s.Inputs,
 			})
 		}
 	}
@@ -282,7 +281,7 @@ func ForEntities(ctx *gofr.Context, blueprintName string, identifiers []string) 
 		s := a.spec
 		out.Actions = append(out.Actions, Available{
 			Identifier: s.Identifier, Title: s.Title, Description: s.Description, Icon: s.Icon, Color: s.Color,
-			Destructive: s.Destructive, Inputs: s.Inputs,
+			Inputs: s.Inputs,
 		})
 		for _, identifier := range allowed {
 			out.Entities[identifier] = append(out.Entities[identifier], s.Identifier)
@@ -332,9 +331,6 @@ func Start(ctx *gofr.Context, name string, req RunRequest, via string) (Run, err
 	a, err := publishedAction(ctx, name)
 	if err != nil {
 		return Run{}, err
-	}
-	if via == ViaMCP && a.spec.Destructive {
-		return Run{}, httpx.Error{Code: http.StatusForbidden, Message: a.spec.Title + " is destructive, so run it in the portal"}
 	}
 	run, err := prepare(ctx, ctx.SQL, a, req.Entity, req.Inputs, p)
 	if err != nil {
@@ -416,9 +412,6 @@ func StartWorkflow(ctx *gofr.Context, name string, req RunRequest, via string) (
 	a, err := publishedDoc(ctx, ctx.SQL, WorkflowName, name)
 	if err != nil {
 		return Run{}, err
-	}
-	if via == ViaMCP && a.spec.Destructive {
-		return Run{}, httpx.Error{Code: http.StatusForbidden, Message: a.spec.Title + " is destructive, so run it in the portal"}
 	}
 	run, err := prepare(ctx, ctx.SQL, a, "", req.Inputs, p)
 	if err != nil {
@@ -725,23 +718,13 @@ func CancelRun(ctx *gofr.Context, id string) (Run, error) {
 
 // RetryRun carries a failed or interrupted run on from the step it stopped
 // at, with the same inputs and version, keeping what earlier steps gave.
-// Through MCP it refuses destructive ones, as starting them does.
-func RetryRun(ctx *gofr.Context, id, via string) (Run, error) {
+func RetryRun(ctx *gofr.Context, id string) (Run, error) {
 	run, p, err := visible(ctx, id)
 	if err != nil {
 		return Run{}, err
 	}
 	if err := mayChange(run, p); err != nil {
 		return Run{}, err
-	}
-	if via == ViaMCP {
-		source, err := NewStore(ctx.SQL).source(ctx, run.documentID, run.Version)
-		if err != nil {
-			return Run{}, err
-		}
-		if spec, _ := parseAny(source); spec.Destructive {
-			return Run{}, httpx.Error{Code: http.StatusForbidden, Message: run.Title + " is destructive, so retry it in the portal"}
-		}
 	}
 	ok, err := NewStore(ctx.SQL).requeue(ctx, id, []string{RunFailed, RunInterrupted}, false, "", "")
 	if err != nil {
@@ -820,7 +803,6 @@ type Offer struct {
 	// Blueprint and BlueprintTitle say what an action runs on.
 	Blueprint      string               `json:"blueprint,omitempty"`
 	BlueprintTitle string               `json:"blueprintTitle,omitempty"`
-	Destructive    bool                 `json:"destructive"`
 	Inputs         []blueprint.Property `json:"inputs"`
 }
 
@@ -866,7 +848,7 @@ func SelfServiceCatalog(ctx *gofr.Context) (Catalog, error) {
 			}
 			o := Offer{
 				Kind: s.docKind(), Identifier: s.Identifier, Title: s.Title, Description: s.Description, Icon: s.Icon,
-				Color: s.Color, Blueprint: s.Blueprint, Destructive: s.Destructive, Inputs: s.Inputs,
+				Color: s.Color, Blueprint: s.Blueprint, Inputs: s.Inputs,
 			}
 			if bp, ok := blueprints[s.Blueprint]; ok {
 				o.BlueprintTitle = bp.Title

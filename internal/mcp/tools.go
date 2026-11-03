@@ -337,19 +337,19 @@ var tools = []tool{
 			Action: a.Action, Blueprint: a.Blueprint, Entity: a.Entity, Status: a.Status, Search: a.Search, Mine: a.Mine, Page: a.Page, Size: a.Size,
 		})
 	}),
-	define("run_action", "Run an action on an entity as the caller. It starts the run and returns it; poll get_run until it finishes. Destructive actions can only be run in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a runActionArgs) (any, error) {
+	define("run_action", "Run an action on an entity as the caller. It starts the run and returns it; poll get_run until it finishes. Approval steps wait for people in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a runActionArgs) (any, error) {
 		return b.services.RunAction(ctx, a.Action, action.RunRequest{Entity: a.Entity, Inputs: a.Inputs, Key: a.IdempotencyKey})
 	}),
 	read("list_self_service", "List the Self-Service catalog: the workflows the caller can run, and the actions they can run on entities they pick, by group, with their inputs.", auth.RoleMember, func(b bridge, ctx *gofr.Context, _ empty) (any, error) {
 		return b.services.SelfServiceCatalog(ctx)
 	}),
-	define("run_workflow", "Run a workflow as the caller, such as registering a service. It starts the run and returns it; poll get_run until it finishes. Destructive workflows can only be run in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a workflowArgs) (any, error) {
+	define("run_workflow", "Run a workflow as the caller, such as registering a service. It starts the run and returns it; poll get_run until it finishes. Approval steps wait for people in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a workflowArgs) (any, error) {
 		return b.services.RunWorkflow(ctx, a.Name, action.RunRequest{Inputs: a.Inputs, Key: a.IdempotencyKey})
 	}),
 	define("cancel_run", "Cancel an action run that hasn't finished. A step already under way may still take effect.", auth.RoleMember, oauth.ScopeRun, false, true, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
 		return b.services.CancelRun(ctx, a.ID)
 	}),
-	define("retry_run", "Retry a failed or interrupted run from the step it stopped at, with the same inputs. It returns the run; poll get_run until it finishes. Destructive runs can only be retried in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
+	define("retry_run", "Retry a failed or interrupted run from the step it stopped at, with the same inputs. It returns the run; poll get_run until it finishes.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
 		return b.services.RetryRun(ctx, a.ID)
 	}),
 	read("list_approvals", "List the runs waiting on the caller's approval, oldest first, with what each step gave so far. Approving and rejecting happen only in the portal.", auth.RoleMember, func(b bridge, ctx *gofr.Context, _ empty) (any, error) {
@@ -444,6 +444,6 @@ Workflow: search or list/read existing documents; validate proposed YAML; save_d
 
 Integrations map what a connector reads into entities with JQ expressions; list_connectors says what each connector reads. Secrets use {env: GP_SECRET_*}; never put secret values in configuration. A push integration needs an ingestion token: create_ingestion_token shows its secret once.
 
-An action's steps call URLs, write entities as a push integration, check the catalog and set what the run shows, reading $input, $entity, $me, $run and $step references. Say who can run it with run, and mark actions that remove or disrupt things destructive. A Workflow takes the same steps but no blueprint, and its action steps run an action on many entities, each checked against whoever asked. Both show under their group in the Self-Service catalog.
+An action's steps call URLs, write entities as a push integration, check the catalog and set what the run shows, reading $input, $entity, $me, $run and $step references. Say who can run it with run, and put an approval step before anything that removes or disrupts things. A Workflow takes the same steps but no blueprint, and its action steps run an action on many entities, each checked against whoever asked. Both show under their group in the Self-Service catalog.
 
 Tools follow the caller's role and the access they granted this client: members browse and run actions, builders also author. Permissions are checked again on every call.`

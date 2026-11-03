@@ -4,7 +4,6 @@ import { ActionOverview } from "@/components/actions/action-overview";
 import { type RunsSearch, RunsTable, validateRunsSearch } from "@/components/actions/runs-table";
 import { DocPage, type DocTab, validateDocSearch } from "@/components/config-docs/doc-page";
 import { PageError } from "@/components/page-error";
-import { Badge } from "@/components/ui/badge";
 import { actions } from "@/features/actions";
 
 function validateActionSearch(search: Record<string, unknown>): RunsSearch & { tab?: DocTab } {
@@ -29,7 +28,6 @@ function ActionPage() {
   const { tab, ...runsSearch } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const { data: action } = useSuspenseQuery(actions.queries.detail(identifier));
-  const destructive = (action.published?.spec ?? action.draft?.spec)?.destructive;
 
   return (
     <DocPage
@@ -41,7 +39,6 @@ function ActionPage() {
       onDeleted={() => navigate({ to: "/actions" })}
       tab={tab}
       onTabChange={(next) => navigate({ search: { tab: next }, replace: true })}
-      badges={destructive && <Badge variant="destructive">Destructive</Badge>}
       overview={(spec, doc) => <ActionOverview spec={spec} action={doc} />}
       extraTabs={[
         {

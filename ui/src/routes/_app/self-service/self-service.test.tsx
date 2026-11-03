@@ -22,7 +22,6 @@ const restartServices: Offer = {
   identifier: "restart-services",
   title: "Restart services",
   description: "Restarts several services.",
-  destructive: true,
   inputs: [
     {
       identifier: "services",
@@ -39,7 +38,6 @@ const register: Offer = {
   kind: "workflow",
   identifier: "register-service",
   title: "Register a service",
-  destructive: false,
   inputs: [{ identifier: "name", title: "Name", type: "string", required: true }],
 };
 
@@ -49,7 +47,6 @@ const scale: Offer = {
   title: "Scale",
   blueprint: "service",
   blueprintTitle: "Service",
-  destructive: false,
   inputs: [],
 };
 
@@ -151,7 +148,6 @@ describe("self-service", () => {
     const create = await screen.findByRole("region", { name: "Create" });
     expect(within(create).getByRole("button", { name: "Register a service" })).toBeInTheDocument();
     const operate = screen.getByRole("region", { name: "Operate" });
-    expect(within(operate).getByText("Destructive")).toBeInTheDocument();
     // Only an action says it runs on an entity.
     expect(within(operate).getByText("on a Service")).toBeInTheDocument();
     expect(within(operate).getAllByText(/^on an? /)).toHaveLength(1);
@@ -182,9 +178,6 @@ describe("self-service", () => {
     await user.click(await screen.findByRole("option", { name: /Search API/ }));
     await user.keyboard("{Escape}");
     await user.click(within(dialog).getByRole("button", { name: "Run" }));
-    const confirm = await screen.findByRole("alertdialog");
-    expect(within(confirm).getByText("Run Restart services?")).toBeInTheDocument();
-    await user.click(within(confirm).getByRole("button", { name: "Run" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/runs/p1"));
     expect(await requests["POST workflows/restart-services/runs"].json()).toMatchObject({
@@ -303,7 +296,6 @@ const spec: ActionSpec = {
   blueprint: "",
   group: "Operations",
   run: { roles: ["member"] },
-  destructive: true,
   inputs: restartServices.inputs,
   steps: [
     {
@@ -341,7 +333,7 @@ describe("workflows", () => {
           publishedVersion: 1,
           hasDraft: false,
           stats: { inputs: 3, steps: 2 },
-          facts: { group: "Operations", destructive: true },
+          facts: { group: "Operations" },
           updatedAt: "2026-10-24T10:00:00Z",
         },
       ]),
@@ -353,7 +345,6 @@ describe("workflows", () => {
     ) as HTMLElement;
     expect(row).toHaveAttribute("data-slot", "table-row");
     expect(within(row).getByText("Operations")).toBeInTheDocument();
-    expect(within(row).getByText("Destructive")).toBeInTheDocument();
   });
 
   it("describes its group and action steps, with its runs in a tab", async () => {

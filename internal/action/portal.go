@@ -27,7 +27,6 @@ type portalAction struct {
 	Title         string     `json:"title"`
 	Description   string     `json:"description"`
 	Blueprint     string     `json:"blueprint"`
-	Destructive   bool       `json:"destructive"`
 	Version       int        `json:"version"`
 	Steps         int        `json:"steps"`
 	Approvals     int        `json:"approvals"`
@@ -97,7 +96,7 @@ func portalActions(ctx context.Context, db configdoc.DB) (any, error) {
 		spec, _ := Parse(record.PublishedSource)
 		a := portalAction{
 			Identifier: record.Identifier, Title: spec.Title, Description: spec.Description,
-			Blueprint: spec.Blueprint, Destructive: spec.Destructive, Version: record.PublishedVersion,
+			Blueprint: spec.Blueprint, Version: record.PublishedVersion,
 			Steps: len(spec.Steps),
 		}
 		for _, step := range spec.Steps {

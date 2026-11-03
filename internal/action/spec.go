@@ -80,13 +80,11 @@ type Spec struct {
 	// Scope narrows the entities it applies to.
 	Scope *entity.Filter `json:"scope,omitempty"`
 	// Run says who can run it. Admins always can.
-	Run Access `json:"run"`
-	// Destructive actions can't be run by agents.
-	Destructive bool                 `json:"destructive"`
-	Inputs      []blueprint.Property `json:"inputs"`
-	Steps       []Step               `json:"steps"`
-	Outputs     []Output             `json:"outputs"`
-	line        int
+	Run     Access               `json:"run"`
+	Inputs  []blueprint.Property `json:"inputs"`
+	Steps   []Step               `json:"steps"`
+	Outputs []Output             `json:"outputs"`
+	line    int
 }
 
 // Access is who can do something: anyone with one of the roles, in one of
@@ -207,7 +205,7 @@ type Output struct {
 // The keys each mapping of an action takes, exported so the documents'
 // JSON Schema can be checked against them.
 var (
-	SpecFields     = []string{"blueprint", "group", "scope", "run", "destructive", "inputs", "steps", "outputs"}
+	SpecFields     = []string{"blueprint", "group", "scope", "run", "inputs", "steps", "outputs"}
 	AccessFields   = []string{"roles", "groups", "filter"}
 	StepFields     = []string{"id", "title", "timeout", "retry", "onFailure", StepHTTP, StepEntity, StepCheck, StepOutput, StepApproval, StepAction}
 	ApprovalFields = []string{"approvers", "require", "timeout", "message", "review"}
@@ -219,7 +217,7 @@ var (
 	ExpectFields   = []string{"count", "min", "max"}
 	OutputFields   = []string{"summary", "links"}
 	// WorkflowFields are what a workflow document's spec takes.
-	WorkflowFields   = []string{"group", "run", "destructive", "inputs", "steps", "outputs"}
+	WorkflowFields   = []string{"group", "run", "inputs", "steps", "outputs"}
 	ActionStepFields = []string{"name", "entities", "inputs", "maxFailures"}
 )
 
@@ -240,7 +238,7 @@ func (s Spec) Stats() map[string]int {
 }
 
 func (s Spec) Facts() map[string]any {
-	facts := map[string]any{"group": s.Group, "destructive": s.Destructive}
+	facts := map[string]any{"group": s.Group}
 	if !s.IsWorkflow() {
 		facts["blueprint"] = s.Blueprint
 	}
@@ -335,7 +333,6 @@ func parse(source, kind string) (Spec, []configdoc.Issue) {
 			p.Errorf(n, "spec.run.filter", "a workflow runs on no entity, so who can run it is roles and groups; an action it runs checks its own access on each entity")
 		}
 	}
-	spec.Destructive = p.Bool(fields["destructive"], "spec.destructive")
 	spec.Inputs = blueprint.ParseInputs(&p.Reader, fields["inputs"], "spec.inputs")
 	p.inputs = spec.Inputs
 

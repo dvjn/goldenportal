@@ -11,7 +11,6 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { PageIcon } from "@/components/page-icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type WorkflowSummary, workflows } from "@/features/actions";
 
@@ -40,12 +39,6 @@ const columns = [
   }),
   count("inputs", "Inputs"),
   count("steps", "Steps"),
-  column.display({
-    id: "destructive",
-    header: () => <span className="sr-only">Destructive</span>,
-    cell: ({ row }) =>
-      row.original.facts?.destructive && <Badge variant="destructive">Destructive</Badge>,
-  }),
   doc.status,
   doc.updated,
 ];

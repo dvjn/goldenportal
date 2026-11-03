@@ -199,9 +199,6 @@ func Diff(previous, next Spec) []configdoc.Change {
 	if !reflect.DeepEqual(previous.Run, next.Run) {
 		add("action", "", configdoc.ChangeChanged, "changes who can run it")
 	}
-	if previous.Destructive != next.Destructive {
-		add("action", "", configdoc.ChangeChanged, "is destructive: %t", next.Destructive)
-	}
 	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon || previous.Color != next.Color {
 		add("action", "", configdoc.ChangeChanged, "changes the title, description or icon")
 	}

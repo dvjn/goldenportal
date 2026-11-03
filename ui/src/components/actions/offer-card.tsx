@@ -20,11 +20,6 @@ export function OfferCard({ offer, onOpen }: Readonly<{ offer: Offer; onOpen: ()
                   {offer.title}
                 </button>
               </CardTitle>
-              {offer.destructive && (
-                <Badge variant="destructive" className="ml-auto">
-                  Destructive
-                </Badge>
-              )}
             </div>
             {offer.description && (
               <CardDescription className="line-clamp-2">{offer.description}</CardDescription>

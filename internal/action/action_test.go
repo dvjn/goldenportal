@@ -28,7 +28,6 @@ spec:
   run:
     roles: [builder]
     filter: {property: owner.members, op: contains, value: $me}
-  destructive: true
   inputs:
     reason: {type: string, required: true, minLength: 3}
     notify: {relation: team}
@@ -71,7 +70,7 @@ func TestParseAction(t *testing.T) {
 	if len(issues) > 0 {
 		t.Fatalf("issues = %+v", issues)
 	}
-	if spec.Blueprint != "service" || !spec.Destructive || len(spec.Inputs) != 2 || len(spec.Steps) != 4 {
+	if spec.Blueprint != "service" || len(spec.Inputs) != 2 || len(spec.Steps) != 4 {
 		t.Fatalf("spec = %+v", spec)
 	}
 	h := spec.Steps[0].HTTP

@@ -489,9 +489,6 @@ spec:
     runsOn:
       title: Runs On
       relation: blueprint
-    destructive:
-      title: Destructive
-      type: boolean
     version:
       title: Version
       type: integer
@@ -792,7 +789,6 @@ spec:
         properties:
           description: .description
           runsOn: .blueprint
-          destructive: .destructive
           version: .version
           steps: .steps
           approvals: .approvals
@@ -1266,9 +1262,9 @@ INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
 -- Example actions, which call the mock ops API in deps.dev.yaml. Restart is
--- for builders and the service's owners, and destructive, so agents can't
--- run it; the others are for everyone. Scale waits for a platform engineer
--- or another of the service's owners to approve the change. Open incident
+-- for builders and the service's owners; the others are for everyone. Scale
+-- waits for a platform engineer or another of the service's owners to
+-- approve the change. Open incident
 -- and Resolve write incidents to the catalog as the Incidents integration.
 WITH example (identifier, source) AS (VALUES
   ('restart', $yaml$kind: Action
@@ -1284,7 +1280,6 @@ spec:
   run:
     roles: [builder]
     filter: {property: owner.members, op: contains, value: $me}
-  destructive: true
   inputs:
     environment:
       title: Environment
@@ -1500,8 +1495,9 @@ INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
 -- Example workflows, in the Self-Service catalog beside the actions of the
--- same group. Restart services runs the Restart action on each service
--- picked, which checks the requester may restart each one. Register a
+-- same group. Restart services waits for a platform engineer, then runs
+-- the Restart action on each service picked, which checks the requester
+-- may restart each one. Register a
 -- service waits for a platform engineer, creates its repository and adds it
 -- to the catalog as the Workflows integration.
 WITH example (identifier, source) AS (VALUES
@@ -1516,7 +1512,6 @@ spec:
   group: Operate
   run:
     roles: [member]
-  destructive: true
   inputs:
     services:
       title: Services
@@ -1534,6 +1529,15 @@ spec:
       minLength: 5
       required: true
   steps:
+    - approval:
+        approvers:
+          groups: [platform-engineers]
+        require: 1
+        timeout: 4h
+        message: "Restart these services in {{ $input.environment }}? Reason: {{ $input.reason }}"
+        review:
+          - title: Services
+            json: $input.services
     - id: restart
       title: Restart each service
       action:

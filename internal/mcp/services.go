@@ -165,7 +165,7 @@ func (portal) CancelRun(ctx *gofr.Context, id string) (action.Run, error) {
 }
 
 func (portal) RetryRun(ctx *gofr.Context, id string) (action.Run, error) {
-	return action.RetryRun(ctx, id, action.ViaMCP)
+	return action.RetryRun(ctx, id)
 }
 
 func (portal) Approvals(ctx *gofr.Context) ([]action.Run, error) { return action.Approvals(ctx) }

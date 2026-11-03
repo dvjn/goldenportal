@@ -98,8 +98,6 @@ export type ActionSpec = {
   // scope narrows the entities it applies to.
   scope?: Filter;
   run: Access;
-  // destructive actions can't be run by agents.
-  destructive: boolean;
   inputs: Property[];
   steps: Step[];
   outputs: Output[];
@@ -107,14 +105,14 @@ export type ActionSpec = {
 
 export type Action = ConfigDoc<ActionSpec>;
 export type ActionSummary = DocSummary & {
-  facts?: { blueprint: string; group?: string; destructive: boolean };
+  facts?: { blueprint: string; group?: string };
 };
 
 export const actions = configDocs<ActionSpec>("actions");
 
 export type Workflow = ConfigDoc<ActionSpec>;
 export type WorkflowSummary = DocSummary & {
-  facts?: { group?: string; destructive: boolean };
+  facts?: { group?: string };
 };
 
 export const workflows = configDocs<ActionSpec>("workflows");
@@ -131,7 +129,6 @@ export type Offer = {
   color?: string;
   blueprint?: string;
   blueprintTitle?: string;
-  destructive: boolean;
   inputs: Property[];
 };
 
@@ -152,7 +149,6 @@ export type Available = {
   description?: string;
   icon?: string;
   color?: string;
-  destructive: boolean;
   inputs: Property[];
 };
 

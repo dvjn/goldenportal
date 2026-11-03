@@ -3,17 +3,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { Loader2, Play } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { IconTile } from "@/components/catalog/blueprint-icon";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,7 +39,7 @@ type RunActionDialogProps = {
 };
 
 // RunActionDialog asks for an action's inputs and runs it on an entity, or
-// runs a workflow, then opens the run. A destructive action asks to be sure first.
+// runs a workflow, then opens the run.
 export function RunActionDialog({ open, onOpenChange, ...props }: RunActionDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -80,7 +69,6 @@ function RunForm({
   const [unpicked, setUnpicked] = useState(false);
   const target = entity ?? picked;
   const needsEntity = kind === "action";
-  const [confirming, setConfirming] = useState(false);
   // One key per form, so a request sent twice starts one run.
   const [key] = useState(() => crypto.randomUUID());
   const navigate = useNavigate();
@@ -121,8 +109,7 @@ function RunForm({
     event.preventDefault();
     const parsed = values();
     if (!parsed) return;
-    if (action.destructive) setConfirming(true);
-    else run.mutate(parsed);
+    run.mutate(parsed);
   }
 
   function change(identifier: string, draft: Draft) {
@@ -136,10 +123,7 @@ function RunForm({
         <div className="flex items-center gap-3">
           <IconTile icon={action.icon} color={action.color} />
           <div className="grid gap-1">
-            <DialogTitle className="flex items-center gap-2">
-              {action.title}
-              {action.destructive && <Badge variant="destructive">Destructive</Badge>}
-            </DialogTitle>
+            <DialogTitle className="flex items-center gap-2">{action.title}</DialogTitle>
             {target && <DialogDescription>{target.title}</DialogDescription>}
           </div>
         </div>
@@ -180,39 +164,11 @@ function RunForm({
             Cancel
           </Button>
         </DialogClose>
-        <Button
-          type="submit"
-          variant={action.destructive ? "destructive" : "default"}
-          disabled={run.isPending}
-        >
+        <Button type="submit" disabled={run.isPending}>
           {run.isPending ? <Loader2 className="animate-spin" /> : <Play />}
           Run
         </Button>
       </DialogFooter>
-      <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {target ? `Run ${action.title} on ${target.title}?` : `Run ${action.title}?`}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              It's marked destructive, so check the inputs before it runs.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                const parsed = values();
-                if (parsed) run.mutate(parsed);
-              }}
-            >
-              Run
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </form>
   );
 }

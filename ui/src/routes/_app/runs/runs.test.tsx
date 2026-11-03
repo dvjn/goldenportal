@@ -64,7 +64,6 @@ const run: Run = {
 const restart: Available = {
   identifier: "restart",
   title: "Restart",
-  destructive: false,
   inputs: [
     {
       identifier: "environment",

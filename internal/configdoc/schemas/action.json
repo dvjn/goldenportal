@@ -25,7 +25,6 @@
         },
         "scope": { "$ref": "#/$defs/filter", "description": "Applies the action only to the entities that match. It can use $me." },
         "run": { "$ref": "#/$defs/access", "description": "Who can run it. Admins always can." },
-        "destructive": { "type": "boolean", "description": "Marks an action that removes or disrupts something. Agents can't run destructive actions." },
         "inputs": {
           "type": "object",
           "description": "What people enter to run it, keyed by identifier, written as blueprint properties are. Steps read them as $input.<id>.",

@@ -47,10 +47,9 @@ const entity = (identifier: string, title: string): Entity => ({
 const restart: Available = {
   identifier: "restart",
   title: "Restart",
-  destructive: true,
   inputs: [{ identifier: "reason", title: "Reason", type: "string", required: true }],
 };
-const scale: Available = { identifier: "scale", title: "Scale", destructive: false, inputs: [] };
+const scale: Available = { identifier: "scale", title: "Scale", inputs: [] };
 
 // An identifier with a comma, which a comma-joined list would split.
 const rowActions: RowActions = {
@@ -81,10 +80,6 @@ describe("row actions", () => {
     expect(screen.queryByRole("button", { name: "Actions for Idle" })).not.toBeInTheDocument();
 
     await user.click(menu);
-    expect(await screen.findByRole("menuitem", { name: "Restart" })).toHaveAttribute(
-      "data-variant",
-      "destructive",
-    );
     await user.click(screen.getByRole("menuitem", { name: "Restart" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Ledger")).toBeInTheDocument();

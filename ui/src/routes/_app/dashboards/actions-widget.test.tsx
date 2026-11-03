@@ -23,11 +23,10 @@ const restart: Available = {
   identifier: "restart",
   title: "Restart",
   icon: "rotate-cw",
-  destructive: true,
   inputs: [{ identifier: "reason", title: "Reason", type: "string", required: true }],
 };
 
-const scale: Available = { identifier: "scale", title: "Scale", destructive: false, inputs: [] };
+const scale: Available = { identifier: "scale", title: "Scale", inputs: [] };
 
 // offer is an action as the Self-Service catalog lists it.
 const offer = (action: Available): Offer => ({
@@ -41,7 +40,6 @@ const restartServices: Offer = {
   kind: "workflow",
   identifier: "restart-services",
   title: "Restart Services",
-  destructive: false,
   inputs: [],
 };
 
@@ -77,7 +75,7 @@ const dashboard = {
 };
 
 describe("actions widget", () => {
-  it("offers a dashboard's actions and then its workflows in order, marking destructive ones", async () => {
+  it("offers a dashboard's actions and then its workflows in order", async () => {
     stubApi(dashboard);
     renderRoute("/");
 
@@ -87,7 +85,7 @@ describe("actions widget", () => {
     const buttons = within(card).getAllByRole("button");
     expect(buttons.map((button) => button.textContent)).toEqual([
       "Scale",
-      "RestartDestructive",
+      "Restart",
       "Restart Services",
     ]);
   });
@@ -183,7 +181,7 @@ describe("actions widget", () => {
     });
     renderRoute("/catalog/service/ledger?tab=incidents");
 
-    const run = await screen.findByRole("button", { name: /^Restart(Destructive)?$/ });
+    const run = await screen.findByRole("button", { name: "Restart" });
     const card = run.closest("[data-slot=card]") as HTMLElement;
     expect(within(card).queryByRole("button", { name: "Scale" })).not.toBeInTheDocument();
     await user.click(run);

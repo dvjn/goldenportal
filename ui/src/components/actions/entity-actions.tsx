@@ -13,8 +13,7 @@ import {
 import { type Available, availableQueryOptions, rowActionsQueryOptions } from "@/features/actions";
 import { RunActionDialog, type RunTarget } from "./run-action-dialog";
 
-// ActionsMenu lists actions to run on an entity, destructive ones marked as
-// such, each opening its form. trigger is what opens the menu.
+// ActionsMenu lists actions to run on an entity, each opening its form. trigger is what opens the menu.
 function ActionsMenu({
   entity,
   actions,
@@ -31,7 +30,6 @@ function ActionsMenu({
           {actions.map((action) => (
             <DropdownMenuItem
               key={action.identifier}
-              variant={action.destructive ? "destructive" : "default"}
               onSelect={() => {
                 setPicked(action);
                 setOpen(true);

@@ -4,7 +4,6 @@ import { ActionOverview } from "@/components/actions/action-overview";
 import { type RunsSearch, RunsTable, validateRunsSearch } from "@/components/actions/runs-table";
 import { DocPage, type DocTab, validateDocSearch } from "@/components/config-docs/doc-page";
 import { PageError } from "@/components/page-error";
-import { Badge } from "@/components/ui/badge";
 import { workflows } from "@/features/actions";
 
 function validateWorkflowSearch(search: Record<string, unknown>): RunsSearch & { tab?: DocTab } {
@@ -29,7 +28,6 @@ function WorkflowPage() {
   const { tab, ...runsSearch } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const { data: doc } = useSuspenseQuery(workflows.queries.detail(identifier));
-  const destructive = (doc.published?.spec ?? doc.draft?.spec)?.destructive;
 
   return (
     <DocPage
@@ -41,7 +39,6 @@ function WorkflowPage() {
       onDeleted={() => navigate({ to: "/workflows" })}
       tab={tab}
       onTabChange={(next) => navigate({ search: { tab: next }, replace: true })}
-      badges={destructive && <Badge variant="destructive">Destructive</Badge>}
       overview={(spec, d) => <ActionOverview spec={spec} action={d} />}
       extraTabs={[
         {

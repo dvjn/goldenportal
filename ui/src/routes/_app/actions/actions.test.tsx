@@ -24,7 +24,6 @@ const spec: ActionSpec = {
   color: "amber",
   blueprint: "service",
   run: { roles: ["builder"], filter: { property: "owner.members", op: "contains", value: "$me" } },
-  destructive: true,
   inputs: [
     {
       identifier: "environment",
@@ -119,7 +118,7 @@ describe("actions", () => {
           publishedVersion: 1,
           hasDraft: false,
           stats: { inputs: 2, steps: 4 },
-          facts: { blueprint: "service", destructive: true },
+          facts: { blueprint: "service" },
           updatedAt: "2026-10-24T10:00:00Z",
         },
       ]),
@@ -128,7 +127,6 @@ describe("actions", () => {
     renderRoute("/actions");
 
     const row = (await screen.findByRole("link", { name: /Restart/ })).closest("tr") as HTMLElement;
-    expect(within(row).getByText("Destructive")).toBeInTheDocument();
     expect(await within(row).findByText("Service")).toBeInTheDocument();
     expect(within(row).getByText("4")).toBeInTheDocument();
   });
@@ -155,7 +153,6 @@ describe("actions", () => {
     const about = screen.getByText("About").closest("[data-slot=card]") as HTMLElement;
     expect(within(about).getByText("builder")).toBeInTheDocument();
     expect(within(about).getByText(/owner\.members/)).toBeInTheDocument();
-    expect(screen.getByText("Destructive")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Runs" }));
     const table = await screen.findByRole("table");
@@ -221,7 +218,7 @@ describe("actions", () => {
       "POST actions/validate": async (request) => {
         const { source } = (await request.json()) as { source: string };
         expect(source).toContain("kind: Action");
-        return Response.json({ data: { spec: { ...spec, destructive: false }, issues: [] } });
+        return Response.json({ data: { spec: spec, issues: [] } });
       },
       "GET catalog": ok([]),
     });
@@ -263,14 +260,12 @@ const restartAvailable: Available = {
   identifier: "restart",
   title: "Restart",
   icon: "rotate-cw",
-  destructive: true,
   inputs: spec.inputs,
 };
 
 const scale: Available = {
   identifier: "scale",
   title: "Scale",
-  destructive: false,
   inputs: [
     {
       identifier: "replicas",
@@ -326,10 +321,6 @@ describe("running actions on an entity", () => {
     renderRoute("/catalog/service/ledger");
 
     await user.click(await screen.findByRole("button", { name: "Actions" }));
-    expect(screen.getByRole("menuitem", { name: "Restart" })).toHaveAttribute(
-      "data-variant",
-      "destructive",
-    );
     await user.click(screen.getByRole("menuitem", { name: "Scale" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -364,7 +355,7 @@ describe("running actions on an entity", () => {
     expect(second.idempotencyKey).toBe(first.idempotencyKey);
   });
 
-  it("asks to be sure before running a destructive action", async () => {
+  it("runs as soon as the form is sent", async () => {
     const user = userEvent.setup();
     const requests = stubApi({
       ...entityPage,
@@ -379,11 +370,6 @@ describe("running actions on an entity", () => {
     await user.click(await screen.findByRole("option", { name: "staging" }));
     await user.type(within(dialog).getByLabelText(/^Reason/), "stuck queue");
     await user.click(within(dialog).getByRole("button", { name: "Run" }));
-
-    const confirm = await screen.findByRole("alertdialog");
-    expect(within(confirm).getByText("Run Restart on Ledger?")).toBeInTheDocument();
-    expect(requests["POST actions/restart/runs"]).toBeUndefined();
-    await user.click(within(confirm).getByRole("button", { name: "Run" }));
 
     expect(await screen.findByRole("heading", { name: "Restart" })).toBeInTheDocument();
     expect(await requests["POST actions/restart/runs"].json()).toMatchObject({

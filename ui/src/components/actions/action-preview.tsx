@@ -10,7 +10,6 @@ export function ActionPreview({ spec }: Readonly<{ spec: ActionSpec }>) {
         <dt className="text-muted-foreground">{spec.kind === "Workflow" ? "Group" : "Runs On"}</dt>
         <dd className="flex items-center gap-2">
           {spec.kind === "Workflow" ? spec.group : <BlueprintLabel blueprint={spec.blueprint} />}
-          {spec.destructive && <Badge variant="destructive">Destructive</Badge>}
         </dd>
       </div>
       {spec.inputs.length > 0 && (

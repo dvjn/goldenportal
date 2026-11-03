@@ -97,7 +97,7 @@ func getRun(ctx *gofr.Context) (any, error) { return result(GetRun(ctx, ctx.Path
 
 func cancel(ctx *gofr.Context) (any, error) { return result(CancelRun(ctx, ctx.PathParam("id"))) }
 
-func retry(ctx *gofr.Context) (any, error) { return result(RetryRun(ctx, ctx.PathParam("id"), ViaWeb)) }
+func retry(ctx *gofr.Context) (any, error) { return result(RetryRun(ctx, ctx.PathParam("id"))) }
 
 type resolveRequest struct {
 	Outcome string `json:"outcome"`
