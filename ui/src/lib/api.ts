@@ -1,4 +1,4 @@
-import ky, { type BeforeErrorHook, HTTPError } from "ky";
+import ky, { type BeforeErrorHook, HTTPError, NetworkError, TimeoutError } from "ky";
 import { noticeNewBuild } from "./new-build";
 
 export type ApiDataResponse<T> = { data: T };
@@ -9,11 +9,47 @@ export type Problems = Record<string, string[]>;
 
 type ApiErrorBody = { error?: { message?: string; problems?: Problems } };
 
-const adoptEnvelopeMessage: BeforeErrorHook = ({ error }) => {
+function envelopeMessage(error: HTTPError) {
+  const body = error.data as ApiErrorBody | string | undefined;
+  return typeof body === "object" ? body.error?.message : undefined;
+}
+
+// ErrorDescription is an error as people read it: what happened, and what
+// to do about it or the server's own reason.
+export type ErrorDescription = { title: string; detail: string };
+
+// describeError words any error the same way everywhere. Failures that
+// never reached the server, or that it didn't explain, read plainly rather
+// than as a request URL; fallback titles everything else.
+export function describeError(error: unknown, fallback = "Something went wrong"): ErrorDescription {
+  if (error instanceof NetworkError) {
+    return { title: "Can't connect", detail: "Try again." };
+  }
+  if (error instanceof TimeoutError) {
+    return { title: "No response", detail: "Try again." };
+  }
   if (error instanceof HTTPError) {
-    const body = error.data as ApiErrorBody | string | undefined;
-    const message = typeof body === "object" ? body.error?.message : undefined;
-    if (message) error.message = message;
+    const message = envelopeMessage(error);
+    if (error.response.status >= 500) {
+      return { title: "Something went wrong", detail: message ?? "Try again." };
+    }
+    return { title: fallback, detail: message ?? `Error ${error.response.status}` };
+  }
+  return { title: fallback, detail: error instanceof Error ? error.message : String(error) };
+}
+
+// plainMessage gives every failed request a message people can read, so
+// toasts and forms that show error.message say the same as error cards.
+const plainMessage: BeforeErrorHook = ({ error }) => {
+  if (error instanceof HTTPError && error.response.status < 500 && envelopeMessage(error)) {
+    error.message = envelopeMessage(error) ?? error.message;
+  } else if (
+    error instanceof HTTPError ||
+    error instanceof NetworkError ||
+    error instanceof TimeoutError
+  ) {
+    const { title, detail } = describeError(error);
+    error.message = `${title}. ${detail}`;
   }
   return error;
 };
@@ -41,7 +77,7 @@ export function createApi(prefix: string) {
     },
     hooks: {
       afterResponse: [noticeNewBuild],
-      beforeError: [adoptEnvelopeMessage],
+      beforeError: [plainMessage],
     },
   });
 }

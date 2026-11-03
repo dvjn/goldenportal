@@ -1,6 +1,6 @@
 import { HTTPError } from "ky";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { apiProblems, createApi } from "./api";
+import { apiProblems, createApi, describeError } from "./api";
 
 const api = createApi("http://localhost/api/web");
 
@@ -38,10 +38,39 @@ describe("api", () => {
     expect((error as HTTPError).response.status).toBe(404);
   });
 
-  it("keeps the default message when the body has no envelope", async () => {
+  it("says plainly what failed when the server gave no reason", async () => {
     stubFetch(new Response("bad gateway", { status: 502 }));
+    await expect(api.get("config").json()).rejects.toThrow("Something went wrong. Try again.");
 
-    await expect(api.get("config").json()).rejects.toThrow(/502/);
+    stubFetch(new Response("nope", { status: 404 }));
+    await expect(api.get("config").json()).rejects.toThrow("Something went wrong. Error 404");
+  });
+
+  it("says it can't connect rather than naming the request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+
+    const error = await api
+      .get("config", { retry: 0 })
+      .json()
+      .catch((caught: unknown) => caught);
+
+    expect((error as Error).message).toBe("Can't connect. Try again.");
+    expect(describeError(error)).toEqual({
+      title: "Can't connect",
+      detail: "Try again.",
+    });
+  });
+
+  it("titles errors the server explained with the caller's fallback", () => {
+    expect(describeError(new Error("no property x"), "Couldn't load")).toEqual({
+      title: "Couldn't load",
+      detail: "no property x",
+    });
   });
 
   it("reads the problems by field from a turned down request", async () => {

@@ -3,17 +3,19 @@ import { PropertyValue } from "@/components/catalog/property-value";
 import { Detail, DetailList } from "@/components/detail-list";
 import { blueprints } from "@/features/blueprints";
 import { entityQueryOptions } from "@/features/catalog";
-import { WidgetCard, WidgetLoading, type WidgetProps } from "./widget-grid";
+import { WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 
 // PropertiesWidget shows some of the page's entity's properties, in the
 // order the widget lists them, or else every one that isn't hidden.
 export function PropertiesWidget({ source, widget, context }: WidgetProps) {
   const blueprint = "blueprint" in source ? source.blueprint : "";
-  const { data: bp } = useQuery(blueprints.queries.detail(blueprint));
-  const { data: entity } = useQuery({
+  const { data: bp, error: bpError } = useQuery(blueprints.queries.detail(blueprint));
+  const { data: entity, error: entityError } = useQuery({
     ...entityQueryOptions(blueprint, context.entity ?? ""),
     enabled: Boolean(context.entity),
   });
+  const failed = bpError ?? entityError;
+  if (failed) return <WidgetError widget={widget} error={failed} />;
   const spec = bp?.published?.spec;
   if (!spec || !entity) return <WidgetLoading widget={widget} height="h-24" />;
 

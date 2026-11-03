@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { CircleAlert } from "lucide-react";
 import { useState } from "react";
+import { EmptyCard } from "@/components/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type DashboardSpec, dashboardViewQueryOptions } from "@/features/dashboards";
+import { describeError } from "@/lib/api";
 import { DashboardView, type Picked } from "./dashboard-view";
 
 // DashboardPreview shows a dashboard as Home will, to the builder: the
@@ -17,7 +20,11 @@ export function DashboardPreview({
   return (
     <div className="grid gap-4">
       {error ? (
-        <p className="text-sm text-muted-foreground">{error.message}</p>
+        <EmptyCard
+          icon={<CircleAlert />}
+          title={describeError(error).title}
+          description={describeError(error).detail}
+        />
       ) : view ? (
         <DashboardView
           view={view}

@@ -11,7 +11,7 @@ import {
   selfServiceCatalogQueryOptions,
 } from "@/features/actions";
 import { entityQueryOptions } from "@/features/catalog";
-import { WidgetCard, WidgetLoading, type WidgetProps } from "./widget-grid";
+import { WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 
 // ActionsWidget offers the actions and then the workflows it lists, in its
 // order, leaving out those the viewer can't run. On an entity's page its
@@ -40,6 +40,8 @@ function EntityActions({
   const available = useQuery(availableQueryOptions(blueprint, entity));
   const catalog = useQuery({ ...selfServiceCatalogQueryOptions, enabled: !!widget.workflows });
   const { data: detail } = useQuery(entityQueryOptions(blueprint, entity));
+  const failed = available.error ?? catalog.error;
+  if (failed) return <WidgetError widget={widget} error={failed} />;
   if (available.isPending || (widget.workflows && catalog.isPending)) {
     return <WidgetLoading widget={widget} />;
   }
@@ -59,6 +61,7 @@ function EntityActions({
 
 function CatalogActions({ widget }: WidgetProps) {
   const catalog = useQuery(selfServiceCatalogQueryOptions);
+  if (catalog.error) return <WidgetError widget={widget} error={catalog.error} />;
   if (catalog.isPending) return <WidgetLoading widget={widget} />;
   const items = catalog.data?.groups.flatMap((group) => group.items) ?? [];
   return (

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { EmptyCard } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { ForbiddenError } from "@/features/auth";
+import { describeError } from "@/lib/api";
 
 type PageErrorProps = ErrorComponentProps & {
   // back links to the page above, for when this one doesn't exist.
@@ -44,12 +45,9 @@ export function PageError({ error, back }: PageErrorProps) {
       </EmptyCard>
     );
   }
+  const { title, detail } = describeError(error);
   return (
-    <EmptyCard
-      icon={<CircleAlert />}
-      title="Something went wrong"
-      description={error instanceof Error ? error.message : String(error)}
-    >
+    <EmptyCard icon={<CircleAlert />} title={title} description={detail}>
       <Button variant="outline" onClick={() => router.invalidate()}>
         Try again
       </Button>

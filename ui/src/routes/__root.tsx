@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { configQueryOptions, useConfig } from "@/features/config";
+import { describeError } from "@/lib/api";
 import { PageTitleProvider } from "@/lib/page-title";
 
 type RouterContext = {
@@ -35,12 +36,12 @@ function RootLayout() {
 
 function RootError({ error }: ErrorComponentProps) {
   const router = useRouter();
-  const message = error instanceof Error ? error.message : String(error);
+  const { title, detail } = describeError(error);
 
   return (
     <section className="flex min-h-screen flex-col items-center justify-center gap-4 text-center">
-      <h1 className="text-2xl font-semibold">Something went wrong</h1>
-      <p className="text-muted-foreground">{message}</p>
+      <h1 className="text-2xl font-semibold">{title}</h1>
+      <p className="text-muted-foreground">{detail}</p>
       <Button variant="outline" onClick={() => router.invalidate()}>
         Try again
       </Button>

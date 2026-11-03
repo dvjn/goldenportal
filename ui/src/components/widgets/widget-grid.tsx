@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { ArrowRight, TriangleAlert } from "lucide-react";
+import { ArrowRight, CircleAlert, Loader2, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { CardTitleBar } from "@/components/card-sections";
+import { EmptyCard } from "@/components/empty-state";
 import { Markdown } from "@/components/markdown";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -20,6 +22,7 @@ import {
   type WidgetSource,
   widgetsQueryOptions,
 } from "@/features/widgets";
+import { describeError } from "@/lib/api";
 import { ActionsWidget } from "./actions-widget";
 import { GroupWidget } from "./group-widget";
 import { PropertiesWidget } from "./properties-widget";
@@ -57,7 +60,8 @@ function loads(widget: Widget, source: WidgetSource) {
 // WidgetGrid lays widgets out on a 12-column grid, in order, each as tall
 // as it needs. Source is the document they're written in. Their data loads
 // in one request, again whenever the context changes, and each widget
-// shows its own share, or why it couldn't load.
+// shows its own share, or why it couldn't load. When the request itself
+// fails, every widget would say the same, so the grid says it once.
 export function WidgetGrid({
   widgets,
   source,
@@ -71,11 +75,26 @@ export function WidgetGrid({
     ...widgetsQueryOptions(source, context),
     enabled: widgets.some((widget) => loads(widget, source)),
   });
+  if (results.error && !results.data) {
+    const { title, detail } = describeError(results.error);
+    return (
+      <EmptyCard icon={<CircleAlert />} title={title} description={detail}>
+        <Button
+          variant="outline"
+          onClick={() => void results.refetch()}
+          disabled={results.isFetching}
+        >
+          {results.isFetching ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+          Try again
+        </Button>
+      </EmptyCard>
+    );
+  }
   return (
     <div className="grid grid-cols-12 items-start gap-4">
       {widgets.map((widget) => {
         const result = results.data?.widgets[widget.identifier];
-        let error = results.error ?? undefined;
+        let error: Error | undefined;
         if (result?.error !== undefined) error = new Error(result.error);
         else if (results.data && !result && loads(widget, source)) {
           error = new Error("The widget's data didn't come back.");
@@ -198,14 +217,22 @@ export function ViewAll({ link }: Readonly<{ link: LinkData | undefined }>) {
   );
 }
 
-// WidgetError says why a widget couldn't load, in its frame.
-export function WidgetError({ widget, error }: Readonly<{ widget: Widget; error: Error }>) {
+// WidgetError says quietly, in its frame, that a widget couldn't load; why
+// is on hover, since it's mostly for whoever wrote the widget.
+export function WidgetError({ widget, error }: Readonly<{ widget: Widget; error: unknown }>) {
+  const { title, detail } = describeError(error, "Couldn't load");
   return (
     <WidgetCard widget={widget}>
-      <p className="flex items-start gap-2 text-sm text-muted-foreground">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden />
-        {error.message}
-      </p>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <p className="flex w-fit cursor-help items-center gap-2 text-sm text-muted-foreground">
+            <CircleAlert className="size-4 shrink-0" aria-hidden />
+            {title}
+            <span className="sr-only">{detail}</span>
+          </p>
+        </TooltipTrigger>
+        <TooltipContent>{detail}</TooltipContent>
+      </Tooltip>
     </WidgetCard>
   );
 }

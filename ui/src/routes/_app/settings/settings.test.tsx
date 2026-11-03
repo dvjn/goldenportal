@@ -210,6 +210,8 @@ describe("access", () => {
     await user.click(await screen.findByRole("combobox", { name: "Role for platform-engineers" }));
     await user.click(screen.getByRole("option", { name: "Member" }));
 
-    expect(await screen.findByText("the database is unavailable")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Something went wrong. the database is unavailable"),
+    ).toBeInTheDocument();
   });
 });

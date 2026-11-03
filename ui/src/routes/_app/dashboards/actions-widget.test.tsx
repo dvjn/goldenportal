@@ -122,6 +122,15 @@ describe("actions widget", () => {
     expect(within(dialog).queryByRole("combobox", { name: "Service" })).not.toBeInTheDocument();
   });
 
+  it("says it couldn't load rather than that there's nothing to run", async () => {
+    stubApi({ ...dashboard, "GET self-service": fail(403, "you can't see the catalog") });
+    renderRoute("/");
+
+    expect(await screen.findByText("Couldn't load")).toBeInTheDocument();
+    expect(screen.getByText("you can't see the catalog")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing to run")).not.toBeInTheDocument();
+  });
+
   it("says so when there's nothing to run", async () => {
     stubApi({
       ...dashboard,

@@ -330,6 +330,31 @@ describe("dashboards and page tabs", () => {
     await stat(/^Critical Services$/, "3");
   });
 
+  it("says once that a dashboard couldn't load, and loads it again on Try again", async () => {
+    const user = userEvent.setup();
+    let reachable = false;
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([overview]),
+      "GET blueprints/service": ok(service),
+      "GET dashboards/overview/data": () => {
+        if (!reachable) throw new TypeError("Failed to fetch");
+        return Response.json({ data: { widgets: { critical: { data: linked(3, critical) } } } });
+      },
+    });
+    renderRoute("/");
+
+    expect(
+      await screen.findByText("Can't connect", undefined, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Can't connect")).toHaveLength(1);
+    expect(screen.queryByText(/localhost/)).not.toBeInTheDocument();
+
+    reachable = true;
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await stat(/^Critical Services$/, "3");
+  });
+
   it("shows jq columns and opens rows where their row link goes", async () => {
     stubApi({
       ...signedInMember,
