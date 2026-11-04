@@ -1,6 +1,7 @@
 // Command mock serves everything the local portal talks to that isn't the
-// portal: a sign-in provider, an operations API, a deploy tracker, and a
-// pusher that feeds the push integrations. mock.yaml sets it up.
+// portal: a sign-in provider, an operations API, a deploy tracker, a service
+// registry that also sends signed events, and a pusher that feeds an
+// integration over the ingest API. mock.yaml sets it up.
 package main
 
 import (
@@ -16,11 +17,12 @@ import (
 )
 
 type config struct {
-	Listen  string        `yaml:"listen"`
-	SSO     ssoConfig     `yaml:"sso"`
-	Ops     opsConfig     `yaml:"ops"`
-	Push    pushConfig    `yaml:"push"`
-	Tracker trackerConfig `yaml:"tracker"`
+	Listen   string         `yaml:"listen"`
+	SSO      ssoConfig      `yaml:"sso"`
+	Ops      opsConfig      `yaml:"ops"`
+	Push     pushConfig     `yaml:"push"`
+	Tracker  trackerConfig  `yaml:"tracker"`
+	Registry registryConfig `yaml:"registry"`
 }
 
 func main() {
@@ -47,7 +49,14 @@ func main() {
 	tracker := newTracker(cfg.Tracker)
 	tracker.routes(mux)
 
-	pusher, err := newPusher(cfg.Push, filepath.Dir(path), tracker.lastDeploy)
+	registry, err := newRegistry(cfg.Registry, filepath.Dir(path), tracker.lastDeploy)
+	if err != nil {
+		log.Fatal(err)
+	}
+	registry.routes(mux)
+	go registry.run()
+
+	pusher, err := newPusher(cfg.Push, filepath.Dir(path))
 	if err != nil {
 		log.Fatal(err)
 	}

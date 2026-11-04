@@ -31,20 +31,34 @@ ops:
     incidents: {latency: {min: 300ms, max: 1500ms}, fails: 0.05}
   jobs: {min: 10s, max: 1m}
 
-# Pushes each file to its push integration as an external system would, every
-# so often give or take the variance. "@DEPLOY:<service>@" in a file becomes
-# when the tracker below last put that service in production. billing-export
-# is invalid on purpose, and legacy-reports is filtered out by the mapping.
+# Pushes each file to its integration with an ingestion token, as an external
+# system would: the whole file as a complete push every so often, give or take
+# the variance, and one of its items as an incremental push between.
 push:
   api: http://localhost:${HTTP_PORT}
   integrations:
-    - {name: team-directory, every: 30m, variance: 10m, token: "${GP_DEV_TEAM_DIRECTORY_TOKEN}", file: payloads/team-directory.json}
-    - {name: service-registry, every: 5m, variance: 2m, token: "${GP_DEV_SERVICE_REGISTRY_TOKEN}", file: payloads/service-registry.json}
+    - name: team-directory
+      token: "${GP_DEV_TEAM_DIRECTORY_TOKEN}"
+      file: payloads/team-directory.json
+      complete: {every: 30m, variance: 10m}
+      changes: {every: 5m, variance: 2m}
+
+# A service registry the service-registry integration pulls, at /registry,
+# which also sends it an event signed with the secret whenever a service
+# deploys, leaves or comes back. billing-export is invalid on purpose, and
+# legacy-reports is filtered out by the mapping.
+registry:
+  api: http://localhost:${HTTP_PORT}
+  integration: service-registry
+  secret: "${GP_SECRET_SERVICE_REGISTRY_SIGNING}"
+  file: payloads/service-registry.json
+  events: {every: 3m, variance: 1m}
 
 # A deploy tracker for the http integration to pull, at /deploy-tracker. Each
 # service deploys every so often, give or take the variance, and fails that
 # share of the time. A new version goes to staging, and once it succeeds the
-# next deployment promotes it.
+# next deployment promotes it. It answers with what changed since a time,
+# including what dropped out, for incremental syncs.
 tracker:
   token: "${GP_SECRET_DEPLOY_TRACKER}"
   takes: {min: 1m, max: 8m}

@@ -36,8 +36,7 @@ until [ "$(psql -tAc "SELECT to_regclass('public.role_bindings') IS NOT NULL AND
   sleep 1
 done
 
-psql -q -v issuer="$GP_OIDC_ISSUER" -v team_token="$GP_DEV_TEAM_DIRECTORY_TOKEN" \
-  -v service_token="$GP_DEV_SERVICE_REGISTRY_TOKEN" < deps/seed.sql
+psql -q -v issuer="$GP_OIDC_ISSUER" -v team_token="$GP_DEV_TEAM_DIRECTORY_TOKEN" < deps/seed.sql
 echo "Seed data loaded"
 '''
 

@@ -20,7 +20,8 @@ services:
       retries: 20
 
   # Everything else the portal talks to in development: sign-in, an ops API,
-  # a deploy tracker and a pusher. deps/mock/mock.yaml sets it up.
+  # a deploy tracker, a service registry and a pusher. deps/mock/mock.yaml
+  # sets it up.
   mock:
     build: deps/mock
     container_name: goldenportal-mock
@@ -33,6 +34,6 @@ services:
       GP_OIDC_CLIENT_ID: ${GP_OIDC_CLIENT_ID}
       GP_OIDC_CLIENT_SECRET: ${GP_OIDC_CLIENT_SECRET}
       GP_DEV_TEAM_DIRECTORY_TOKEN: ${GP_DEV_TEAM_DIRECTORY_TOKEN}
-      GP_DEV_SERVICE_REGISTRY_TOKEN: ${GP_DEV_SERVICE_REGISTRY_TOKEN}
+      GP_SECRET_SERVICE_REGISTRY_SIGNING: ${GP_SECRET_SERVICE_REGISTRY_SIGNING}
       GP_SECRET_OPS: ${GP_SECRET_OPS}
       GP_SECRET_DEPLOY_TRACKER: ${GP_SECRET_DEPLOY_TRACKER}

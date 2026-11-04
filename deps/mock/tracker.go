@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -33,16 +35,31 @@ type deployment struct {
 	StartedAt   string  `json:"startedAt"`
 	FinishedAt  *string `json:"finishedAt"`
 	started     time.Time
+	// changed is when it started or finished, whichever was last.
+	changed time.Time
+}
+
+// tombstone is a deployment that dropped out of the tracker, which it
+// reports to syncs that ask for changes since before then.
+type tombstone struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
 }
 
 const (
 	trackerKept    = 20
 	trackerPerPage = 10
+	// tombstonesKept is how long the tracker remembers what dropped out.
+	tombstonesKept = 24 * time.Hour
 )
 
 // tracker is a deploy tracker for the http integration to pull. It serves the
-// latest deployments newest first as two pages, /deployments/1.json linking
-// to 2.json. Only the latest 20 are kept, so older ones drop out of syncs.
+// latest deployments newest first, ten a page. Only the latest 20 are kept,
+// so older ones drop out of syncs.
+//
+// /deployments?since=<time> answers with what started or finished since
+// then, and the deployments that dropped out since, marked deleted, paging
+// with Link headers. /deployments/1.json links to 2.json in its body.
 //
 // Each service deploys on its own cadence, and each deployment runs for its
 // own time, so some overlap. A new version goes to staging first; once it
@@ -79,6 +96,7 @@ func newTracker(cfg trackerConfig) *tracker {
 }
 
 func (t *tracker) routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /deploy-tracker/deployments", t.changes)
 	mux.HandleFunc("GET /deploy-tracker/deployments/{page}", t.page)
 }
 
@@ -101,7 +119,7 @@ func (t *tracker) run(s trackerService) {
 func (t *tracker) start(service string, at time.Time) int {
 	d := deployment{
 		ID: fmt.Sprintf("deploy-%d", len(t.all)+1), Service: service, Status: "running",
-		StartedAt: at.UTC().Format(time.RFC3339), started: at,
+		StartedAt: at.UTC().Format(time.RFC3339), started: at, changed: at,
 	}
 	if version, ok := t.staged[service]; ok {
 		d.Version, d.Environment = version, "production"
@@ -123,6 +141,7 @@ func (t *tracker) finish(i int, at time.Time, fails float64) {
 	}
 	finished := at.UTC().Format(time.RFC3339)
 	d.FinishedAt = &finished
+	d.changed = at
 	if d.Status == "succeeded" && d.Environment == "staging" {
 		t.staged[d.Service] = d.Version
 	}
@@ -169,4 +188,64 @@ func (t *tracker) page(w http.ResponseWriter, r *http.Request) {
 		next = &link
 	}
 	reply(w, http.StatusOK, map[string]any{"deployments": latest[from:to], "next": next})
+}
+
+// changes serves what changed since ?since=, or everything without it.
+func (t *tracker) changes(w http.ResponseWriter, r *http.Request) {
+	if !authorized(r, t.cfg.Token) {
+		reply(w, http.StatusUnauthorized, map[string]string{"error": "missing or wrong token"})
+		return
+	}
+	var since time.Time
+	if s := r.URL.Query().Get("since"); s != "" {
+		var err error
+		if since, err = time.Parse(time.RFC3339, s); err != nil {
+			reply(w, http.StatusBadRequest, map[string]string{"error": "since must be an RFC 3339 time"})
+			return
+		}
+	}
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		var err error
+		if page, err = strconv.Atoi(p); err != nil || page < 1 {
+			reply(w, http.StatusBadRequest, map[string]string{"error": "page must be a whole number from 1"})
+			return
+		}
+	}
+
+	t.mu.Lock()
+	all := slices.Clone(t.all)
+	t.mu.Unlock()
+	slices.SortFunc(all, func(a, b deployment) int { return cmp.Compare(b.started.UnixNano(), a.started.UnixNano()) })
+	remembers := since.After(time.Now().Add(-tombstonesKept))
+	var changed []any
+	for i, d := range all {
+		if i < trackerKept {
+			if !d.changed.Before(since) {
+				changed = append(changed, d)
+			}
+			continue
+		}
+		// A deployment dropped out when the one trackerKept newer started.
+		// Asked for changes since before it remembers, the tracker has no
+		// tombstones to give, as a sync then gets everything anyway.
+		dropped := all[i-trackerKept].started
+		if remembers && !dropped.Before(since) {
+			changed = append(changed, tombstone{ID: d.ID, Deleted: true})
+		}
+	}
+
+	from := (page - 1) * trackerPerPage
+	to := min(from+trackerPerPage, len(changed))
+	if from > len(changed) {
+		from = len(changed)
+	}
+	if to < len(changed) {
+		next := url.Values{"page": {strconv.Itoa(page + 1)}}
+		if !since.IsZero() {
+			next.Set("since", since.Format(time.RFC3339))
+		}
+		w.Header().Set("Link", fmt.Sprintf(`<?%s>; rel="next"`, next.Encode()))
+	}
+	reply(w, http.StatusOK, map[string]any{"deployments": append([]any{}, changed[from:to]...)})
 }

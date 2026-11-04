@@ -1,9 +1,9 @@
 -- Development seed data: the people in deps/mock/mock.yaml with their groups,
 -- so the portal has users, groups and roles before anyone signs in, plus example
--- blueprints and the push integrations the mock in deps.dev.yaml feeds.
+-- blueprints and the integrations the mock in deps.dev.yaml feeds.
 -- Every insert skips rows that already exist, so this is safe to run again.
 -- psql sets :issuer to GP_OIDC_ISSUER, the mock sign-in uses the email as the
--- subject, and :team_token and :service_token are the mock's push tokens.
+-- subject, and :team_token is the mock's token for pushing to the team directory.
 
 INSERT INTO groups (name)
 VALUES ('platform-engineers'), ('payments'), ('search')
@@ -648,10 +648,12 @@ $yaml$)
 INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
--- Example integrations: push integrations, where each mapping is jq over the
--- JSON its system sends, and Incidents, which the example actions write; the
--- Portal, which syncs the portal's own objects; and an http integration
--- pulling from the mock deploy tracker.
+-- Example integrations: the Team Directory, which the mock pushes to with a
+-- token, all of it as a complete push and single teams between; the Service
+-- Registry, pulled every half hour and kept current between by events the
+-- registry signs; Incidents and Workflows, which the example actions write;
+-- the Portal, which syncs the portal's own objects; and the Deploy Tracker,
+-- pulled incrementally every five minutes and completely every hour.
 WITH example (identifier, source) AS (VALUES
   ('team-directory', $yaml$kind: Integration
 metadata:
@@ -660,10 +662,15 @@ metadata:
   description: Teams and their channels, from the team directory.
 spec:
   connector:
-    type: push
+    type: http
+    config:
+      resources:
+        teams:
+          push:
+            items: .body.teams[]
   mappings:
-    - blueprint: team
-      items: .teams[]
+    - resource: teams
+      blueprint: team
       entity:
         identifier: .slug
         title: .name
@@ -679,10 +686,26 @@ metadata:
   description: Services from the deployment registry. Retired ones are left out.
 spec:
   connector:
-    type: push
+    type: http
+    config:
+      push:
+        signature:
+          header: X-Registry-Signature
+          algorithm: sha256
+          prefix: sha256=
+          secret: {env: GP_SECRET_SERVICE_REGISTRY_SIGNING}
+      resources:
+        services:
+          url: http://localhost:47800/registry/services
+          items: .services[]
+          push:
+            items: .body.service
+            deleted: .body.action == "deleted"
+  sync:
+    interval: 30m
   mappings:
-    - blueprint: service
-      items: .services[]
+    - resource: services
+      blueprint: service
       filter: .lifecycle != "retired"
       entity:
         identifier: .name
@@ -703,10 +726,15 @@ metadata:
   description: Incidents, which the Open incident and Resolve actions write.
 spec:
   connector:
-    type: push
+    type: http
+    config:
+      resources:
+        incidents:
+          push:
+            items: .body.incidents[]
   mappings:
-    - blueprint: incident
-      items: .incidents[]
+    - resource: incidents
+      blueprint: incident
       entity:
         identifier: .id
         title: .summary
@@ -723,10 +751,15 @@ metadata:
   description: Entities workflows create, such as services people register from Self-Service.
 spec:
   connector:
-    type: push
+    type: http
+    config:
+      resources:
+        services:
+          push:
+            items: .body.services[]
   mappings:
-    - blueprint: service
-      items: .services[]
+    - resource: services
+      blueprint: service
       entity:
         identifier: .name
         title: .title
@@ -822,16 +855,20 @@ spec:
     config:
       resources:
         deployments:
-          url: http://localhost:47800/deploy-tracker/deployments/1.json
-          next: .next
+          # $since makes the tracker answer with what changed, and the
+          # deployments that dropped out, marked deleted.
+          url: http://localhost:47800/deploy-tracker/deployments?since={{ $since }}
+          next: '$headers.link // "" | capture("<(?<url>[^>]+)>; rel=\"next\"").url'
+          items: .deployments[]
+          deleted: .deleted == true
           headers:
             Authorization: {env: GP_SECRET_DEPLOY_TRACKER}
   sync:
     interval: 5m
+    complete: 1h
   mappings:
     - resource: deployments
       blueprint: deployment
-      items: .deployments[]
       entity:
         identifier: .id
         title: .service + " " + .version
@@ -855,8 +892,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 INSERT INTO ingestion_tokens (integration_id, name, prefix, secret_hash)
 SELECT d.id, 'Mock Pusher', left(t.token, 12), sha256(convert_to(t.token, 'UTF8'))
 FROM (VALUES
-  ('team-directory', :'team_token'),
-  ('service-registry', :'service_token')
+  ('team-directory', :'team_token')
 ) AS t (identifier, token)
 JOIN config_documents d ON d.kind = 'integration' AND d.identifier = t.identifier
 ON CONFLICT (secret_hash) DO NOTHING;
