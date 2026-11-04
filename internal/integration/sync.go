@@ -49,7 +49,8 @@ type TxDB interface {
 // Sync pulls a published pull integration's data and writes it as a full
 // snapshot: entities the integration wrote before that aren't in the data
 // any more are deleted. Items that fail validation still count as present,
-// so a bad value never deletes an entity.
+// so a bad value never deletes an entity. An item without an identifier
+// could be any of them, so then nothing is deleted.
 func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error) {
 	started := time.Now().UTC()
 	store := configdoc.NewStore(db, Name)
@@ -112,12 +113,34 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 			fmt.Errorf("pull %s: %w", identifier, err))
 	}
 
+	complete := true
+	for i := range items {
+		if items[i].Entity.Identifier == "" {
+			complete = false
+			items[i].Problems = append(items[i].Problems, "it has no identifier, so this sync deleted nothing")
+		}
+	}
+
 	run := &Run{StartedAt: started, Trigger: trigger, Received: len(items), Errors: []RunError{}}
 	seen, err := write(ctx, tx, id, items, run)
 	if err != nil {
 		return nil, err
 	}
+	if complete {
+		if run.Deleted, err = deleteUnseen(ctx, tx, id, seen); err != nil {
+			return nil, err
+		}
+	}
 
+	if err := NewStore(tx).RecordRun(ctx, id, "", run); err != nil {
+		return nil, err
+	}
+
+	return run, tx.Commit()
+}
+
+// deleteUnseen deletes the integration's entities that aren't in seen.
+func deleteUnseen(ctx context.Context, tx *gofrSQL.Tx, integrationID string, seen map[string][]string) (int, error) {
 	var keep []string
 	for bp, identifiers := range seen {
 		for _, identifier := range identifiers {
@@ -127,18 +150,13 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 	result, err := tx.ExecContext(ctx, `
 		DELETE FROM entities e USING config_documents b
 		WHERE b.id = e.blueprint_id AND e.integration_id = $1
-			AND NOT ((b.identifier || '/' || e.identifier) = ANY($2))`, id, pq.Array(keep))
+			AND NOT ((b.identifier || '/' || e.identifier) = ANY($2))`, integrationID, pq.Array(keep))
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	deleted, _ := result.RowsAffected()
-	run.Deleted = int(deleted)
 
-	if err := NewStore(tx).RecordRun(ctx, id, "", run); err != nil {
-		return nil, err
-	}
-
-	return run, tx.Commit()
+	return int(deleted), nil
 }
 
 // recordFailure records a sync that fetched nothing as a run, so the failure

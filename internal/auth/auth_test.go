@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -103,6 +104,21 @@ func TestMiddleware(t *testing.T) {
 				t.Fatalf("user = %q, want %q", gotUser, tt.wantUser)
 			}
 		})
+	}
+}
+
+func TestMiddlewareCapsPushBodies(t *testing.T) {
+	var readErr error
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, readErr = io.ReadAll(r.Body)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/ingest/ci", strings.NewReader(strings.Repeat("x", MaxIngestBytes+1)))
+
+	Middleware(fakeResolver{}, true)(next).ServeHTTP(httptest.NewRecorder(), req)
+
+	var tooLarge *http.MaxBytesError
+	if !errors.As(readErr, &tooLarge) {
+		t.Fatalf("read error = %v, want a MaxBytesError", readErr)
 	}
 }
 

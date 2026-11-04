@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func httpYAML(url string) string {
@@ -100,6 +102,7 @@ func TestHTTPPull(t *testing.T) {
 }
 
 func TestHTTPPullStopsOnLoopsAndErrors(t *testing.T) {
+	shortenRetries(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/loop":
@@ -118,6 +121,53 @@ func TestHTTPPullStopsOnLoopsAndErrors(t *testing.T) {
 			t.Errorf("%s: err = %v, want %q", path, err, want)
 		}
 	}
+}
+
+func TestFetchRetries(t *testing.T) {
+	shortenRetries(t)
+	tests := []struct {
+		name       string
+		answers    []int
+		retryAfter string
+		calls      int32
+		want       string
+	}{
+		{name: "recovers from 503s", answers: []int{503, 503, 200}, calls: 3},
+		{name: "recovers from a 429", answers: []int{429, 200}, retryAfter: "0", calls: 2},
+		{name: "gives up after three retries", answers: []int{502, 502, 502, 502, 200}, calls: 4, want: "502"},
+		{name: "doesn't retry a 404", answers: []int{404, 200}, calls: 1, want: "404"},
+		{name: "won't wait long", answers: []int{429, 200}, retryAfter: "120", calls: 1, want: "asked to wait 2m0s"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				status := test.answers[calls.Add(1)-1]
+				if test.retryAfter != "" {
+					w.Header().Set("Retry-After", test.retryAfter)
+				}
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+
+			_, err := fetchJSON(context.Background(), server.URL, nil)
+			if calls.Load() != test.calls {
+				t.Errorf("calls = %d, want %d", calls.Load(), test.calls)
+			}
+			if test.want == "" && err != nil || test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)) {
+				t.Errorf("err = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+// shortenRetries makes retried fetches wait a millisecond instead of seconds.
+func shortenRetries(t *testing.T) {
+	t.Helper()
+	backoff := retryBackoff
+	retryBackoff = time.Millisecond
+	t.Cleanup(func() { retryBackoff = backoff })
 }
 
 func mustJSON(t *testing.T, v any) any {

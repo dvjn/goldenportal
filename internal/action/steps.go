@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
 )
 
@@ -161,7 +161,7 @@ func (rn Runner) call(ctx context.Context, run Run, position int, step Step, sco
 		}
 	}
 
-	return resp, retryAfter(res.Header.Get("Retry-After")), nil
+	return resp, httpx.RetryAfter(res.Header.Get("Retry-After")), nil
 }
 
 func unwrapURLError(err error) error {
@@ -173,17 +173,6 @@ func unwrapURLError(err error) error {
 	}
 
 	return err
-}
-
-func retryAfter(value string) time.Duration {
-	if seconds, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && seconds > 0 {
-		return time.Duration(seconds) * time.Second
-	}
-	if at, err := http.ParseTime(value); err == nil {
-		return max(time.Until(at), 0)
-	}
-
-	return 0
 }
 
 func succeeded(success []int, status int) bool {

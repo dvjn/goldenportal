@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -69,7 +70,14 @@ func ingest(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 	var data any
-	if err := ctx.Bind(&data); err != nil {
+	var tooLarge *http.MaxBytesError
+	switch err := ctx.Bind(&data); {
+	case errors.As(err, &tooLarge):
+		return nil, httpx.Error{
+			Code:    http.StatusRequestEntityTooLarge,
+			Message: fmt.Sprintf("the request body is over %d MB; split it across requests", auth.MaxIngestBytes>>20),
+		}
+	case err != nil:
 		return nil, badRequest("the request body is not valid JSON")
 	}
 

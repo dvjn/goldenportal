@@ -18,6 +18,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 // HTTPConfig is the http connector's config: the resources it fetches, each
@@ -51,12 +52,22 @@ const (
 	httpTimeout  = 30 * time.Second
 	maxPageBytes = 10 << 20
 	maxPages     = 100
+
+	// pageRetries is how many times a page is fetched again after a network
+	// error, a 5xx or a 429, before the sync fails.
+	pageRetries = 3
+	// maxRetryWait is the longest Retry-After a sync waits out. Anything
+	// longer fails it, and the next scheduled sync tries again.
+	maxRetryWait = 30 * time.Second
 )
 
 var (
 	resourceNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 	headerNamePattern   = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 	httpClient          = &http.Client{Timeout: httpTimeout}
+	// retryBackoff is the wait before the first retry when the answer names
+	// none, doubling for each one after. Tests shorten it.
+	retryBackoff = time.Second
 )
 
 // ReadHeaders reads headers, each written out or read from an environment
@@ -218,10 +229,35 @@ func fetchPages(ctx context.Context, name string, resource HTTPResource) ([]any,
 	return pages, nil
 }
 
+// fetchJSON fetches one page, trying again after failures that may pass.
 func fetchJSON(ctx context.Context, address string, headers map[string]HeaderValue) (any, error) {
+	for retry := 0; ; retry++ {
+		page, wait, err := fetchJSONOnce(ctx, address, headers)
+		if wait < 0 || retry == pageRetries {
+			return page, err
+		}
+		if wait == 0 {
+			wait = retryBackoff << retry
+		}
+		if wait > maxRetryWait {
+			return nil, fmt.Errorf("%w, and asked to wait %s before trying again", err, wait.Round(time.Second))
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, errors.Join(err, ctx.Err())
+		case <-timer.C:
+		}
+	}
+}
+
+// fetchJSONOnce fetches one page. wait is negative when trying again won't
+// help, and otherwise what the answer asked to wait, if anything.
+func fetchJSONOnce(ctx context.Context, address string, headers map[string]HeaderValue) (any, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 	req.Header.Set("Accept", "application/json")
 	for name, header := range headers {
@@ -230,26 +266,32 @@ func fetchJSON(ctx context.Context, address string, headers map[string]HeaderVal
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		if ctx.Err() != nil {
+			return nil, -1, err
+		}
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return nil, httpx.RetryAfter(resp.Header.Get("Retry-After")), fmt.Errorf("%s answered %s", address, resp.Status)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("%s answered %s", address, resp.Status)
+		return nil, -1, fmt.Errorf("%s answered %s", address, resp.Status)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPageBytes+1))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(body) > maxPageBytes {
-		return nil, fmt.Errorf("%s answered with more than %d MB", address, maxPageBytes>>20)
+		return nil, -1, fmt.Errorf("%s answered with more than %d MB", address, maxPageBytes>>20)
 	}
 	var page any
 	if err := json.Unmarshal(body, &page); err != nil {
-		return nil, fmt.Errorf("%s didn't answer with JSON: %w", address, err)
+		return nil, -1, fmt.Errorf("%s didn't answer with JSON: %w", address, err)
 	}
 
-	return page, nil
+	return page, -1, nil
 }
 
 // resourceNames lists what a pull integration can fetch: the connector's

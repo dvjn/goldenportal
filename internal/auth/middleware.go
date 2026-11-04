@@ -32,6 +32,10 @@ func sessionCookie(secure bool) string {
 // with an ingestion token, which the ingest handlers check themselves.
 const IngestPrefix = "/api/ingest/"
 
+// MaxIngestBytes caps a push body, so one request can't hold the server's
+// memory.
+const MaxIngestBytes = 32 << 20
+
 // publicPaths answer without a signed-in user.
 var publicPaths = map[string]bool{
 	httpx.WebAPI + "config": true,
@@ -53,6 +57,7 @@ func Middleware(resolver principalResolver, secureCookies bool) func(http.Handle
 			switch {
 			case strings.HasPrefix(r.URL.Path, IngestPrefix):
 				secret, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+				r.Body = http.MaxBytesReader(w, r.Body, MaxIngestBytes)
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ingestKey{}, secret)))
 				return
 			case strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, httpx.WebAPI):
