@@ -23,11 +23,18 @@ const inventory: Integration = {
     spec: {
       identifier: "inventory",
       title: "Inventory",
-      connector: { type: "push" },
+      connector: {
+        type: "http",
+        config: { resources: { services: { push: { items: ".body.services[]" } } } },
+      },
+      pulls: false,
+      receives: true,
+      checks: false,
       mappings: [
         {
+          resource: "services",
           blueprint: "service",
-          items: ".services[]",
+          filter: ".active",
           entity: {
             identifier: ".id",
             properties: [{ identifier: "owner", expression: ".team" }],
@@ -49,12 +56,14 @@ const routes = {
   "GET integrations/inventory/versions": ok([]),
   "GET connectors": ok([
     {
-      id: "push",
-      title: "Push",
-      description: "Other systems send entities.",
-      icon: "webhook",
+      id: "http",
+      title: "HTTP",
+      description: "JSON fetched from URLs, or sent to the ingest API.",
+      icon: "globe",
       color: "violet",
-      mode: "push",
+      pulls: true,
+      receives: true,
+      checks: true,
     },
   ]),
   "GET catalog": ok([{ identifier: "service", title: "Service", entities: 12 }]),
@@ -74,6 +83,7 @@ const routes = {
         startedAt: "2026-10-24T10:00:00Z",
         finishedAt: "2026-10-24T10:00:01Z",
         trigger: "push",
+        mode: "complete",
         token: "ci",
         received: 3,
         created: 1,
@@ -89,6 +99,58 @@ const routes = {
   }),
 };
 
+const portal: Integration = {
+  ...inventory,
+  identifier: "portal",
+  published: inventory.published && {
+    ...inventory.published,
+    spec: {
+      ...inventory.published.spec,
+      identifier: "portal",
+      connector: { type: "portal" },
+      sync: { interval: "1m", complete: "1d" },
+      pulls: true,
+      receives: false,
+      checks: true,
+    },
+  },
+};
+
+const syncRun = {
+  id: 2,
+  startedAt: "2026-10-24T10:00:00Z",
+  finishedAt: "2026-10-24T10:00:01Z",
+  trigger: "manual",
+  mode: "incremental",
+  received: 3,
+  created: 1,
+  updated: 1,
+  unchanged: 1,
+  deleted: 2,
+  failed: 0,
+  errors: [],
+};
+
+const pullRoutes = {
+  ...routes,
+  "GET integrations/portal": ok(portal),
+  "GET integrations/portal/versions": ok([]),
+  "GET integrations/portal/runs": ok({ runs: [], total: 0 }),
+  "GET connectors": ok([
+    {
+      id: "portal",
+      title: "Portal",
+      description: "The portal's own objects.",
+      icon: "box",
+      color: "blue",
+      pulls: true,
+      receives: false,
+      checks: true,
+    },
+  ]),
+  "POST integrations/portal/sync": ok(syncRun),
+};
+
 describe("integrations", () => {
   it("shows the mappings, with runs and pushing in their own tabs", async () => {
     const user = userEvent.setup();
@@ -102,9 +164,15 @@ describe("integrations", () => {
       "href",
       "/blueprints/service",
     );
-    expect(screen.getByText(".services[]")).toBeInTheDocument();
-    expect(await screen.findByText("Push Connector")).toBeInTheDocument();
-    // It pushes, so there's nothing to sync; it hasn't been pushed to yet.
+    expect(within(mappings).getByText("services")).toBeInTheDocument();
+    expect(within(mappings).getByText(".active")).toBeInTheDocument();
+    expect(await screen.findByText("HTTP Connector")).toBeInTheDocument();
+    // Its config only takes pushes, though the connector could pull or check too.
+    const about = screen.getByText("About").closest("[data-slot=card]") as HTMLElement;
+    expect(within(about).getByText("Push")).toBeInTheDocument();
+    expect(within(about).queryByText("Pull")).not.toBeInTheDocument();
+    expect(within(about).queryByText("Syncs Every")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Test Connection" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync Now" })).not.toBeInTheDocument();
     expect(screen.getByText("Never run")).toBeInTheDocument();
 
@@ -118,18 +186,26 @@ describe("integrations", () => {
     await user.click(screen.getByRole("tab", { name: "Runs" }));
     expect(await screen.findByLabelText("Succeeded with warnings")).toBeInTheDocument();
     expect(screen.getByText("1s")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Mode" })).toBeInTheDocument();
+    expect(screen.getByText("Complete")).toBeInTheDocument();
 
     await user.click(await screen.findByRole("button", { name: "View failures" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("tier is required")).toBeInTheDocument();
     await user.keyboard("{Escape}");
 
-    // Pushing shows a request to copy, aimed at the endpoint.
+    // Pushing shows requests to copy, aimed at the endpoint in either mode.
     await user.click(screen.getByRole("tab", { name: "Push" }));
     expect(
-      await screen.findByText(/curl -X POST ".*\/api\/ingest\/inventory"/),
+      await screen.findByText(/curl -X POST ".*\/api\/ingest\/inventory\?mode=incremental"/),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Copy push request/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/curl -X POST ".*\/api\/ingest\/inventory\?mode=complete"/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Copy incremental push request/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Copy complete push request/i })).toBeInTheDocument();
   });
 
   it("filters runs by outcome on the server", async () => {
@@ -161,6 +237,7 @@ describe("integrations", () => {
             startedAt: "2026-10-24T10:00:00Z",
             finishedAt: "2026-10-24T10:00:01Z",
             trigger: "action",
+            mode: "incremental",
             actionRun: "run-1",
             action: "Open incident",
             received: 1,
@@ -188,6 +265,7 @@ describe("integrations", () => {
       startedAt: "2026-10-24T10:00:00Z",
       finishedAt: "2026-10-24T10:00:00Z",
       trigger: "schedule",
+      mode: "complete",
       received: 0,
       created: 0,
       updated: 0,
@@ -256,50 +334,125 @@ describe("integrations", () => {
     expect(await requests["POST integrations/inventory/tokens"].json()).toEqual({ name: "CI" });
   });
 
-  it("syncs a pull integration instead of taking pushes", async () => {
+  it("syncs an integration that pulls instead of taking pushes", async () => {
     const user = userEvent.setup();
-    const portal = {
-      ...inventory,
-      identifier: "portal",
-      published: inventory.published && {
-        ...inventory.published,
-        spec: {
-          ...inventory.published.spec,
-          identifier: "portal",
-          connector: { type: "portal" },
-          sync: { interval: "1m" },
-        },
-      },
-    };
-    const requests = stubApi({
-      ...routes,
-      "GET integrations/portal": ok(portal),
-      "GET integrations/portal/versions": ok([]),
-      "GET integrations/portal/runs": ok({ runs: [], total: 0 }),
-      "GET connectors": ok([
-        { id: "portal", title: "Portal", description: "The portal's own objects.", mode: "pull" },
-      ]),
+    const requests = stubApi(pullRoutes);
+    renderRoute("/integrations/portal");
+
+    await user.click(await screen.findByRole("button", { name: "Sync Now" }));
+    expect(await screen.findByText("Synced: 1 created, 1 updated, 2 deleted")).toBeInTheDocument();
+    // Without a mode, the schedule decides.
+    expect(new URL(requests["POST integrations/portal/sync"]?.url ?? "").search).toBe("");
+    // It pulls every minute, completely every day, so there's no Push tab.
+    expect(screen.getByText("Syncs Every").nextElementSibling).toHaveTextContent("1m");
+    expect(screen.getByText("Complete Every").nextElementSibling).toHaveTextContent("1d");
+    expect(screen.queryByRole("tab", { name: "Push" })).not.toBeInTheDocument();
+  });
+
+  it("runs a complete sync from the Sync Now menu", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi(pullRoutes);
+    renderRoute("/integrations/portal");
+
+    await user.click(await screen.findByRole("button", { name: "More Sync Options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Complete Sync" }));
+    await waitFor(() =>
+      expect(
+        new URL(requests["POST integrations/portal/sync"]?.url ?? "").searchParams.get("mode"),
+      ).toBe("complete"),
+    );
+  });
+
+  it("warns when a sync wrote some resources and failed others", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...pullRoutes,
       "POST integrations/portal/sync": ok({
-        id: 2,
-        startedAt: "2026-10-24T10:00:00Z",
-        finishedAt: "2026-10-24T10:00:01Z",
-        trigger: "manual",
-        received: 3,
-        created: 1,
-        updated: 1,
-        unchanged: 1,
-        deleted: 2,
-        failed: 0,
-        errors: [],
+        ...syncRun,
+        created: 4,
+        error: "users: 503 Service Unavailable",
       }),
     });
     renderRoute("/integrations/portal");
 
     await user.click(await screen.findByRole("button", { name: "Sync Now" }));
-    expect(await screen.findByText("Synced: 1 created, 1 updated, 2 deleted")).toBeInTheDocument();
-    expect(requests["POST integrations/portal/sync"]).toBeDefined();
-    // It pulls, every minute, so there's no Push tab.
-    expect(screen.getByText("Syncs Every").nextElementSibling).toHaveTextContent("1m");
-    expect(screen.queryByRole("tab", { name: "Push" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Synced: 4 created, 1 updated, 2 deleted")).toBeInTheDocument();
+    expect(screen.getByText("users: 503 Service Unavailable")).toBeInTheDocument();
+  });
+
+  it("tests the connection and shows why it failed", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      ...pullRoutes,
+      "POST integrations/portal/check": ok({
+        version: "published",
+        passed: false,
+        error: "GET https://example.com: 401 Unauthorized",
+      }),
+    });
+    renderRoute("/integrations/portal");
+
+    await user.click(await screen.findByRole("button", { name: "Test Connection" }));
+    const about = screen.getByText("About").closest("[data-slot=card]") as HTMLElement;
+    expect(await within(about).findByText("Failed")).toBeInTheDocument();
+    expect(
+      within(about).getByText("GET https://example.com: 401 Unauthorized"),
+    ).toBeInTheDocument();
+    expect(requests["POST integrations/portal/check"]).toBeDefined();
+  });
+
+  it("shows a passed connection test", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...pullRoutes,
+      "POST integrations/portal/check": ok({ version: "published", passed: true }),
+    });
+    renderRoute("/integrations/portal");
+
+    await user.click(await screen.findByRole("button", { name: "Test Connection" }));
+    const about = screen.getByText("About").closest("[data-slot=card]") as HTMLElement;
+    expect(await within(about).findByText("Passed")).toBeInTheDocument();
+  });
+
+  it("explains a run that failed to fetch some resources", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...pullRoutes,
+      "GET integrations/portal/runs": ok({
+        total: 1,
+        runs: [{ ...syncRun, trigger: "schedule", error: "users: 503 Service Unavailable" }],
+      }),
+    });
+    renderRoute("/integrations/portal?tab=runs");
+
+    expect(await screen.findByText("Incremental")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "View failures" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/Some or all resources couldn't be fetched/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("users: 503 Service Unavailable")).toBeInTheDocument();
+  });
+
+  it("offers pushing and syncing together when the config does both", async () => {
+    const both = {
+      ...portal,
+      published: portal.published && {
+        ...portal.published,
+        spec: { ...portal.published.spec, receives: true },
+      },
+    };
+    stubApi({
+      ...pullRoutes,
+      "GET integrations/portal": ok(both),
+      "GET integrations/portal/tokens": ok([]),
+    });
+    renderRoute("/integrations/portal");
+
+    expect(await screen.findByRole("button", { name: "Sync Now" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Push" })).toBeInTheDocument();
+    const about = screen.getByText("About").closest("[data-slot=card]") as HTMLElement;
+    expect(within(about).getByText("Pull")).toBeInTheDocument();
+    expect(within(about).getByText("Push")).toBeInTheDocument();
   });
 });

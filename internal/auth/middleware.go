@@ -1,9 +1,13 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/dvjn/goldenportal/internal/httpx"
@@ -56,9 +60,22 @@ func Middleware(resolver principalResolver, secureCookies bool) func(http.Handle
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case strings.HasPrefix(r.URL.Path, IngestPrefix):
+				// Read the body here, so a signature can be checked against it as sent.
+				body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxIngestBytes))
+				var tooLarge *http.MaxBytesError
+				switch {
+				case errors.As(err, &tooLarge):
+					httpx.WriteError(w, http.StatusRequestEntityTooLarge,
+						fmt.Sprintf("the request body is over %d MB; split it across requests", MaxIngestBytes>>20))
+					return
+				case err != nil:
+					httpx.WriteError(w, http.StatusBadRequest, "could not read the request body")
+					return
+				}
+				r.Body = io.NopCloser(bytes.NewReader(body))
 				secret, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-				r.Body = http.MaxBytesReader(w, r.Body, MaxIngestBytes)
-				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ingestKey{}, secret)))
+				in := Ingest{Secret: secret, Header: r.Header.Clone(), Query: r.URL.Query(), Body: body}
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ingestKey{}, in)))
 				return
 			case strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, httpx.WebAPI):
 				httpx.WriteError(w, http.StatusNotFound, "there is no API here")
@@ -119,8 +136,17 @@ func isSafeMethod(method string) bool {
 
 type ingestKey struct{}
 
-// IngestionSecret returns the bearer token sent to an ingest path, if any.
-func IngestionSecret(ctx context.Context) string {
-	secret, _ := ctx.Value(ingestKey{}).(string)
-	return secret
+// Ingest is a request to an ingest path, as sent.
+type Ingest struct {
+	// Secret is the bearer token, if any.
+	Secret string
+	Header http.Header
+	Query  url.Values
+	Body   []byte
+}
+
+// IngestRequest returns the request sent to an ingest path.
+func IngestRequest(ctx context.Context) Ingest {
+	in, _ := ctx.Value(ingestKey{}).(Ingest)
+	return in
 }

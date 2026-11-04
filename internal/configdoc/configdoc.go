@@ -89,6 +89,10 @@ type Kind[S Spec] struct {
 	Check func(ctx context.Context, db DB, spec S) ([]Issue, error)
 	// Diff lists what publishing next over previous changes.
 	Diff func(previous, next S) []Change
+	// Preflight checks what a draft reaches outside the portal before it's
+	// published, such as whether a connector's system answers. Its issues
+	// are warnings, since what's outside can be down for a while.
+	Preflight func(ctx context.Context, db DB, spec S) []Issue
 	// Affected counts the data a publish would touch, for the impact preview.
 	Affected func(ctx context.Context, db DB, identifier string) (int, error)
 	// Published runs in the publish transaction, e.g. to drop data of removed fields.

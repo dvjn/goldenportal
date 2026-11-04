@@ -48,7 +48,7 @@ func define[Args any](name, description string, role auth.Role, scope string, re
 				Name: t.name, Title: title(t.name), Description: t.description,
 				Annotations: &mcp.ToolAnnotations{
 					ReadOnlyHint: t.readOnly, DestructiveHint: &t.destructive,
-					OpenWorldHint: boolPointer(t.name == "sync_integration"),
+					OpenWorldHint: boolPointer(t.name == "sync_integration" || t.name == "check_integration"),
 				},
 			}, func(ctx context.Context, _ *mcp.CallToolRequest, a Args) (*mcp.CallToolResult, Output, error) {
 				result, out, err := b.call(ctx, func(g *gofr.Context) (any, error) { return run(b, g, a) })
@@ -151,6 +151,10 @@ type (
 	documentRef struct {
 		Kind string `json:"kind" jsonschema:"Blueprint, Integration, Scorecard, Dashboard, Action or Workflow"`
 		Name string `json:"name"`
+	}
+	syncArgs struct {
+		Name string `json:"name"`
+		Mode string `json:"mode,omitempty" jsonschema:"complete deletes what the sync doesn't see; incremental fetches what changed and deletes only what the source says was deleted. Left out, the integration's schedule decides"`
 	}
 	publishManyArgs struct {
 		Documents           []documentRef `json:"documents"`
@@ -322,7 +326,7 @@ var tools = []tool{
 	read("list_sync_runs", "Read recent integration runs and item errors.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
 		return b.services.SyncRuns(ctx, a.Name)
 	}),
-	read("list_ingestion_tokens", "List a push integration's ingestion tokens, by name and prefix; secrets are never shown again.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
+	read("list_ingestion_tokens", "List an integration's ingestion tokens, by name and prefix; secrets are never shown again.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
 		return b.services.IngestionTokens(ctx, a.Name)
 	}),
 
@@ -405,16 +409,19 @@ var tools = []tool{
 		}
 		return b.services.PublishMany(ctx, refs, a.AcknowledgeBreaking)
 	}),
-	author("sync_integration", "Run a published pull integration now using its declared mappings.", true, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
-		return b.services.Sync(ctx, a.Name)
+	author("sync_integration", "Sync a published integration that pulls now, completely or incrementally, using its declared mappings.", true, func(b bridge, ctx *gofr.Context, a syncArgs) (any, error) {
+		return b.services.Sync(ctx, a.Name, a.Mode)
+	}),
+	author("check_integration", "Check a published integration's connector can reach its system with the current config and secrets, or the draft's when it isn't published.", false, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
+		return b.services.CheckIntegration(ctx, a.Name)
 	}),
 	author("evaluate_scorecard", "Evaluate a published scorecard now and store its current results.", false, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
 		return b.services.EvaluateScorecard(ctx, a.Name)
 	}),
-	author("create_ingestion_token", "Create an ingestion token for a push integration. Its secret is in this response only; hand it to the pushing system now.", false, func(b bridge, ctx *gofr.Context, a tokenArgs) (any, error) {
+	author("create_ingestion_token", "Create an ingestion token for an integration that takes pushes. Its secret is in this response only; hand it to the pushing system now.", false, func(b bridge, ctx *gofr.Context, a tokenArgs) (any, error) {
 		return b.services.CreateIngestionToken(ctx, a.Integration, a.Name)
 	}),
-	author("revoke_ingestion_token", "Revoke a push integration's ingestion token; systems pushing with it stop being accepted.", true, func(b bridge, ctx *gofr.Context, a revokeTokenArgs) (any, error) {
+	author("revoke_ingestion_token", "Revoke an integration's ingestion token; systems pushing with it stop being accepted.", true, func(b bridge, ctx *gofr.Context, a revokeTokenArgs) (any, error) {
 		return nil, b.services.RevokeIngestionToken(ctx, a.Integration, a.ID)
 	}),
 }
@@ -442,8 +449,8 @@ const authoringHelp = `Documents are YAML with kind (Blueprint, Integration, Sco
 
 Workflow: search or list/read existing documents; validate proposed YAML; save_draft or apply_documents(dryRun=true) then apply_documents(dryRun=false); preview_impact; publish_document or publish_documents in one atomic batch; inspect catalog/entities and sync runs. Validation returns issues with severity/path/line. An error blocks saving/publishing; warnings may refer to dependencies not published yet. Export includes only published configuration unless reading a draft explicitly through get_document.
 
-Integrations map what a connector reads into entities with JQ expressions; list_connectors says what each connector reads. Secrets use {env: GP_SECRET_*}; never put secret values in configuration. A push integration needs an ingestion token: create_ingestion_token shows its secret once.
+Integrations map a connector's items, each one object of one of its resources or its deletion, into entities with JQ expressions; list_connectors says what each connector can do and reads. An http resource can be fetched from a url, pushed to the ingest API, or both, through the same mappings. A sync is complete, deleting what it didn't see, or incremental, fetching what changed since {{ $since }} and deleting only what's marked deleted; sync.complete sets how often a sync is complete. Secrets use {env: GP_SECRET_*}; never put secret values in configuration. Pushes need an ingestion token, which create_ingestion_token shows once, or a signature the integration checks; only a push with a token can be complete (?mode=complete).
 
-An action's steps call URLs, write entities as a push integration, check the catalog and set what the run shows, reading $input, $entity, $me, $run and $step references. Say who can run it with run, and put an approval step before anything that removes or disrupts things. A Workflow takes the same steps but no blueprint, and its action steps run an action on many entities, each checked against whoever asked. Both show under their group in the Self-Service catalog.
+An action's steps call URLs, write entities as an integration that doesn't pull, check the catalog and set what the run shows, reading $input, $entity, $me, $run and $step references. Say who can run it with run, and put an approval step before anything that removes or disrupts things. A Workflow takes the same steps but no blueprint, and its action steps run an action on many entities, each checked against whoever asked. Both show under their group in the Self-Service catalog.
 
 Tools follow the caller's role and the access they granted this client: members browse and run actions, builders also author. Permissions are checked again on every call.`

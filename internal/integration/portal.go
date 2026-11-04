@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -88,10 +89,61 @@ type lastRun struct {
 	outcome string
 }
 
+// portalConfig is the Portal connector's config, which has nothing to set.
+type portalConfig struct{}
+
+func parsePortalConfig(r *configdoc.Reader, node *yaml.Node, path string) Config {
+	if node != nil {
+		r.Errorf(node, path, "the portal connector takes no config")
+	}
+
+	return portalConfig{}
+}
+
+func (portalConfig) Resources() []string {
+	c, _ := connector("portal")
+	return c.Resources
+}
+
+func (c portalConfig) Pulls() []string { return c.Resources() }
+
+// Pull reads the portal's objects. It reads them all at once, from the
+// portal's own database, so one failure fails every resource.
+func (portalConfig) Pull(ctx context.Context, db configdoc.DB, p PullRequest,
+	emit func(resource string, items []Item) error,
+) (map[string]error, error) {
+	snapshot, err := portalSnapshot(ctx, db, p.Resources)
+	if err != nil {
+		failed := map[string]error{}
+		for _, resource := range p.Resources {
+			failed[resource] = err
+		}
+		return failed, nil
+	}
+	for _, resource := range p.Resources {
+		objects, _ := snapshot[resource].([]any)
+		items := make([]Item, len(objects))
+		for i, object := range objects {
+			items[i] = Item{Resource: resource, Object: object}
+		}
+		if err := emit(resource, items); err != nil {
+			return nil, err
+		}
+	}
+
+	return nil, nil
+}
+
+// Check reaches the portal's database.
+func (portalConfig) Check(ctx context.Context, db configdoc.DB) error {
+	var one int
+	return db.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
+}
+
 // portalSnapshot reads the resources asked for: users, groups, published
 // blueprints and integrations, and those other packages added. Users are named by email and groups by name,
 // so mappings can relate them to each other.
-func portalSnapshot(ctx context.Context, db configdoc.DB, _ Spec, resources []string) (map[string]any, error) {
+func portalSnapshot(ctx context.Context, db configdoc.DB, resources []string) (map[string]any, error) {
 	data := portalData{
 		Users: []portalUser{}, Groups: []portalGroup{}, Blueprints: []portalBlueprint{},
 		Integrations: []portalIntegration{},

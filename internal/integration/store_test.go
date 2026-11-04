@@ -22,9 +22,9 @@ func TestRunsFiltersAndPages(t *testing.T) {
 	mock.ExpectQuery("ORDER BY r.id DESC LIMIT").
 		WithArgs("integration-id", `%ci\_bot%`, `{"manual","push"}`, `{"failed"}`, 10, 20).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "started_at", "finished_at", "trigger", "token", "action_run", "action", "received", "created", "updated",
+			"id", "started_at", "finished_at", "trigger", "mode", "token", "action_run", "action", "received", "created", "updated",
 			"unchanged", "deleted", "failed", "errors", "error",
-		}).AddRow(3, now, now, TriggerPush, "ci_bot", "", "", 0, 0, 0, 0, 0, 0, []byte("[]"), "fetch failed"))
+		}).AddRow(3, now, now, TriggerPush, ModeComplete, "ci_bot", "", "", 0, 0, 0, 0, 0, 0, []byte("[]"), "fetch failed"))
 
 	page, err := NewStore(db).Runs(context.Background(), "integration-id", RunQuery{
 		Search: "ci_bot", Triggers: []string{TriggerManual, TriggerPush}, Outcomes: []string{OutcomeFailed},
@@ -33,7 +33,7 @@ func TestRunsFiltersAndPages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runs() error = %v", err)
 	}
-	if page.Total != 21 || len(page.Runs) != 1 || page.Runs[0].Token != "ci_bot" {
+	if page.Total != 21 || len(page.Runs) != 1 || page.Runs[0].Token != "ci_bot" || page.Runs[0].Mode != ModeComplete {
 		t.Fatalf("Runs() = %+v", page)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

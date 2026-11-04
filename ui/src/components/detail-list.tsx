@@ -33,7 +33,7 @@ export function Detail({
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 [overflow-wrap:anywhere]">
           {children}
         </div>
-        {help && <p className="text-xs text-muted-foreground">{help}</p>}
+        {help && <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{help}</p>}
       </dd>
     </div>
   );

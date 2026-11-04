@@ -3,7 +3,8 @@ import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { IntegrationPreview } from "@/components/integrations/integration-preview";
 import { integrations } from "@/features/integrations";
 
-// Every expression in a mapping is jq, run against the pushed JSON.
+// A resource's push items are jq over the request; every expression in a
+// mapping is jq over one of those items.
 const template = `kind: Integration
 metadata:
   name: example
@@ -11,10 +12,15 @@ metadata:
   description: Where these entities come from.
 spec:
   connector:
-    type: push
+    type: http
+    config:
+      resources:
+        services:
+          push:
+            items: .body.services[]
   mappings:
-    - blueprint: service
-      items: .services[]
+    - resource: services
+      blueprint: service
       entity:
         identifier: .id
         title: .name

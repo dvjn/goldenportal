@@ -24,7 +24,7 @@ func TestPortalIntegrations(t *testing.T) {
 		AddRow("portal", 1, portalYAML, now, "", "", now, "", now).
 		AddRow("draft", 0, "", now, "", "kind: Integration", now, "", now))
 
-	data, err := portalSnapshot(t.Context(), db, Spec{}, []string{"integrations"})
+	data, err := portalSnapshot(t.Context(), db, []string{"integrations"})
 	if err != nil {
 		t.Fatal(err)
 	}

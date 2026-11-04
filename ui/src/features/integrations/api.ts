@@ -4,10 +4,9 @@ import { type ApiDataResponse, api } from "@/lib/api";
 export type Field = { identifier: string; expression: string };
 
 export type Mapping = {
-  // resource is what a pull connector fetches for the mapping, such as users.
-  resource?: string;
+  // resource names the items the mapping reads, such as users.
+  resource: string;
   blueprint: string;
-  items: string;
   filter?: string;
   entity: { identifier: string; title?: string; properties: Field[] };
 };
@@ -20,9 +19,15 @@ export type IntegrationSpec = {
   icon?: string;
   color?: string;
   connector: { type: string; config?: Record<string, unknown> };
-  sync?: { interval: string };
+  // complete is how often a sync deletes what it didn't see; without it, every sync does.
+  sync?: { interval: string; complete?: string };
   // mappings are also the only blueprints the integration writes.
   mappings: Mapping[];
+  // pulls, receives and checks are what this integration's connector config
+  // does: sync on a schedule, take pushes, check its system.
+  pulls: boolean;
+  receives: boolean;
+  checks: boolean;
 };
 
 export type Integration = ConfigDoc<IntegrationSpec>;
@@ -34,7 +39,11 @@ export type Connector = {
   description: string;
   icon: string;
   color: string;
-  mode: "push" | "pull";
+  // pulls, receives and checks are what the connector can do; an
+  // integration's config may use less.
+  pulls: boolean;
+  receives: boolean;
+  checks: boolean;
   resources?: string[];
 };
 
@@ -56,11 +65,15 @@ export type RunError = {
   problems: string[];
 };
 
+// RunMode is whether a run deleted what it didn't see, or only what it was told was deleted.
+export type RunMode = "complete" | "incremental";
+
 export type Run = {
   id: number;
   startedAt: string;
   finishedAt: string;
   trigger: "push" | "schedule" | "manual" | "action";
+  mode: RunMode;
   token?: string;
   // actionRun and action are the action run behind an action trigger and its title.
   actionRun?: string;
@@ -72,7 +85,8 @@ export type Run = {
   deleted: number;
   failed: number;
   errors: RunError[];
-  // error is why a pull sync fetched nothing, which left its entities as they were.
+  // error is why a sync couldn't fetch some or all of its resources; it
+  // deleted nothing those resources write.
   error?: string;
 };
 
@@ -119,9 +133,26 @@ export async function revokeToken(identifier: string, id: string): Promise<void>
   await api.delete(`${path(identifier)}/tokens/${id}`);
 }
 
-// syncIntegration syncs a pull integration now.
-export async function syncIntegration(identifier: string): Promise<Run> {
-  return (await api.post(`${path(identifier)}/sync`).json<ApiDataResponse<Run>>()).data;
+// syncIntegration syncs an integration that pulls now, in mode, or as its
+// schedule would without one.
+export async function syncIntegration(identifier: string, mode?: RunMode): Promise<Run> {
+  const searchParams = mode ? { mode } : undefined;
+  return (await api.post(`${path(identifier)}/sync`, { searchParams }).json<ApiDataResponse<Run>>())
+    .data;
+}
+
+export type CheckResult = {
+  // version is what was checked: the published version, or the draft of an
+  // integration that hasn't been published.
+  version: "published" | "draft";
+  passed: boolean;
+  error?: string;
+};
+
+// checkIntegration checks the connector can reach its system with the
+// current config and secrets.
+export async function checkIntegration(identifier: string): Promise<CheckResult> {
+  return (await api.post(`${path(identifier)}/check`).json<ApiDataResponse<CheckResult>>()).data;
 }
 
 export async function listStatus(): Promise<IntegrationStatus[]> {

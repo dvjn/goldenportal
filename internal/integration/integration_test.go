@@ -1,8 +1,10 @@
 package integration
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -14,10 +16,17 @@ metadata:
   name: inventory
   title: Inventory
 spec:
-  connector: {type: push}
+  connector:
+    type: http
+    config:
+      resources:
+        services:
+          push:
+            items: .body.services[]
+            deleted: .query.deleted == "true"
   mappings:
-    - blueprint: service
-      items: .services[]
+    - resource: services
+      blueprint: service
       filter: .archived | not
       entity:
         identifier: .id
@@ -59,30 +68,33 @@ func mustParse(t *testing.T, source string) Spec {
 
 func TestParse(t *testing.T) {
 	spec := mustParse(t, inventoryYAML)
-	if len(spec.Mappings) != 1 || spec.Mappings[0].Entity.Properties[0].ID != "tier" || spec.Connector.Type != "push" || spec.Icon != "webhook" {
+	if len(spec.Mappings) != 1 || spec.Mappings[0].Entity.Properties[0].ID != "tier" || spec.Icon != "globe" ||
+		spec.Pulls || !spec.Receives || !spec.Checks {
 		t.Fatalf("spec = %+v", spec)
 	}
 	portal := mustParse(t, portalYAML)
-	if portal.SyncEvery().Minutes() != 5 || portal.Mappings[1].Resource != "groups" {
+	if portal.SyncEvery().Minutes() != 5 || portal.Mappings[1].Resource != "groups" || !portal.Pulls || portal.Receives {
 		t.Fatalf("portal = %+v", portal)
 	}
 
 	head := "kind: Integration\nmetadata: {name: a, title: A}\nspec:\n"
-	push := head + "  connector: {type: push}\n"
+	push := head + "  connector:\n    type: http\n    config: {resources: {s: {push: {items: .body}}}}\n"
 	pull := head + "  connector: {type: portal}\n"
 	tests := []struct{ name, source, want string }{
-		{"own icon", "kind: Integration\nmetadata: {name: a, title: A, icon: plug}\nspec:\n  connector: {type: push}", "icon comes from its connector"},
-		{"connector", head + "  connector: {type: ftp}", "type must be one of push, portal"},
-		{"config", head + "  connector: {type: push, config: {url: x}}", "takes no config"},
+		{"own icon", "kind: Integration\nmetadata: {name: a, title: A, icon: plug}\nspec:\n  connector: {type: portal}", "icon comes from its connector"},
+		{"connector", head + "  connector: {type: push}", "type must be one of portal, http"},
+		{"config", head + "  connector: {type: portal, config: {url: x}}", "takes no config"},
 		{"no mappings", push, "add a mapping for each blueprint"},
-		{"no entity", push + "  mappings:\n    - blueprint: s", "add the entity to make"},
-		{"no identifier", push + "  mappings:\n    - blueprint: s\n      entity: {title: .a}", "add a jq expression for identifier"},
-		{"bad jq", push + "  mappings:\n    - blueprint: s\n      entity: {identifier: .id |}", "identifier is not valid jq"},
-		{"unquoted list", push + "  mappings:\n    - blueprint: s\n      entity:\n        identifier: .id\n        properties:\n          x: [.a]", "quote this jq expression"},
-		{"sync on push", push + "  sync: {interval: 5m}\n  mappings: []", "push integrations don't sync"},
-		{"short interval", pull + "  sync: {interval: 10s}\n  mappings: []", "at least 1m0s"},
-		{"resource on push", push + "  mappings:\n    - resource: users\n      blueprint: s\n      entity: {identifier: .id}", "have no resources"},
-		{"no resource on pull", pull + "  mappings:\n    - blueprint: s\n      entity: {identifier: .id}", "add the resource to map"},
+		{"no entity", push + "  mappings:\n    - {resource: s, blueprint: s}", "add the entity to make"},
+		{"no identifier", push + "  mappings:\n    - resource: s\n      blueprint: s\n      entity: {title: .a}", "add a jq expression for identifier"},
+		{"bad jq", push + "  mappings:\n    - resource: s\n      blueprint: s\n      entity: {identifier: .id |}", "identifier is not valid jq"},
+		{"unquoted list", push + "  mappings:\n    - resource: s\n      blueprint: s\n      entity:\n        identifier: .id\n        properties:\n          x: [.a]", "quote this jq expression"},
+		{"items on a mapping", push + "  mappings:\n    - resource: s\n      blueprint: s\n      items: .a\n      entity: {identifier: .id}", "items"},
+		{"sync without pulling", push + "  sync: {interval: 5m}\n  mappings: []", "only integrations that pull sync"},
+		{"short interval", pull + "  sync: {interval: 10s}\n  mappings: []", "interval must be at least 1m0s"},
+		{"complete under interval", pull + "  sync: {interval: 1h, complete: 5m}\n  mappings: []", "complete must be at least the interval"},
+		{"complete without since", pull + "  sync: {interval: 5m, complete: 1h}\n  mappings: []", "no resource url uses {{ $since }}"},
+		{"no resource", pull + "  mappings:\n    - blueprint: s\n      entity: {identifier: .id}", "add the resource to map"},
 		{"unknown resource", pull + "  mappings:\n    - resource: tokens\n      blueprint: s\n      entity: {identifier: .id}", "resource must be one of users"},
 	}
 	for _, test := range tests {
@@ -112,22 +124,34 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-func TestMap(t *testing.T) {
-	spec := mustParse(t, inventoryYAML)
-	items, err := spec.Map(map[string]any{"services": []any{
-		map[string]any{"id": float64(42), "name": "Indexer", "tier": "standard", "team": "search"},
-		map[string]any{"id": "old", "archived": true},
-	}})
+func mustMap(t *testing.T, spec Spec, items ...Item) []Entry {
+	t.Helper()
+	m, err := spec.mapper()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want the archived one filtered out", items)
+
+	return m.Map(items)
+}
+
+func TestMap(t *testing.T) {
+	spec := mustParse(t, inventoryYAML)
+	entries := mustMap(t, spec,
+		Item{Resource: "services", Object: map[string]any{"id": float64(42), "name": "Indexer", "tier": "standard", "team": "search"}},
+		Item{Resource: "services", Object: map[string]any{"id": "old", "archived": true}},
+		Item{Resource: "services", Object: map[string]any{"id": "gone", "archived": true}, Deleted: true},
+		Item{Resource: "other", Object: map[string]any{"id": "x"}},
+	)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %+v, want the archived one filtered out, the deletion kept and the other resource unmapped", entries)
 	}
-	got := items[0]
+	got := entries[0]
 	if got.Blueprint != "service" || got.Entity.Identifier != "42" || got.Entity.Title != "Indexer" ||
 		got.Entity.Properties["tier"] != "standard" || got.Entity.Properties["owner"] != "search" {
-		t.Fatalf("item = %+v", got)
+		t.Fatalf("entry = %+v", got)
+	}
+	if deleted := entries[1]; !deleted.Deleted || deleted.Entity.Identifier != "gone" || len(deleted.Entity.Properties) != 0 {
+		t.Fatalf("deletion = %+v", deleted)
 	}
 }
 
@@ -142,21 +166,52 @@ func TestDiff(t *testing.T) {
 	if len(changes) != 1 || changes[0].Change != configdoc.ChangeChanged || changes[0].Breaking {
 		t.Fatalf("changes = %+v", changes)
 	}
+
+	pulled := mustParse(t, strings.Replace(inventoryYAML, "        services:\n          push:", "        services:\n          url: https://inventory.example.com\n          push:", 1))
+	if changes := Diff(before, pulled); len(changes) != 2 || changes[1].Detail != "starts syncing on a schedule" || changes[1].Breaking {
+		t.Fatalf("starts pulling: changes = %+v", changes)
+	}
+	pullOnly := mustParse(t, strings.Replace(portalYAML, "name: portal", "name: inventory", 1))
+	if changes := Diff(before, pullOnly); !slices.ContainsFunc(changes, func(c configdoc.Change) bool {
+		return c.Breaking && c.Detail == "stops taking pushes, so systems pushing to it are refused"
+	}) {
+		t.Fatalf("stops taking pushes: changes = %+v", changes)
+	}
 }
 
 func TestMapResources(t *testing.T) {
 	spec := mustParse(t, portalYAML)
-	items, err := spec.Map(map[string]any{
-		"users": []any{
-			map[string]any{"email": "ada@example.com", "active": true, "groups": []any{"payments"}},
-			map[string]any{"email": "gone@example.com", "active": false},
-		},
-		"groups": []any{map[string]any{"name": "payments"}},
-	})
-	if err != nil {
-		t.Fatal(err)
+	entries := mustMap(t, spec,
+		Item{Resource: "users", Object: map[string]any{"email": "ada@example.com", "active": true, "groups": []any{"payments"}}},
+		Item{Resource: "users", Object: map[string]any{"email": "gone@example.com", "active": false}},
+		Item{Resource: "groups", Object: map[string]any{"name": "payments"}},
+	)
+	if len(entries) != 2 || entries[0].Entity.Identifier != "ada@example.com" || entries[1].Blueprint != "group" {
+		t.Fatalf("entries = %+v", entries)
 	}
-	if len(items) != 2 || items[0].Entity.Identifier != "ada@example.com" || items[1].Blueprint != "group" {
-		t.Fatalf("items = %+v", items)
+}
+
+func TestUsualMode(t *testing.T) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	daily := mustParse(t, strings.Replace(portalYAML, "sync: {interval: 5m}", "sync: {interval: 5m, complete: 24h}", 1))
+	published := now.Add(-48 * time.Hour)
+	tests := []struct {
+		name    string
+		spec    Spec
+		history syncHistory
+		want    string
+	}{
+		{"always complete without a complete interval", mustParse(t, portalYAML), syncHistory{lastComplete: now.Add(-time.Minute), published: published}, ModeComplete},
+		{"complete first", daily, syncHistory{published: published}, ModeComplete},
+		{"incremental between", daily, syncHistory{lastComplete: now.Add(-time.Hour), published: published}, ModeIncremental},
+		{"complete once the interval passes", daily, syncHistory{lastComplete: now.Add(-24 * time.Hour), published: published}, ModeComplete},
+		{"complete after a publish", daily, syncHistory{lastComplete: now.Add(-time.Hour), published: now.Add(-time.Minute)}, ModeComplete},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.spec.usualMode(test.history, now); got != test.want {
+				t.Fatalf("mode = %s, want %s", got, test.want)
+			}
+		})
 	}
 }

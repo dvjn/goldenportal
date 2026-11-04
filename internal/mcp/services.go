@@ -41,7 +41,8 @@ type Services interface {
 
 	Connectors(ctx *gofr.Context) ([]integration.Connector, error)
 	SyncRuns(ctx *gofr.Context, name string) (integration.RunPage, error)
-	Sync(ctx *gofr.Context, name string) (*integration.Run, error)
+	Sync(ctx *gofr.Context, name, mode string) (*integration.Run, error)
+	CheckIntegration(ctx *gofr.Context, name string) (integration.CheckResult, error)
 	IngestionTokens(ctx *gofr.Context, name string) ([]integration.Token, error)
 	CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (integration.CreatedToken, error)
 	RevokeIngestionToken(ctx *gofr.Context, name, id string) error
@@ -130,8 +131,12 @@ func (portal) SyncRuns(ctx *gofr.Context, name string) (integration.RunPage, err
 	return integration.Runs(ctx, name, integration.RunsRequest{})
 }
 
-func (portal) Sync(ctx *gofr.Context, name string) (*integration.Run, error) {
-	return integration.SyncNow(ctx, name)
+func (portal) CheckIntegration(ctx *gofr.Context, name string) (integration.CheckResult, error) {
+	return integration.CheckNow(ctx, name)
+}
+
+func (portal) Sync(ctx *gofr.Context, name, mode string) (*integration.Run, error) {
+	return integration.SyncNow(ctx, name, mode)
 }
 
 func (portal) IngestionTokens(ctx *gofr.Context, name string) ([]integration.Token, error) {

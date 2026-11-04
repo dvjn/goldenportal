@@ -26,10 +26,15 @@ type Spec struct {
 	Color       string        `json:"color,omitempty"`
 	Connector   ConnectorSpec `json:"connector"`
 	Sync        *SyncSpec     `json:"sync,omitempty"`
-	// Mappings turn incoming data into entities. They're also the only
-	// blueprints the integration can write.
+	// Mappings turn items into entities. They're also the only blueprints
+	// the integration can write.
 	Mappings []Mapping `json:"mappings"`
-	http     *HTTPConfig
+	// Pulls, Receives and Checks are what this integration's connector
+	// config does: sync on a schedule, take pushes, check its system.
+	Pulls    bool `json:"pulls"`
+	Receives bool `json:"receives"`
+	Checks   bool `json:"checks"`
+	config   Config
 }
 
 // ConnectorSpec picks the connector and configures it.
@@ -38,23 +43,24 @@ type ConnectorSpec struct {
 	Config map[string]any `json:"config,omitempty"`
 }
 
-// SyncSpec is how often a pull integration syncs.
+// SyncSpec is how often a pull integration syncs: incrementally every
+// Interval, and completely every Complete. Without Complete, every sync is
+// complete.
 type SyncSpec struct {
-	Interval string        `json:"interval"`
-	Every    time.Duration `json:"-"`
+	Interval      string        `json:"interval"`
+	Complete      string        `json:"complete,omitempty"`
+	Every         time.Duration `json:"-"`
+	CompleteEvery time.Duration `json:"-"`
 }
 
-// Mapping turns items of incoming data into entities of one blueprint.
-// Every expression is jq.
+// Mapping turns the items of one resource into entities of one blueprint.
+// Every expression is jq over an item.
 type Mapping struct {
-	// Resource names what a pull connector fetches for this mapping, such
-	// as users. Push integrations have none.
-	Resource  string `json:"resource,omitempty"`
+	// Resource names the items it maps, such as users.
+	Resource  string `json:"resource"`
 	Blueprint string `json:"blueprint"`
-	// Items picks the items from the data: the pushed body, or each fetched
-	// object. Each result is one item.
-	Items string `json:"items"`
-	// Filter keeps the items it's true for.
+	// Filter keeps the items it's true for. Deleted items skip it, since
+	// what a system sends for a deletion may be no more than an ID.
 	Filter string        `json:"filter,omitempty"`
 	Entity EntityMapping `json:"entity"`
 	line   int
@@ -86,11 +92,14 @@ const (
 var (
 	SpecFields         = []string{"connector", "sync", "mappings"}
 	ConnectorFields    = []string{"type", "config"}
-	SyncFields         = []string{"interval"}
-	MappingFields      = []string{"resource", "blueprint", "items", "filter", "entity"}
+	SyncFields         = []string{"interval", "complete"}
+	MappingFields      = []string{"resource", "blueprint", "filter", "entity"}
 	EntityFields       = []string{"identifier", "title", "properties"}
-	HTTPConfigFields   = []string{"resources"}
-	HTTPResourceFields = []string{"url", "next", "headers"}
+	HTTPConfigFields   = []string{"push", "resources"}
+	HTTPPushFields     = []string{"signature"}
+	SignatureFields    = []string{"header", "algorithm", "prefix", "secret"}
+	HTTPResourceFields = []string{"url", "next", "items", "deleted", "maxPages", "headers", "push"}
+	HTTPReceiveFields  = []string{"items", "deleted"}
 	HTTPHeaderFields   = []string{"env"}
 )
 
@@ -102,7 +111,8 @@ func (s Spec) Meta() configdoc.Meta {
 
 func (s Spec) Stats() map[string]int { return map[string]int{"mappings": len(s.Mappings)} }
 
-// SyncEvery is how often a pull integration syncs.
+// SyncEvery is how often a pull integration syncs, incrementally if it
+// also has a complete interval.
 func (s Spec) SyncEvery() time.Duration {
 	if s.Sync != nil && s.Sync.Every > 0 {
 		return s.Sync.Every
@@ -134,11 +144,11 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 		return spec, r.Issues
 	}
 
-	c := parseConnector(r, &spec, fields["connector"], doc.Spec)
-	parseSync(r, &spec, fields["sync"], c)
+	parseConnector(r, &spec, fields["connector"], doc.Spec)
+	parseSync(r, &spec, fields["sync"])
 
 	r.List(fields["mappings"], "spec.mappings", func(i int, item *yaml.Node) {
-		spec.Mappings = append(spec.Mappings, parseMapping(r, fmt.Sprintf("spec.mappings[%d]", i), item, c))
+		spec.Mappings = append(spec.Mappings, parseMapping(r, fmt.Sprintf("spec.mappings[%d]", i), item, spec.config))
 	})
 	if len(spec.Mappings) == 0 {
 		r.Errorf(configdoc.OrNode(fields["mappings"], doc.Spec), "spec.mappings",
@@ -148,14 +158,14 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	return spec, r.Issues
 }
 
-func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) Connector {
+func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) {
 	if node == nil {
-		r.Errorf(parent, "spec.connector", "add a connector, such as connector: {type: push}")
-		return Connector{}
+		r.Errorf(parent, "spec.connector", "add a connector, such as connector: {type: http, config: {...}}")
+		return
 	}
 	fields, ok := r.Fields(node, "spec.connector", ConnectorFields...)
 	if !ok {
-		return Connector{}
+		return
 	}
 	spec.Connector.Type = r.Text(fields["type"], "spec.connector.type")
 	c, known := connector(spec.Connector.Type)
@@ -167,70 +177,100 @@ func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) Co
 		}
 		r.Errorf(configdoc.OrNode(fields["type"], node), "spec.connector.type",
 			"type must be one of %s", strings.Join(ids, ", "))
+		return
 	}
 	n := fields["config"]
-	switch {
-	case c.ID == "http" && n == nil:
-		r.Errorf(node, "spec.connector.config", "add the resources to fetch, under config.resources")
-	case c.ID == "http":
-		spec.http = parseHTTPConfig(r, n, "spec.connector.config")
-		_ = n.Decode(&spec.Connector.Config)
-		c.Resources = spec.resourceNames(c)
-	case n != nil:
-		r.Errorf(n, "spec.connector.config", "the %s connector takes no config", spec.Connector.Type)
+	spec.config = c.parse(r, n, "spec.connector.config")
+	if spec.config == nil {
+		if n == nil {
+			r.Errorf(node, "spec.connector.config", "add the %s connector's config", c.ID)
+		}
+		return
 	}
-
-	return c
+	if n != nil {
+		_ = n.Decode(&spec.Connector.Config)
+	}
+	if p, ok := spec.config.(Puller); ok && len(p.Pulls()) > 0 {
+		spec.Pulls = true
+	}
+	if rc, ok := spec.config.(Receiver); ok && len(rc.Receives()) > 0 {
+		spec.Receives = true
+	}
+	_, spec.Checks = spec.config.(Checker)
 }
 
-func parseSync(r *configdoc.Reader, spec *Spec, node *yaml.Node, c Connector) {
+func parseSync(r *configdoc.Reader, spec *Spec, node *yaml.Node) {
 	if node == nil {
 		return
 	}
-	if c.Mode == ModePush {
-		r.Errorf(node, "spec.sync", "push integrations don't sync; other systems send them data")
+	if !spec.Pulls {
+		r.Errorf(node, "spec.sync", "only integrations that pull sync; give a resource a url to fetch, or drop sync")
 		return
 	}
 	fields, ok := r.Fields(node, "spec.sync", SyncFields...)
 	if !ok {
 		return
 	}
-	interval := r.Text(fields["interval"], "spec.sync.interval")
-	every, err := time.ParseDuration(interval)
-	switch {
-	case err != nil:
-		r.Errorf(configdoc.OrNode(fields["interval"], node), "spec.sync.interval",
-			"interval must be a duration, such as 5m or 1h")
-	case every < MinSyncInterval:
-		r.Errorf(fields["interval"], "spec.sync.interval", "interval must be at least %s", MinSyncInterval)
-	default:
-		spec.Sync = &SyncSpec{Interval: interval, Every: every}
+	every, ok := syncInterval(r, fields["interval"], node, "interval")
+	if !ok {
+		return
+	}
+	spec.Sync = &SyncSpec{Interval: fields["interval"].Value, Every: every}
+	if n := fields["complete"]; n != nil {
+		complete, ok := syncInterval(r, n, node, "complete")
+		switch {
+		case !ok:
+		case complete < every:
+			r.Errorf(n, "spec.sync.complete", "complete must be at least the interval, %s", spec.Sync.Interval)
+		default:
+			spec.Sync.Complete, spec.Sync.CompleteEvery = n.Value, complete
+			if inc, ok := spec.config.(Incremental); !ok || !inc.UsesSince() {
+				r.Report(configdoc.SeverityWarning, n, "spec.sync.complete",
+					"no resource url uses {{ $since }}, so incremental syncs fetch everything and delete nothing")
+			}
+		}
 	}
 }
 
-func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, c Connector) Mapping {
-	m := Mapping{Items: ".", line: node.Line, Entity: EntityMapping{Properties: []Field{}}}
+// syncInterval reads one of spec.sync's durations, at least MinSyncInterval.
+func syncInterval(r *configdoc.Reader, node, parent *yaml.Node, name string) (time.Duration, bool) {
+	path := "spec.sync." + name
+	every, err := time.ParseDuration(r.Text(node, path))
+	switch {
+	case err != nil:
+		r.Errorf(configdoc.OrNode(node, parent), path, "%s must be a duration, such as 5m or 1h", name)
+		return 0, false
+	case every < MinSyncInterval:
+		r.Errorf(node, path, "%s must be at least %s", name, MinSyncInterval)
+		return 0, false
+	}
+
+	return every, true
+}
+
+func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, config Config) Mapping {
+	m := Mapping{line: node.Line, Entity: EntityMapping{Properties: []Field{}}}
 	fields, ok := r.Fields(node, path, MappingFields...)
 	if !ok {
 		return m
 	}
 
 	m.Resource = r.Text(fields["resource"], path+".resource")
+	var resources []string
+	if config != nil {
+		resources = config.Resources()
+	}
 	switch {
-	case c.Mode == ModePush && fields["resource"] != nil:
-		r.Errorf(fields["resource"], path+".resource", "push integrations map what's sent to them, so they have no resources")
-	case c.Mode == ModePull && fields["resource"] == nil:
-		r.Errorf(node, path+".resource", "add the resource to map, one of %s", strings.Join(c.Resources, ", "))
-	case c.Mode == ModePull && !slices.Contains(c.Resources, m.Resource):
-		r.Errorf(fields["resource"], path+".resource", "resource must be one of %s", strings.Join(c.Resources, ", "))
+	case config == nil:
+	case fields["resource"] == nil:
+		r.Errorf(node, path+".resource", "add the resource to map, one of %s", strings.Join(resources, ", "))
+	case !slices.Contains(resources, m.Resource):
+		r.Errorf(fields["resource"], path+".resource", "resource must be one of %s", strings.Join(resources, ", "))
 	}
 
 	m.Blueprint = r.Text(fields["blueprint"], path+".blueprint")
 	if !configdoc.ValidIdentifier(m.Blueprint) {
 		r.Errorf(configdoc.OrNode(fields["blueprint"], node), path+".blueprint", "blueprint must name a blueprint")
-	}
-	if items := expression(r, fields, node, path, "items", false); items != "" {
-		m.Items = items
 	}
 	m.Filter = expression(r, fields, node, path, "filter", false)
 

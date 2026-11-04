@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DocPage, type DocTab, validateDocSearch } from "@/components/config-docs/doc-page";
 import { LastRun, SyncNow } from "@/components/integrations/integration-header";
@@ -10,7 +9,7 @@ import {
   validateRunsSearch,
 } from "@/components/integrations/recent-runs";
 import { PageError } from "@/components/page-error";
-import { connectorsQueryOptions, integrations, useIntegration } from "@/features/integrations";
+import { integrations, useIntegration } from "@/features/integrations";
 
 function validateIntegrationSearch(search: Record<string, unknown>): RunsSearch & { tab?: DocTab } {
   return { ...validateDocSearch(search, ["runs", "push"]), ...validateRunsSearch(search) };
@@ -34,11 +33,11 @@ function IntegrationPage() {
   const { tab, ...runsSearch } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const integration = useIntegration(identifier);
-  const { data: connectors } = useQuery(connectorsQueryOptions);
-  // The connector decides how data arrives: pulled on a schedule, which
-  // Sync Now runs early once published, or pushed to the endpoint.
-  const spec = integration.published?.spec ?? integration.draft?.spec;
-  const mode = connectors?.find((c) => c.id === spec?.connector.type)?.mode;
+  // The connector config decides how data arrives: pulled on a schedule,
+  // which Sync Now runs early once published, pushed to the endpoint, or
+  // both. Tokens can be made while only the draft takes pushes.
+  const pulls = integration.published?.spec.pulls;
+  const receives = integration.published?.spec.receives || integration.draft?.spec.receives;
 
   return (
     <DocPage
@@ -51,7 +50,7 @@ function IntegrationPage() {
       tab={tab}
       onTabChange={(next) => navigate({ search: { tab: next }, replace: true })}
       badges={integration.published && <LastRun identifier={identifier} />}
-      actions={mode === "pull" && integration.published && <SyncNow identifier={identifier} />}
+      actions={pulls && <SyncNow identifier={identifier} />}
       overview={(spec) => <IntegrationOverview spec={spec} />}
       extraTabs={[
         {
@@ -59,7 +58,7 @@ function IntegrationPage() {
           title: "Runs",
           content: <RecentRuns identifier={identifier} search={runsSearch} />,
         },
-        ...(mode === "push"
+        ...(receives
           ? [{ value: "push", title: "Push", content: <PushPanel identifier={identifier} /> }]
           : []),
       ]}

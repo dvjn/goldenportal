@@ -9,57 +9,73 @@ import (
 	"github.com/dvjn/goldenportal/internal/blueprint"
 )
 
-// Item is one entity made from incoming data, or the reason it couldn't be.
-type Item struct {
+// Entry is one entity made from an item, the identifier of one to delete,
+// or the reason it couldn't be either.
+type Entry struct {
 	Blueprint string
 	Entity    blueprint.Entity
+	Deleted   bool
 	Problems  []string
 }
 
-// Map turns incoming data into entities through the mappings. For a pull
-// connector, data maps each resource to its objects, and a mapping runs over
-// each object of its resource; otherwise it runs over the data as sent.
-func (s Spec) Map(data any) ([]Item, error) {
-	var items []Item
-	for _, m := range s.Mappings {
-		inputs := []any{data}
-		if m.Resource != "" {
-			resources, _ := data.(map[string]any)
-			inputs, _ = resources[m.Resource].([]any)
-		}
-		mapped, err := m.apply(inputs)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, mapped...)
-	}
-
-	return items, nil
+// mapper runs an integration's mappings, compiled once for a run.
+type mapper struct {
+	byResource map[string][]compiled
 }
 
 type compiled struct {
-	items, filter, identifier, title *gojq.Code
-	properties                       map[string]*gojq.Code
+	blueprint                 string
+	filter, identifier, title *gojq.Code
+	properties                map[string]*gojq.Code
 }
 
-func compile(expression string) (*gojq.Code, error) {
+// mapper compiles the mappings.
+func (s Spec) mapper() (mapper, error) {
+	m := mapper{byResource: map[string][]compiled{}}
+	for _, mapping := range s.Mappings {
+		c, err := mapping.compile()
+		if err != nil {
+			return m, fmt.Errorf("the %s mapping: %w", mapping.Blueprint, err)
+		}
+		m.byResource[mapping.Resource] = append(m.byResource[mapping.Resource], c)
+	}
+
+	return m, nil
+}
+
+// Map turns items into entries through the mappings of each item's resource.
+func (m mapper) Map(items []Item) []Entry {
+	var entries []Entry
+	for _, item := range items {
+		for _, c := range m.byResource[item.Resource] {
+			if entry, ok := c.apply(item); ok {
+				entries = append(entries, entry)
+			}
+		}
+	}
+
+	return entries
+}
+
+// compile parses jq that may use the variables named.
+func compile(expression string, variables ...string) (*gojq.Code, error) {
 	query, err := gojq.Parse(expression)
 	if err != nil {
 		return nil, err
 	}
 
-	return gojq.Compile(query)
+	return gojq.Compile(query, gojq.WithVariables(variables))
 }
 
 func (m Mapping) compile() (compiled, error) {
 	var (
-		c   = compiled{properties: map[string]*gojq.Code{}}
+		c   = compiled{blueprint: m.Blueprint, properties: map[string]*gojq.Code{}}
 		err error
 	)
 	for _, field := range []struct {
 		target     **gojq.Code
 		expression string
-	}{{&c.items, m.Items}, {&c.filter, m.Filter}, {&c.identifier, m.Entity.Identifier}, {&c.title, m.Entity.Title}} {
+	}{{&c.filter, m.Filter}, {&c.identifier, m.Entity.Identifier}, {&c.title, m.Entity.Title}} {
 		if field.expression == "" {
 			continue
 		}
@@ -76,70 +92,54 @@ func (m Mapping) compile() (compiled, error) {
 	return c, nil
 }
 
-func (m Mapping) apply(sources []any) ([]Item, error) {
-	c, err := m.compile()
-	if err != nil {
-		return nil, err
-	}
-
-	var inputs []any
-	for _, source := range sources {
-		iter := c.items.Run(source)
-		for {
-			value, ok := iter.Next()
-			if !ok {
-				break
-			}
-			if err, isErr := value.(error); isErr {
-				return nil, fmt.Errorf("the items of the %s mapping: %w", m.Blueprint, err)
-			}
-			inputs = append(inputs, value)
-		}
-	}
-
-	items := make([]Item, 0, len(inputs))
-	for _, input := range inputs {
-		if c.filter != nil {
-			keep, err := first(c.filter, input)
-			if err != nil {
-				items = append(items, Item{Blueprint: m.Blueprint, Problems: []string{"filter: " + err.Error()}})
-				continue
-			}
-			if keep != true {
-				continue
-			}
-		}
-
-		item := Item{Blueprint: m.Blueprint, Entity: blueprint.Entity{Properties: map[string]any{}}}
-		identifier, err := first(c.identifier, input)
+// apply maps one item, or reports false when the filter drops it. A deleted
+// item only needs its identifier.
+func (c compiled) apply(item Item) (Entry, bool) {
+	input := item.Object
+	if c.filter != nil && !item.Deleted {
+		keep, err := first(c.filter, input)
 		if err != nil {
-			item.Problems = append(item.Problems, "identifier: "+err.Error())
+			return Entry{Blueprint: c.blueprint, Problems: []string{"filter: " + err.Error()}}, true
 		}
-		item.Entity.Identifier = identifierText(identifier)
-		if c.title != nil {
-			title, err := first(c.title, input)
-			if err != nil {
-				item.Problems = append(item.Problems, "title: "+err.Error())
-			}
-			item.Entity.Title, _ = title.(string)
+		if keep != true {
+			return Entry{}, false
 		}
-		for id, code := range c.properties {
-			value, err := first(code, input)
-			if err != nil {
-				item.Problems = append(item.Problems, "properties."+id+": "+err.Error())
-				continue
-			}
-			item.Entity.Properties[id] = value
-		}
-		items = append(items, item)
 	}
 
-	return items, nil
+	entry := Entry{Blueprint: c.blueprint, Deleted: item.Deleted, Entity: blueprint.Entity{Properties: map[string]any{}}}
+	identifier, err := first(c.identifier, input)
+	if err != nil {
+		entry.Problems = append(entry.Problems, "identifier: "+err.Error())
+	}
+	entry.Entity.Identifier = identifierText(identifier)
+	if item.Deleted {
+		return entry, true
+	}
+	if c.title != nil {
+		title, err := first(c.title, input)
+		if err != nil {
+			entry.Problems = append(entry.Problems, "title: "+err.Error())
+		}
+		entry.Entity.Title, _ = title.(string)
+	}
+	for id, code := range c.properties {
+		value, err := first(code, input)
+		if err != nil {
+			entry.Problems = append(entry.Problems, "properties."+id+": "+err.Error())
+			continue
+		}
+		entry.Entity.Properties[id] = value
+	}
+
+	return entry, true
 }
 
 // first runs code and returns its first result, with numbers as float64.
-func first(code *gojq.Code, input any) (any, error) {
-	iter := code.Run(input)
+func first(code *gojq.Code, input any) (any, error) { return firstWith(code, input) }
+
+// firstWith is first with values for the code's variables.
+func firstWith(code *gojq.Code, input any, variables ...any) (any, error) {
+	iter := code.Run(input, variables...)
 	value, ok := iter.Next()
 	if !ok {
 		return nil, nil

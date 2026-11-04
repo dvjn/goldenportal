@@ -91,7 +91,11 @@ func (f fakeServices) DashboardData(ctx *gofr.Context, name string, inputs map[s
 	return dashboard.PageData{}, nil
 }
 
-func (f fakeServices) Sync(*gofr.Context, string) (*integration.Run, error) {
+func (f fakeServices) CheckIntegration(*gofr.Context, string) (integration.CheckResult, error) {
+	return integration.CheckResult{Version: "published", Passed: true}, nil
+}
+
+func (f fakeServices) Sync(*gofr.Context, string, string) (*integration.Run, error) {
 	return nil, errors.New("connection refused to the database at 10.0.0.5")
 }
 

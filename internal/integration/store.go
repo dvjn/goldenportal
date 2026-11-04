@@ -91,14 +91,18 @@ func (s Store) TokenIntegration(ctx context.Context, secretHash []byte) (tokenID
 	return tokenID, integration, err
 }
 
-// Run is one ingestion: a push, or a sync of a pull integration.
+// Run is one ingestion: a push, a sync of an integration that pulls, or an
+// action's write.
 type Run struct {
 	ID         int64     `json:"id"`
 	StartedAt  time.Time `json:"startedAt"`
 	FinishedAt time.Time `json:"finishedAt"`
 	// Trigger is push, schedule, manual or action.
 	Trigger string `json:"trigger"`
-	Token   string `json:"token,omitempty"`
+	// Mode is complete when the run deleted what it didn't see, or
+	// incremental when it only deleted what it was told to.
+	Mode  string `json:"mode"`
+	Token string `json:"token,omitempty"`
 	// ActionRun and Action are the action run behind an action trigger and its title.
 	ActionRun string     `json:"actionRun,omitempty"`
 	Action    string     `json:"action,omitempty"`
@@ -109,7 +113,8 @@ type Run struct {
 	Deleted   int        `json:"deleted"`
 	Failed    int        `json:"failed"`
 	Errors    []RunError `json:"errors"`
-	// Error is why a pull sync fetched nothing, which left its entities as they were.
+	// Error is why a sync couldn't fetch some or all of its resources. It
+	// deleted nothing those resources write.
 	Error string `json:"error,omitempty"`
 }
 
@@ -128,11 +133,11 @@ func (s Store) RecordRun(ctx context.Context, integrationID, tokenID string, run
 	errorsJSON, _ := json.Marshal(run.Errors)
 
 	return s.db.QueryRowContext(ctx, `
-		INSERT INTO ingestion_runs (integration_id, token_id, trigger, started_at, received, created, updated,
+		INSERT INTO ingestion_runs (integration_id, token_id, trigger, mode, started_at, received, created, updated,
 			unchanged, deleted, failed, errors, error, action_run_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, finished_at`,
-		integrationID, nullable(tokenID), run.Trigger, run.StartedAt, run.Received, run.Created, run.Updated,
+		integrationID, nullable(tokenID), run.Trigger, run.Mode, run.StartedAt, run.Received, run.Created, run.Updated,
 		run.Unchanged, run.Deleted, run.Failed, errorsJSON, run.Error, nullable(run.ActionRun)).Scan(&run.ID, &run.FinishedAt)
 }
 
@@ -184,7 +189,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 		return RunPage{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id, r.started_at, r.finished_at, r.trigger, coalesce(t.name, ''), coalesce(r.action_run_id::text, ''),
+		SELECT r.id, r.started_at, r.finished_at, r.trigger, r.mode, coalesce(t.name, ''), coalesce(r.action_run_id::text, ''),
 			coalesce(a.title, ''), r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error`+runFilter+`
 		ORDER BY r.id DESC LIMIT $5 OFFSET $6`, append(args, q.PageSize, (q.Page-1)*q.PageSize)...)
 	if err != nil {
@@ -197,7 +202,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 			r      Run
 			errors []byte
 		)
-		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.ActionRun, &r.Action, &r.Received,
+		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Mode, &r.Token, &r.ActionRun, &r.Action, &r.Received,
 			&r.Created, &r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
 			return RunPage{}, err
 		}
@@ -227,4 +232,33 @@ func (s Store) LastSync(ctx context.Context, identifier string) (time.Time, erro
 		WHERE d.kind = 'integration' AND d.identifier = $1 AND r.trigger IN ('schedule', 'manual')`, identifier).Scan(&last)
 
 	return last.Time, err
+}
+
+// syncHistory is what a sync needs to choose its mode and what to fetch.
+type syncHistory struct {
+	// lastComplete started the last complete sync, and lastSucceeded the
+	// last sync that fetched every resource. Either is zero if there's none.
+	lastComplete, lastSucceeded time.Time
+	// published is when the integration's version was published.
+	published time.Time
+}
+
+const syncHistorySQL = `
+		SELECT
+			(SELECT max(started_at) FROM ingestion_runs
+				WHERE integration_id = $1 AND trigger IN ('schedule', 'manual') AND mode = 'complete' AND error = ''),
+			(SELECT max(started_at) FROM ingestion_runs
+				WHERE integration_id = $1 AND trigger IN ('schedule', 'manual') AND error = ''),
+			(SELECT v.published_at FROM config_versions v JOIN config_documents d
+				ON d.id = v.document_id AND v.version = d.published_version WHERE d.id = $1)`
+
+func (s Store) syncHistory(ctx context.Context, integrationID string) (syncHistory, error) {
+	var (
+		h                         syncHistory
+		lastComplete, lastSucceed sql.NullTime
+	)
+	err := s.db.QueryRowContext(ctx, syncHistorySQL, integrationID).Scan(&lastComplete, &lastSucceed, &h.published)
+	h.lastComplete, h.lastSucceeded = lastComplete.Time, lastSucceed.Time
+
+	return h, err
 }

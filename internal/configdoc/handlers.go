@@ -340,7 +340,11 @@ func (h documents[S]) Impact(ctx *gofr.Context, identifier string) (Impact, erro
 	if err != nil {
 		return Impact{}, err
 	}
-	view, _, err := h.draftImpact(ctx, record)
+	view, draft, err := h.draftImpact(ctx, record)
+	// Only the preview runs the preflight, since it can wait on other systems.
+	if err == nil && !HasErrors(view.Issues) && h.kind.Preflight != nil {
+		view.Issues = append(view.Issues, h.kind.Preflight(ctx, ctx.SQL, draft)...)
+	}
 
 	return view, err
 }

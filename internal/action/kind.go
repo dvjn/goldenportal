@@ -106,7 +106,7 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 				return nil, err
 			default:
 				target, _ := integration.Parse(record.PublishedSource)
-				if problem := integration.PushOnly(target); problem != "" {
+				if problem := integration.Writable(target); problem != "" {
 					add(configdoc.SeverityError, path+".entity.integration", step.line, "%s", problem)
 				}
 			}

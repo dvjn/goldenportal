@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -108,17 +107,28 @@ func TestMiddleware(t *testing.T) {
 }
 
 func TestMiddlewareCapsPushBodies(t *testing.T) {
-	var readErr error
-	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		_, readErr = io.ReadAll(r.Body)
-	})
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("an oversized push reached its handler") })
 	req := httptest.NewRequest(http.MethodPost, "/api/ingest/ci", strings.NewReader(strings.Repeat("x", MaxIngestBytes+1)))
+	rec := httptest.NewRecorder()
+
+	Middleware(fakeResolver{}, true)(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", rec.Code)
+	}
+}
+
+func TestMiddlewareKeepsPushRequests(t *testing.T) {
+	var got Ingest
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = IngestRequest(r.Context()) })
+	req := httptest.NewRequest(http.MethodPost, "/api/ingest/ci?mode=complete", strings.NewReader(`{"a":1}`))
+	req.Header.Set("Authorization", "Bearer gpi_x")
+	req.Header.Set("X-Signature", "sha256=ab")
 
 	Middleware(fakeResolver{}, true)(next).ServeHTTP(httptest.NewRecorder(), req)
 
-	var tooLarge *http.MaxBytesError
-	if !errors.As(readErr, &tooLarge) {
-		t.Fatalf("read error = %v, want a MaxBytesError", readErr)
+	if got.Secret != "gpi_x" || string(got.Body) != `{"a":1}` || got.Query.Get("mode") != "complete" || got.Header.Get("X-Signature") != "sha256=ab" {
+		t.Fatalf("ingest request = %+v", got)
 	}
 }
 

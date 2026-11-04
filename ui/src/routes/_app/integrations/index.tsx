@@ -98,7 +98,7 @@ function IntegrationsPage() {
           <EmptyState
             icon={<Plug />}
             title="No integrations yet"
-            description="An integration writes entities, from data pushed to the portal."
+            description="An integration writes entities from data it pulls or that is pushed to it."
           >
             <NewIntegrationButton />
           </EmptyState>

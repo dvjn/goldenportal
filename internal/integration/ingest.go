@@ -3,8 +3,9 @@ package integration
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"gofr.dev/pkg/gofr"
@@ -16,79 +17,152 @@ import (
 	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
-// writer is the integration an ingestion token signs in as.
+// Run modes.
+const (
+	ModeComplete    = "complete"
+	ModeIncremental = "incremental"
+)
+
+var (
+	// ErrUnverified is a push that came with neither an ingestion token nor
+	// a signature the connector can check.
+	ErrUnverified = errors.New(`send the ingestion token as "Authorization: Bearer <token>"`)
+	ErrNotJSON    = errors.New("the request body is not valid JSON")
+)
+
+// ReceiveError is a request a connector couldn't read.
+type ReceiveError struct{ Reason string }
+
+func (e ReceiveError) Error() string { return e.Reason }
+
+// writer is the integration a push writes as.
 type writer struct {
 	id      string
 	tokenID string
 	spec    Spec
 }
 
-// authenticate checks the ingestion token is for the integration in the
-// path, and that the integration is published.
-func authenticate(ctx *gofr.Context) (writer, error) {
-	secret := auth.IngestionSecret(ctx)
-	if secret == "" {
-		return writer{}, httpx.Error{
-			Code:    http.StatusUnauthorized,
-			Message: `send the ingestion token as "Authorization: Bearer <token>"`,
+// authenticate finds the integration in the path, and checks the ingestion
+// token is for it, if one was sent. Without one, it only says the request
+// is unverified, so unsigned requests can't learn which integrations exist.
+func authenticate(ctx *gofr.Context, secret string) (writer, error) {
+	identifier := ctx.PathParam("integration")
+	var tokenID string
+	if secret != "" {
+		var (
+			integration string
+			err         error
+		)
+		tokenID, integration, err = NewStore(ctx.SQL).TokenIntegration(ctx, auth.HashSecret(secret))
+		if errors.Is(err, ErrTokenNotFound) {
+			return writer{}, httpx.Error{Code: http.StatusUnauthorized, Message: "the ingestion token is invalid or revoked"}
 		}
-	}
-	tokenID, integration, err := NewStore(ctx.SQL).TokenIntegration(ctx, auth.HashSecret(secret))
-	if errors.Is(err, ErrTokenNotFound) {
-		return writer{}, httpx.Error{Code: http.StatusUnauthorized, Message: "the ingestion token is invalid or revoked"}
-	}
-	if err != nil {
-		return writer{}, err
-	}
-	if integration != ctx.PathParam("integration") {
-		return writer{}, httpx.Error{Code: http.StatusForbidden, Message: "this ingestion token is for the " + integration + " integration"}
+		if err != nil {
+			return writer{}, err
+		}
+		if integration != identifier {
+			return writer{}, httpx.Error{Code: http.StatusForbidden, Message: "this ingestion token is for the " + integration + " integration"}
+		}
 	}
 
 	store := configdoc.NewStore(ctx.SQL, Name)
-	record, err := store.Get(ctx, integration)
-	if err != nil {
+	record, err := store.Get(ctx, identifier)
+	switch {
+	case secret == "" && (errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published())):
+		return writer{}, unauthorized(ErrUnverified)
+	case err != nil:
 		return writer{}, err
-	}
-	if !record.Published() {
+	case !record.Published():
 		return writer{}, httpx.Error{Code: http.StatusConflict, Message: "publish the integration before ingesting"}
 	}
 	spec, _ := Parse(record.PublishedSource)
-	if c, _ := connector(spec.Connector.Type); c.Mode != ModePush {
-		return writer{}, httpx.Error{Code: http.StatusConflict, Message: "the " + integration + " integration pulls its data, so nothing can push to it"}
-	}
-	id, err := store.PublishedID(ctx, integration)
+	id, err := store.PublishedID(ctx, identifier)
 
 	return writer{id: id, tokenID: tokenID, spec: spec}, err
 }
 
-// ingest maps the request body to entities and writes them. Items that
-// fail are reported without stopping the rest.
+func unauthorized(err error) error {
+	return httpx.Error{Code: http.StatusUnauthorized, Message: err.Error()}
+}
+
+// ingest hands a request to the integration's connector and writes the
+// items it gives. Items that fail are reported without stopping the rest.
+// ?mode=complete, with an ingestion token, also deletes what the request
+// didn't carry of the resources it covers: ?resources=, or every resource
+// the integration receives.
 func ingest(ctx *gofr.Context) (any, error) {
-	started := time.Now().UTC()
-	w, err := authenticate(ctx)
+	in := auth.IngestRequest(ctx)
+	w, err := authenticate(ctx, in.Secret)
 	if err != nil {
 		return nil, err
 	}
-	var data any
-	var tooLarge *http.MaxBytesError
-	switch err := ctx.Bind(&data); {
-	case errors.As(err, &tooLarge):
-		return nil, httpx.Error{
-			Code:    http.StatusRequestEntityTooLarge,
-			Message: fmt.Sprintf("the request body is over %d MB; split it across requests", auth.MaxIngestBytes>>20),
+	receiver, ok := w.spec.config.(Receiver)
+	if !ok || !w.spec.Receives {
+		if in.Secret == "" {
+			return nil, unauthorized(ErrUnverified)
 		}
-	case err != nil:
-		return nil, badRequest("the request body is not valid JSON")
+		return nil, httpx.Error{
+			Code:    http.StatusConflict,
+			Message: "the " + w.spec.Identifier + " integration takes no pushes; give one of its resources a push side",
+		}
 	}
 
-	items, err := w.spec.Map(data)
+	mode := ModeIncremental
+	switch m := in.Query.Get("mode"); m {
+	case "", ModeIncremental:
+	case ModeComplete:
+		if in.Secret == "" {
+			return nil, httpx.Error{Code: http.StatusForbidden, Message: "a complete push needs an ingestion token"}
+		}
+		mode = ModeComplete
+	default:
+		return nil, badRequest("mode must be complete or incremental")
+	}
+	resources := receiver.Receives()
+	if r := in.Query.Get("resources"); r != "" {
+		resources = strings.Split(r, ",")
+		for _, name := range resources {
+			if !slices.Contains(receiver.Receives(), name) {
+				return nil, badRequest("resources must name resources the integration receives: " + strings.Join(receiver.Receives(), ", "))
+			}
+		}
+	}
+
+	started, err := dbNow(ctx, ctx.SQL)
 	if err != nil {
+		return nil, err
+	}
+	items, err := receiver.Receive(Request{Resources: resources, Header: in.Header, Query: in.Query, Body: in.Body}, in.Secret != "")
+	var (
+		signatureErr SignatureError
+		receiveErr   ReceiveError
+	)
+	switch {
+	case errors.Is(err, ErrUnverified):
+		return nil, unauthorized(err)
+	case errors.As(err, &signatureErr):
+		return nil, unauthorized(err)
+	case errors.Is(err, ErrNotJSON):
+		return nil, badRequest(err.Error())
+	case errors.As(err, &receiveErr):
 		return nil, httpx.Error{Code: http.StatusUnprocessableEntity, Message: err.Error()}
+	case err != nil:
+		return nil, err
+	}
+	m, err := w.spec.mapper()
+	if err != nil {
+		return nil, err
 	}
 
-	run := &Run{StartedAt: started, Trigger: TriggerPush, Received: len(items), Errors: []RunError{}}
-	if _, err := write(ctx, ctx.SQL, w.id, items, run); err != nil {
+	run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: mode, Errors: []RunError{}}
+	unsafe, err := write(ctx, ctx.SQL, w.id, m.Map(items), run)
+	if err != nil {
 		return nil, err
+	}
+	if mode == ModeComplete {
+		if run.Deleted, err = reconcile(ctx, ctx.SQL, w.id, w.spec, resources, unsafe, started); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run); err != nil {
@@ -101,7 +175,11 @@ func ingest(ctx *gofr.Context) (any, error) {
 // deleteEntity removes an entity the integration wrote.
 func deleteEntity(ctx *gofr.Context) (any, error) {
 	started := time.Now().UTC()
-	w, err := authenticate(ctx)
+	in := auth.IngestRequest(ctx)
+	if in.Secret == "" {
+		return nil, unauthorized(ErrUnverified)
+	}
+	w, err := authenticate(ctx, in.Secret)
 	if err != nil {
 		return nil, err
 	}
@@ -124,60 +202,88 @@ func deleteEntity(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	run := &Run{StartedAt: started, Trigger: TriggerPush, Received: 1, Deleted: 1, Errors: []RunError{}}
+	run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: ModeIncremental, Received: 1, Deleted: 1, Errors: []RunError{}}
 
 	return nil, NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run)
 }
 
-// write validates items against their blueprints and writes them as the
-// integration, counting outcomes in run. Items that fail are reported
-// without stopping the rest. It returns the entities it saw, written or
-// not, by blueprint, so a full sync knows what not to delete.
-func write(ctx context.Context, db configdoc.DB, integrationID string, items []Item, run *Run) (map[string][]string, error) {
+// dbNow is the database's clock, which seen_at is set by, so a complete run
+// compares like with like.
+func dbNow(ctx context.Context, db configdoc.DB) (time.Time, error) {
+	var now time.Time
+	err := db.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&now)
+
+	return now.UTC(), err
+}
+
+// write validates entries against their blueprints and writes or deletes
+// them as the integration, counting outcomes in run. Entries that fail are
+// reported without stopping the rest. It returns the blueprints a complete
+// run mustn't reconcile, because an entry of theirs had no identifier and
+// could have been any of their entities.
+func write(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) (map[string]bool, error) {
 	blueprints, err := blueprint.Published(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	blueprintIDs := map[string]string{}
-	seen := map[string][]string{}
+	unsafe := map[string]bool{}
 	entities := entity.NewStore(db)
 
-	for i, item := range items {
-		if item.Entity.Identifier != "" {
-			seen[item.Blueprint] = append(seen[item.Blueprint], item.Entity.Identifier)
+	for _, e := range entries {
+		index := run.Received
+		run.Received++
+		if e.Entity.Identifier == "" {
+			unsafe[e.Blueprint] = true
+			e.Problems = append(e.Problems, "it has no identifier, so this run deleted no "+e.Blueprint+" entities")
 		}
 		fail := func(problems ...string) {
 			run.Failed++
 			if len(run.Errors) < MaxRunErrors {
 				run.Errors = append(run.Errors, RunError{
-					Index: i, Blueprint: item.Blueprint,
-					Identifier: item.Entity.Identifier, Problems: problems,
+					Index: index, Blueprint: e.Blueprint,
+					Identifier: e.Entity.Identifier, Problems: problems,
 				})
 			}
 		}
-		if len(item.Problems) > 0 {
-			fail(item.Problems...)
+		if len(e.Problems) > 0 {
+			fail(e.Problems...)
 			continue
 		}
-		spec, ok := blueprints[item.Blueprint]
+		spec, ok := blueprints[e.Blueprint]
 		if !ok {
-			fail("no blueprint " + item.Blueprint + " is published")
+			fail("no blueprint " + e.Blueprint + " is published")
 			continue
 		}
-		if _, ok := blueprintIDs[item.Blueprint]; !ok {
-			if blueprintIDs[item.Blueprint], err = configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, item.Blueprint); err != nil {
+		if _, ok := blueprintIDs[e.Blueprint]; !ok {
+			if blueprintIDs[e.Blueprint], err = configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, e.Blueprint); err != nil {
 				return nil, err
 			}
 		}
 
-		clean, problems := spec.ValidateEntity(item.Entity)
+		var owned entity.OwnedError
+		if e.Deleted {
+			err := entities.Delete(ctx, blueprintIDs[e.Blueprint], integrationID, e.Entity.Identifier)
+			switch {
+			case errors.Is(err, entity.ErrNotFound):
+				run.Unchanged++
+			case errors.As(err, &owned):
+				fail(owned.Error())
+			case err != nil:
+				return nil, err
+			default:
+				run.Deleted++
+			}
+			continue
+		}
+
+		clean, problems := spec.ValidateEntity(e.Entity)
 		if len(problems) > 0 {
 			fail(problems...)
 			continue
 		}
 		computed, _ := spec.Compute(clean)
-		outcome, err := entities.Upsert(ctx, blueprintIDs[item.Blueprint], integrationID, clean, computed)
-		var owned entity.OwnedError
+		outcome, err := entities.Upsert(ctx, blueprintIDs[e.Blueprint], integrationID, clean, computed)
 		switch {
 		case errors.As(err, &owned):
 			fail(owned.Error())
@@ -195,5 +301,51 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, items []I
 		}
 	}
 
-	return seen, nil
+	return unsafe, nil
+}
+
+// reconcile deletes, after a complete run over resources, the integration's
+// entities the run didn't see. It only reconciles a blueprint when the run
+// covered every resource its mappings name, and none of its entries lacked
+// an identifier.
+func reconcile(ctx context.Context, db configdoc.DB, integrationID string, spec Spec, covered []string,
+	unsafe map[string]bool, started time.Time,
+) (int, error) {
+	var ids []string
+	for _, bp := range spec.reconcilable(covered, unsafe) {
+		id, err := configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, bp)
+		switch {
+		case errors.Is(err, configdoc.ErrNotFound):
+			continue
+		case err != nil:
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+
+	return entity.NewStore(db).Reconcile(ctx, integrationID, ids, started)
+}
+
+// reconcilable lists, in order, the blueprints a complete run over covered
+// can reconcile: those whose mappings' resources it all covered, and whose
+// entries all had identifiers.
+func (s Spec) reconcilable(covered []string, unsafe map[string]bool) []string {
+	whole := map[string]bool{}
+	for _, m := range s.Mappings {
+		if _, seen := whole[m.Blueprint]; !seen {
+			whole[m.Blueprint] = true
+		}
+		if !slices.Contains(covered, m.Resource) {
+			whole[m.Blueprint] = false
+		}
+	}
+	var out []string
+	for bp, ok := range whole {
+		if ok && !unsafe[bp] {
+			out = append(out, bp)
+		}
+	}
+	slices.Sort(out)
+
+	return out
 }

@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
-	"github.com/lib/pq"
 	"gofr.dev/pkg/gofr"
 	gofrSQL "gofr.dev/pkg/gofr/datasource/sql"
 
@@ -23,20 +24,27 @@ const (
 	TriggerPush     = "push"
 	TriggerSchedule = "schedule"
 	TriggerManual   = "manual"
-	// TriggerAction is an action run writing an entity through a push integration.
+	// TriggerAction is an action run writing an entity as the integration.
 	TriggerAction = "action"
 )
 
-// SyncSchedule is how often the scheduler looks for pull integrations due
-// a sync, as a cron expression.
+// SyncSchedule is how often the scheduler looks for integrations due a
+// sync, as a cron expression.
 const SyncSchedule = "* * * * *"
 
 // pullTimeout bounds how long one sync may spend fetching from a provider.
 const pullTimeout = 10 * time.Minute
 
+// writeBatch is how many entries a sync writes per transaction, so a large
+// sync neither holds one transaction open nor commits row by row.
+const writeBatch = 500
+
+// syncSlack keeps an interval from being skipped by jitter in the scheduler.
+const syncSlack = 5 * time.Second
+
 var (
 	ErrSyncing  = errors.New("a sync of this integration is already running")
-	ErrNotPull  = errors.New("only integrations that pull their data can sync")
+	ErrNotPull  = errors.New("only integrations that pull their data can sync; give a resource a url to fetch")
 	ErrUnsynced = errors.New("publish the integration before syncing it")
 )
 
@@ -46,13 +54,18 @@ type TxDB interface {
 	Begin() (*gofrSQL.Tx, error)
 }
 
-// Sync pulls a published pull integration's data and writes it as a full
-// snapshot: entities the integration wrote before that aren't in the data
-// any more are deleted. Items that fail validation still count as present,
-// so a bad value never deletes an entity. An item without an identifier
-// could be any of them, so then nothing is deleted.
-func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error) {
-	started := time.Now().UTC()
+// Sync pulls a published integration's data and writes it, a batch at a
+// time. mode is complete or incremental, or empty for the integration's
+// usual one.
+//
+// A complete sync then deletes the entities the integration wrote before
+// that it didn't see this time, of the blueprints whose resources it all
+// fetched. Items that fail validation still count as seen, so a bad value
+// never deletes an entity, and an item without an identifier could be any
+// of its blueprint's, so that blueprint deletes nothing. An incremental
+// sync fetches what changed since the last sync that fetched everything,
+// where the connector can, and deletes only what items say was deleted.
+func Sync(ctx context.Context, db TxDB, identifier, trigger, mode string) (*Run, error) {
 	store := configdoc.NewStore(db, Name)
 	record, err := store.Get(ctx, identifier)
 	if err != nil {
@@ -62,9 +75,8 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 		return nil, ErrUnsynced
 	}
 	spec, _ := Parse(record.PublishedSource)
-	c, _ := connector(spec.Connector.Type)
-	pull := c.pull()
-	if pull == nil {
+	puller, ok := spec.config.(Puller)
+	if !ok || !spec.Pulls {
 		return nil, ErrNotPull
 	}
 	id, err := store.PublishedID(ctx, identifier)
@@ -72,16 +84,17 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 		return nil, err
 	}
 
-	tx, err := db.Begin()
+	lock, err := db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = lock.Rollback() }()
 
 	// Take the lock before fetching so overlapping syncs fail fast instead of
-	// each spending a full provider fetch.
+	// each spending a full provider fetch. It's held in a transaction of its
+	// own, since what's fetched is written in batches.
 	var locked bool
-	if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtext('integration-sync:' || $1))`,
+	if err := lock.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtext('integration-sync:' || $1))`,
 		id).Scan(&locked); err != nil {
 		return nil, err
 	}
@@ -89,74 +102,108 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger string) (*Run, error
 		return nil, ErrSyncing
 	}
 
-	var resources []string
-	for _, m := range spec.Mappings {
-		if !slices.Contains(resources, m.Resource) {
-			resources = append(resources, m.Resource)
-		}
-	}
-	// The fetch runs inside the transaction, so bound it to keep a slow
-	// provider from holding a connection indefinitely.
-	pullCtx, cancel := context.WithTimeout(ctx, pullTimeout)
-	pulled, err := pull(pullCtx, tx, spec, resources)
-	cancel()
-	var items []Item
-	if err == nil {
-		var data any
-		if data, err = toJSONValue(pulled); err == nil {
-			items, err = spec.Map(data)
-		}
-	}
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, recordFailure(ctx, db, id, &Run{StartedAt: started, Trigger: trigger, Errors: []RunError{}},
-			fmt.Errorf("pull %s: %w", identifier, err))
-	}
-
-	complete := true
-	for i := range items {
-		if items[i].Entity.Identifier == "" {
-			complete = false
-			items[i].Problems = append(items[i].Problems, "it has no identifier, so this sync deleted nothing")
-		}
-	}
-
-	run := &Run{StartedAt: started, Trigger: trigger, Received: len(items), Errors: []RunError{}}
-	seen, err := write(ctx, tx, id, items, run)
+	history, err := NewStore(db).syncHistory(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if complete {
-		if run.Deleted, err = deleteUnseen(ctx, tx, id, seen); err != nil {
+	if mode == "" {
+		mode = spec.usualMode(history, time.Now())
+	}
+	since := time.Unix(0, 0).UTC()
+	if mode == ModeIncremental && !history.lastSucceeded.IsZero() {
+		since = history.lastSucceeded.Add(-time.Minute)
+	}
+	started, err := dbNow(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	run := &Run{StartedAt: started, Trigger: trigger, Mode: mode, Errors: []RunError{}}
+
+	var resources []string
+	for _, m := range spec.Mappings {
+		if slices.Contains(puller.Pulls(), m.Resource) && !slices.Contains(resources, m.Resource) {
+			resources = append(resources, m.Resource)
+		}
+	}
+	m, err := spec.mapper()
+	if err != nil {
+		return nil, err
+	}
+	unsafe := map[string]bool{}
+	emit := func(_ string, items []Item) error {
+		entries := m.Map(items)
+		for start := 0; start < len(entries); start += writeBatch {
+			if err := writeBatched(ctx, db, id, entries[start:min(start+writeBatch, len(entries))], run, unsafe); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// The lock holds a connection while fetching, so bound the fetch to keep
+	// a slow provider from holding it indefinitely.
+	pullCtx, cancel := context.WithTimeout(ctx, pullTimeout)
+	failed, err := puller.Pull(pullCtx, db, PullRequest{Resources: resources, Since: since}, emit)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	if len(failed) > 0 {
+		names := slices.Sorted(maps.Keys(failed))
+		reasons := make([]string, len(names))
+		for i, name := range names {
+			reasons[i] = failed[name].Error()
+		}
+		run.Error = strings.Join(reasons, "; ")
+	}
+	if len(failed) == len(resources) {
+		return nil, recordFailure(ctx, db, id, run, fmt.Errorf("pull %s: %s", identifier, run.Error))
+	}
+
+	if mode == ModeComplete {
+		var covered []string
+		for _, r := range resources {
+			if failed[r] == nil {
+				covered = append(covered, r)
+			}
+		}
+		if run.Deleted, err = reconcile(ctx, db, id, spec, covered, unsafe, started); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := NewStore(tx).RecordRun(ctx, id, "", run); err != nil {
+	if err := NewStore(db).RecordRun(ctx, id, "", run); err != nil {
 		return nil, err
 	}
 
-	return run, tx.Commit()
+	return run, lock.Commit()
 }
 
-// deleteUnseen deletes the integration's entities that aren't in seen.
-func deleteUnseen(ctx context.Context, tx *gofrSQL.Tx, integrationID string, seen map[string][]string) (int, error) {
-	var keep []string
-	for bp, identifiers := range seen {
-		for _, identifier := range identifiers {
-			keep = append(keep, bp+"/"+identifier)
-		}
-	}
-	result, err := tx.ExecContext(ctx, `
-		DELETE FROM entities e USING config_documents b
-		WHERE b.id = e.blueprint_id AND e.integration_id = $1
-			AND NOT ((b.identifier || '/' || e.identifier) = ANY($2))`, integrationID, pq.Array(keep))
+func writeBatched(ctx context.Context, db TxDB, integrationID string, entries []Entry, run *Run, unsafe map[string]bool) error {
+	tx, err := db.Begin()
 	if err != nil {
-		return 0, err
+		return err
 	}
-	deleted, _ := result.RowsAffected()
+	defer func() { _ = tx.Rollback() }()
+	batchUnsafe, err := write(ctx, tx, integrationID, entries, run)
+	if err != nil {
+		return err
+	}
+	maps.Copy(unsafe, batchUnsafe)
 
-	return int(deleted), nil
+	return tx.Commit()
+}
+
+// usualMode is how a sync runs unless asked otherwise: complete without a
+// complete interval, on the first sync, the first after a publish, and once
+// the interval has passed; incremental between.
+func (s Spec) usualMode(h syncHistory, now time.Time) string {
+	if s.Sync == nil || s.Sync.CompleteEvery == 0 || h.lastComplete.IsZero() || h.lastComplete.Before(h.published) ||
+		now.Sub(h.lastComplete) >= s.Sync.CompleteEvery-syncSlack {
+		return ModeComplete
+	}
+
+	return ModeIncremental
 }
 
 // recordFailure records a sync that fetched nothing as a run, so the failure
@@ -171,8 +218,8 @@ func recordFailure(ctx context.Context, db configdoc.DB, integrationID string, r
 	return err
 }
 
-// syncAll syncs the published pull integrations whose interval has passed
-// since their last sync. It runs every minute.
+// syncAll syncs the published integrations that pull whose interval has
+// passed since their last sync. It runs every minute.
 func syncAll(ctx *gofr.Context) {
 	records, err := configdoc.NewStore(ctx.SQL, Name).List(ctx)
 	if err != nil {
@@ -184,7 +231,7 @@ func syncAll(ctx *gofr.Context) {
 			continue
 		}
 		spec, _ := Parse(record.PublishedSource)
-		if c, _ := connector(spec.Connector.Type); c.pull() == nil {
+		if !spec.Pulls {
 			continue
 		}
 		last, err := NewStore(ctx.SQL).LastSync(ctx, record.Identifier)
@@ -192,28 +239,33 @@ func syncAll(ctx *gofr.Context) {
 			ctx.Errorf("find the last sync of %s: %v", record.Identifier, err)
 			continue
 		}
-		// A little slack, so a one-minute interval isn't skipped by jitter in the scheduler.
-		if !last.IsZero() && time.Since(last) < spec.SyncEvery()-5*time.Second {
+		if !last.IsZero() && time.Since(last) < spec.SyncEvery()-syncSlack {
 			continue
 		}
-		if _, err := Sync(ctx, ctx.SQL, record.Identifier, TriggerSchedule); err != nil && !errors.Is(err, ErrSyncing) {
+		if _, err := Sync(ctx, ctx.SQL, record.Identifier, TriggerSchedule, ""); err != nil && !errors.Is(err, ErrSyncing) {
 			ctx.Errorf("sync %s: %v", record.Identifier, err)
 		}
 	}
 }
 
-func syncNow(ctx *gofr.Context) (any, error) { return SyncNow(ctx, ctx.PathParam("identifier")) }
+func syncNow(ctx *gofr.Context) (any, error) {
+	return SyncNow(ctx, ctx.PathParam("identifier"), ctx.Param("mode"))
+}
 
-// SyncNow syncs one published pull integration straight away.
-func SyncNow(ctx *gofr.Context, identifier string) (*Run, error) {
+// SyncNow syncs one published integration that pulls straight away,
+// completely or incrementally, or as its schedule would when mode is empty.
+func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return nil, err
+	}
+	if mode != "" && mode != ModeComplete && mode != ModeIncremental {
+		return nil, badRequest("mode must be complete or incremental")
 	}
 	if _, err := integrationID(ctx, identifier); err != nil {
 		return nil, err
 	}
 
-	run, err := Sync(ctx, ctx.SQL, identifier, TriggerManual)
+	run, err := Sync(ctx, ctx.SQL, identifier, TriggerManual, mode)
 	switch {
 	case errors.Is(err, ErrSyncing), errors.Is(err, ErrNotPull), errors.Is(err, ErrUnsynced):
 		return nil, httpx.Error{Code: http.StatusConflict, Message: err.Error()}

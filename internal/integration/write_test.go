@@ -37,7 +37,7 @@ func TestRecordActionCountsTheWrite(t *testing.T) {
 			}
 			defer db.Close()
 			mock.ExpectQuery("INSERT INTO ingestion_runs").
-				WithArgs("integration-id", nil, TriggerAction, sqlmock.AnyArg(), 1, tt.created, tt.updated,
+				WithArgs("integration-id", nil, TriggerAction, ModeIncremental, sqlmock.AnyArg(), 1, tt.created, tt.updated,
 					0, tt.deleted, tt.fails, []byte(tt.errors), "", "run-id").
 				WillReturnRows(sqlmock.NewRows([]string{"id", "finished_at"}).AddRow(1, time.Now()))
 

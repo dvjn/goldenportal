@@ -344,13 +344,13 @@
     },
     "entityStep": {
       "type": "object",
-      "description": "Writes or deletes an entity as a push integration. It gives identifier, title, blueprint and url.",
+      "description": "Writes or deletes an entity as an integration that doesn't pull. It gives identifier, title, blueprint and url.",
       "properties": {
         "operation": {
           "enum": ["upsert", "delete"],
           "description": "upsert creates the entity or updates the properties given, keeping the rest; delete removes it."
         },
-        "integration": { "$ref": "#/$defs/identifier", "description": "The push integration the entity is written as. Only it can change the entity after." },
+        "integration": { "$ref": "#/$defs/identifier", "description": "The integration the entity is written as, one that doesn't pull. Only it can change the entity after." },
         "blueprint": { "$ref": "#/$defs/identifier" },
         "identifier": { "type": "string", "description": "The entity's identifier, such as $entity or $input.name." },
         "title": { "type": "string" },

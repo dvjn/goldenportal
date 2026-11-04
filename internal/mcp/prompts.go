@@ -96,9 +96,10 @@ var prompts = []prompt{
 				task += " that brings in " + a["what"]
 			}
 			return task + ".\n\n" +
-				"Read list_connectors for its configuration and resources, and map into existing blueprints, proposing any that are missing first. " +
+				"Read list_connectors for what it can do and its resources, and map into existing blueprints, proposing any that are missing first. " +
+				"Ask whether the source is fetched, sends its changes, or both, and whether a sync should be complete every time or incremental between complete ones. " +
 				"Secrets go in GP_SECRET_* environment variables, never in the document. " +
-				"A push integration needs an ingestion token once it's published: offer to create one."
+				"Once it's published, an integration that takes pushes needs an ingestion token or a signature: offer to create a token, and check_integration once it's published."
 		}),
 	authoring("create_scorecard", "Create a scorecard", "Grade a blueprint's entities against standards", "scorecards",
 		[]*mcp.PromptArgument{

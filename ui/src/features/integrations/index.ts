@@ -1,6 +1,8 @@
 export {
+  type CheckResult,
   type Connector,
   type CreatedIngestionToken,
+  checkIntegration,
   createToken,
   type Field,
   type IngestionToken,
@@ -15,6 +17,7 @@ export {
   type Run,
   type RunError,
   type RunFilters,
+  type RunMode,
   type RunOutcome,
   type RunPage,
   type RunTrigger,

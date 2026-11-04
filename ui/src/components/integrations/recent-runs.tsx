@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   type Run,
+  type RunMode,
   type RunOutcome,
   type RunTrigger,
   runsQueryOptions,
@@ -86,6 +87,12 @@ function triggerLabel(run: Run) {
   return run.token ? `Push · ${run.token}` : "Push";
 }
 
+// A complete run deletes what it didn't see; an incremental one only what it was told was deleted.
+const modeLabels: Record<RunMode, string> = {
+  complete: "Complete",
+  incremental: "Incremental",
+};
+
 const column = dataTableColumns<Run>();
 
 const columns = [
@@ -119,6 +126,11 @@ const columns = [
         )}
       </span>
     ),
+  }),
+  column.accessor("mode", {
+    header: "Mode",
+    enableSorting: false,
+    cell: ({ getValue }) => <span className="text-muted-foreground">{modeLabels[getValue()]}</span>,
   }),
   column.display({
     id: "took",
@@ -234,13 +246,18 @@ function RunErrors({ run }: Readonly<{ run: Run }>) {
         <DialogHeader>
           <DialogTitle>Failures</DialogTitle>
           <DialogDescription>
-            {run.error
-              ? "The sync fetched nothing, so its entities were left as they were."
-              : `${run.failed} of ${run.received} items weren't written` +
-                (run.failed > run.errors.length
-                  ? `; the first ${run.errors.length} are shown`
-                  : "") +
-                "."}
+            {[
+              run.error &&
+                "Some or all resources couldn't be fetched, so nothing they write was deleted.",
+              run.failed > 0 &&
+                `${run.failed} of ${run.received} items weren't written` +
+                  (run.failed > run.errors.length
+                    ? `; the first ${run.errors.length} are shown`
+                    : "") +
+                  ".",
+            ]
+              .filter(Boolean)
+              .join(" ")}
           </DialogDescription>
         </DialogHeader>
         {run.error && <p className="font-mono text-sm break-words">{run.error}</p>}

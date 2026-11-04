@@ -1,15 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { CardSection, CardTitleBar } from "@/components/card-sections";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 import { BlueprintLabel } from "@/components/catalog/blueprint-label";
 import { Code } from "@/components/code";
 import { Detail, DetailList } from "@/components/detail-list";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { blueprints } from "@/features/blueprints";
 import {
+  checkIntegration,
   connectorsQueryOptions,
   type IntegrationSpec,
   type Mapping,
@@ -20,9 +23,6 @@ import {
 // it writes and how data becomes entities. Pushing has its own tab, and
 // syncing sits in the page header.
 export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }>) {
-  const { data: connectors } = useQuery(connectorsQueryOptions);
-  const pulls = connectors?.find((c) => c.id === spec.connector.type)?.mode === "pull";
-
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <Card className="min-w-0 gap-0 pb-0">
@@ -36,11 +36,7 @@ export function IntegrationOverview({ spec }: Readonly<{ spec: IntegrationSpec }
         </CardContent>
       </Card>
       <div className="grid gap-4">
-        <ConnectorCard
-          connector={spec.connector.type}
-          description={spec.description}
-          interval={pulls ? (spec.sync?.interval ?? "15m") : undefined}
-        />
+        <ConnectorCard spec={spec} />
         <FeedsCard identifier={spec.identifier} />
       </div>
     </div>
@@ -86,33 +82,67 @@ function FeedsCard({ identifier }: Readonly<{ identifier: string }>) {
   );
 }
 
-// ConnectorCard says what the integration connects to, and for one that
-// pulls, how often it syncs; each sync is a full snapshot, so entities
-// that drop out of it are deleted.
-function ConnectorCard({
-  connector,
-  description,
-  interval,
-}: Readonly<{ connector: string; description?: string; interval?: string }>) {
+// ConnectorCard says what the integration connects to and what it does
+// with it. One that pulls syncs incrementally every interval and completely,
+// deleting what the system no longer has, every complete interval; without
+// one, every sync is complete.
+function ConnectorCard({ spec }: Readonly<{ spec: IntegrationSpec }>) {
   const { data: connectors } = useQuery(connectorsQueryOptions);
-  const known = connectors?.find((c) => c.id === connector);
+  const known = connectors?.find((c) => c.id === spec.connector.type);
+  const interval = spec.sync?.interval ?? "15m";
+  const check = useMutation({
+    mutationFn: () => checkIntegration(spec.identifier),
+    onError: (error) => toast.error(error.message),
+  });
 
   return (
     <Card>
-      <CardTitleBar title="About" />
+      <CardTitleBar
+        title="About"
+        action={
+          spec.checks && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => check.mutate()}
+              disabled={check.isPending}
+            >
+              {check.isPending && <Loader2 className="animate-spin" aria-hidden />}
+              Test Connection
+            </Button>
+          )
+        }
+      />
       <CardContent className="grid gap-3 text-sm">
-        {description && <p className="text-muted-foreground">{description}</p>}
+        {spec.description && <p className="text-muted-foreground">{spec.description}</p>}
         <div className="flex items-center gap-2">
           <IconTile icon={known?.icon} color={known?.color} size="sm" />
-          <span className="font-medium">{known?.title ?? connector} Connector</span>
-          {known && <Badge variant="secondary">{known.mode}</Badge>}
+          <span className="font-medium">{known?.title ?? spec.connector.type} Connector</span>
+          {spec.pulls && <Badge variant="secondary">Pull</Badge>}
+          {spec.receives && <Badge variant="secondary">Push</Badge>}
         </div>
         {known && <p className="text-muted-foreground">{known.description}</p>}
-        {interval && (
+        {(spec.pulls || check.data) && (
           <DetailList>
-            <Detail label="Syncs Every">
-              <code className="font-mono">{interval}</code>
-            </Detail>
+            {spec.pulls && (
+              <>
+                <Detail label="Syncs Every">
+                  <code className="font-mono">{interval}</code>
+                </Detail>
+                <Detail label="Complete Every">
+                  <code className="font-mono">{spec.sync?.complete ?? interval}</code>
+                </Detail>
+              </>
+            )}
+            {check.data && (
+              <Detail label="Connection" help={check.data.error}>
+                {check.data.passed ? (
+                  <Badge variant="success">Passed</Badge>
+                ) : (
+                  <Badge variant="destructive">Failed</Badge>
+                )}
+              </Detail>
+            )}
           </DetailList>
         )}
       </CardContent>
@@ -124,7 +154,6 @@ function MappingView({ mapping }: Readonly<{ mapping: Mapping }>) {
   const { data: target } = useQuery(blueprints.queries.detail(mapping.blueprint));
   const properties = (target?.published?.spec ?? target?.draft?.spec)?.properties ?? [];
   const rows: [string, string | undefined][] = [
-    ["Items", mapping.items === "." ? undefined : mapping.items],
     ["Filter", mapping.filter],
     ["Identifier", mapping.entity.identifier],
     ["Title", mapping.entity.title],
@@ -138,12 +167,8 @@ function MappingView({ mapping }: Readonly<{ mapping: Mapping }>) {
     <CardSection
       heading={
         <>
-          {mapping.resource && (
-            <>
-              <code className="font-mono text-muted-foreground">{mapping.resource}</code>
-              <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            </>
-          )}
+          <code className="font-mono text-muted-foreground">{mapping.resource}</code>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <Link
             to="/blueprints/$identifier"
             params={{ identifier: mapping.blueprint }}

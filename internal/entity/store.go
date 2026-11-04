@@ -41,7 +41,8 @@ const (
 	Unchanged = "unchanged"
 )
 
-// Upsert writes an entity on behalf of an integration.
+// Upsert writes an entity on behalf of an integration, and marks it seen
+// now, even when it's unchanged, so a complete run keeps it.
 func (s Store) Upsert(ctx context.Context, blueprintID, integrationID string, e blueprint.Entity, computed map[string]any) (string, error) {
 	properties, _ := json.Marshal(e.Properties)
 	relations, _ := json.Marshal(e.Relations)
@@ -53,7 +54,7 @@ func (s Store) Upsert(ctx context.Context, blueprintID, integrationID string, e 
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (blueprint_id, identifier) DO UPDATE
 			SET title = excluded.title, properties = excluded.properties, relations = excluded.relations,
-				computed = excluded.computed, updated_at = now()
+				computed = excluded.computed, updated_at = now(), seen_at = now()
 			WHERE entities.integration_id = excluded.integration_id
 				AND (entities.title, entities.properties, entities.relations, entities.computed)
 					IS DISTINCT FROM (excluded.title, excluded.properties, excluded.relations, excluded.computed)
@@ -68,12 +69,14 @@ func (s Store) Upsert(ctx context.Context, blueprintID, integrationID string, e 
 		return "", err
 	}
 
-	// Nothing was written: the entity is either unchanged or someone else's.
+	// Nothing was written: the entity is either unchanged, so it's only
+	// seen, or someone else's.
 	var ownerID, owner string
 	err = s.db.QueryRowContext(ctx, `
-		SELECT e.integration_id, i.identifier FROM entities e
-		JOIN config_documents i ON i.id = e.integration_id
-		WHERE e.blueprint_id = $1 AND e.identifier = $2`, blueprintID, e.Identifier).Scan(&ownerID, &owner)
+		UPDATE entities e SET seen_at = CASE WHEN e.integration_id = $3 THEN now() ELSE e.seen_at END
+		FROM config_documents i
+		WHERE i.id = e.integration_id AND e.blueprint_id = $1 AND e.identifier = $2
+		RETURNING e.integration_id, i.identifier`, blueprintID, e.Identifier, integrationID).Scan(&ownerID, &owner)
 	if err != nil {
 		return "", err
 	}
@@ -106,6 +109,24 @@ func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifie
 		blueprintID, identifier, integrationID)
 
 	return err
+}
+
+// Reconcile deletes an integration's entities of the blueprints given that
+// nothing has written or seen since before, which a complete run calls with
+// when it started.
+func (s Store) Reconcile(ctx context.Context, integrationID string, blueprintIDs []string, before time.Time) (int, error) {
+	if len(blueprintIDs) == 0 {
+		return 0, nil
+	}
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM entities WHERE integration_id = $1 AND blueprint_id = ANY($2) AND seen_at < $3`,
+		integrationID, pq.Array(blueprintIDs), before)
+	if err != nil {
+		return 0, err
+	}
+	deleted, _ := result.RowsAffected()
+
+	return int(deleted), nil
 }
 
 // Entity is a stored entity as the API shows it.

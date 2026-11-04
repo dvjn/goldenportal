@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -25,8 +26,33 @@ var Kind = configdoc.Kind[Spec]{
 		}
 		return Check(spec, published), nil
 	},
+	Preflight: func(ctx context.Context, db configdoc.DB, spec Spec) []configdoc.Issue {
+		err := spec.check(ctx, db)
+		if err == nil {
+			return nil
+		}
+		return []configdoc.Issue{{
+			Severity: configdoc.SeverityWarning, Path: "spec.connector",
+			Message: "the connector's check failed: " + err.Error(),
+		}}
+	},
 	Diff:     Diff,
 	Affected: countEntities,
+}
+
+// checkTimeout bounds a connector's check, which waits on its system.
+const checkTimeout = 15 * time.Second
+
+// check runs the connector's check, if it has one.
+func (s Spec) check(ctx context.Context, db configdoc.DB) error {
+	checker, ok := s.config.(Checker)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+
+	return checker.Check(ctx, db)
 }
 
 // Diff lists what publishing next over previous changes. Entities already
@@ -45,7 +71,25 @@ func Diff(previous, next Spec) []configdoc.Change {
 			Detail: "changes the connector config",
 		})
 	}
-	if previous.SyncEvery() != next.SyncEvery() {
+	for _, side := range []struct {
+		before, after bool
+		starts, stops string
+		breaking      bool
+	}{
+		{previous.Pulls, next.Pulls, "starts syncing on a schedule", "stops syncing; the entities it pulled stay", false},
+		// Systems that push get refused, so they need telling.
+		{previous.Receives, next.Receives, "starts taking pushes", "stops taking pushes, so systems pushing to it are refused", true},
+	} {
+		switch {
+		case !side.before && side.after:
+			changes = append(changes, configdoc.Change{Section: "integration", Change: configdoc.ChangeChanged, Detail: side.starts})
+		case side.before && !side.after:
+			changes = append(changes, configdoc.Change{
+				Section: "integration", Change: configdoc.ChangeChanged, Breaking: side.breaking, Detail: side.stops,
+			})
+		}
+	}
+	if previous.Pulls && next.Pulls && previous.SyncEvery() != next.SyncEvery() {
 		changes = append(changes, configdoc.Change{
 			Section: "integration", Change: configdoc.ChangeChanged,
 			Detail: fmt.Sprintf("syncs every %s instead of every %s", next.SyncEvery(), previous.SyncEvery()),

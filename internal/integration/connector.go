@@ -2,11 +2,17 @@ package integration
 
 import (
 	"context"
+	"net/http"
+	"net/url"
+	"time"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 )
 
-// Connector is a source of entities an integration can use.
+// Connector is built-in code for one kind of system. It turns what the system
+// has into items; the core maps, owns and reconciles them.
 type Connector struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
@@ -15,60 +21,109 @@ type Connector struct {
 	// same everywhere.
 	Icon  string `json:"icon"`
 	Color string `json:"color"`
-	// Mode is "push" when other systems send entities, or "pull" when the portal fetches them.
-	Mode string `json:"mode"`
-	// Resources are what a pull connector can fetch, which mappings name.
+	// Pulls, Receives and Checks are what the connector can do: fetch its
+	// resources, take requests the system sends, and check it can reach the
+	// system. An integration's config may use less, as an http integration
+	// with no URLs doesn't pull.
+	Pulls    bool `json:"pulls"`
+	Receives bool `json:"receives"`
+	Checks   bool `json:"checks"`
+	// Resources are the fixed ones a connector reads, which mappings name.
+	// Connectors whose config defines them have none here.
 	Resources []string `json:"resources,omitempty"`
+	// parse reads the connector's config, nil when the document has none.
+	parse func(r *configdoc.Reader, node *yaml.Node, path string) Config
 }
 
-// puller fetches the resources a pull integration's mappings name, as a map
-// from resource to its objects.
-type puller func(ctx context.Context, db configdoc.DB, spec Spec, resources []string) (map[string]any, error)
-
-// pull returns how a pull connector fetches. It's a function rather than a
-// field so the connector list doesn't depend on the code that parses integrations.
-func (c Connector) pull() puller {
-	switch c.ID {
-	case "portal":
-		return portalSnapshot
-	case "http":
-		return httpPull
-	}
-
-	return nil
+// Item is one object of one resource, or its deletion.
+type Item struct {
+	Resource string
+	Object   any
+	Deleted  bool
 }
 
-const (
-	ModePush = "push"
-	ModePull = "pull"
-)
+// Config is an integration's parsed connector config. What it can do beyond
+// naming resources it says by also being a Puller, Receiver or Checker.
+type Config interface {
+	// Resources are what mappings can name.
+	Resources() []string
+}
+
+// Puller is a config that fetches its resources.
+type Puller interface {
+	Config
+	// Pulls lists the resources it fetches.
+	Pulls() []string
+	// Pull fetches each resource asked for and hands its items to emit, a
+	// page at a time. A resource that fails doesn't stop the others; its
+	// error is returned by name.
+	Pull(ctx context.Context, db configdoc.DB, p PullRequest, emit func(resource string, items []Item) error) (map[string]error, error)
+}
+
+// PullRequest is what one sync asks a Puller for.
+type PullRequest struct {
+	Resources []string
+	// Since is when the last successful sync started, less a minute, for an
+	// incremental sync; the zero time for a complete one.
+	Since time.Time
+}
+
+// Incremental is a Puller that can fetch only what changed since a time.
+// Without it, every sync fetches everything.
+type Incremental interface {
+	Puller
+	UsesSince() bool
+}
+
+// Receiver is a config that takes requests its system sends.
+type Receiver interface {
+	Config
+	// Receives lists the resources requests can carry.
+	Receives() []string
+	// Receive turns a request into items. authenticated is whether it came
+	// with the integration's ingestion token; without one the connector
+	// verifies it, returning ErrUnverified if it can't.
+	Receive(req Request, authenticated bool) ([]Item, error)
+}
+
+// Request is a request sent to an integration's ingest endpoint.
+type Request struct {
+	// Resources are the ones to read from it, of those the config receives.
+	Resources []string
+	Header    http.Header
+	Query     url.Values
+	Body      []byte
+}
+
+// Checker is a config that can check its system is reachable.
+type Checker interface {
+	Config
+	Check(ctx context.Context, db configdoc.DB) error
+}
 
 // Connectors are the built-in connectors.
 var Connectors = []Connector{
-	{
-		ID:          "push",
-		Icon:        "webhook",
-		Color:       "violet",
-		Title:       "Push",
-		Description: "Other systems send entities to the ingest API with an ingestion token.",
-		Mode:        ModePush,
-	},
 	{
 		ID:          "portal",
 		Icon:        "panels-top-left",
 		Color:       "indigo",
 		Title:       "Portal",
 		Description: "The portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. Changes to the entities never flow back.",
-		Mode:        ModePull,
+		Pulls:       true,
+		Checks:      true,
 		Resources:   []string{"users", "groups", "blueprints", "integrations"},
+		parse:       parsePortalConfig,
 	},
 	{
 		ID:          "http",
 		Icon:        "globe",
 		Color:       "cyan",
 		Title:       "HTTP",
-		Description: "JSON fetched from URLs on a schedule, following pages if there are several.",
-		Mode:        ModePull,
+		Description: "JSON fetched from URLs on a schedule, following pages, and JSON other systems send to the ingest API, with an ingestion token or a signature.",
+		Pulls:       true,
+		Receives:    true,
+		Checks:      true,
+		parse:       parseHTTPConfig,
 	},
 }
 

@@ -144,7 +144,7 @@ type HTTPStep struct {
 	Output []Output `json:"output,omitempty"`
 }
 
-// EntityStep writes or deletes an entity as a push integration.
+// EntityStep writes or deletes an entity as an integration that doesn't pull.
 type EntityStep struct {
 	Operation   string         `json:"operation"`
 	Integration string         `json:"integration"`
@@ -702,7 +702,7 @@ func (p *parser) entityStep(node *yaml.Node, path string) *EntityStep {
 	}
 	e.Integration = p.Text(fields["integration"], path+".integration")
 	if !configdoc.ValidIdentifier(e.Integration) {
-		p.Errorf(configdoc.OrNode(fields["integration"], node), path+".integration", "integration must name the push integration the entity is written as")
+		p.Errorf(configdoc.OrNode(fields["integration"], node), path+".integration", "integration must name the integration the entity is written as")
 	}
 	e.Blueprint = p.Text(fields["blueprint"], path+".blueprint")
 	if !configdoc.ValidIdentifier(e.Blueprint) {

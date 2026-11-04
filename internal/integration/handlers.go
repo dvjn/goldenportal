@@ -35,6 +35,7 @@ func Register(app httpx.Routes) {
 	app.DELETE("integrations/{identifier}/tokens/{id}", revokeToken)
 	app.GET("integrations/{identifier}/runs", listRuns)
 	app.POST("integrations/{identifier}/sync", syncNow)
+	app.POST("integrations/{identifier}/check", checkNow)
 	app.AddCronJob(SyncSchedule, "sync-pull-integrations", syncAll)
 	app.GET("blueprints/{identifier}/usage", blueprintUsage)
 	app.GET("integration-status", listStatus)
@@ -76,7 +77,7 @@ func integrationID(ctx *gofr.Context, identifier string) (string, error) {
 
 func listTokens(ctx *gofr.Context) (any, error) { return ListTokens(ctx, ctx.PathParam("identifier")) }
 
-// ListTokens lists a push integration's ingestion tokens, without secrets.
+// ListTokens lists an integration's ingestion tokens, without secrets.
 func ListTokens(ctx *gofr.Context, integration string) ([]Token, error) {
 	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return nil, err
@@ -109,7 +110,7 @@ func createToken(ctx *gofr.Context) (any, error) {
 	return httpx.Result(CreateToken(ctx, ctx.PathParam("identifier"), req.Name))
 }
 
-// CreateToken creates an ingestion token for a push integration.
+// CreateToken creates an ingestion token for an integration that takes pushes.
 func CreateToken(ctx *gofr.Context, integration, name string) (CreatedToken, error) {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
 	if err != nil {
@@ -124,8 +125,8 @@ func CreateToken(ctx *gofr.Context, integration, name string) (CreatedToken, err
 		return CreatedToken{}, badRequest("give the token a name of up to 100 characters")
 	}
 
-	if pulls(ctx, integration) {
-		return CreatedToken{}, httpx.Error{Code: http.StatusConflict, Message: "the " + integration + " integration pulls its data, so it has no ingestion tokens"}
+	if !receives(ctx, integration) {
+		return CreatedToken{}, httpx.Error{Code: http.StatusConflict, Message: "the " + integration + " integration takes no pushes, so it has no ingestion tokens; give one of its resources a push side"}
 	}
 
 	secret := tokenPrefix + auth.NewSecret()
@@ -268,9 +269,54 @@ func badRequest(message string) error {
 	return httpx.Error{Code: http.StatusBadRequest, Message: message}
 }
 
-// pulls reports whether the integration's latest version, draft or
-// published, uses a pull connector.
-func pulls(ctx *gofr.Context, identifier string) bool {
+// CheckResult is how a connector's check went.
+type CheckResult struct {
+	// Version is what was checked: the published version, or the draft of
+	// an integration that hasn't been published.
+	Version string `json:"version"`
+	Passed  bool   `json:"passed"`
+	Error   string `json:"error,omitempty"`
+}
+
+func checkNow(ctx *gofr.Context) (any, error) { return CheckNow(ctx, ctx.PathParam("identifier")) }
+
+// CheckNow checks the integration's connector can reach its system with the
+// current config and secrets.
+func CheckNow(ctx *gofr.Context, identifier string) (CheckResult, error) {
+	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
+		return CheckResult{}, err
+	}
+	if _, err := integrationID(ctx, identifier); err != nil {
+		return CheckResult{}, err
+	}
+	record, err := configdoc.NewStore(ctx.SQL, Name).Get(ctx, identifier)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	result := CheckResult{Version: "published"}
+	source := record.PublishedSource
+	if !record.Published() {
+		result.Version, source = "draft", record.DraftSource
+	}
+	spec, issues := Parse(source)
+	if configdoc.HasErrors(issues) {
+		return CheckResult{}, httpx.Error{Code: http.StatusConflict, Message: "fix the " + result.Version + "'s errors before checking it"}
+	}
+	if !spec.Checks {
+		return CheckResult{}, httpx.Error{Code: http.StatusConflict, Message: "the " + spec.Connector.Type + " connector can't check its system"}
+	}
+	if err := spec.check(ctx, ctx.SQL); err != nil {
+		result.Error = err.Error()
+	} else {
+		result.Passed = true
+	}
+
+	return result, nil
+}
+
+// receives reports whether the integration's latest version, draft or
+// published, takes pushes.
+func receives(ctx *gofr.Context, identifier string) bool {
 	record, err := configdoc.NewStore(ctx.SQL, Name).Get(ctx, identifier)
 	if err != nil {
 		return false
@@ -280,7 +326,6 @@ func pulls(ctx *gofr.Context, identifier string) bool {
 		source = record.DraftSource
 	}
 	spec, _ := Parse(source)
-	c, _ := connector(spec.Connector.Type)
 
-	return c.Mode == ModePull
+	return spec.Receives
 }

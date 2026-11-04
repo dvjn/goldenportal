@@ -292,7 +292,7 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
                     className="text-xs text-muted-foreground"
                     title={writer.lastRunAt ? formatAbsolute(writer.lastRunAt) : undefined}
                   >
-                    {writer.lastRunAt ? formatRelative(writer.lastRunAt) : "Never pushed"}
+                    {writer.lastRunAt ? formatRelative(writer.lastRunAt) : "Never run"}
                   </span>
                 </div>
                 <span

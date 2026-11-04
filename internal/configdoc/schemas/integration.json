@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Integration",
-  "description": "An integration writes entities into the catalog: a connector brings in data, pushed by another system or pulled on a schedule, and mappings turn it into entities of blueprints with jq.",
+  "description": "An integration writes entities into the catalog: its connector turns what a system has into items, each one object of one of its resources or its deletion, and mappings turn the items into entities of blueprints with jq.",
   "type": "object",
   "properties": {
     "kind": { "const": "Integration" },
@@ -23,7 +23,7 @@
         "mappings": {
           "type": "array",
           "minItems": 1,
-          "description": "One mapping for each kind of entity the integration writes. They're also the only blueprints it can write.",
+          "description": "One mapping for each kind of entity the integration writes from each resource. They're also the only blueprints it can write.",
           "items": { "$ref": "#/$defs/mapping" }
         }
       },
@@ -31,27 +31,22 @@
       "allOf": [
         {
           "if": {
-            "properties": { "connector": { "properties": { "type": { "const": "push" } }, "required": ["type"] } },
+            "properties": {
+              "connector": { "properties": { "type": { "const": "portal" } }, "required": ["type"] }
+            },
             "required": ["connector"]
           },
           "then": {
             "properties": {
-              "sync": false,
-              "mappings": { "items": { "properties": { "resource": false } } }
-            }
-          },
-          "else": {
-            "properties": { "mappings": { "items": { "required": ["resource"] } } }
-          }
-        },
-        {
-          "if": {
-            "properties": { "connector": { "properties": { "type": { "const": "portal" } }, "required": ["type"] } },
-            "required": ["connector"]
-          },
-          "then": {
-            "properties": {
-              "mappings": { "items": { "properties": { "resource": { "enum": ["users", "groups", "blueprints", "integrations", "actions", "runs"] } } } }
+              "mappings": {
+                "items": {
+                  "properties": {
+                    "resource": {
+                      "enum": ["users", "groups", "blueprints", "integrations", "actions", "runs"]
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -63,8 +58,8 @@
       "description": "Where the data comes from.",
       "properties": {
         "type": {
-          "enum": ["push", "portal", "http"],
-          "description": "push: other systems send JSON to the ingest API with an ingestion token. portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages."
+          "enum": ["portal", "http"],
+          "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource."
         },
         "config": { "$ref": "#/$defs/httpConfig" }
       },
@@ -78,10 +73,11 @@
       "type": "object",
       "description": "The http connector's config. Only it takes one.",
       "properties": {
+        "push": { "$ref": "#/$defs/httpPush" },
         "resources": {
           "type": "object",
           "minProperties": 1,
-          "description": "The JSON documents to fetch, keyed by the resource name mappings use.",
+          "description": "The resources, keyed by the name mappings use. Each is fetched from a url, sent to the ingest API, or both.",
           "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,62}$" },
           "additionalProperties": { "$ref": "#/$defs/httpResource" }
         }
@@ -89,13 +85,68 @@
       "required": ["resources"],
       "additionalProperties": false
     },
+    "httpPush": {
+      "type": "object",
+      "description": "How requests to the ingest API are checked. Without a signature, pushes need an ingestion token.",
+      "properties": { "signature": { "$ref": "#/$defs/signature" } },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "description": "Lets a system push without an ingestion token by signing each request: an HMAC of the body, in hex, in a header. A signed push is always incremental.",
+      "properties": {
+        "header": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+$",
+          "description": "The header the signature is in, such as X-Hub-Signature-256."
+        },
+        "algorithm": { "enum": ["sha1", "sha256", "sha512"], "description": "The HMAC's hash." },
+        "prefix": {
+          "type": "string",
+          "description": "What comes before the hex, such as sha256=."
+        },
+        "secret": {
+          "type": "object",
+          "properties": {
+            "env": {
+              "type": "string",
+              "pattern": "^GP_SECRET_",
+              "description": "An environment variable of the server, starting with GP_SECRET_."
+            }
+          },
+          "required": ["env"],
+          "additionalProperties": false,
+          "description": "The secret the system signs with, read from the server's environment."
+        }
+      },
+      "required": ["header", "algorithm", "secret"],
+      "additionalProperties": false
+    },
     "httpResource": {
       "type": "object",
+      "description": "A resource. Its pull and push sides must give the same objects, since the same mappings run over both.",
       "properties": {
-        "url": { "type": "string", "pattern": "^https?://[^/]", "description": "The http or https URL of the first page." },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://[^/]",
+          "description": "The http or https URL of the first page. {{ $since }} in it becomes when the last sync that fetched everything started, less a minute, on incremental syncs, and 1970-01-01T00:00:00Z on complete ones. Left out, the resource is only pushed."
+        },
         "next": {
           "$ref": "#/$defs/jq",
-          "description": "jq over a page giving the next page's URL, absolute or relative to the page, or null on the last page. Left out, there's one page."
+          "description": "jq over a page, with the answer's headers as $headers by lowercase name, giving the next page's URL, absolute or relative to the page, or null on the last page. Left out, there's one page."
+        },
+        "items": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over a page giving its items, such as .deployments[]. Left out, the page is one item."
+        },
+        "deleted": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over each fetched item that's true when it's a deletion, for sources that list what was deleted."
+        },
+        "maxPages": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many pages a sync fetches before failing, so pages that never end can't run on. Defaults to 100."
         },
         "headers": {
           "type": "object",
@@ -118,19 +169,41 @@
               }
             ]
           }
+        },
+        "push": { "$ref": "#/$defs/httpReceive" }
+      },
+      "additionalProperties": false,
+      "anyOf": [{ "required": ["url"] }, { "required": ["push"] }]
+    },
+    "httpReceive": {
+      "type": "object",
+      "description": "The resource's push side: what a request to the ingest API carries of it. Its jq runs over the request as {body, headers, query}, with header names in lowercase.",
+      "properties": {
+        "items": {
+          "$ref": "#/$defs/jq",
+          "description": "jq giving the request's objects of this resource, such as .body.services[], or none."
+        },
+        "deleted": {
+          "$ref": "#/$defs/jq",
+          "description": "jq that's true when the request's objects are deletions, such as .body.action == \"deleted\"."
         }
       },
-      "required": ["url"],
+      "required": ["items"],
       "additionalProperties": false
     },
     "sync": {
       "type": "object",
-      "description": "Pull connectors only: how often to sync. Push integrations don't sync.",
+      "description": "Integrations that pull only: how often to sync.",
       "properties": {
         "interval": {
           "type": "string",
           "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-          "description": "A Go duration of at least 1m, such as 5m or 1h. Defaults to 15m."
+          "description": "A Go duration of at least 1m, such as 5m or 1h. Defaults to 15m. With complete, syncs at this interval are incremental."
+        },
+        "complete": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "description": "How often a sync is complete, deleting what it didn't see: a Go duration of at least the interval, such as 24h. Left out, every sync is complete. The first sync, and the first after a publish, are complete too."
         }
       },
       "required": ["interval"],
@@ -138,29 +211,37 @@
     },
     "mapping": {
       "type": "object",
-      "description": "Turns items of the incoming data into entities of one blueprint. Every expression is jq.",
+      "description": "Turns the items of one resource into entities of one blueprint. Every expression is jq over an item.",
       "properties": {
         "resource": {
           "type": "string",
-          "description": "Pull connectors only, and required there: what to fetch for this mapping, one of the connector's resources (portal: users, groups, blueprints, integrations, actions or runs; http: a key of config.resources)."
+          "description": "The resource whose items it maps (portal: users, groups, blueprints, integrations, actions or runs; http: a key of config.resources)."
         },
-        "blueprint": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it writes." },
-        "items": {
+        "blueprint": {
+          "$ref": "#/$defs/identifier",
+          "description": "The blueprint whose entities it writes."
+        },
+        "filter": {
           "$ref": "#/$defs/jq",
-          "description": "jq picking the items from the data, the pushed body or each fetched page, such as .services[]. Each result is one entity. Defaults to ., the data itself."
+          "description": "jq over each item; keeps the items it's true for. Deleted items skip it."
         },
-        "filter": { "$ref": "#/$defs/jq", "description": "jq over each item; keeps the items it's true for." },
         "entity": { "$ref": "#/$defs/entityMapping" }
       },
-      "required": ["blueprint", "entity"],
+      "required": ["resource", "blueprint", "entity"],
       "additionalProperties": false
     },
     "entityMapping": {
       "type": "object",
-      "description": "Makes an entity from an item, with jq over the item.",
+      "description": "Makes an entity from an item, with jq over the item. A deleted item only needs its identifier.",
       "properties": {
-        "identifier": { "$ref": "#/$defs/jq", "description": "jq giving the entity's identifier, such as .id." },
-        "title": { "$ref": "#/$defs/jq", "description": "jq giving the entity's title. Defaults to its identifier." },
+        "identifier": {
+          "$ref": "#/$defs/jq",
+          "description": "jq giving the entity's identifier, such as .id."
+        },
+        "title": {
+          "$ref": "#/$defs/jq",
+          "description": "jq giving the entity's title. Defaults to its identifier."
+        },
         "properties": {
           "type": "object",
           "description": "jq giving each property's value, keyed by the blueprint's stored property or relation. A relation takes the identifier, or a list of them, of the related entities.",

@@ -17,9 +17,9 @@ type EntityError struct{ Problems []string }
 
 func (e EntityError) Error() string { return strings.Join(e.Problems, "; ") }
 
-// pushID returns a published push integration's row ID, which others,
-// such as actions, write entities as.
-func pushID(ctx context.Context, db configdoc.DB, name string) (string, error) {
+// writableID returns the row ID of a published integration that doesn't
+// pull, which others, such as actions, write entities as.
+func writableID(ctx context.Context, db configdoc.DB, name string) (string, error) {
 	store := configdoc.NewStore(db, Name)
 	record, err := store.Get(ctx, name)
 	if errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published()) {
@@ -29,30 +29,31 @@ func pushID(ctx context.Context, db configdoc.DB, name string) (string, error) {
 		return "", err
 	}
 	spec, _ := Parse(record.PublishedSource)
-	if c, _ := connector(spec.Connector.Type); c.Mode != ModePush {
-		return "", EntityError{[]string{"the " + name + " integration pulls its data, so nothing else can write it"}}
+	if problem := Writable(spec); problem != "" {
+		return "", EntityError{[]string{problem}}
 	}
 
 	return store.PublishedID(ctx, name)
 }
 
-// PushOnly reports a problem when name isn't a push integration's spec,
-// for documents that write entities as it.
-func PushOnly(spec Spec) string {
-	if c, _ := connector(spec.Connector.Type); c.Mode != ModePush {
-		return "the " + spec.Identifier + " integration pulls its data, so nothing else can write it; name a push integration"
+// Writable reports a problem when others can't write entities as the
+// integration, for documents that do. One that pulls can't be written,
+// since its next complete sync would delete what they wrote.
+func Writable(spec Spec) string {
+	if spec.Pulls {
+		return "the " + spec.Identifier + " integration pulls its data, so nothing else can write it; name an integration that doesn't pull"
 	}
 
 	return ""
 }
 
-// WriteEntity validates an entity and writes it as a push integration, for the
+// WriteEntity validates an entity and writes it as an integration, for the
 // action run actionRun, which the integration records as a run of its own.
 // With merge, the properties it leaves out keep their stored values. It
 // returns the outcome: created, updated or unchanged.
 func WriteEntity(ctx context.Context, db configdoc.DB, actionRun, integration, blueprintName string, e blueprint.Entity, merge bool) (string, error) {
 	started := time.Now().UTC()
-	integrationID, err := pushID(ctx, db, integration)
+	integrationID, err := writableID(ctx, db, integration)
 	if err != nil {
 		return "", err
 	}
@@ -113,11 +114,11 @@ func writeEntity(ctx context.Context, db configdoc.DB, integrationID, blueprintN
 	return outcome, err
 }
 
-// RemoveEntity deletes an entity a push integration wrote, for the action run
+// RemoveEntity deletes an entity an integration wrote, for the action run
 // actionRun, which the integration records as a run of its own.
 func RemoveEntity(ctx context.Context, db configdoc.DB, actionRun, integration, blueprintName, identifier string) error {
 	started := time.Now().UTC()
-	integrationID, err := pushID(ctx, db, integration)
+	integrationID, err := writableID(ctx, db, integration)
 	if err != nil {
 		return err
 	}
@@ -159,7 +160,7 @@ func recordAction(ctx context.Context, db configdoc.DB, integrationID, actionRun
 	if err != nil && !errors.As(err, &entityErr) {
 		return err
 	}
-	run := &Run{StartedAt: started, Trigger: TriggerAction, ActionRun: actionRun, Received: 1, Errors: []RunError{}}
+	run := &Run{StartedAt: started, Trigger: TriggerAction, Mode: ModeIncremental, ActionRun: actionRun, Received: 1, Errors: []RunError{}}
 	switch {
 	case err != nil:
 		run.Failed = 1
