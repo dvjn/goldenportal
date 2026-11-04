@@ -18,5 +18,6 @@ func All() map[int64]migration.Migrate {
 		20261102120000: createOAuth(),
 		20261102130000: addOAuthClientMetadata(),
 		20261103180000: createRuns(),
+		20261104120000: addActionIngestionRuns(),
 	}
 }

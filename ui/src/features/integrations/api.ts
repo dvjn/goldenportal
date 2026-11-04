@@ -60,8 +60,11 @@ export type Run = {
   id: number;
   startedAt: string;
   finishedAt: string;
-  trigger: "push" | "schedule" | "manual";
+  trigger: "push" | "schedule" | "manual" | "action";
   token?: string;
+  // actionRun and action are the action run behind an action trigger and its title.
+  actionRun?: string;
+  action?: string;
   received: number;
   created: number;
   updated: number;

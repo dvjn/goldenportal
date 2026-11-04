@@ -37,8 +37,8 @@ func TestSyncRecordsFailedFetch(t *testing.T) {
 	mock.ExpectRollback()
 	// No DELETE is expected: the rollback leaves the previous snapshot in place.
 	mock.ExpectQuery(`INSERT INTO ingestion_runs (integration_id, token_id, trigger, started_at, received, created, updated,
-		unchanged, deleted, failed, errors, error) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, finished_at`).
-		WithArgs("integration-id", nil, TriggerSchedule, sqlmock.AnyArg(), 0, 0, 0, 0, 0, 0, []byte("[]"), sqlmock.AnyArg()).
+		unchanged, deleted, failed, errors, error, action_run_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id, finished_at`).
+		WithArgs("integration-id", nil, TriggerSchedule, sqlmock.AnyArg(), 0, 0, 0, 0, 0, 0, []byte("[]"), sqlmock.AnyArg(), nil).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "finished_at"}).AddRow(1, now))
 
 	_, err := Sync(context.Background(), db, "source", TriggerSchedule)

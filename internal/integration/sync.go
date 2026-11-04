@@ -23,6 +23,8 @@ const (
 	TriggerPush     = "push"
 	TriggerSchedule = "schedule"
 	TriggerManual   = "manual"
+	// TriggerAction is an action run writing an entity through a push integration.
+	TriggerAction = "action"
 )
 
 // SyncSchedule is how often the scheduler looks for pull integrations due

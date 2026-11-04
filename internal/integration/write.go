@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -45,14 +46,22 @@ func PushOnly(spec Spec) string {
 	return ""
 }
 
-// WriteEntity validates an entity and writes it as a push integration.
+// WriteEntity validates an entity and writes it as a push integration, for the
+// action run actionRun, which the integration records as a run of its own.
 // With merge, the properties it leaves out keep their stored values. It
 // returns the outcome: created, updated or unchanged.
-func WriteEntity(ctx context.Context, db configdoc.DB, integration, blueprintName string, e blueprint.Entity, merge bool) (string, error) {
+func WriteEntity(ctx context.Context, db configdoc.DB, actionRun, integration, blueprintName string, e blueprint.Entity, merge bool) (string, error) {
+	started := time.Now().UTC()
 	integrationID, err := pushID(ctx, db, integration)
 	if err != nil {
 		return "", err
 	}
+	outcome, err := writeEntity(ctx, db, integrationID, blueprintName, e, merge)
+
+	return outcome, recordAction(ctx, db, integrationID, actionRun, started, blueprintName, e.Identifier, outcome, err)
+}
+
+func writeEntity(ctx context.Context, db configdoc.DB, integrationID, blueprintName string, e blueprint.Entity, merge bool) (string, error) {
 	published, err := blueprint.Published(ctx, db)
 	if err != nil {
 		return "", err
@@ -104,12 +113,23 @@ func WriteEntity(ctx context.Context, db configdoc.DB, integration, blueprintNam
 	return outcome, err
 }
 
-// RemoveEntity deletes an entity a push integration wrote.
-func RemoveEntity(ctx context.Context, db configdoc.DB, integration, blueprintName, identifier string) error {
+// RemoveEntity deletes an entity a push integration wrote, for the action run
+// actionRun, which the integration records as a run of its own.
+func RemoveEntity(ctx context.Context, db configdoc.DB, actionRun, integration, blueprintName, identifier string) error {
+	started := time.Now().UTC()
 	integrationID, err := pushID(ctx, db, integration)
 	if err != nil {
 		return err
 	}
+	err = removeEntity(ctx, db, integrationID, blueprintName, identifier)
+
+	return recordAction(ctx, db, integrationID, actionRun, started, blueprintName, identifier, deleted, err)
+}
+
+// deleted is RemoveEntity's outcome when it records the run.
+const deleted = "deleted"
+
+func removeEntity(ctx context.Context, db configdoc.DB, integrationID, blueprintName, identifier string) error {
 	blueprintID, err := configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, blueprintName)
 	if errors.Is(err, configdoc.ErrNotFound) {
 		return EntityError{[]string{"no blueprint " + blueprintName + " is published"}}
@@ -124,6 +144,37 @@ func RemoveEntity(ctx context.Context, db configdoc.DB, integration, blueprintNa
 		return EntityError{[]string{fmt.Sprintf("there's no %s %s", blueprintName, identifier)}}
 	case errors.As(err, &owned):
 		return EntityError{[]string{owned.Error()}}
+	}
+
+	return err
+}
+
+// recordAction records an action's write as a run of the integration, so its
+// history shows what actions changed. A write the entity's problems stopped is
+// a run with one failed item; any other error is returned without a run.
+func recordAction(ctx context.Context, db configdoc.DB, integrationID, actionRun string, started time.Time,
+	blueprintName, identifier, outcome string, err error,
+) error {
+	var entityErr EntityError
+	if err != nil && !errors.As(err, &entityErr) {
+		return err
+	}
+	run := &Run{StartedAt: started, Trigger: TriggerAction, ActionRun: actionRun, Received: 1, Errors: []RunError{}}
+	switch {
+	case err != nil:
+		run.Failed = 1
+		run.Errors = []RunError{{Blueprint: blueprintName, Identifier: identifier, Problems: entityErr.Problems}}
+	case outcome == entity.Created:
+		run.Created = 1
+	case outcome == entity.Updated:
+		run.Updated = 1
+	case outcome == deleted:
+		run.Deleted = 1
+	default:
+		run.Unchanged = 1
+	}
+	if recordErr := NewStore(db).RecordRun(ctx, integrationID, "", run); recordErr != nil {
+		return recordErr
 	}
 
 	return err

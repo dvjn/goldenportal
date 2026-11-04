@@ -35,7 +35,7 @@ func (rn Runner) runStep(ctx context.Context, store Store, run Run, position int
 	case StepHTTP:
 		return rn.httpStep(ctx, store, run, position, step, scope)
 	case StepEntity:
-		return rn.entityStep(ctx, step.Entity, scope)
+		return rn.entityStep(ctx, run.ID, step.Entity, scope)
 	case StepCheck:
 		return rn.checkStep(ctx, step.Check, scope)
 	case StepOutput:
@@ -252,7 +252,7 @@ func roundTrip(value any) any {
 	return out
 }
 
-func (rn Runner) entityStep(ctx context.Context, e *EntityStep, scope Scope) (any, error) {
+func (rn Runner) entityStep(ctx context.Context, runID string, e *EntityStep, scope Scope) (any, error) {
 	identifier := strings.TrimSpace(scope.Text(e.Identifier))
 	if identifier == "" {
 		return nil, failed(nil, "the identifier came out empty")
@@ -260,7 +260,7 @@ func (rn Runner) entityStep(ctx context.Context, e *EntityStep, scope Scope) (an
 	link := rn.baseURL + "/catalog/" + e.Blueprint + "/" + identifier
 	var entityErr integration.EntityError
 	if e.Operation == OpDelete {
-		err := integration.RemoveEntity(ctx, rn.db, e.Integration, e.Blueprint, identifier)
+		err := integration.RemoveEntity(ctx, rn.db, runID, e.Integration, e.Blueprint, identifier)
 		if errors.As(err, &entityErr) {
 			return nil, failed(map[string]any{"problems": entityErr.Problems}, "%s", entityErr.Error())
 		}
@@ -269,7 +269,7 @@ func (rn Runner) entityStep(ctx context.Context, e *EntityStep, scope Scope) (an
 
 	properties, _ := scope.Resolve(e.Properties).(map[string]any)
 	title := scope.Text(e.Title)
-	outcome, err := integration.WriteEntity(ctx, rn.db, e.Integration, e.Blueprint,
+	outcome, err := integration.WriteEntity(ctx, rn.db, runID, e.Integration, e.Blueprint,
 		blueprint.Entity{Identifier: identifier, Title: title, Properties: properties}, true)
 	if errors.As(err, &entityErr) {
 		return nil, failed(map[string]any{"problems": entityErr.Problems}, "%s", entityErr.Error())

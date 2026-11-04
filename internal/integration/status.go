@@ -88,10 +88,12 @@ func ListStatus(ctx *gofr.Context) ([]Status, error) {
 func latestRuns(ctx *gofr.Context) (map[string]Run, error) {
 	rows, err := ctx.SQL.QueryContext(ctx, `
 		SELECT DISTINCT ON (r.integration_id) i.identifier, r.id, r.started_at, r.finished_at, r.trigger,
-			coalesce(t.name, ''), r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error
+			coalesce(t.name, ''), coalesce(r.action_run_id::text, ''), coalesce(a.title, ''),
+			r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error
 		FROM ingestion_runs r
 		JOIN config_documents i ON i.id = r.integration_id
 		LEFT JOIN ingestion_tokens t ON t.id = r.token_id
+		LEFT JOIN runs a ON a.id = r.action_run_id
 		ORDER BY r.integration_id, r.id DESC`)
 	if err != nil {
 		return nil, err
@@ -104,8 +106,8 @@ func latestRuns(ctx *gofr.Context) (map[string]Run, error) {
 			r      Run
 			errors []byte
 		)
-		if err := rows.Scan(&id, &r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.Received, &r.Created,
-			&r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
+		if err := rows.Scan(&id, &r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.ActionRun, &r.Action,
+			&r.Received, &r.Created, &r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(errors, &r.Errors); err != nil {

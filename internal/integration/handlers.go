@@ -216,7 +216,7 @@ func Runs(ctx *gofr.Context, integration string, req RunsRequest) (RunPage, erro
 		}
 		q.PageSize = req.Size
 	}
-	if q.Triggers, err = oneOf("trigger", req.Triggers, TriggerSchedule, TriggerManual, TriggerPush); err != nil {
+	if q.Triggers, err = oneOf("trigger", req.Triggers, TriggerSchedule, TriggerManual, TriggerPush, TriggerAction); err != nil {
 		return RunPage{}, err
 	}
 	if q.Outcomes, err = oneOf("outcome", req.Outcomes, OutcomeSucceeded, OutcomeWarnings, OutcomeFailed); err != nil {

@@ -96,9 +96,12 @@ type Run struct {
 	ID         int64     `json:"id"`
 	StartedAt  time.Time `json:"startedAt"`
 	FinishedAt time.Time `json:"finishedAt"`
-	// Trigger is push, schedule or manual.
-	Trigger   string     `json:"trigger"`
-	Token     string     `json:"token,omitempty"`
+	// Trigger is push, schedule, manual or action.
+	Trigger string `json:"trigger"`
+	Token   string `json:"token,omitempty"`
+	// ActionRun and Action are the action run behind an action trigger and its title.
+	ActionRun string     `json:"actionRun,omitempty"`
+	Action    string     `json:"action,omitempty"`
 	Received  int        `json:"received"`
 	Created   int        `json:"created"`
 	Updated   int        `json:"updated"`
@@ -126,16 +129,16 @@ func (s Store) RecordRun(ctx context.Context, integrationID, tokenID string, run
 
 	return s.db.QueryRowContext(ctx, `
 		INSERT INTO ingestion_runs (integration_id, token_id, trigger, started_at, received, created, updated,
-			unchanged, deleted, failed, errors, error)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			unchanged, deleted, failed, errors, error, action_run_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, finished_at`,
 		integrationID, nullable(tokenID), run.Trigger, run.StartedAt, run.Received, run.Created, run.Updated,
-		run.Unchanged, run.Deleted, run.Failed, errorsJSON, run.Error).Scan(&run.ID, &run.FinishedAt)
+		run.Unchanged, run.Deleted, run.Failed, errorsJSON, run.Error, nullable(run.ActionRun)).Scan(&run.ID, &run.FinishedAt)
 }
 
 // RunQuery picks a page of an integration's runs. Empty fields don't filter.
 type RunQuery struct {
-	// Search matches the pushing token's name or the run's error, ignoring case.
+	// Search matches the pushing token's name, the action's title or the run's error, ignoring case.
 	Search   string
 	Triggers []string
 	Outcomes []string
@@ -159,8 +162,9 @@ const (
 
 const runFilter = `
 	FROM ingestion_runs r LEFT JOIN ingestion_tokens t ON t.id = r.token_id
+		LEFT JOIN runs a ON a.id = r.action_run_id
 	WHERE r.integration_id = $1
-		AND ($2 = '' OR coalesce(t.name, '') ILIKE $2 OR r.error ILIKE $2)
+		AND ($2 = '' OR coalesce(t.name, '') ILIKE $2 OR coalesce(a.title, '') ILIKE $2 OR r.error ILIKE $2)
 		AND (coalesce(cardinality($3::text[]), 0) = 0 OR r.trigger = ANY($3))
 		AND (coalesce(cardinality($4::text[]), 0) = 0 OR CASE
 			WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 THEN 'warnings' ELSE 'succeeded' END = ANY($4))`
@@ -180,8 +184,8 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 		return RunPage{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id, r.started_at, r.finished_at, r.trigger, coalesce(t.name, ''), r.received, r.created, r.updated,
-			r.unchanged, r.deleted, r.failed, r.errors, r.error`+runFilter+`
+		SELECT r.id, r.started_at, r.finished_at, r.trigger, coalesce(t.name, ''), coalesce(r.action_run_id::text, ''),
+			coalesce(a.title, ''), r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error`+runFilter+`
 		ORDER BY r.id DESC LIMIT $5 OFFSET $6`, append(args, q.PageSize, (q.Page-1)*q.PageSize)...)
 	if err != nil {
 		return RunPage{}, err
@@ -193,8 +197,8 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 			r      Run
 			errors []byte
 		)
-		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.Received, &r.Created, &r.Updated,
-			&r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
+		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Token, &r.ActionRun, &r.Action, &r.Received,
+			&r.Created, &r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
 			return RunPage{}, err
 		}
 		if err := json.Unmarshal(errors, &r.Errors); err != nil {
@@ -220,7 +224,7 @@ func (s Store) LastSync(ctx context.Context, identifier string) (time.Time, erro
 	err := s.db.QueryRowContext(ctx, `
 		SELECT max(r.finished_at) FROM ingestion_runs r
 		JOIN config_documents d ON d.id = r.integration_id
-		WHERE d.kind = 'integration' AND d.identifier = $1 AND r.trigger <> 'push'`, identifier).Scan(&last)
+		WHERE d.kind = 'integration' AND d.identifier = $1 AND r.trigger IN ('schedule', 'manual')`, identifier).Scan(&last)
 
 	return last.Time, err
 }

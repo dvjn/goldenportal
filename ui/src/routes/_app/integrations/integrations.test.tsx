@@ -150,6 +150,38 @@ describe("integrations", () => {
     );
   });
 
+  it("links a run an action made to that action run", async () => {
+    stubApi({
+      ...routes,
+      "GET integrations/inventory/runs": ok({
+        total: 1,
+        runs: [
+          {
+            id: 2,
+            startedAt: "2026-10-24T10:00:00Z",
+            finishedAt: "2026-10-24T10:00:01Z",
+            trigger: "action",
+            actionRun: "run-1",
+            action: "Open incident",
+            received: 1,
+            created: 1,
+            updated: 0,
+            unchanged: 0,
+            deleted: 0,
+            failed: 0,
+            errors: [],
+          },
+        ],
+      }),
+    });
+    renderRoute("/integrations/inventory?tab=runs");
+
+    expect(await screen.findByRole("link", { name: "Action · Open incident" })).toHaveAttribute(
+      "href",
+      "/runs/run-1",
+    );
+  });
+
   it("lists integrations with how their last run went", async () => {
     const run = {
       id: 2,

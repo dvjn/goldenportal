@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { CircleAlert, History } from "lucide-react";
 import {
   DataTable,
@@ -36,6 +36,7 @@ const triggerOptions: { value: RunTrigger; label: string }[] = [
   { value: "schedule", label: "Schedule" },
   { value: "manual", label: "Sync Now" },
   { value: "push", label: "Push" },
+  { value: "action", label: "Action" },
 ];
 
 const outcomeOptions: { value: RunOutcome; label: string }[] = [
@@ -76,10 +77,12 @@ const counts = [
   { key: "failed", label: "Failed" },
 ] as const;
 
-// triggerLabel says what started a run: a push names its token.
+// triggerLabel says what started a run: a push names its token, and an action
+// its title.
 function triggerLabel(run: Run) {
   if (run.trigger === "schedule") return "Schedule";
   if (run.trigger === "manual") return "Sync Now";
+  if (run.trigger === "action") return run.action ? `Action · ${run.action}` : "Action";
   return run.token ? `Push · ${run.token}` : "Push";
 }
 
@@ -107,7 +110,13 @@ const columns = [
       <span
         className={row.original.error ? "font-medium text-destructive" : "text-muted-foreground"}
       >
-        {triggerLabel(row.original)}
+        {row.original.actionRun ? (
+          <Link to="/runs/$id" params={{ id: row.original.actionRun }} className="hover:underline">
+            {triggerLabel(row.original)}
+          </Link>
+        ) : (
+          triggerLabel(row.original)
+        )}
       </span>
     ),
   }),
@@ -189,7 +198,7 @@ export function RecentRuns({
       columns={columns}
       getRowId={(run) => String(run.id)}
       search={search}
-      searchLabel="Search tokens and errors"
+      searchLabel="Search tokens, actions and errors"
       onClearFilters={() => filter({ trigger: undefined, outcome: undefined })}
       filters={{
         fields: runFilterFields,
@@ -206,7 +215,7 @@ export function RecentRuns({
         <EmptyState
           icon={<History />}
           title="Nothing has run yet"
-          description="Syncs and pushes show up here as they finish."
+          description="Syncs, pushes and action writes show up here as they finish."
         />
       }
     />
