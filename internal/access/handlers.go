@@ -177,7 +177,7 @@ func listAudit(ctx *gofr.Context) (any, error) {
 		q.To = q.To.AddDate(0, 0, 1)
 	}
 
-	return audit.List(ctx, ctx.SQL, q)
+	return httpx.Result(audit.List(ctx, ctx.SQL, q))
 }
 
 // dateParam reads a YYYY-MM-DD date, as the start of that day in UTC.

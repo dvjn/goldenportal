@@ -252,7 +252,7 @@ func (h documents[S]) saveDraft(ctx *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	return h.SaveDraft(ctx, ctx.PathParam("identifier"), source)
+	return httpx.Result(h.SaveDraft(ctx, ctx.PathParam("identifier"), source))
 }
 
 // SaveDraft stores a valid source as the draft, creating the document if
@@ -328,7 +328,7 @@ type Impact struct {
 }
 
 func (h documents[S]) impact(ctx *gofr.Context) (any, error) {
-	return h.Impact(ctx, ctx.PathParam("identifier"))
+	return httpx.Result(h.Impact(ctx, ctx.PathParam("identifier")))
 }
 
 // Impact previews what publishing the draft would change.
@@ -379,7 +379,7 @@ func (h documents[S]) publish(ctx *gofr.Context) (any, error) {
 	// An empty body means no acknowledgement.
 	_ = ctx.Bind(&req)
 
-	return h.Publish(ctx, ctx.PathParam("identifier"), req.AcknowledgeBreaking)
+	return httpx.Result(h.Publish(ctx, ctx.PathParam("identifier"), req.AcknowledgeBreaking))
 }
 
 // Publish makes the draft the next version. Breaking changes need
@@ -583,7 +583,7 @@ func (h documents[S]) version(ctx *gofr.Context) (any, error) {
 		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such version"}
 	}
 
-	return h.Version(ctx, ctx.PathParam("identifier"), n)
+	return httpx.Result(h.Version(ctx, ctx.PathParam("identifier"), n))
 }
 
 // Version reads a numbered version's exact source.

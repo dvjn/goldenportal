@@ -106,7 +106,7 @@ func createToken(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("the request body is not valid JSON")
 	}
 
-	return CreateToken(ctx, ctx.PathParam("identifier"), req.Name)
+	return httpx.Result(CreateToken(ctx, ctx.PathParam("identifier"), req.Name))
 }
 
 // CreateToken creates an ingestion token for a push integration.
@@ -190,7 +190,7 @@ func listRuns(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("size must be 10, 20, 50 or 100")
 	}
 
-	return Runs(ctx, ctx.PathParam("identifier"), req)
+	return httpx.Result(Runs(ctx, ctx.PathParam("identifier"), req))
 }
 
 // Runs returns a page of an integration's runs, newest first.

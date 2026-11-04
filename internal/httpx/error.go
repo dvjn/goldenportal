@@ -31,3 +31,13 @@ func WriteError(w http.ResponseWriter, status int, message string) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }
+
+// Result answers with v, or only the error: gofr treats data beside an
+// error as a partial answer, and an empty struct beside one as a 500.
+func Result[T any](v T, err error) (any, error) {
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
+}

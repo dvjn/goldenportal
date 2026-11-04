@@ -96,7 +96,7 @@ func listResults(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("size must be 10, 20, 50 or 100")
 	}
 
-	return Results(ctx, ctx.PathParam("identifier"), req)
+	return httpx.Result(Results(ctx, ctx.PathParam("identifier"), req))
 }
 
 // Results pages a scorecard's entity results, worst tier first.
@@ -152,7 +152,7 @@ type Evaluated struct {
 }
 
 func evaluateNow(ctx *gofr.Context) (any, error) {
-	return EvaluateNow(ctx, ctx.PathParam("identifier"))
+	return httpx.Result(EvaluateNow(ctx, ctx.PathParam("identifier")))
 }
 
 // EvaluateNow evaluates a published scorecard and stores its results.

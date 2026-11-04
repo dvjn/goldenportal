@@ -74,7 +74,7 @@ func Home(ctx *gofr.Context) ([]HomeDashboard, error) {
 }
 
 func dashboardView(ctx *gofr.Context) (any, error) {
-	return View(ctx, ctx.PathParam("identifier"), ctx.Param("draft") == "true")
+	return httpx.Result(View(ctx, ctx.PathParam("identifier"), ctx.Param("draft") == "true"))
 }
 
 // View is one dashboard as Home would show it to whoever is looking, from
@@ -238,7 +238,7 @@ func source(ctx *gofr.Context, p auth.Principal, kind, name string, draft bool) 
 }
 
 func dashboardData(ctx *gofr.Context) (any, error) {
-	return Data(ctx, ctx.PathParam("identifier"), inputsFrom(httpx.Query(ctx)), ctx.Param("draft") == "true")
+	return httpx.Result(Data(ctx, ctx.PathParam("identifier"), inputsFrom(httpx.Query(ctx)), ctx.Param("draft") == "true"))
 }
 
 // Data loads every widget on a dashboard, as Home shows it to whoever is
@@ -361,10 +361,10 @@ func picked(spec Spec, inputs map[string][]string) (widget.Values, error) {
 }
 
 func blueprintData(ctx *gofr.Context) (any, error) {
-	return PageTab(ctx, PageRequest{
+	return httpx.Result(PageTab(ctx, PageRequest{
 		Blueprint: ctx.PathParam("blueprint"), Page: ctx.PathParam("page"), Tab: ctx.PathParam("tab"),
 		Entity: ctx.Param("entity"), Draft: ctx.Param("draft") == "true",
-	})
+	}))
 }
 
 // PageRequest names one tab of a blueprint's catalog or entity page, and

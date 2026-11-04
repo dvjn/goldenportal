@@ -43,25 +43,15 @@ func badRequest(message string) error {
 	return httpx.Error{Code: http.StatusBadRequest, Message: message}
 }
 
-// result answers with v, or only the error: gofr treats data beside an
-// error as a partial answer.
-func result[T any](v T, err error) (any, error) {
-	if err != nil {
-		return nil, err
-	}
-
-	return v, nil
-}
-
 func forEntity(ctx *gofr.Context) (any, error) {
-	return result(ForEntity(ctx, ctx.PathParam("blueprint"), ctx.Param("entity")))
+	return httpx.Result(ForEntity(ctx, ctx.PathParam("blueprint"), ctx.Param("entity")))
 }
 
 // forEntities answers for each entity given as entity, which repeats. It
 // reads the raw query, since identifiers come from other systems and may
 // hold commas, which ctx.Params splits on.
 func forEntities(ctx *gofr.Context) (any, error) {
-	return result(ForEntities(ctx, ctx.PathParam("blueprint"), httpx.Query(ctx)["entity"]))
+	return httpx.Result(ForEntities(ctx, ctx.PathParam("blueprint"), httpx.Query(ctx)["entity"]))
 }
 
 func start(ctx *gofr.Context) (any, error) {
@@ -70,7 +60,7 @@ func start(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("the request body is not valid JSON")
 	}
 
-	return result(Start(ctx, ctx.PathParam("identifier"), req, ViaWeb))
+	return httpx.Result(Start(ctx, ctx.PathParam("identifier"), req, ViaWeb))
 }
 
 func runsRequest(ctx *gofr.Context) RunsRequest {
@@ -88,16 +78,16 @@ func actionRuns(ctx *gofr.Context) (any, error) {
 	req := runsRequest(ctx)
 	req.Action = ctx.PathParam("identifier")
 
-	return result(Runs(ctx, req))
+	return httpx.Result(Runs(ctx, req))
 }
 
-func listRuns(ctx *gofr.Context) (any, error) { return result(Runs(ctx, runsRequest(ctx))) }
+func listRuns(ctx *gofr.Context) (any, error) { return httpx.Result(Runs(ctx, runsRequest(ctx))) }
 
-func getRun(ctx *gofr.Context) (any, error) { return result(GetRun(ctx, ctx.PathParam("id"))) }
+func getRun(ctx *gofr.Context) (any, error) { return httpx.Result(GetRun(ctx, ctx.PathParam("id"))) }
 
-func cancel(ctx *gofr.Context) (any, error) { return result(CancelRun(ctx, ctx.PathParam("id"))) }
+func cancel(ctx *gofr.Context) (any, error) { return httpx.Result(CancelRun(ctx, ctx.PathParam("id"))) }
 
-func retry(ctx *gofr.Context) (any, error) { return result(RetryRun(ctx, ctx.PathParam("id"))) }
+func retry(ctx *gofr.Context) (any, error) { return httpx.Result(RetryRun(ctx, ctx.PathParam("id"))) }
 
 type resolveRequest struct {
 	Outcome string `json:"outcome"`
@@ -110,7 +100,7 @@ func resolve(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("the request body is not valid JSON")
 	}
 
-	return result(ResolveRun(ctx, ctx.PathParam("id"), req.Outcome, req.Comment))
+	return httpx.Result(ResolveRun(ctx, ctx.PathParam("id"), req.Outcome, req.Comment))
 }
 
 type decideRequest struct {
@@ -124,12 +114,12 @@ func decide(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("the request body is not valid JSON")
 	}
 
-	return result(Decide(ctx, ctx.PathParam("id"), req.Decision, req.Comment))
+	return httpx.Result(Decide(ctx, ctx.PathParam("id"), req.Decision, req.Comment))
 }
 
-func approvals(ctx *gofr.Context) (any, error) { return result(Approvals(ctx)) }
+func approvals(ctx *gofr.Context) (any, error) { return httpx.Result(Approvals(ctx)) }
 
-func selfServiceCatalog(ctx *gofr.Context) (any, error) { return result(SelfServiceCatalog(ctx)) }
+func selfServiceCatalog(ctx *gofr.Context) (any, error) { return httpx.Result(SelfServiceCatalog(ctx)) }
 
 func startWorkflow(ctx *gofr.Context) (any, error) {
 	var req RunRequest
@@ -137,12 +127,12 @@ func startWorkflow(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("the request body is not valid JSON")
 	}
 
-	return result(StartWorkflow(ctx, ctx.PathParam("identifier"), req, ViaWeb))
+	return httpx.Result(StartWorkflow(ctx, ctx.PathParam("identifier"), req, ViaWeb))
 }
 
 func workflowRuns(ctx *gofr.Context) (any, error) {
 	req := runsRequest(ctx)
 	req.Workflow = ctx.PathParam("identifier")
 
-	return result(Runs(ctx, req))
+	return httpx.Result(Runs(ctx, req))
 }

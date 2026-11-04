@@ -103,7 +103,7 @@ func list(ctx *gofr.Context) (any, error) {
 		return nil, badRequest("size must be 10, 20, 50 or 100")
 	}
 
-	return List(ctx, ctx.PathParam("blueprint"), req)
+	return httpx.Result(List(ctx, ctx.PathParam("blueprint"), req))
 }
 
 // List returns a page of one blueprint's entities.
@@ -173,7 +173,7 @@ type Detail struct {
 }
 
 func get(ctx *gofr.Context) (any, error) {
-	return Get(ctx, ctx.PathParam("blueprint"), ctx.PathParam("identifier"))
+	return httpx.Result(Get(ctx, ctx.PathParam("blueprint"), ctx.PathParam("identifier")))
 }
 
 // Get reads an entity with its resolved properties and incoming relations.
