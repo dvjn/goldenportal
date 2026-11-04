@@ -1,0 +1,60 @@
+# Everything the local portal talks to that isn't the portal. ${NAME} is read
+# from the environment, which deps.dev.yaml fills from configs/.dev.env.
+listen: :47800
+
+# Sign-in without passwords: the sign-in page lists the users below. The email
+# is the subject, and deps/seed.sql loads the same people with their groups and
+# roles, so keep the two in step.
+sso:
+  issuer: ${GP_OIDC_ISSUER}
+  clients:
+    - id: ${GP_OIDC_CLIENT_ID}
+      secret: ${GP_OIDC_CLIENT_SECRET}
+      # Any localhost port, so the Vite dev server and a locally built binary both work.
+      redirect: ^http://localhost:\d+/api/web/auth/callback$
+  users:
+    - {email: admin@example.com, name: Dev Admin}
+    - {email: member@example.com, name: Dev Member}
+    - {email: builder@example.com, name: Dev Builder}
+    - {email: ada@example.com, name: Ada Lovelace}
+    - {email: grace@example.com, name: Grace Hopper}
+
+# An operations API for the example actions, at /ops. Each endpoint waits a
+# while and answers 503 that share of the time, so retries and failed runs
+# show. Restart answers with a job that runs for a while before it's done.
+ops:
+  token: "${GP_SECRET_OPS}"
+  endpoints:
+    restart: {latency: {min: 1s, max: 4s}, fails: 0.25}
+    scale: {latency: {min: 500ms, max: 2s}, fails: 0.3}
+    repos: {latency: {min: 1s, max: 3s}, fails: 0.05}
+    incidents: {latency: {min: 300ms, max: 1500ms}, fails: 0.05}
+  jobs: {min: 10s, max: 1m}
+
+# Pushes each file to its push integration as an external system would, every
+# so often give or take the variance. "@DEPLOY:<service>@" in a file becomes
+# when the tracker below last put that service in production. billing-export
+# is invalid on purpose, and legacy-reports is filtered out by the mapping.
+push:
+  api: http://localhost:${HTTP_PORT}
+  integrations:
+    - {name: team-directory, every: 30m, variance: 10m, token: "${GP_DEV_TEAM_DIRECTORY_TOKEN}", file: payloads/team-directory.json}
+    - {name: service-registry, every: 5m, variance: 2m, token: "${GP_DEV_SERVICE_REGISTRY_TOKEN}", file: payloads/service-registry.json}
+
+# A deploy tracker for the http integration to pull, at /deploy-tracker. Each
+# service deploys every so often, give or take the variance, and fails that
+# share of the time. A new version goes to staging, and once it succeeds the
+# next deployment promotes it.
+tracker:
+  token: "${GP_SECRET_DEPLOY_TRACKER}"
+  takes: {min: 1m, max: 8m}
+  services:
+    - {name: payments-api, fails: 0.1, every: 40m, variance: 20m}
+    - {name: ledger, fails: 0.05, every: 2h, variance: 1h}
+    - {name: checkout-web, fails: 0.2, every: 25m, variance: 15m}
+    - {name: search-api, fails: 0.1, every: 1h, variance: 30m}
+    - {name: indexer, fails: 0.25, every: 3h, variance: 1h}
+    - {name: auth-service, fails: 0.05, every: 4h, variance: 2h}
+    - {name: postgres-proxy, fails: 0.02, every: 8h, variance: 4h}
+    - {name: api-gateway, fails: 0.1, every: 90m, variance: 45m}
+    - {name: feature-flags, fails: 0.15, every: 30m, variance: 20m}

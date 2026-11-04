@@ -39,26 +39,13 @@ done
 psql -q -v issuer="$GP_OIDC_ISSUER" -v team_token="$GP_DEV_TEAM_DIRECTORY_TOKEN" \
   -v service_token="$GP_DEV_SERVICE_REGISTRY_TOKEN" < deps/seed.sql
 echo "Seed data loaded"
-
-# Ask Authentik to push its people and groups over SCIM now, rather than at
-# its next scheduled sync. Authentik may still be starting, so this is best effort.
-if docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T authentik-worker ak shell -c "
-from authentik.providers.scim.models import SCIMProvider
-from authentik.providers.scim.tasks import scim_sync
-for provider in SCIMProvider.objects.filter(name='Golden Portal SCIM'):
-    scim_sync.send(provider.pk)
-" >/dev/null 2>&1; then
-  echo "Asked Authentik to sync people and groups over SCIM"
-else
-  echo "Authentik isn't ready; it will sync people and groups over SCIM on its own schedule"
-fi
 '''
 
 [tasks."api:dev"]
 description = "Run the API with hot reload"
 depends = ["deps:up"]
 env = { _.file = "configs/.dev.env" }
-run = "air --build.cmd 'go build -o .local/tmp/goldenportal ./cmd/goldenportal' --build.bin .local/tmp/goldenportal -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,.local' --misc.clean_on_exit true"
+run = "air --build.cmd 'go build -o .local/tmp/goldenportal ./cmd/goldenportal' --build.bin .local/tmp/goldenportal -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,deps,.local' --misc.clean_on_exit true"
 
 [tasks.build]
 description = "Build the UI, then the goldenportal binary that embeds it"
@@ -98,12 +85,14 @@ dir = "ui"
 run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
 
 [tasks."deps:up"]
-description = "Start local Postgres, Authentik and the mock pusher"
+description = "Start local Postgres and the mock services"
 env = { _.file = "configs/.dev.env" }
 run = '''
 set -eu
-mkdir -p .local/postgres .local/authentik-postgres
-docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d
+mkdir -p .local/postgres
+docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d --remove-orphans
+# podman compose keeps a container on its old image, and the mock holds no state.
+docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d --build --force-recreate mock
 
 attempts=0
 until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgres pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; do
@@ -115,11 +104,11 @@ until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgr
   sleep 1
 done
 
-echo "PostgreSQL ready. Authentik is starting at http://localhost:47900 (the first start takes a minute)."
+echo "PostgreSQL ready. Mock services at http://localhost:47800."
 '''
 
 [tasks."deps:reset"]
-description = "Delete the local Golden Portal database (Authentik keeps its data)"
+description = "Delete the local Golden Portal database"
 env = { _.file = "configs/.dev.env" }
 run = '''
 set -eu
@@ -132,7 +121,7 @@ echo "Deleted the local database"
 '''
 
 [tasks."deps:down"]
-description = "Stop local Postgres, Authentik and the mock pusher"
+description = "Stop local Postgres and the mock services"
 env = { _.file = "configs/.dev.env" }
 run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml down"
 
@@ -143,20 +132,21 @@ run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml logs -f"
 
 [tasks.fmt]
 description = "Format Go source files"
-run = "gofumpt -w cmd internal migrations"
+run = "gofumpt -w cmd internal migrations deps/mock"
 
 [tasks.lint]
 description = "Check Go formatting, run go vet, and run the UI checks"
 depends = ["ui:check"]
 run = '''
 set -eu
-unformatted="$(gofumpt -l cmd internal migrations)"
+unformatted="$(gofumpt -l cmd internal migrations deps/mock)"
 if [ -n "$unformatted" ]; then
   echo "gofumpt would change:" >&2
   echo "$unformatted" >&2
   exit 1
 fi
 go vet ./...
+(cd deps/mock && go vet ./...)
 '''
 
 [tasks.test]

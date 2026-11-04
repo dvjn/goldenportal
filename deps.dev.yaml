@@ -19,98 +19,20 @@ services:
       timeout: 3s
       retries: 20
 
-  # Authentik is the local OIDC provider. deps/authentik/golden-portal.yaml
-  # sets up the Golden Portal application and two sign-in accounts.
-  authentik-postgres:
-    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.4-bookworm}
-    container_name: goldenportal-authentik-postgres
-    user: root
-    environment:
-      POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: authentik-local-dev-password
-      POSTGRES_DB: authentik
-    volumes:
-      - ./.local/authentik-postgres:/var/lib/postgresql
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U authentik -d authentik
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  authentik-server:
-    image: &authentik-image ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server:2026.8.5}
-    container_name: goldenportal-authentik-server
-    command: server
-    environment: &authentik-environment
-      AUTHENTIK_SECRET_KEY: golden-portal-local-dev-authentik-secret-key-not-for-production
-      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
-      AUTHENTIK_POSTGRESQL__USER: authentik
-      AUTHENTIK_POSTGRESQL__PASSWORD: authentik-local-dev-password
-      AUTHENTIK_POSTGRESQL__NAME: authentik
-      AUTHENTIK_BOOTSTRAP_EMAIL: ${GP_BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
-      AUTHENTIK_BOOTSTRAP_PASSWORD: golden-portal-dev
-      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
-      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-    ports:
-      - "${AUTHENTIK_PORT:-47900}:9000"
-    # Lets Authentik reach the portal's API on the host for SCIM.
-    extra_hosts: &authentik-hosts
-      - "host.docker.internal:host-gateway"
-    volumes: &authentik-volumes
-      - ./deps/authentik:/blueprints/custom:ro
-    depends_on:
-      authentik-postgres:
-        condition: service_healthy
-
-  authentik-worker:
-    image: *authentik-image
-    container_name: goldenportal-authentik-worker
-    command: worker
-    environment: *authentik-environment
-    extra_hosts: *authentik-hosts
-    volumes: *authentik-volumes
-    depends_on:
-      authentik-postgres:
-        condition: service_healthy
-
-  # Pushes example data to the push integrations in deps/seed.sql, as an
-  # external system would. deps/mock-pusher has the payloads and the loop.
-  mock-pusher:
-    image: ${CURL_IMAGE:-docker.io/curlimages/curl:8.17.0}
-    container_name: goldenportal-mock-pusher
-    # Reaches the API on the host's localhost, where mise runs it.
+  # Everything else the portal talks to in development: sign-in, an ops API,
+  # a deploy tracker and a pusher. deps/mock/mock.yaml sets it up.
+  mock:
+    build: deps/mock
+    container_name: goldenportal-mock
+    # Reaches the API on the host's localhost, where mise runs it, and serves
+    # sign-in on the same localhost address the browser and the API both use.
     network_mode: host
-    entrypoint: ["/bin/sh", "/data/push.sh"]
     environment:
-      GP_API_URL: http://localhost:${HTTP_PORT:-47200}
-      PUSH_INTERVAL: ${MOCK_PUSH_INTERVAL:-60}
-      TEAM_DIRECTORY_TOKEN: ${GP_DEV_TEAM_DIRECTORY_TOKEN}
-      SERVICE_REGISTRY_TOKEN: ${GP_DEV_SERVICE_REGISTRY_TOKEN}
-    volumes:
-      - ./deps/mock-pusher:/data:ro
-
-  # A pretend deploy tracker with a JSON API, for the http integration in
-  # deps/seed.sql to pull from. deps/mock-deploy-tracker has the server.
-  mock-deploy-tracker:
-    image: ${BUSYBOX_IMAGE:-docker.io/library/busybox:1.37.0}
-    container_name: goldenportal-mock-deploy-tracker
-    entrypoint: ["/bin/sh", "/app/serve.sh"]
-    environment:
-      TICK: ${MOCK_DEPLOY_TICK:-30}
-    ports:
-      - "${MOCK_DEPLOY_TRACKER_PORT:-47801}:8080"
-    volumes:
-      - ./deps/mock-deploy-tracker:/app:ro
-
-  # A pretend operations API for the example actions in deps/seed.sql to
-  # call. deps/mock-ops has the server.
-  mock-ops:
-    image: ${BUSYBOX_IMAGE:-docker.io/library/busybox:1.37.0}
-    container_name: goldenportal-mock-ops
-    entrypoint: ["/bin/sh", "/app/serve.sh"]
-    ports:
-      - "${MOCK_OPS_PORT:-47802}:8080"
-    volumes:
-      - ./deps/mock-ops:/app:ro
+      HTTP_PORT: ${HTTP_PORT}
+      GP_OIDC_ISSUER: ${GP_OIDC_ISSUER}
+      GP_OIDC_CLIENT_ID: ${GP_OIDC_CLIENT_ID}
+      GP_OIDC_CLIENT_SECRET: ${GP_OIDC_CLIENT_SECRET}
+      GP_DEV_TEAM_DIRECTORY_TOKEN: ${GP_DEV_TEAM_DIRECTORY_TOKEN}
+      GP_DEV_SERVICE_REGISTRY_TOKEN: ${GP_DEV_SERVICE_REGISTRY_TOKEN}
+      GP_SECRET_OPS: ${GP_SECRET_OPS}
+      GP_SECRET_DEPLOY_TRACKER: ${GP_SECRET_DEPLOY_TRACKER}

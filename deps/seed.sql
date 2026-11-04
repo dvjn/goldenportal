@@ -1,9 +1,9 @@
--- Development seed data: the people and groups in deps/authentik/golden-portal.yaml,
+-- Development seed data: the people in deps/mock/mock.yaml with their groups,
 -- so the portal has users, groups and roles before anyone signs in, plus example
--- blueprints and the push integrations the mock pusher in deps.dev.yaml feeds.
+-- blueprints and the push integrations the mock in deps.dev.yaml feeds.
 -- Every insert skips rows that already exist, so this is safe to run again.
--- psql sets :issuer to GP_OIDC_ISSUER, the dev Authentik uses the email as the
--- subject, and :team_token and :service_token are the mock pusher's tokens.
+-- psql sets :issuer to GP_OIDC_ISSUER, the mock sign-in uses the email as the
+-- subject, and :team_token and :service_token are the mock's push tokens.
 
 INSERT INTO groups (name)
 VALUES ('platform-engineers'), ('payments'), ('search')
@@ -11,7 +11,7 @@ ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO users (oidc_issuer, oidc_subject, email, display_name)
 VALUES
-  (:'issuer', 'admin@example.com', 'admin@example.com', 'authentik Default Admin'),
+  (:'issuer', 'admin@example.com', 'admin@example.com', 'Dev Admin'),
   (:'issuer', 'member@example.com', 'member@example.com', 'Dev Member'),
   (:'issuer', 'builder@example.com', 'builder@example.com', 'Dev Builder'),
   (:'issuer', 'ada@example.com', 'ada@example.com', 'Ada Lovelace'),
@@ -740,7 +740,7 @@ spec:
   connector:
     type: portal
   sync:
-    interval: 1m
+    interval: 5m
   mappings:
     - resource: users
       blueprint: user
@@ -822,12 +822,12 @@ spec:
     config:
       resources:
         deployments:
-          url: http://localhost:47801/deployments/1.json
+          url: http://localhost:47800/deploy-tracker/deployments/1.json
           next: .next
           headers:
             Authorization: {env: GP_SECRET_DEPLOY_TRACKER}
   sync:
-    interval: 1m
+    interval: 5m
   mappings:
     - resource: deployments
       blueprint: deployment
@@ -1297,7 +1297,7 @@ spec:
       title: Restart the service
       http:
         method: POST
-        url: http://localhost:47802/cgi-bin/ops/services/{{ $entity }}/restart
+        url: http://localhost:47800/ops/services/{{ $entity }}/restart
         headers:
           Authorization: {env: GP_SECRET_OPS}
         body:
@@ -1311,7 +1311,7 @@ spec:
     - output:
         summary: "Restarted {{ $entity.title }} in {{ $input.environment }}"
         links:
-          Job: http://localhost:47802/cgi-bin/ops/jobs/{{ $step.restart.job }}
+          Job: http://localhost:47800/ops/jobs/{{ $step.restart.job }}
   outputs:
     job: $step.restart.job
 $yaml$),
@@ -1362,7 +1362,7 @@ spec:
       title: Scale the service
       http:
         method: POST
-        url: http://localhost:47802/cgi-bin/ops/services/{{ $entity }}/scale
+        url: http://localhost:47800/ops/services/{{ $entity }}/scale
         headers:
           Authorization: {env: GP_SECRET_OPS}
         body:
@@ -1415,7 +1415,7 @@ spec:
       title: Open the incident
       http:
         method: POST
-        url: http://localhost:47802/cgi-bin/ops/incidents
+        url: http://localhost:47800/ops/incidents
         headers:
           Authorization: {env: GP_SECRET_OPS}
         body:
@@ -1468,7 +1468,7 @@ spec:
       title: Resolve the incident
       http:
         method: POST
-        url: http://localhost:47802/cgi-bin/ops/incidents/{{ $entity }}/resolve
+        url: http://localhost:47800/ops/incidents/{{ $entity }}/resolve
         headers:
           Authorization: {env: GP_SECRET_OPS}
         output:
@@ -1615,7 +1615,7 @@ spec:
       title: Create the repository
       http:
         method: POST
-        url: http://localhost:47802/cgi-bin/ops/repos
+        url: http://localhost:47800/ops/repos
         headers:
           Authorization: {env: GP_SECRET_OPS}
         body:
@@ -1681,7 +1681,7 @@ ON CONFLICT (blueprint_id, identifier) DO NOTHING;
 WITH example (n, action, service, email, status, error, summary, inputs, started, took) AS (VALUES
   (1, 'scale', 'search-api', 'member@example.com', 'succeeded', '', 'Search API runs 4 replicas in production', '{"environment": "production", "replicas": 4}', interval '6 days', 3),
   (2, 'restart', 'payments-api', 'ada@example.com', 'succeeded', '', 'Restarted Payments API in production', '{"environment": "production", "reason": "memory climbs after the deploy"}', interval '5 days', 4),
-  (3, 'scale', 'checkout-web', 'grace@example.com', 'failed', 'Scale the service: localhost:47802 answered 503 Service Unavailable', '', '{"environment": "production", "replicas": 6}', interval '4 days', 9),
+  (3, 'scale', 'checkout-web', 'grace@example.com', 'failed', 'Scale the service: localhost:47800 answered 503 Service Unavailable', '', '{"environment": "production", "replicas": 6}', interval '4 days', 9),
   (4, 'scale', 'checkout-web', 'grace@example.com', 'succeeded', '', 'Checkout runs 6 replicas in production', '{"environment": "production", "replicas": 6}', interval '4 days' - interval '10 minutes', 2),
   (5, 'restart', 'ledger', 'builder@example.com', 'succeeded', '', 'Restarted Ledger in staging', '{"environment": "staging", "reason": "pick up the new certificate"}', interval '3 days', 3),
   (6, 'restart', 'payments-api', 'ada@example.com', 'cancelled', '', '', '{"environment": "staging", "reason": "wrong environment"}', interval '2 days', 1),
