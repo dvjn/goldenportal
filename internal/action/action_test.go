@@ -107,6 +107,9 @@ func TestParseActionProblems(t *testing.T) {
 		{"approval with timeout", head + "  steps: [{approval: {approvers: {roles: [admin]}, require: 1, timeout: 1h}, timeout: 1m}]\n", "approval steps take no timeout"},
 		{"review both", head + "  steps: [{approval: {approvers: {roles: [admin]}, require: 1, timeout: 1h, review: [{markdown: a, json: b}]}}]\n", "markdown or json, not both"},
 		{"no expectation", head + "  steps: [{check: {blueprint: s, expect: {}, message: m}}]\n", "expect takes count, min or max"},
+		{"sync without mode", head + "  steps: [{sync: {integration: registry}}]\n", "mode must be incremental"},
+		{"sync no resources", head + "  steps: [{sync: {integration: registry, resources: [], mode: complete}}]\n", "resources must list"},
+		{"sync retries", head + "  steps: [{sync: {integration: registry, mode: complete}, retry: {attempts: 1, backoff: 1s}}]\n", "only http steps retry"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -144,6 +147,19 @@ spec:
           - {title: Changes, json: $step.plan.body.changes}
     - http: {method: POST, url: https://ops.example.com/apply, body: {by: $step.approve.approvedBy}}
 `
+
+func TestParseSync(t *testing.T) {
+	head := "kind: Action\nmetadata: {name: a, title: A}\nspec:\n  blueprint: service\n  run: {roles: [member]}\n"
+	spec, issues := Parse(head + "  steps:\n    - sync: {integration: registry, resources: [services], mode: incremental}\n      timeout: 2m\n")
+	if len(issues) > 0 {
+		t.Fatalf("issues = %+v", issues)
+	}
+	step := spec.Steps[0]
+	want := SyncStep{Integration: "registry", Resources: []string{"services"}, Mode: "incremental"}
+	if step.Type != StepSync || step.Title != "Sync registry" || !reflect.DeepEqual(*step.Sync, want) || time.Duration(step.Timeout) != 2*time.Minute {
+		t.Fatalf("step = %+v, sync = %+v", step, step.Sync)
+	}
+}
 
 func TestParseApproval(t *testing.T) {
 	spec, issues := Parse(applyYAML)

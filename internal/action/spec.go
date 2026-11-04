@@ -34,6 +34,7 @@ const (
 	StepHTTP     = "http"
 	StepEntity   = "entity"
 	StepCheck    = "check"
+	StepSync     = "sync"
 	StepOutput   = "output"
 	StepApproval = "approval"
 	StepAction   = "action"
@@ -108,6 +109,7 @@ type Step struct {
 	HTTP     *HTTPStep     `json:"http,omitempty"`
 	Entity   *EntityStep   `json:"entity,omitempty"`
 	Check    *CheckStep    `json:"check,omitempty"`
+	Sync     *SyncStep     `json:"sync,omitempty"`
 	Output   *OutputStep   `json:"output,omitempty"`
 	Approval *ApprovalStep `json:"approval,omitempty"`
 	Action   *ActionStep   `json:"action,omitempty"`
@@ -165,6 +167,15 @@ type CheckStep struct {
 	Message   string         `json:"message"`
 }
 
+// SyncStep syncs an integration that pulls, so what an earlier step changed
+// at the source shows in the portal before the run ends. It gives the
+// sync's counts.
+type SyncStep struct {
+	Integration string   `json:"integration"`
+	Resources   []string `json:"resources,omitempty"`
+	Mode        string   `json:"mode"`
+}
+
 // OutputStep sets what the run shows when it's done.
 type OutputStep struct {
 	Summary string `json:"summary,omitempty"`
@@ -207,7 +218,7 @@ type Output struct {
 var (
 	SpecFields     = []string{"blueprint", "group", "scope", "run", "inputs", "steps", "outputs"}
 	AccessFields   = []string{"roles", "groups", "filter"}
-	StepFields     = []string{"id", "title", "timeout", "retry", "onFailure", StepHTTP, StepEntity, StepCheck, StepOutput, StepApproval, StepAction}
+	StepFields     = []string{"id", "title", "timeout", "retry", "onFailure", StepHTTP, StepEntity, StepCheck, StepSync, StepOutput, StepApproval, StepAction}
 	ApprovalFields = []string{"approvers", "require", "timeout", "message", "review"}
 	ReviewFields   = []string{"title", "markdown", "json"}
 	RetryFields    = []string{"attempts", "backoff"}
@@ -215,6 +226,7 @@ var (
 	EntityFields   = []string{"operation", "integration", "blueprint", "identifier", "title", "properties"}
 	CheckFields    = []string{"blueprint", "filter", "expect", "message"}
 	ExpectFields   = []string{"count", "min", "max"}
+	SyncFields     = []string{"integration", "resources", "mode"}
 	OutputFields   = []string{"summary", "links"}
 	// WorkflowFields are what a workflow document's spec takes.
 	WorkflowFields   = []string{"group", "run", "inputs", "steps", "outputs"}
@@ -222,7 +234,7 @@ var (
 )
 
 var (
-	stepTypes   = []string{StepHTTP, StepEntity, StepCheck, StepOutput, StepApproval, StepAction}
+	stepTypes   = []string{StepHTTP, StepEntity, StepCheck, StepSync, StepOutput, StepApproval, StepAction}
 	methods     = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
 	namePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,62}$`)
 )
@@ -585,6 +597,11 @@ func (p *parser) step(path string, node *yaml.Node) Step {
 		if step.Title == "" && step.Check != nil {
 			step.Title = "Check " + step.Check.Blueprint
 		}
+	case StepSync:
+		step.Sync = p.syncStep(body, typePath)
+		if step.Title == "" && step.Sync != nil {
+			step.Title = "Sync " + step.Sync.Integration
+		}
 	case StepOutput:
 		step.Output = p.output(body, typePath)
 		if step.Title == "" {
@@ -730,6 +747,30 @@ func (p *parser) entityStep(node *yaml.Node, path string) *EntityStep {
 	}
 
 	return e
+}
+
+func (p *parser) syncStep(node *yaml.Node, path string) *SyncStep {
+	sync := &SyncStep{}
+	fields, ok := p.Fields(node, path, SyncFields...)
+	if !ok {
+		return sync
+	}
+	sync.Integration = p.Text(fields["integration"], path+".integration")
+	if !configdoc.ValidIdentifier(sync.Integration) {
+		p.Errorf(configdoc.OrNode(fields["integration"], node), path+".integration", "integration must name the integration to sync")
+	}
+	if n := fields["resources"]; n != nil {
+		if err := n.Decode(&sync.Resources); err != nil || len(sync.Resources) == 0 {
+			p.Errorf(n, path+".resources", "resources must list the resources to sync, such as [services]")
+		}
+	}
+	sync.Mode = p.Text(fields["mode"], path+".mode")
+	if sync.Mode != integration.ModeIncremental && sync.Mode != integration.ModeComplete {
+		p.Errorf(configdoc.OrNode(fields["mode"], node), path+".mode",
+			"mode must be incremental, which fetches what changed, or complete, which also deletes what's gone")
+	}
+
+	return sync
 }
 
 func (p *parser) check(node *yaml.Node, path string) *CheckStep {

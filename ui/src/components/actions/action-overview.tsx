@@ -186,7 +186,7 @@ function stepDetails(step: Step): [string, ReactNode][] {
     if (value !== undefined && value !== null && value !== "") rows.push([label, value]);
   };
   const code = (text?: string) => text && <Code>{text}</Code>;
-  const { http, entity, check, output, approval, action } = step;
+  const { http, entity, check, sync, output, approval, action } = step;
   if (http) {
     add(
       "Request",
@@ -219,6 +219,25 @@ function stepDetails(step: Step): [string, ReactNode][] {
     if (check.filter) add("Filter", <Yaml value={check.filter} />);
     add("Expect", code(expectText(check)));
     add("Message", code(check.message));
+  }
+  if (sync) {
+    add(
+      "Integration",
+      <Link
+        to="/integrations/$identifier"
+        params={{ identifier: sync.integration }}
+        className="font-mono text-xs hover:underline"
+      >
+        {sync.integration}
+      </Link>,
+    );
+    add("Resources", code(sync.resources?.join(", ")));
+    add(
+      "Mode",
+      <Badge variant="outline" className="font-mono">
+        {sync.mode}
+      </Badge>,
+    );
   }
   if (output) {
     add("Summary", code(output.summary));

@@ -387,6 +387,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Action", "/$defs/httpStep", action.HTTPFields, nil},
 		{"Action", "/$defs/entityStep", action.EntityFields, nil},
 		{"Action", "/$defs/checkStep", action.CheckFields, nil},
+		{"Action", "/$defs/syncStep", action.SyncFields, nil},
 		{"Action", "/$defs/checkStep/properties/expect", action.ExpectFields, nil},
 		{"Action", "/$defs/outputStep", action.OutputFields, nil},
 		{"Action", "/$defs/approvalStep", action.ApprovalFields, nil},
@@ -395,6 +396,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Workflow", "/$defs/requesters", []string{"roles", "groups"}, nil},
 		{"Workflow", "/$defs/step", action.StepFields, nil},
 		{"Workflow", "/$defs/actionStep", action.ActionStepFields, nil},
+		{"Workflow", "/$defs/syncStep", action.SyncFields, nil},
 		{"Workflow", "/$defs/approvalStep", action.ApprovalFields, nil},
 	}
 	for _, kind := range configdoc.SchemaKinds {

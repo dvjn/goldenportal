@@ -28,6 +28,7 @@ ops:
     restart: {latency: {min: 1s, max: 4s}, fails: 0.25}
     scale: {latency: {min: 500ms, max: 2s}, fails: 0.3}
     repos: {latency: {min: 1s, max: 3s}, fails: 0.05}
+    services: {latency: {min: 500ms, max: 2s}, fails: 0.05}
     incidents: {latency: {min: 300ms, max: 1500ms}, fails: 0.05}
   jobs: {min: 10s, max: 1m}
 

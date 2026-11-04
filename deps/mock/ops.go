@@ -51,12 +51,14 @@ type ops struct {
 	jobs      map[string]*job
 	incidents map[string]string
 	repos     map[string]bool
+	// register adds a service to the registry, false when it's there already.
+	register func(service map[string]any) (map[string]any, bool)
 }
 
-func newOps(cfg opsConfig) *ops {
+func newOps(cfg opsConfig, register func(map[string]any) (map[string]any, bool)) *ops {
 	return &ops{
 		cfg: cfg, next: int(time.Since(epoch).Minutes()),
-		jobs: map[string]*job{}, incidents: map[string]string{}, repos: map[string]bool{},
+		jobs: map[string]*job{}, incidents: map[string]string{}, repos: map[string]bool{}, register: register,
 	}
 }
 
@@ -64,6 +66,7 @@ func (o *ops) routes(mux *http.ServeMux) {
 	o.handle(mux, "POST /ops/services/{service}/restart", "restart", o.restart)
 	o.handle(mux, "POST /ops/services/{service}/scale", "scale", o.scale)
 	o.handle(mux, "POST /ops/repos", "repos", o.createRepo)
+	o.handle(mux, "POST /ops/services", "services", o.registerService)
 	o.handle(mux, "POST /ops/incidents", "incidents", o.openIncident)
 	o.handle(mux, "POST /ops/incidents/{id}/resolve", "incidents", o.resolveIncident)
 	o.handle(mux, "GET /ops/jobs/{id}", "jobs", o.job)
@@ -147,6 +150,25 @@ func (o *ops) createRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, http.StatusCreated, map[string]any{"name": name, "url": "https://git.example.com/" + name, "at": now()})
+}
+
+func (o *ops) registerService(w http.ResponseWriter, r *http.Request) {
+	fields := body(r)
+	name, _ := fields["name"].(string)
+	if !repoName.MatchString(name) {
+		reply(w, http.StatusUnprocessableEntity, map[string]string{"error": "name must be lowercase letters, digits and dashes, starting with a letter"})
+		return
+	}
+	service := map[string]any{
+		"name": name, "displayName": fields["displayName"], "language": fields["language"], "tier": fields["tier"],
+		"repo": fields["repo"], "owner": fields["owner"], "tags": []any{}, "dependencies": []any{}, "lifecycle": "production",
+	}
+	registered, ok := o.register(service)
+	if !ok {
+		reply(w, http.StatusConflict, map[string]string{"error": "a service named " + name + " is already registered"})
+		return
+	}
+	reply(w, http.StatusCreated, registered)
 }
 
 func (o *ops) openIncident(w http.ResponseWriter, _ *http.Request) {

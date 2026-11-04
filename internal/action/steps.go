@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
@@ -38,6 +39,8 @@ func (rn Runner) runStep(ctx context.Context, store Store, run Run, position int
 		return rn.entityStep(ctx, run.ID, step.Entity, scope)
 	case StepCheck:
 		return rn.checkStep(ctx, step.Check, scope)
+	case StepSync:
+		return rn.syncStep(ctx, run.ID, step)
 	case StepOutput:
 		summary := scope.Text(step.Output.Summary)
 		links := make([]Link, 0, len(step.Output.Links))
@@ -299,6 +302,46 @@ func (rn Runner) checkStep(ctx context.Context, c *CheckStep, scope Scope) (any,
 	}
 
 	return map[string]any{"count": float64(count)}, nil
+}
+
+// syncRetry is how often a sync step tries again while another sync of the
+// integration runs, since that one may have fetched before the change.
+const syncRetry = 2 * time.Second
+
+func (rn Runner) syncStep(ctx context.Context, runID string, step Step) (any, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(step.Timeout))
+	defer cancel()
+	s := step.Sync
+	for {
+		run, err := integration.SyncForAction(ctx, rn.db, s.Integration, runID, s.Mode, s.Resources)
+		switch {
+		case errors.Is(err, integration.ErrSyncing):
+			select {
+			case <-ctx.Done():
+			case <-time.After(syncRetry):
+				continue
+			}
+		case err == nil && run.Error != "":
+			return nil, failed(syncOutput(run), "some resources couldn't be fetched: %s", run.Error)
+		case err == nil:
+			return syncOutput(run), nil
+		}
+		if ctx.Err() != nil {
+			return nil, failed(nil, "the sync didn't finish within %s", time.Duration(step.Timeout))
+		}
+		if errors.Is(err, configdoc.ErrNotFound) {
+			return nil, failed(nil, "there's no integration %s", s.Integration)
+		}
+
+		return nil, failed(nil, "%s: %v", s.Integration, err)
+	}
+}
+
+func syncOutput(run *integration.Run) map[string]any {
+	return map[string]any{
+		"mode": run.Mode, "received": float64(run.Received), "created": float64(run.Created), "updated": float64(run.Updated),
+		"unchanged": float64(run.Unchanged), "deleted": float64(run.Deleted), "failed": float64(run.Failed),
+	}
 }
 
 func orString(s, fallback string) string {

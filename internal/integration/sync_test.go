@@ -74,6 +74,53 @@ func TestSyncWithoutIdentifierDeletesNothing(t *testing.T) {
 	}
 }
 
+// TestSyncForAction checks an action's sync runs the mode it asks for and is
+// recorded against the action run, and that it refuses a resource the
+// integration doesn't pull before fetching anything.
+func TestSyncForAction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"deployments": []}`))
+	}))
+	defer server.Close()
+	db, mock := mockSyncStart(t, server.URL)
+	mock.ExpectQuery(insertRunSQL).
+		WithArgs("integration-id", nil, TriggerAction, ModeIncremental, sqlmock.AnyArg(), 0, 0, 0, 0, 0, 0, []byte("[]"), "", "action-run").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "finished_at"}).AddRow(1, time.Now()))
+	mock.ExpectCommit()
+
+	run, err := SyncForAction(context.Background(), db, "source", "action-run", ModeIncremental, []string{"deployments"})
+	if err != nil || run.Trigger != TriggerAction || run.ActionRun != "action-run" {
+		t.Fatalf("SyncForAction() = %+v, %v", run, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, mock = mockSyncStart(t, server.URL)
+	mock.ExpectRollback()
+	_, err = SyncForAction(context.Background(), db, "source", "action-run", ModeIncremental, []string{"builds"})
+	if err == nil || !strings.Contains(err.Error(), "doesn't pull a resource called builds") {
+		t.Fatalf("SyncForAction(builds) error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSyncableResource(t *testing.T) {
+	spec := mustParse(t, strings.Replace(httpYAML("https://tracker.example.com"), "  sync:",
+		"        builds:\n          url: https://tracker.example.com/builds\n          items: .builds[]\n  sync:", 1))
+	for name, want := range map[string]string{
+		"deployments": "",
+		"builds":      "no mapping of tracker reads builds",
+		"tests":       "tracker doesn't pull a resource called tests",
+	} {
+		if got := spec.SyncableResource(name); !strings.Contains(got, want) || (want == "") != (got == "") {
+			t.Errorf("SyncableResource(%s) = %q, want %q", name, got, want)
+		}
+	}
+}
+
 func TestReconcilable(t *testing.T) {
 	spec := Spec{Mappings: []Mapping{
 		{Resource: "repos", Blueprint: "repository"},

@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/integration"
 )
 
 const (
@@ -30,13 +31,13 @@ const SweepSchedule = "* * * * *"
 // Runner carries runs out. Every instance has one; they share the work
 // through the database.
 type Runner struct {
-	db     configdoc.DB
+	db     integration.TxDB
 	logger logging.Logger
 	// baseURL is the portal's public URL, for links to runs and entities.
 	baseURL string
 }
 
-func NewRunner(db configdoc.DB, logger logging.Logger, baseURL string) Runner {
+func NewRunner(db integration.TxDB, logger logging.Logger, baseURL string) Runner {
 	return Runner{db: db, logger: logger, baseURL: strings.TrimSuffix(baseURL, "/")}
 }
 

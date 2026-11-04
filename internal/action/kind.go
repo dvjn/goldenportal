@@ -124,6 +124,26 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 					add(configdoc.SeverityError, path+".entity.properties."+key, step.line, "%s is worked out by the portal, so it can't be written", key)
 				}
 			}
+		case step.Sync != nil:
+			record, err := integrations.Get(ctx, step.Sync.Integration)
+			switch {
+			case errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published()):
+				add(configdoc.SeverityWarning, path+".sync.integration", step.line, "no integration %q is published yet, so this step fails until it is", step.Sync.Integration)
+			case err != nil:
+				return nil, err
+			default:
+				target, _ := integration.Parse(record.PublishedSource)
+				if !target.Pulls {
+					add(configdoc.SeverityError, path+".sync.integration", step.line,
+						"the %s integration doesn't pull, so there's nothing to sync; what's pushed to it shows as it arrives", target.Identifier)
+					continue
+				}
+				for _, name := range step.Sync.Resources {
+					if problem := target.SyncableResource(name); problem != "" {
+						add(configdoc.SeverityError, path+".sync.resources", step.line, "%s", problem)
+					}
+				}
+			}
 		case step.Approval != nil && step.Approval.Approvers.Filter != nil && bp.Identifier != "":
 			if err := entity.CheckFilter(published, bp, *step.Approval.Approvers.Filter); err != nil {
 				add(configdoc.SeverityError, path+".approval.approvers.filter", step.line, "%v", err)

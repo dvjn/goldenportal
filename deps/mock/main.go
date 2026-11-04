@@ -45,7 +45,6 @@ func main() {
 		log.Fatal(err)
 	}
 	sso.routes(mux)
-	newOps(cfg.Ops).routes(mux)
 	tracker := newTracker(cfg.Tracker)
 	tracker.routes(mux)
 
@@ -54,6 +53,7 @@ func main() {
 		log.Fatal(err)
 	}
 	registry.routes(mux)
+	newOps(cfg.Ops, registry.add).routes(mux)
 	go registry.run()
 
 	pusher, err := newPusher(cfg.Push, filepath.Dir(path))

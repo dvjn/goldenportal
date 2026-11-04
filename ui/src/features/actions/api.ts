@@ -64,7 +64,16 @@ export type ActionStep = {
   maxFailures: number;
 };
 
-export type StepType = "http" | "entity" | "check" | "output" | "approval" | "action";
+// SyncStep syncs an integration that pulls, so what an earlier step changed
+// at the source shows before the run ends.
+export type SyncStep = {
+  integration: string;
+  // resources narrows the sync; every resource its mappings read when absent.
+  resources?: string[];
+  mode: "incremental" | "complete";
+};
+
+export type StepType = "http" | "entity" | "check" | "sync" | "output" | "approval" | "action";
 
 export type Step = {
   id?: string;
@@ -78,6 +87,7 @@ export type Step = {
   http?: HttpStep;
   entity?: EntityStep;
   check?: CheckStep;
+  sync?: SyncStep;
   output?: OutputStep;
   approval?: ApprovalStep;
   action?: ActionStep;

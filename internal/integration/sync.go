@@ -66,6 +66,18 @@ type TxDB interface {
 // sync fetches what changed since the last sync that fetched everything,
 // where the connector can, and deletes only what items say was deleted.
 func Sync(ctx context.Context, db TxDB, identifier, trigger, mode string) (*Run, error) {
+	return syncAs(ctx, db, identifier, Run{Trigger: trigger, Mode: mode}, nil)
+}
+
+// SyncForAction syncs for the action run actionRun, so a change an action
+// made at the source shows without waiting for the schedule. resources
+// narrows it to some of what the integration pulls; empty is all of it.
+// It doesn't move the schedule, since it may have fetched only part.
+func SyncForAction(ctx context.Context, db TxDB, identifier, actionRun, mode string, resources []string) (*Run, error) {
+	return syncAs(ctx, db, identifier, Run{Trigger: TriggerAction, Mode: mode, ActionRun: actionRun}, resources)
+}
+
+func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []string) (*Run, error) {
 	store := configdoc.NewStore(db, Name)
 	record, err := store.Get(ctx, identifier)
 	if err != nil {
@@ -106,6 +118,7 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger, mode string) (*Run,
 	if err != nil {
 		return nil, err
 	}
+	mode := asked.Mode
 	if mode == "" {
 		mode = spec.usualMode(history, time.Now())
 	}
@@ -117,11 +130,17 @@ func Sync(ctx context.Context, db TxDB, identifier, trigger, mode string) (*Run,
 	if err != nil {
 		return nil, err
 	}
-	run := &Run{StartedAt: started, Trigger: trigger, Mode: mode, Errors: []RunError{}}
+	run := &Run{StartedAt: started, Trigger: asked.Trigger, Mode: mode, ActionRun: asked.ActionRun, Errors: []RunError{}}
 
+	for _, name := range only {
+		if problem := spec.SyncableResource(name); problem != "" {
+			return nil, errors.New(problem)
+		}
+	}
 	var resources []string
 	for _, m := range spec.Mappings {
-		if slices.Contains(puller.Pulls(), m.Resource) && !slices.Contains(resources, m.Resource) {
+		if slices.Contains(puller.Pulls(), m.Resource) && !slices.Contains(resources, m.Resource) &&
+			(len(only) == 0 || slices.Contains(only, m.Resource)) {
 			resources = append(resources, m.Resource)
 		}
 	}
@@ -192,6 +211,21 @@ func writeBatched(ctx context.Context, db TxDB, integrationID string, entries []
 	maps.Copy(unsafe, batchUnsafe)
 
 	return tx.Commit()
+}
+
+// SyncableResource says why name can't be synced on its own, or nothing when
+// it can: it must be a resource the integration pulls, and a mapping must
+// read it.
+func (s Spec) SyncableResource(name string) string {
+	puller, ok := s.config.(Puller)
+	if !ok || !slices.Contains(puller.Pulls(), name) {
+		return s.Identifier + " doesn't pull a resource called " + name
+	}
+	if !slices.ContainsFunc(s.Mappings, func(m Mapping) bool { return m.Resource == name }) {
+		return "no mapping of " + s.Identifier + " reads " + name + ", so syncing it writes nothing"
+	}
+
+	return ""
 }
 
 // usualMode is how a sync runs unless asked otherwise: complete without a

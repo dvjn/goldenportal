@@ -88,6 +88,21 @@ func (g *registry) current(s map[string]any) map[string]any {
 	return out
 }
 
+// add registers a service, as the operations API does for a new one. It sends
+// no event, so the portal only sees it when it next pulls.
+func (g *registry) add(service map[string]any) (map[string]any, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	named := func(s map[string]any) bool { return s["name"] == service["name"] }
+	if slices.ContainsFunc(g.services, named) {
+		return nil, false
+	}
+	g.gone = slices.DeleteFunc(g.gone, named)
+	g.services = append(g.services, service)
+
+	return g.current(service), true
+}
+
 func (g *registry) run() {
 	for {
 		time.Sleep(g.cfg.Events.pick())

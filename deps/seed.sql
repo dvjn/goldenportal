@@ -744,26 +744,6 @@ spec:
           service: .service
           channel: .channel
 $yaml$),
-  ('workflows', $yaml$kind: Integration
-metadata:
-  name: workflows
-  title: Workflows
-  description: Entities workflows create, such as services people register from Self-Service.
-spec:
-  connector:
-    type: http
-    config:
-      resources:
-        services:
-          push:
-            items: .body.services[]
-  mappings:
-    - resource: services
-      blueprint: service
-      entity:
-        identifier: .name
-        title: .title
-$yaml$),
   ('portal', $yaml$kind: Integration
 metadata:
   name: portal
@@ -1592,7 +1572,7 @@ $yaml$),
 metadata:
   name: register-service
   title: Register a service
-  description: Creates a repository for a new service and adds the service to the catalog, once a platform engineer approves.
+  description: Creates a repository for a new service and registers the service, which the catalog then syncs, once a platform engineer approves.
   icon: package-plus
   color: emerald
 spec:
@@ -1659,23 +1639,28 @@ spec:
           owner: $input.owner
         output:
           url: .body.url
-    - id: service
-      title: Add it to the catalog
-      entity:
-        operation: upsert
-        integration: workflows
-        blueprint: service
-        identifier: $input.name
-        title: $input.title
-        properties:
+    - id: registry
+      title: Add it to the registry
+      http:
+        method: POST
+        url: http://localhost:47800/ops/services
+        headers:
+          Authorization: {env: GP_SECRET_OPS}
+        body:
+          name: $input.name
+          displayName: $input.title
           language: $input.language
           tier: $input.tier
-          repository: $step.repo.url
+          repo: $step.repo.url
           owner: $input.owner
+    - title: Bring it into the catalog
+      sync:
+        integration: service-registry
+        resources: [services]
+        mode: incremental
     - output:
         summary: "Registered {{ $input.title }}"
         links:
-          Service: $step.service.url
           Repository: $step.repo.url
   outputs:
     repository: $step.repo.url
