@@ -41,6 +41,7 @@ const triggerOptions: { value: RunTrigger; label: string }[] = [
 ];
 
 const outcomeOptions: { value: RunOutcome; label: string }[] = [
+  { value: "running", label: "Running" },
   { value: "succeeded", label: "Succeeded" },
   { value: "warnings", label: "Succeeded with Warnings" },
   { value: "failed", label: "Failed" },
@@ -138,7 +139,7 @@ const columns = [
     header: () => <span className="block text-right">Took</span>,
     cell: ({ row }) => (
       <span className="block text-right text-muted-foreground tabular-nums">
-        {formatDuration(row.original.startedAt, row.original.finishedAt)}
+        {row.original.finishedAt && formatDuration(row.original.startedAt, row.original.finishedAt)}
       </span>
     ),
   }),
@@ -228,7 +229,7 @@ export function RecentRuns({
         <EmptyState
           icon={<History />}
           title="Nothing has run yet"
-          description="Syncs, pushes and action writes show up here as they finish."
+          description="Syncs show up here as they start, and pushes and action writes as they finish."
         />
       }
     />

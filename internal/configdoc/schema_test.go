@@ -86,6 +86,7 @@ func (routes) POST(string, gofr.Handler)                {}
 func (routes) PUT(string, gofr.Handler)                 {}
 func (routes) DELETE(string, gofr.Handler)              {}
 func (routes) AddCronJob(string, string, gofr.CronFunc) {}
+func (routes) OnStart(func(*gofr.Context) error)        {}
 
 func TestSchemaHandlers(t *testing.T) {
 	r := routes{}

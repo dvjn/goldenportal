@@ -84,7 +84,8 @@ func ListStatus(ctx *gofr.Context) ([]Status, error) {
 	return statuses(sources, titles, lastRuns, counts), nil
 }
 
-// latestRuns finds each integration's newest run.
+// latestRuns finds each integration's newest run, or its running sync, which
+// a push finishing meanwhile mustn't hide.
 func latestRuns(ctx *gofr.Context) (map[string]Run, error) {
 	rows, err := ctx.SQL.QueryContext(ctx, `
 		SELECT DISTINCT ON (r.integration_id) i.identifier, r.id, r.started_at, r.finished_at, r.trigger,
@@ -94,7 +95,7 @@ func latestRuns(ctx *gofr.Context) (map[string]Run, error) {
 		JOIN config_documents i ON i.id = r.integration_id
 		LEFT JOIN ingestion_tokens t ON t.id = r.token_id
 		LEFT JOIN runs a ON a.id = r.action_run_id
-		ORDER BY r.integration_id, r.id DESC`)
+		ORDER BY r.integration_id, r.finished_at IS NULL DESC, r.id DESC`)
 	if err != nil {
 		return nil, err
 	}

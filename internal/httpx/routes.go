@@ -13,4 +13,5 @@ type Routes interface {
 	PUT(string, gofr.Handler)
 	DELETE(string, gofr.Handler)
 	AddCronJob(string, string, gofr.CronFunc)
+	OnStart(func(*gofr.Context) error)
 }

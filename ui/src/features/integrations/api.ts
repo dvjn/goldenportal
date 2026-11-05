@@ -76,7 +76,8 @@ export type RunMode = "complete" | "incremental";
 export type Run = {
   id: number;
   startedAt: string;
-  finishedAt: string;
+  // finishedAt is null while a sync is running.
+  finishedAt: string | null;
   trigger: "push" | "schedule" | "manual" | "action";
   mode: RunMode;
   token?: string;
@@ -140,8 +141,8 @@ export async function revokeToken(identifier: string, id: string): Promise<void>
   await api.delete(`${path(identifier)}/tokens/${id}`);
 }
 
-// syncIntegration syncs an integration that pulls now, in mode, or as its
-// schedule would without one.
+// syncIntegration starts syncing an integration that pulls now, in mode, or as its
+// schedule would without one, and returns the run as it starts.
 export async function syncIntegration(identifier: string, mode?: RunMode): Promise<Run> {
   const searchParams = mode ? { mode } : undefined;
   return (await api.post(`${path(identifier)}/sync`, { searchParams }).json<ApiDataResponse<Run>>())
@@ -175,7 +176,7 @@ export type RunPage = {
 };
 
 export type RunTrigger = Run["trigger"];
-export type RunOutcome = "succeeded" | "warnings" | "failed";
+export type RunOutcome = "running" | "succeeded" | "warnings" | "failed";
 
 export type RunFilters = {
   q?: string;

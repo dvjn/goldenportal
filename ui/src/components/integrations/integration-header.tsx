@@ -35,45 +35,38 @@ export function LastRun({ identifier }: Readonly<{ identifier: string }>) {
   );
 }
 
-// SyncNow syncs an integration that pulls now, on top of its schedule. The
+// SyncNow starts syncing an integration that pulls now, on top of its schedule. The
 // button syncs as the schedule would next; the menu forces a complete sync,
-// which also deletes what neither it nor the complete run before it saw.
+// which also deletes what neither it nor the complete run before it saw. The
+// sync carries on after it answers, so its runs show how it ends.
 export function SyncNow({ identifier }: Readonly<{ identifier: string }>) {
   const queryClient = useQueryClient();
+  const { data } = useQuery(statusQueryOptions);
+  const lastRun = data?.find((s) => s.integration === identifier)?.lastRun;
   const sync = useMutation({
     mutationFn: (mode?: RunMode) => syncIntegration(identifier, mode),
-    // A failed sync is recorded as a run too, so both outcomes refresh the runs.
+    // Refreshing shows the running run, this one or the one that refused it, and keeps reading
+    // until it finishes.
     onSettled: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: integrationKeys.runs(identifier) }),
         queryClient.invalidateQueries({ queryKey: integrationKeys.status }),
       ]),
-    onSuccess: (run) => {
-      const counts =
-        `Synced: ${run.created} created, ${run.updated} updated, ${run.deleted} deleted` +
-        (run.failed > 0 ? `, ${run.failed} failed` : "");
-      // Some resources failed while the others were written, or something else went wrong.
-      if (run.error || run.warning)
-        toast.warning(counts, { description: [run.error, run.warning].filter(Boolean).join(" ") });
-      else toast.success(counts);
-    },
+    onSuccess: () => toast.success("Started the sync"),
     onError: (error) => toast.error(error.message),
   });
+  // Another sync would be refused while one runs, however it started.
+  const running = sync.isPending || (lastRun ? !lastRun.finishedAt : false);
 
   return (
     <div className="flex items-center gap-1">
-      <Button variant="outline" onClick={() => sync.mutate(undefined)} disabled={sync.isPending}>
-        {sync.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+      <Button variant="outline" onClick={() => sync.mutate(undefined)} disabled={running}>
+        {running ? <Loader2 className="animate-spin" /> : <RefreshCw />}
         Sync Now
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <IconButton
-            label="More Sync Options"
-            variant="outline"
-            size="icon"
-            disabled={sync.isPending}
-          >
+          <IconButton label="More Sync Options" variant="outline" size="icon" disabled={running}>
             <ChevronDown />
           </IconButton>
         </DropdownMenuTrigger>

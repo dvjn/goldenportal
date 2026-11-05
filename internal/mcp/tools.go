@@ -409,7 +409,7 @@ var tools = []tool{
 		}
 		return b.services.PublishMany(ctx, refs, a.AcknowledgeBreaking)
 	}),
-	author("sync_integration", "Sync a published integration that pulls now, completely or incrementally, using its declared mappings.", true, func(b bridge, ctx *gofr.Context, a syncArgs) (any, error) {
+	author("sync_integration", "Start syncing a published integration that pulls now, completely or incrementally, using its declared mappings. It returns the run as soon as it starts, with finishedAt null; read its outcome later with list_sync_runs, which lists the newest runs first: the run with the same id has finished once finishedAt is set.", true, func(b bridge, ctx *gofr.Context, a syncArgs) (any, error) {
 		return b.services.Sync(ctx, a.Name, a.Mode)
 	}),
 	author("check_integration", "Check a published integration's connector can reach its system with the current config and secrets, or the draft's when it isn't published.", false, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {

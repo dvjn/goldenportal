@@ -50,6 +50,7 @@ func Register(app httpx.Routes, baseURL, key string) {
 	app.POST("integrations/{identifier}/sync", syncNow)
 	app.POST("integrations/{identifier}/check", checkNow)
 	app.AddCronJob(SyncSchedule, "sync-pull-integrations", syncAll)
+	app.OnStart(func(ctx *gofr.Context) error { return NewStore(ctx.SQL).finishInterrupted(ctx) })
 	app.GET("blueprints/{identifier}/usage", blueprintUsage)
 	app.GET("integration-status", listStatus)
 }
@@ -261,7 +262,7 @@ func Runs(ctx *gofr.Context, integration string, req RunsRequest) (RunPage, erro
 	if q.Triggers, err = oneOf("trigger", req.Triggers, TriggerSchedule, TriggerManual, TriggerPush, TriggerAction); err != nil {
 		return RunPage{}, err
 	}
-	if q.Outcomes, err = oneOf("outcome", req.Outcomes, OutcomeSucceeded, OutcomeWarnings, OutcomeFailed); err != nil {
+	if q.Outcomes, err = oneOf("outcome", req.Outcomes, OutcomeRunning, OutcomeSucceeded, OutcomeWarnings, OutcomeFailed); err != nil {
 		return RunPage{}, err
 	}
 

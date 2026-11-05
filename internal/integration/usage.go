@@ -94,6 +94,7 @@ func BlueprintUsage(ctx *gofr.Context, identifier string) (Usage, error) {
 	runs, err := ctx.SQL.QueryContext(ctx, `
 		SELECT i.identifier, max(r.finished_at) FROM ingestion_runs r
 		JOIN config_documents i ON i.id = r.integration_id
+		WHERE r.finished_at IS NOT NULL
 		GROUP BY i.identifier`)
 	if err != nil {
 		return Usage{}, err

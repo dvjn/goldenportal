@@ -79,6 +79,31 @@ func SyncForAction(ctx context.Context, db TxDB, identifier, actionRun, mode str
 }
 
 func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []string) (*Run, error) {
+	s, err := startSync(ctx, db, identifier, asked, only)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.finish(ctx)
+}
+
+// syncing is a sync that holds its integration's lock and is recorded as
+// running.
+type syncing struct {
+	db         TxDB
+	lock       *gofrSQL.Tx
+	id         string
+	identifier string
+	spec       Spec
+	puller     Puller
+	mapping    mapper
+	request    PullRequest
+	run        *Run
+}
+
+// startSync takes the integration's lock and records the run as running,
+// so a second sync fails fast and Sync Now can answer before the fetch.
+func startSync(ctx context.Context, db TxDB, identifier string, asked Run, only []string) (_ *syncing, err error) {
 	store := configdoc.NewStore(db, Name)
 	record, err := store.Get(ctx, identifier)
 	if err != nil {
@@ -101,7 +126,11 @@ func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []s
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = lock.Rollback() }()
+	defer func() {
+		if err != nil {
+			_ = lock.Rollback()
+		}
+	}()
 
 	// Take the lock before fetching so overlapping syncs fail fast instead of
 	// each spending a full provider fetch. It's held in a transaction of its
@@ -131,7 +160,6 @@ func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []s
 	if err != nil {
 		return nil, err
 	}
-	run := &Run{StartedAt: started, Trigger: asked.Trigger, Mode: mode, ActionRun: asked.ActionRun, Errors: []RunError{}}
 
 	for _, name := range only {
 		if problem := spec.SyncableResource(name); problem != "" {
@@ -148,11 +176,49 @@ func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []s
 	if err != nil {
 		return nil, err
 	}
+
+	run := &Run{StartedAt: started, Trigger: asked.Trigger, Mode: mode, ActionRun: asked.ActionRun, Errors: []RunError{}}
+	if err := NewStore(db).startRun(ctx, id, run); err != nil {
+		return nil, err
+	}
+	request := PullRequest{Resources: resources, Since: since}
+	if len(only) == 0 {
+		request.IngestURL, request.WebhookSecret = IngestURL(identifier), WebhookSecret(identifier)
+	}
+
+	return &syncing{
+		db: db, lock: lock, id: id, identifier: identifier, spec: spec, puller: puller, mapping: m,
+		request: request, run: run,
+	}, nil
+}
+
+// finish fetches and writes what the sync started, then records how it
+// ended. A sync that fails is recorded too, so the failure shows with the
+// integration's runs and the scheduler waits out the interval instead of
+// retrying, and burning provider rate limits, every minute.
+func (s *syncing) finish(ctx context.Context) (*Run, error) {
+	defer func() { _ = s.lock.Rollback() }()
+	err := s.pull(ctx)
+	if err != nil {
+		s.run.Error = err.Error()
+	}
+	if finishErr := NewStore(s.db).finishRun(context.WithoutCancel(ctx), s.run); finishErr != nil {
+		return nil, errors.Join(err, finishErr)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return s.run, s.lock.Commit()
+}
+
+func (s *syncing) pull(ctx context.Context) error {
+	run := s.run
 	unsafe := map[string]bool{}
 	emit := func(_ string, items []Item) error {
-		entries := m.Map(items)
+		entries := s.mapping.Map(items)
 		for start := 0; start < len(entries); start += writeBatch {
-			if err := writeBatched(ctx, db, id, entries[start:min(start+writeBatch, len(entries))], run, unsafe); err != nil {
+			if err := writeBatched(ctx, s.db, s.id, entries[start:min(start+writeBatch, len(entries))], run, unsafe); err != nil {
 				return err
 			}
 		}
@@ -163,14 +229,12 @@ func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []s
 	// a slow provider from holding it indefinitely.
 	pullCtx, cancel := context.WithTimeout(ctx, pullTimeout)
 	var warnings []string
-	request := PullRequest{Resources: resources, Since: since, Warn: func(warning string) { warnings = append(warnings, warning) }}
-	if len(only) == 0 {
-		request.IngestURL, request.WebhookSecret = IngestURL(identifier), WebhookSecret(identifier)
-	}
-	failed, err := puller.Pull(pullCtx, db, request, emit)
+	request := s.request
+	request.Warn = func(warning string) { warnings = append(warnings, warning) }
+	failed, err := s.puller.Pull(pullCtx, s.db, request, emit)
 	cancel()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	run.Warning = strings.Join(warnings, " ")
 	if len(failed) > 0 {
@@ -181,29 +245,27 @@ func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []s
 		}
 		run.Error = strings.Join(reasons, "; ")
 	}
-	if len(failed) == len(resources) {
-		return nil, recordFailure(ctx, db, id, run, fmt.Errorf("pull %s: %s", identifier, run.Error))
+	if len(failed) == len(request.Resources) {
+		return fmt.Errorf("pull %s: %s", s.identifier, run.Error)
 	}
 
-	if mode == ModeComplete {
+	if run.Mode == ModeComplete {
 		var covered []string
-		for _, r := range resources {
+		for _, r := range request.Resources {
 			if failed[r] == nil {
 				covered = append(covered, r)
 			}
 		}
-		if run.Deleted, err = reconcile(ctx, db, id, spec, covered, unsafe, started); err != nil {
-			return nil, err
+		if run.Deleted, err = reconcile(ctx, s.db, s.id, s.spec, covered, unsafe, run.StartedAt); err != nil {
+			return err
 		}
 	}
 
-	if err := NewStore(db).RecordRun(ctx, id, "", run); err != nil {
-		return nil, err
-	}
-
-	return run, lock.Commit()
+	return nil
 }
 
+// writeBatched writes a batch, and the run's counts so far with it, so a
+// running sync shows how far it got.
 func writeBatched(ctx context.Context, db TxDB, integrationID string, entries []Entry, run *Run, unsafe map[string]bool) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -215,6 +277,9 @@ func writeBatched(ctx context.Context, db TxDB, integrationID string, entries []
 		return err
 	}
 	maps.Copy(unsafe, batchUnsafe)
+	if err := NewStore(tx).progress(ctx, run); err != nil {
+		return err
+	}
 
 	return tx.Commit()
 }
@@ -259,18 +324,6 @@ func (s Spec) usualMode(h syncHistory, now time.Time) string {
 	return ModeIncremental
 }
 
-// recordFailure records a sync that fetched nothing as a run, so the failure
-// shows with the integration's runs and the scheduler waits out the interval
-// instead of retrying, and burning provider rate limits, every minute.
-func recordFailure(ctx context.Context, db configdoc.DB, integrationID string, run *Run, err error) error {
-	run.Error = err.Error()
-	if recordErr := NewStore(db).RecordRun(context.WithoutCancel(ctx), integrationID, "", run); recordErr != nil {
-		return errors.Join(err, recordErr)
-	}
-
-	return err
-}
-
 // syncAll syncs the published integrations that pull whose interval has
 // passed since their last sync. It runs every minute.
 func syncAll(ctx *gofr.Context) {
@@ -305,8 +358,11 @@ func syncNow(ctx *gofr.Context) (any, error) {
 	return SyncNow(ctx, ctx.PathParam("identifier"), ctx.Param("mode"))
 }
 
-// SyncNow syncs one published integration that pulls straight away,
-// completely or incrementally, or as its schedule would when mode is empty.
+// SyncNow starts syncing one published integration that pulls straight
+// away, completely or incrementally, or as its schedule would when mode is
+// empty. It returns the running run once the sync holds its lock, so a sync
+// already running is refused at once; the integration's runs say how it
+// ended.
 func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return nil, err
@@ -318,7 +374,7 @@ func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 		return nil, err
 	}
 
-	run, err := Sync(ctx, ctx.SQL, identifier, TriggerManual, mode)
+	s, err := startSync(ctx, ctx.SQL, identifier, Run{Trigger: TriggerManual, Mode: mode}, nil)
 	switch {
 	case errors.Is(err, ErrSyncing), errors.Is(err, ErrNotPull), errors.Is(err, ErrUnsynced):
 		return nil, httpx.Error{Code: http.StatusConflict, Message: err.Error()}
@@ -326,8 +382,22 @@ func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 		return nil, err
 	}
 
-	return run, nil
+	started := *s.run
+	// A sync can outlast the request, whose context is cancelled when the
+	// client goes and mustn't be used once the handler returns, so it runs
+	// on a context of its own, still bounded by pullTimeout.
+	logger := ctx.Container.Logger
+	background(func() {
+		if _, err := s.finish(context.Background()); err != nil {
+			logger.Errorf("sync %s: %v", identifier, err)
+		}
+	})
+
+	return &started, nil
 }
+
+// background runs the rest of a sync Sync Now started; tests wait for it.
+var background = func(finish func()) { go finish() }
 
 // toJSONValue turns a struct into the maps and slices jq works on.
 func toJSONValue(v any) (any, error) {

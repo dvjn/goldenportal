@@ -134,6 +134,17 @@ const syncRun = {
   errors: [],
 };
 
+// runningRun is a sync as Sync Now answers: started, and not finished yet.
+const runningRun = {
+  ...syncRun,
+  finishedAt: null,
+  received: 0,
+  created: 0,
+  updated: 0,
+  unchanged: 0,
+  deleted: 0,
+};
+
 const pullRoutes = {
   ...routes,
   "GET integrations/portal": ok(portal),
@@ -152,7 +163,7 @@ const pullRoutes = {
       checks: true,
     },
   ]),
-  "POST integrations/portal/sync": ok(syncRun),
+  "POST integrations/portal/sync": ok(runningRun),
 };
 
 describe("integrations", () => {
@@ -344,7 +355,7 @@ describe("integrations", () => {
     renderRoute("/integrations/portal");
 
     await user.click(await screen.findByRole("button", { name: "Sync Now" }));
-    expect(await screen.findByText("Synced: 1 created, 1 updated, 2 deleted")).toBeInTheDocument();
+    expect(await screen.findByText("Started the sync")).toBeInTheDocument();
     // Without a mode, the schedule decides.
     expect(new URL(requests["POST integrations/portal/sync"]?.url ?? "").search).toBe("");
     // It pulls every minute, completely every day, so there's no Push tab.
@@ -367,21 +378,35 @@ describe("integrations", () => {
     );
   });
 
-  it("warns when a sync wrote some resources and failed others", async () => {
-    const user = userEvent.setup();
+  it("disables Sync Now while a sync runs", async () => {
     stubApi({
       ...pullRoutes,
-      "POST integrations/portal/sync": ok({
-        ...syncRun,
-        created: 4,
-        error: "users: 503 Service Unavailable",
-      }),
+      "GET integration-status": ok([
+        { integration: "portal", lastRun: { ...runningRun, trigger: "schedule" }, feeds: [] },
+      ]),
     });
     renderRoute("/integrations/portal");
 
-    await user.click(await screen.findByRole("button", { name: "Sync Now" }));
-    expect(await screen.findByText("Synced: 4 created, 1 updated, 2 deleted")).toBeInTheDocument();
-    expect(screen.getByText("users: 503 Service Unavailable")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Running")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sync Now" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "More Sync Options" })).toBeDisabled();
+  });
+
+  it("shows a running sync with its counts so far, and how long only once it ends", async () => {
+    stubApi({
+      ...pullRoutes,
+      "GET integrations/portal/runs": ok({
+        total: 2,
+        runs: [{ ...runningRun, id: 3, received: 500, created: 500 }, syncRun],
+      }),
+    });
+    renderRoute("/integrations/portal?tab=runs");
+
+    const running = (await screen.findByLabelText("Running")).closest("tr") as HTMLElement;
+    expect(within(running).getAllByText("500")).toHaveLength(2);
+    expect(within(running).queryByText(/\d+(ms|s)$/)).not.toBeInTheDocument();
+    const finished = screen.getByLabelText("Succeeded").closest("tr") as HTMLElement;
+    expect(within(finished).getByText("1s")).toBeInTheDocument();
   });
 
   it("tests the connection and shows why it failed", async () => {

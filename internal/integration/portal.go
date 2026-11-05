@@ -327,6 +327,7 @@ func portalCounts(ctx context.Context, db configdoc.DB) (map[string]int, map[str
 			CASE WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 OR r.warning <> '' THEN 'warnings' ELSE 'succeeded' END
 		FROM ingestion_runs r
 		JOIN config_documents d ON d.id = r.integration_id
+		WHERE r.finished_at IS NOT NULL
 		ORDER BY r.integration_id, r.finished_at DESC`)
 	if err != nil {
 		return nil, nil, err
