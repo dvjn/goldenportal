@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar";
-import { PageBar, PageBarProvider } from "@/components/page-bar";
+import { PageBar, PageBarProvider, PageTrail } from "@/components/page-bar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { meQueryOptions } from "@/features/auth";
@@ -32,6 +32,9 @@ function AppLayout() {
           <PageBarProvider>
             <PageBar />
             <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-4 pb-10 sm:px-6 sm:pt-6 lg:pb-12">
+              {/* A page with no header of its own, such as one loading or failed,
+                  still needs the trigger to open the sidebar on phones. */}
+              <PageTrail className="has-[~[data-slot=page-header],~*_[data-slot=page-header]]:hidden" />
               <Outlet />
             </div>
           </PageBarProvider>

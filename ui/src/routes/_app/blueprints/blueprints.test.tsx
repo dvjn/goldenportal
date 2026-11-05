@@ -170,9 +170,9 @@ describe("blueprints", () => {
     expect(screen.getByText("updatedAt")).toBeInTheDocument();
   });
 
-  it("puts the trail in the page bar, and the header once it's scrolled past", async () => {
+  it("leads the header with its trail, and shows the bar once it's scrolled past", async () => {
     const user = userEvent.setup();
-    // jsdom can't scroll, so the test reports the header passing under the bar.
+    // jsdom can't scroll, so the test reports the header scrolling away.
     let scrolledPast: (past: boolean) => void = () => {};
     vi.stubGlobal(
       "IntersectionObserver",
@@ -197,9 +197,14 @@ describe("blueprints", () => {
     stubApi(serviceRoutes);
     const { router } = renderRoute("/blueprints/service");
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Service" })).toBeVisible();
+    const heading = await screen.findByRole("heading", { level: 1, name: "Service" });
+    expect(heading).toBeVisible();
+    // At rest there's no bar; the trail is a row of the header, over its title.
     const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]') as HTMLElement;
-    const crumbs = within(bar).getByRole("navigation", { name: "breadcrumb" });
+    expect(bar).not.toBeVisible();
+    const header = heading.closest<HTMLElement>('[data-slot="page-header"]') as HTMLElement;
+    const crumbs = within(header).getByRole("navigation", { name: "breadcrumb" });
+    expect(crumbs.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(crumbs).getByRole("link", { name: "Blueprints" })).toHaveAttribute(
       "href",
       "/blueprints",
@@ -215,6 +220,7 @@ describe("blueprints", () => {
     // Scrolled past, the bar keeps the trail, still leading back up, beside
     // the tabs and actions, and the page's own tabs step aside.
     act(() => scrolledPast(true));
+    expect(bar).toBeVisible();
     expect(bar).toHaveAttribute("data-collapsed");
     const compact = within(bar).getByRole("navigation", { name: "breadcrumb" });
     expect(within(compact).getByRole("link", { name: "Blueprints" })).toHaveAttribute(
@@ -239,7 +245,9 @@ describe("blueprints", () => {
 
     act(() => scrolledPast(false));
     expect(bar).not.toHaveAttribute("data-collapsed");
-    expect(within(bar).getByRole("navigation", { name: "breadcrumb" })).toBeInTheDocument();
+    expect(bar).not.toBeVisible();
+    expect(within(bar).queryByRole("navigation", { name: "breadcrumb" })).not.toBeInTheDocument();
+    expect(within(header).getByRole("navigation", { name: "breadcrumb" })).toBeInTheDocument();
     expect(within(bar).queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Versions" })).toHaveAttribute("aria-selected", "true");
   });

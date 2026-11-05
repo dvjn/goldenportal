@@ -778,9 +778,11 @@ describe("dashboards and page tabs", () => {
     const row = await screen.findByRole("group", { name: "Inputs" });
     expect(row).not.toHaveClass("sticky");
     const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]') as HTMLElement;
+    expect(bar).not.toBeVisible();
     expect(within(bar).queryByRole("group", { name: "Inputs" })).not.toBeInTheDocument();
 
     act(() => scrolledPast(true));
+    expect(bar).toBeVisible();
     // The bar shows every control where there's room, and else one button
     // counting those set; the page's own row steps aside.
     expect(within(bar).getByRole("group", { name: "Inputs" })).toBeInTheDocument();

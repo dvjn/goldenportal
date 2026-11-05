@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { pageBarHeight, usePageBar } from "@/components/page-bar";
+import { PageTrail, pageBarHeight, usePageBar } from "@/components/page-bar";
 import { CompactBreadcrumbs, PageBreadcrumbs, PageCrumbIcon } from "@/components/page-breadcrumbs";
 import { Separator } from "@/components/ui/separator";
 import { usePageTitle } from "@/lib/page-title";
@@ -31,8 +31,8 @@ type PageHeaderProps = {
 };
 
 // PageHeader is the header every page starts with, so titles look the same
-// everywhere. Its breadcrumbs go in the page bar, and once it's scrolled
-// past, its trail, tabs, toolbar and actions move up into the bar as one row.
+// everywhere. Its breadcrumbs lead it, and once it's scrolled past, its
+// trail, tabs, toolbar and actions show in the page bar as one row.
 export function PageHeader({
   title,
   heading,
@@ -56,36 +56,41 @@ export function PageHeader({
 
   return (
     <>
-      {bar?.crumbs && createPortal(crumbs, bar.crumbs)}
       {collapsed &&
         bar?.compact &&
         createPortal(
           <CompactHeader crumbs={crumbs} tabs={tabs} toolbar={toolbar?.(true)} actions={actions} />,
           bar.compact,
         )}
-      <div ref={ref} className="grid gap-6">
-        {!bar && breadcrumbs && crumbs}
-        {headless ? (
-          <h1 className="sr-only">{title}</h1>
-        ) : (
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              {icon}
-              <div className="grid min-w-0 gap-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-semibold tracking-tight">{heading ?? title}</h1>
-                  {badges && (
-                    <span data-slot="page-badges" className="contents">
-                      {badges}
-                    </span>
+      <div ref={ref} data-slot="page-header" className="grid gap-6">
+        {/* The trail sits closer to the title it leads to than the rows below.
+            Without a heading, an empty trail would still leave the gap. */}
+        <div className={headless ? "contents" : "grid gap-3"}>
+          <PageTrail>{crumbs}</PageTrail>
+          {headless ? (
+            <h1 className="sr-only">{title}</h1>
+          ) : (
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                {icon}
+                <div className="grid min-w-0 gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="text-2xl font-semibold tracking-tight">{heading ?? title}</h1>
+                    {badges && (
+                      <span data-slot="page-badges" className="contents">
+                        {badges}
+                      </span>
+                    )}
+                  </div>
+                  {description && (
+                    <div className="text-sm text-muted-foreground">{description}</div>
                   )}
                 </div>
-                {description && <div className="text-sm text-muted-foreground">{description}</div>}
               </div>
+              {actions && <div className="flex items-center gap-2">{actions}</div>}
             </div>
-            {actions && <div className="flex items-center gap-2">{actions}</div>}
-          </div>
-        )}
+          )}
+        </div>
         {tabs && (
           // Kept in place while the bar shows them, so the page doesn't jump.
           // The rule runs the page's width, and the active tab's line sits on it.
@@ -124,7 +129,7 @@ function CompactHeader({
   Pick<PageHeaderProps, "tabs" | "actions"> & { crumbs: ReactNode; toolbar?: ReactNode }
 >) {
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-3 duration-200 animate-in slide-in-from-top-1 motion-reduce:animate-none">
+    <div className="flex min-w-0 flex-1 items-center gap-3">
       <div className="flex max-w-2/5 min-w-0 shrink-0 items-center gap-2">
         <CompactBreadcrumbs value>{crumbs}</CompactBreadcrumbs>
       </div>
@@ -147,7 +152,8 @@ function CompactHeader({
   );
 }
 
-// useScrolledPast tells the bar whether the header has gone up under it.
+// useScrolledPast tells the bar whether the header has scrolled up to where
+// the bar shows, so the bar comes in as the header's last row leaves.
 function useScrolledPast(
   ref: RefObject<HTMLElement | null>,
   onChange: ((past: boolean) => void) | undefined,

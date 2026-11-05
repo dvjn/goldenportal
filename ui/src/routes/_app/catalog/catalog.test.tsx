@@ -149,14 +149,12 @@ describe("catalog", () => {
       within(link.closest("[data-slot=card]") as HTMLElement).getByText("1.2K"),
     ).toBeInTheDocument();
     // The sidebar links here. A top-level page has nothing above it, and the
-    // header names it, so the bar shows no trail.
+    // header names it, so it has no trail.
     const links = screen.getAllByRole("link", { name: "Catalog" });
     expect(links.some((link) => link.getAttribute("href") === "/catalog")).toBe(true);
-    const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]');
-    expect(
-      within(bar as HTMLElement).queryByRole("navigation", { name: "breadcrumb" }),
-    ).not.toBeInTheDocument();
-    expect(bar?.querySelector('[data-slot="page-crumbs"]')).toBeEmptyDOMElement();
+    expect(within(main).queryByRole("navigation", { name: "breadcrumb" })).not.toBeInTheDocument();
+    const header = main.querySelector<HTMLElement>('[data-slot="page-header"]');
+    expect(header?.querySelector('[data-slot="page-crumbs"]')).toBeEmptyDOMElement();
   });
 
   it("keeps the navigation when a blueprint doesn't exist", async () => {
@@ -169,6 +167,11 @@ describe("catalog", () => {
       "/catalog",
     );
     expect(screen.getByRole("link", { name: "Scorecards" })).toBeInTheDocument();
+    // With no header to lead, the page still starts with the trigger that
+    // opens the sidebar on phones.
+    const trail = screen.getByRole("main").querySelector<HTMLElement>('[data-slot="page-crumbs"]')
+      ?.parentElement as HTMLElement;
+    expect(within(trail).getByRole("button", { name: "Toggle Sidebar" })).toBeInTheDocument();
   });
 
   it("shows a failed page of entities in the table and tries again", async () => {
@@ -439,10 +442,10 @@ describe("catalog", () => {
     });
     renderRoute("/catalog/service/ledger");
 
-    await screen.findByRole("heading", { level: 1, name: "Ledger" });
-    const bar = document.querySelector<HTMLElement>('[data-slot="page-bar"]') as HTMLElement;
+    const heading = await screen.findByRole("heading", { level: 1, name: "Ledger" });
+    const header = heading.closest<HTMLElement>('[data-slot="page-header"]') as HTMLElement;
     const crumb = (name: string) =>
-      within(bar).getByRole("link", { name }).parentElement?.querySelector("span.size-6");
+      within(header).getByRole("link", { name }).parentElement?.querySelector("span.size-6");
     expect(crumb("Catalog")).toHaveClass("bg-gray-500/15");
     // The blueprint's crumb is tinted as the blueprint is.
     await waitFor(() => expect(crumb("Service")?.querySelector(".lucide-server")).not.toBeNull());

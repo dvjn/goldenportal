@@ -65,10 +65,10 @@ describe("page icons", () => {
     });
     cleanup();
     renderRoute("/runs/r1");
-    const bar =
-      (await screen.findByRole("heading", { level: 1, name: "Restart" })) &&
-      (document.querySelector<HTMLElement>('[data-slot="page-bar"]') as HTMLElement);
-    const crumb = within(bar).getByRole("link", { name: "Runs" }).parentElement;
+    const header = (
+      await screen.findByRole("heading", { level: 1, name: "Restart" })
+    ).closest<HTMLElement>('[data-slot="page-header"]') as HTMLElement;
+    const crumb = within(header).getByRole("link", { name: "Runs" }).parentElement;
     expect(iconOf(crumb)).toBe(iconOf(nav));
   });
 });

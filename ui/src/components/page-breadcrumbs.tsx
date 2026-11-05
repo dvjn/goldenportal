@@ -27,7 +27,7 @@ type PageBreadcrumbsProps = {
 };
 
 // CompactBreadcrumbs fits the trails inside it on one line, as the bar does
-// once the page header has scrolled up into it. Pages build their own
+// once the page header has scrolled away. Pages build their own
 // trail, so the bar sets the variant around it rather than on it.
 export const CompactBreadcrumbs = createContext(false);
 
@@ -57,7 +57,7 @@ function BlueprintTile({ blueprint }: Readonly<{ blueprint: string }>) {
 }
 
 // PageBreadcrumbs is the trail to a page. Each crumb leads with its icon
-// tile: a section's, or the page's own. In the bar it's only the pages
+// tile: a section's, or the page's own. Over the header it's only the pages
 // above, since the header right below names the page; a top-level page has
 // none. Compact, once that header has scrolled away, it ends in the page
 // and stays on one line: the outermost crumbs truncate first, and on narrow
