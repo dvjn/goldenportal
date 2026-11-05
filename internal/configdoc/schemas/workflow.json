@@ -345,7 +345,7 @@
         },
         "mode": {
           "enum": ["incremental", "complete"],
-          "description": "incremental fetches what changed; complete fetches everything and deletes what's gone from those resources."
+          "description": "incremental fetches what changed; complete fetches everything and deletes what neither it nor the complete run before it saw of those resources."
         }
       },
       "required": ["integration", "mode"],

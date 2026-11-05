@@ -99,8 +99,9 @@ type Run struct {
 	FinishedAt time.Time `json:"finishedAt"`
 	// Trigger is push, schedule, manual or action.
 	Trigger string `json:"trigger"`
-	// Mode is complete when the run deleted what it didn't see, or
-	// incremental when it only deleted what it was told to.
+	// Mode is complete when the run deleted what neither it nor the
+	// complete run before it saw, or incremental when it only deleted what
+	// it was told to.
 	Mode  string `json:"mode"`
 	Token string `json:"token,omitempty"`
 	// ActionRun and Action are the action run behind an action trigger and its title.
@@ -116,6 +117,9 @@ type Run struct {
 	// Error is why a sync couldn't fetch some or all of its resources. It
 	// deleted nothing those resources write.
 	Error string `json:"error,omitempty"`
+	// Warning is what went wrong without failing anything it read, such as
+	// a webhook a sync couldn't set up.
+	Warning string `json:"warning,omitempty"`
 }
 
 // RunError is why an item wasn't written.
@@ -134,11 +138,11 @@ func (s Store) RecordRun(ctx context.Context, integrationID, tokenID string, run
 
 	return s.db.QueryRowContext(ctx, `
 		INSERT INTO ingestion_runs (integration_id, token_id, trigger, mode, started_at, received, created, updated,
-			unchanged, deleted, failed, errors, error, action_run_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			unchanged, deleted, failed, errors, error, warning, action_run_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING id, finished_at`,
 		integrationID, nullable(tokenID), run.Trigger, run.Mode, run.StartedAt, run.Received, run.Created, run.Updated,
-		run.Unchanged, run.Deleted, run.Failed, errorsJSON, run.Error, nullable(run.ActionRun)).Scan(&run.ID, &run.FinishedAt)
+		run.Unchanged, run.Deleted, run.Failed, errorsJSON, run.Error, run.Warning, nullable(run.ActionRun)).Scan(&run.ID, &run.FinishedAt)
 }
 
 // RunQuery picks a page of an integration's runs. Empty fields don't filter.
@@ -158,7 +162,7 @@ type RunPage struct {
 }
 
 // Run outcomes: a failed run fetched nothing, and a run with warnings skipped
-// some items.
+// some items, or warned of something else that went wrong.
 const (
 	OutcomeSucceeded = "succeeded"
 	OutcomeWarnings  = "warnings"
@@ -169,10 +173,10 @@ const runFilter = `
 	FROM ingestion_runs r LEFT JOIN ingestion_tokens t ON t.id = r.token_id
 		LEFT JOIN runs a ON a.id = r.action_run_id
 	WHERE r.integration_id = $1
-		AND ($2 = '' OR coalesce(t.name, '') ILIKE $2 OR coalesce(a.title, '') ILIKE $2 OR r.error ILIKE $2)
+		AND ($2 = '' OR coalesce(t.name, '') ILIKE $2 OR coalesce(a.title, '') ILIKE $2 OR r.error ILIKE $2 OR r.warning ILIKE $2)
 		AND (coalesce(cardinality($3::text[]), 0) = 0 OR r.trigger = ANY($3))
 		AND (coalesce(cardinality($4::text[]), 0) = 0 OR CASE
-			WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 THEN 'warnings' ELSE 'succeeded' END = ANY($4))`
+			WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 OR r.warning <> '' THEN 'warnings' ELSE 'succeeded' END = ANY($4))`
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
@@ -190,7 +194,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.id, r.started_at, r.finished_at, r.trigger, r.mode, coalesce(t.name, ''), coalesce(r.action_run_id::text, ''),
-			coalesce(a.title, ''), r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error`+runFilter+`
+			coalesce(a.title, ''), r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error, r.warning`+runFilter+`
 		ORDER BY r.id DESC LIMIT $5 OFFSET $6`, append(args, q.PageSize, (q.Page-1)*q.PageSize)...)
 	if err != nil {
 		return RunPage{}, err
@@ -203,7 +207,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 			errors []byte
 		)
 		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Mode, &r.Token, &r.ActionRun, &r.Action, &r.Received,
-			&r.Created, &r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error); err != nil {
+			&r.Created, &r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error, &r.Warning); err != nil {
 			return RunPage{}, err
 		}
 		if err := json.Unmarshal(errors, &r.Errors); err != nil {

@@ -1,8 +1,12 @@
 package integration
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,9 +29,18 @@ const (
 
 var runPageSizes = []int{10, 20, 50, 100}
 
+var (
+	// portalURL is the portal's public URL, which systems send events to.
+	portalURL string
+	// webhookKey is the server's key each integration's webhook secret is
+	// derived from.
+	webhookKey string
+)
+
 // Register serves integrations. The handlers read the request and call the
 // services below, which MCP calls too.
-func Register(app httpx.Routes) {
+func Register(app httpx.Routes, baseURL, key string) {
+	portalURL, webhookKey = baseURL, key
 	configdoc.Register(app, Kind)
 	app.GET("connectors", listConnectors)
 	app.GET("integrations/{identifier}/tokens", listTokens)
@@ -46,6 +59,34 @@ func Register(app httpx.Routes) {
 func RegisterIngest(app *gofr.App) {
 	app.POST(auth.IngestPrefix+"{integration}", ingest)
 	app.DELETE(auth.IngestPrefix+"{integration}/entities/{blueprint}/{identifier:.+}", deleteEntity)
+}
+
+// WebhookKeyEnv names the server's key that each integration's webhook
+// secret is derived from, so systems that sign their events can be set up
+// without a secret written for each. It's outside SecretEnvPrefix, so no
+// document can reference it, and send it anywhere.
+const WebhookKeyEnv = "GP_WEBHOOK_KEY"
+
+// WebhookSecret is the secret an integration's webhooks are signed with,
+// or "" while the server has no key.
+func WebhookSecret(identifier string) string {
+	if webhookKey == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(webhookKey))
+	mac.Write([]byte("webhook " + identifier))
+
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// IngestURL is where systems send an integration's pushes, or "" while the
+// portal doesn't know its public URL.
+func IngestURL(identifier string) string {
+	if portalURL == "" {
+		return ""
+	}
+
+	return strings.TrimRight(portalURL, "/") + auth.IngestPrefix + url.PathEscape(identifier)
 }
 
 func listConnectors(ctx *gofr.Context) (any, error) { return ListConnectors(ctx) }
@@ -276,6 +317,8 @@ type CheckResult struct {
 	Version string `json:"version"`
 	Passed  bool   `json:"passed"`
 	Error   string `json:"error,omitempty"`
+	// Warning is what won't work, though the check passed.
+	Warning string `json:"warning,omitempty"`
 }
 
 func checkNow(ctx *gofr.Context) (any, error) { return CheckNow(ctx, ctx.PathParam("identifier")) }
@@ -305,7 +348,9 @@ func CheckNow(ctx *gofr.Context, identifier string) (CheckResult, error) {
 	if !spec.Checks {
 		return CheckResult{}, httpx.Error{Code: http.StatusConflict, Message: "the " + spec.Connector.Type + " connector can't check its system"}
 	}
-	if err := spec.check(ctx, ctx.SQL); err != nil {
+	warnings, err := spec.check(ctx, ctx.SQL)
+	result.Warning = strings.Join(warnings, " ")
+	if err != nil {
 		result.Error = err.Error()
 	} else {
 		result.Passed = true

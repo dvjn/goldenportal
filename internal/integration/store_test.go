@@ -23,8 +23,8 @@ func TestRunsFiltersAndPages(t *testing.T) {
 		WithArgs("integration-id", `%ci\_bot%`, `{"manual","push"}`, `{"failed"}`, 10, 20).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "started_at", "finished_at", "trigger", "mode", "token", "action_run", "action", "received", "created", "updated",
-			"unchanged", "deleted", "failed", "errors", "error",
-		}).AddRow(3, now, now, TriggerPush, ModeComplete, "ci_bot", "", "", 0, 0, 0, 0, 0, 0, []byte("[]"), "fetch failed"))
+			"unchanged", "deleted", "failed", "errors", "error", "warning",
+		}).AddRow(3, now, now, TriggerPush, ModeComplete, "ci_bot", "", "", 0, 0, 0, 0, 0, 0, []byte("[]"), "fetch failed", ""))
 
 	page, err := NewStore(db).Runs(context.Background(), "integration-id", RunQuery{
 		Search: "ci_bot", Triggers: []string{TriggerManual, TriggerPush}, Outcomes: []string{OutcomeFailed},

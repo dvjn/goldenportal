@@ -12,10 +12,12 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"go.uber.org/mock/gomock"
 	gofrSQL "gofr.dev/pkg/gofr/datasource/sql"
+
+	"github.com/dvjn/goldenportal/internal/blueprint"
 )
 
 const insertRunSQL = `INSERT INTO ingestion_runs (integration_id, token_id, trigger, mode, started_at, received, created, updated,
-	unchanged, deleted, failed, errors, error, action_run_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+	unchanged, deleted, failed, errors, error, warning, action_run_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	RETURNING id, finished_at`
 
 // TestSyncRecordsFailedFetch checks a failed fetch keeps the entities and is
@@ -29,7 +31,7 @@ func TestSyncRecordsFailedFetch(t *testing.T) {
 	db, mock := mockSyncStart(t, server.URL)
 	// No DELETE is expected: nothing was fetched.
 	mock.ExpectQuery(insertRunSQL).
-		WithArgs("integration-id", nil, TriggerSchedule, ModeComplete, sqlmock.AnyArg(), 0, 0, 0, 0, 0, 0, []byte("[]"), sqlmock.AnyArg(), nil).
+		WithArgs("integration-id", nil, TriggerSchedule, ModeComplete, sqlmock.AnyArg(), 0, 0, 0, 0, 0, 0, []byte("[]"), sqlmock.AnyArg(), "", nil).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "finished_at"}).AddRow(1, time.Now()))
 	mock.ExpectRollback()
 
@@ -58,7 +60,7 @@ func TestSyncWithoutIdentifierDeletesNothing(t *testing.T) {
 	// No DELETE is expected.
 	var errorsJSON []byte
 	mock.ExpectQuery(insertRunSQL).
-		WithArgs("integration-id", nil, TriggerSchedule, ModeComplete, sqlmock.AnyArg(), 2, 0, 0, 0, 0, 2, capture{&errorsJSON}, "", nil).
+		WithArgs("integration-id", nil, TriggerSchedule, ModeComplete, sqlmock.AnyArg(), 2, 0, 0, 0, 0, 2, capture{&errorsJSON}, "", "", nil).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "finished_at"}).AddRow(1, time.Now()))
 	mock.ExpectCommit()
 
@@ -84,7 +86,7 @@ func TestSyncForAction(t *testing.T) {
 	defer server.Close()
 	db, mock := mockSyncStart(t, server.URL)
 	mock.ExpectQuery(insertRunSQL).
-		WithArgs("integration-id", nil, TriggerAction, ModeIncremental, sqlmock.AnyArg(), 0, 0, 0, 0, 0, 0, []byte("[]"), "", "action-run").
+		WithArgs("integration-id", nil, TriggerAction, ModeIncremental, sqlmock.AnyArg(), 0, 0, 0, 0, 0, 0, []byte("[]"), "", "", "action-run").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "finished_at"}).AddRow(1, time.Now()))
 	mock.ExpectCommit()
 
@@ -118,6 +120,85 @@ func TestSyncableResource(t *testing.T) {
 		if got := spec.SyncableResource(name); !strings.Contains(got, want) || (want == "") != (got == "") {
 			t.Errorf("SyncableResource(%s) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// TestWriteSeesWhatItCantWrite checks an item that fails validation still
+// marks its entity seen, so a complete run doesn't delete it for a bad value.
+func TestWriteSeesWhatItCantWrite(t *testing.T) {
+	db, mock, metrics := gofrSQL.NewSQLMocks(t)
+	metrics.EXPECT().RecordHistogram(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	deployment := "kind: Blueprint\nmetadata: {name: deployment, title: Deployment}\nspec:\n  properties:\n    status: {type: string, required: true}\n"
+	now := time.Now()
+	mock.ExpectQuery(`SELECT ` + recordColumnsSQL + ` WHERE b.kind = $1 ORDER BY b.identifier`).
+		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("deployment", 1, deployment, now, "", "", now, "", now))
+	mock.ExpectQuery(`SELECT id FROM config_documents WHERE kind = $1 AND identifier = $2 AND published_version IS NOT NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("blueprint-id"))
+	mock.ExpectExec(`UPDATE entities SET seen_at = now() WHERE blueprint_id = $1 AND identifier = $2 AND integration_id = $3`).
+		WithArgs("blueprint-id", "d1", "integration-id").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	run := &Run{}
+	entries := []Entry{{Blueprint: "deployment", Entity: blueprint.Entity{Identifier: "d1", Properties: map[string]any{}}}}
+	if _, err := write(context.Background(), db, "integration-id", entries, run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Failed != 1 {
+		t.Fatalf("failed = %d, want 1", run.Failed)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestReconcileDeletesWhatTwoRunsMissed checks a complete run deletes only
+// the entities a complete run that finished before it started missed too,
+// with nothing seeing them between, under the published version, and marks
+// the rest it missed as of when it marks them.
+func TestReconcileDeletesWhatTwoRunsMissed(t *testing.T) {
+	db, mock, metrics := gofrSQL.NewSQLMocks(t)
+	metrics.EXPECT().RecordHistogram(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	spec := Spec{Mappings: []Mapping{{Resource: "repos", Blueprint: "repository"}}}
+	started, published := time.Now(), time.Now().Add(-time.Hour)
+	mock.ExpectQuery(`SELECT id FROM config_documents WHERE kind = $1 AND identifier = $2 AND published_version IS NOT NULL`).
+		WithArgs("blueprint", "repository").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("blueprint-id"))
+	mock.ExpectQuery(`SELECT v.published_at FROM config_versions v JOIN config_documents d
+			ON d.id = v.document_id AND v.version = d.published_version WHERE d.id = $1`).
+		WithArgs("integration-id").WillReturnRows(sqlmock.NewRows([]string{"published_at"}).AddRow(published))
+	mock.ExpectExec(`DELETE FROM entities WHERE integration_id = $1 AND blueprint_id = ANY($2) AND seen_at < $3
+			AND missed_at < $3 AND missed_at >= $4 AND seen_at < missed_at`).
+		WithArgs("integration-id", sqlmock.AnyArg(), started, published).WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(`UPDATE entities SET missed_at = clock_timestamp() WHERE integration_id = $1 AND blueprint_id = ANY($2) AND seen_at < $3`).
+		WithArgs("integration-id", sqlmock.AnyArg(), started).WillReturnResult(sqlmock.NewResult(0, 3))
+
+	deleted, err := reconcile(context.Background(), db, "integration-id", spec, []string{"repos"}, map[string]bool{}, started)
+	if err != nil || deleted != 2 {
+		t.Fatalf("reconcile = %d, %v", deleted, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestReconcileAfterAPublish checks a complete run that started before the
+// integration was last published, so read with the old mappings, neither
+// deletes nor marks anything, however late it finishes.
+func TestReconcileAfterAPublish(t *testing.T) {
+	db, mock, metrics := gofrSQL.NewSQLMocks(t)
+	metrics.EXPECT().RecordHistogram(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	spec := Spec{Mappings: []Mapping{{Resource: "repos", Blueprint: "repository"}}}
+	started := time.Now()
+	mock.ExpectQuery(`SELECT id FROM config_documents WHERE kind = $1 AND identifier = $2 AND published_version IS NOT NULL`).
+		WithArgs("blueprint", "repository").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("blueprint-id"))
+	mock.ExpectQuery(`SELECT v.published_at FROM config_versions v JOIN config_documents d
+			ON d.id = v.document_id AND v.version = d.published_version WHERE d.id = $1`).
+		WithArgs("integration-id").WillReturnRows(sqlmock.NewRows([]string{"published_at"}).AddRow(started.Add(time.Minute)))
+
+	deleted, err := reconcile(context.Background(), db, "integration-id", spec, []string{"repos"}, map[string]bool{}, started)
+	if err != nil || deleted != 0 {
+		t.Fatalf("reconcile = %d, %v", deleted, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

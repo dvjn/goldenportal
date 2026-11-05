@@ -34,7 +34,10 @@ type Spec struct {
 	Pulls    bool `json:"pulls"`
 	Receives bool `json:"receives"`
 	Checks   bool `json:"checks"`
-	config   Config
+	// Events is whether what it receives are its system's events, sent to a
+	// webhook its connector sets up, rather than pushes.
+	Events bool `json:"events"`
+	config Config
 }
 
 // ConnectorSpec picks the connector and configures it.
@@ -44,8 +47,8 @@ type ConnectorSpec struct {
 }
 
 // SyncSpec is how often a pull integration syncs: incrementally every
-// Interval, and completely every Complete. Without Complete, every sync is
-// complete.
+// Interval, and completely every Complete, for connectors that can fetch
+// only what changed. Without Complete, every sync is complete.
 type SyncSpec struct {
 	Interval      string        `json:"interval"`
 	Complete      string        `json:"complete,omitempty"`
@@ -100,7 +103,7 @@ var (
 	SignatureFields    = []string{"header", "algorithm", "prefix", "secret"}
 	HTTPResourceFields = []string{"url", "next", "items", "deleted", "maxPages", "headers", "push"}
 	HTTPReceiveFields  = []string{"items", "deleted"}
-	HTTPHeaderFields   = []string{"env"}
+	SecretFields       = []string{"env"}
 )
 
 func (s Spec) Key() string { return s.Identifier }
@@ -195,6 +198,7 @@ func parseConnector(r *configdoc.Reader, spec *Spec, node, parent *yaml.Node) {
 	}
 	if rc, ok := spec.config.(Receiver); ok && len(rc.Receives()) > 0 {
 		spec.Receives = true
+		_, spec.Events = rc.(EventReceiver)
 	}
 	_, spec.Checks = spec.config.(Checker)
 }
@@ -216,18 +220,26 @@ func parseSync(r *configdoc.Reader, spec *Spec, node *yaml.Node) {
 		return
 	}
 	spec.Sync = &SyncSpec{Interval: fields["interval"].Value, Every: every}
-	if n := fields["complete"]; n != nil {
-		complete, ok := syncInterval(r, n, node, "complete")
-		switch {
-		case !ok:
-		case complete < every:
-			r.Errorf(n, "spec.sync.complete", "complete must be at least the interval, %s", spec.Sync.Interval)
-		default:
-			spec.Sync.Complete, spec.Sync.CompleteEvery = n.Value, complete
-			if inc, ok := spec.config.(Incremental); !ok || !inc.UsesSince() {
-				r.Report(configdoc.SeverityWarning, n, "spec.sync.complete",
-					"no resource url uses {{ $since }}, so incremental syncs fetch everything and delete nothing")
-			}
+	n := fields["complete"]
+	if n == nil {
+		return
+	}
+	inc, ok := spec.config.(Incremental)
+	if !ok {
+		r.Report(configdoc.SeverityWarning, n, "spec.sync.complete",
+			"the %s connector reads everything on every sync, so every sync is complete and complete is ignored", spec.Connector.Type)
+		return
+	}
+	complete, ok := syncInterval(r, n, node, "complete")
+	switch {
+	case !ok:
+	case complete < every:
+		r.Errorf(n, "spec.sync.complete", "complete must be at least the interval, %s", spec.Sync.Interval)
+	default:
+		spec.Sync.Complete, spec.Sync.CompleteEvery = n.Value, complete
+		if !inc.UsesSince() {
+			r.Report(configdoc.SeverityWarning, n, "spec.sync.complete",
+				"no resource url uses {{ $since }}, so incremental syncs fetch everything and delete nothing")
 		}
 	}
 }
@@ -266,6 +278,12 @@ func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, config Conf
 		r.Errorf(node, path+".resource", "add the resource to map, one of %s", strings.Join(resources, ", "))
 	case !slices.Contains(resources, m.Resource):
 		r.Errorf(fields["resource"], path+".resource", "resource must be one of %s", strings.Join(resources, ", "))
+	default:
+		if rp, ok := config.(resourceProblemer); ok {
+			if problem := rp.resourceProblem(m.Resource); problem != "" {
+				r.Errorf(fields["resource"], path+".resource", "%s", problem)
+			}
+		}
 	}
 
 	m.Blueprint = r.Text(fields["blueprint"], path+".blueprint")
@@ -296,6 +314,12 @@ func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, config Conf
 	})
 
 	return m
+}
+
+// resourceProblemer is a config that can say why a resource it has can't
+// be read with how it's set up.
+type resourceProblemer interface {
+	resourceProblem(resource string) string
 }
 
 // expression reads a jq field of a mapping.

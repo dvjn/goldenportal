@@ -122,7 +122,11 @@ func ReadHeaders(r *configdoc.Reader, node *yaml.Node, path string) map[string]H
 
 // readSecret reads {env: GP_SECRET_...}.
 func readSecret(r *configdoc.Reader, node *yaml.Node, path string) (HeaderValue, bool) {
-	fields, ok := r.Fields(node, path, HTTPHeaderFields...)
+	if node.Kind == yaml.ScalarNode {
+		r.Errorf(node, path, "write the secret as {env: %s...}, an environment variable of the server, never in the document", SecretEnvPrefix)
+		return HeaderValue{}, false
+	}
+	fields, ok := r.Fields(node, path, SecretFields...)
 	if !ok {
 		return HeaderValue{}, false
 	}
@@ -432,13 +436,38 @@ func fetchJSON(ctx context.Context, address string, headers map[string]HeaderVal
 		if wait > maxRetryWait {
 			return nil, nil, fmt.Errorf("%w, and asked to wait %s before trying again", err, wait.Round(time.Second))
 		}
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		if sleep(ctx, wait) != nil {
 			return nil, nil, errors.Join(err, ctx.Err())
-		case <-timer.C:
 		}
+	}
+}
+
+// tooLargeError is an answer over maxPageBytes, which trying again won't fix.
+type tooLargeError struct{}
+
+func (tooLargeError) Error() string { return fmt.Sprintf("with more than %d MB", maxPageBytes>>20) }
+
+// readPage reads an answer's body, refusing one too large to hold.
+func readPage(body io.Reader) ([]byte, error) {
+	page, err := io.ReadAll(io.LimitReader(body, maxPageBytes+1))
+	if err == nil && len(page) > maxPageBytes {
+		return nil, tooLargeError{}
+	}
+
+	return page, err
+}
+
+func sleep(ctx context.Context, wait time.Duration) error {
+	if wait <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -469,12 +498,13 @@ func fetchJSONOnce(ctx context.Context, address string, headers map[string]Heade
 		return nil, nil, -1, fmt.Errorf("%s answered %s", address, resp.Status)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPageBytes+1))
-	if err != nil {
+	body, err := readPage(resp.Body)
+	var tooLarge tooLargeError
+	switch {
+	case errors.As(err, &tooLarge):
+		return nil, nil, -1, fmt.Errorf("%s answered %w", address, err)
+	case err != nil:
 		return nil, nil, 0, err
-	}
-	if len(body) > maxPageBytes {
-		return nil, nil, -1, fmt.Errorf("%s answered with more than %d MB", address, maxPageBytes>>20)
 	}
 	var page any
 	if err := json.Unmarshal(body, &page); err != nil {
@@ -498,7 +528,7 @@ func lowerHeaders(h http.Header) map[string]any {
 }
 
 // Receive turns a request into items of the resources it asks for.
-func (c *HTTPConfig) Receive(req Request, authenticated bool) ([]Item, error) {
+func (c *HTTPConfig) Receive(_ context.Context, req Request, authenticated bool) ([]Item, error) {
 	if !authenticated {
 		if c.Push.Signature == nil {
 			return nil, ErrUnverified
@@ -542,7 +572,7 @@ func (c *HTTPConfig) Receive(req Request, authenticated bool) ([]Item, error) {
 
 // Check fetches the first page of each resource it pulls, and checks the
 // secrets it reads are set.
-func (c *HTTPConfig) Check(ctx context.Context, _ configdoc.DB) error {
+func (c *HTTPConfig) Check(ctx context.Context, _ configdoc.DB, _ CheckRequest) error {
 	if c.Push.Signature != nil && c.Push.Signature.Secret.Resolve() == "" {
 		return fmt.Errorf("%s isn't set on the server, so signed pushes fail", c.Push.Signature.Secret.Env)
 	}

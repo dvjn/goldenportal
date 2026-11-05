@@ -135,7 +135,7 @@ func (portalConfig) Pull(ctx context.Context, db configdoc.DB, p PullRequest,
 }
 
 // Check reaches the portal's database.
-func (portalConfig) Check(ctx context.Context, db configdoc.DB) error {
+func (portalConfig) Check(ctx context.Context, db configdoc.DB, _ CheckRequest) error {
 	var one int
 	return db.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
 }
@@ -324,7 +324,7 @@ func portalCounts(ctx context.Context, db configdoc.DB) (map[string]int, map[str
 	lastRuns := map[string]lastRun{}
 	runs, err := db.QueryContext(ctx, `
 		SELECT DISTINCT ON (r.integration_id) d.identifier, r.finished_at,
-			CASE WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 THEN 'warnings' ELSE 'succeeded' END
+			CASE WHEN r.error <> '' THEN 'failed' WHEN r.failed > 0 OR r.warning <> '' THEN 'warnings' ELSE 'succeeded' END
 		FROM ingestion_runs r
 		JOIN config_documents d ON d.id = r.integration_id
 		ORDER BY r.integration_id, r.finished_at DESC`)

@@ -29,6 +29,7 @@ const inventory: Integration = {
       },
       pulls: false,
       receives: true,
+      events: false,
       checks: false,
       mappings: [
         {
@@ -63,6 +64,7 @@ const routes = {
       color: "violet",
       pulls: true,
       receives: true,
+      events: false,
       checks: true,
     },
   ]),
@@ -111,6 +113,7 @@ const portal: Integration = {
       sync: { interval: "1m", complete: "1d" },
       pulls: true,
       receives: false,
+      events: false,
       checks: true,
     },
   },
@@ -145,6 +148,7 @@ const pullRoutes = {
       color: "blue",
       pulls: true,
       receives: false,
+      events: false,
       checks: true,
     },
   ]),
@@ -184,12 +188,12 @@ describe("integrations", () => {
     expect(within(feeds).getByTitle("12 entities")).toHaveTextContent("12");
 
     await user.click(screen.getByRole("tab", { name: "Runs" }));
-    expect(await screen.findByLabelText("Succeeded with warnings")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Succeeded with Warnings")).toBeInTheDocument();
     expect(screen.getByText("1s")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Mode" })).toBeInTheDocument();
     expect(screen.getByText("Complete")).toBeInTheDocument();
 
-    await user.click(await screen.findByRole("button", { name: "View failures" }));
+    await user.click(await screen.findByRole("button", { name: "View problems" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("tier is required")).toBeInTheDocument();
     await user.keyboard("{Escape}");
@@ -213,7 +217,7 @@ describe("integrations", () => {
     const requests = stubApi(routes);
     renderRoute("/integrations/inventory?tab=runs");
 
-    await screen.findByLabelText("Succeeded with warnings");
+    await screen.findByLabelText("Succeeded with Warnings");
     expect(screen.getByText("Showing 1 to 1 of 1")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(await screen.findByRole("option", { name: "Outcome" }));
@@ -426,7 +430,7 @@ describe("integrations", () => {
     renderRoute("/integrations/portal?tab=runs");
 
     expect(await screen.findByText("Incremental")).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "View failures" }));
+    await user.click(await screen.findByRole("button", { name: "View problems" }));
     const dialog = await screen.findByRole("dialog");
     expect(
       within(dialog).getByText(/Some or all resources couldn't be fetched/),

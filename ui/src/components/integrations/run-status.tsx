@@ -2,11 +2,12 @@ import { cn } from "cn";
 import { CircleCheck, CircleX, TriangleAlert } from "lucide-react";
 import type { Run } from "@/features/integrations";
 
-// runOutcome sums up a run: it failed to fetch, wrote everything, or skipped some items.
+// runOutcome sums up a run: it failed to fetch, wrote everything, or skipped some items or
+// warned of something else.
 export function runOutcome(run: Run) {
   if (run.error) return { label: "Failed", icon: CircleX, className: "text-destructive" };
-  if (run.failed > 0) {
-    return { label: "Succeeded with warnings", icon: TriangleAlert, className: "text-warning" };
+  if (run.failed > 0 || run.warning) {
+    return { label: "Succeeded with Warnings", icon: TriangleAlert, className: "text-warning" };
   }
   return { label: "Succeeded", icon: CircleCheck, className: "text-success" };
 }

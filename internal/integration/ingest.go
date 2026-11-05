@@ -35,6 +35,19 @@ type ReceiveError struct{ Reason string }
 
 func (e ReceiveError) Error() string { return e.Reason }
 
+// FetchError is a request a connector couldn't complete because its system
+// didn't answer what it asked. Nothing the request carried was written, so
+// the sender may try it again.
+type FetchError struct{ Err error }
+
+func (e FetchError) Error() string { return e.Err.Error() }
+
+func (e FetchError) Unwrap() error { return e.Err }
+
+// receiveTimeout keeps a connector that reads its system while receiving
+// within the ten seconds webhook senders commonly wait for an answer.
+const receiveTimeout = 8 * time.Second
+
 // writer is the integration a push writes as.
 type writer struct {
 	id      string
@@ -87,9 +100,9 @@ func unauthorized(err error) error {
 
 // ingest hands a request to the integration's connector and writes the
 // items it gives. Items that fail are reported without stopping the rest.
-// ?mode=complete, with an ingestion token, also deletes what the request
-// didn't carry of the resources it covers: ?resources=, or every resource
-// the integration receives.
+// ?mode=complete, with an ingestion token, also deletes what neither it nor the complete run before it saw
+// of the resources it covers: ?resources=, or every resource the
+// integration receives.
 func ingest(ctx *gofr.Context) (any, error) {
 	in := auth.IngestRequest(ctx)
 	w, err := authenticate(ctx, in.Secret)
@@ -114,6 +127,12 @@ func ingest(ctx *gofr.Context) (any, error) {
 		if in.Secret == "" {
 			return nil, httpx.Error{Code: http.StatusForbidden, Message: "a complete push needs an ingestion token"}
 		}
+		if w.spec.Events {
+			return nil, httpx.Error{
+				Code:    http.StatusConflict,
+				Message: "the " + w.spec.Identifier + " integration takes events, each about one object, so a push can't be complete; its syncs are",
+			}
+		}
 		mode = ModeComplete
 	default:
 		return nil, badRequest("mode must be complete or incremental")
@@ -132,10 +151,17 @@ func ingest(ctx *gofr.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	items, err := receiver.Receive(Request{Resources: resources, Header: in.Header, Query: in.Query, Body: in.Body}, in.Secret != "")
+	// The connector reads only what a mapping reads, since it may ask its
+	// system for each.
+	mapped := slices.DeleteFunc(slices.Clone(resources), func(r string) bool { return !slices.Contains(w.spec.mappedResources(), r) })
+	receiveCtx, cancel := context.WithTimeout(ctx, receiveTimeout)
+	request := Request{Resources: mapped, Header: in.Header, Query: in.Query, Body: in.Body, WebhookSecret: WebhookSecret(w.spec.Identifier)}
+	items, err := receiver.Receive(receiveCtx, request, in.Secret != "")
+	cancel()
 	var (
 		signatureErr SignatureError
 		receiveErr   ReceiveError
+		fetchErr     FetchError
 	)
 	switch {
 	case errors.Is(err, ErrUnverified):
@@ -146,6 +172,14 @@ func ingest(ctx *gofr.Context) (any, error) {
 		return nil, badRequest(err.Error())
 	case errors.As(err, &receiveErr):
 		return nil, httpx.Error{Code: http.StatusUnprocessableEntity, Message: err.Error()}
+	case errors.As(err, &fetchErr):
+		// Recorded, so it shows with the integration's runs, and answered as
+		// a failure, so the sender's own log shows it to try again.
+		run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: mode, Error: err.Error(), Errors: []RunError{}}
+		if err := NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run); err != nil {
+			return nil, err
+		}
+		return nil, httpx.Error{Code: http.StatusBadGateway, Message: err.Error()}
 	case err != nil:
 		return nil, err
 	}
@@ -246,19 +280,30 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, entries [
 				})
 			}
 		}
-		if len(e.Problems) > 0 {
-			fail(e.Problems...)
-			continue
-		}
 		spec, ok := blueprints[e.Blueprint]
 		if !ok {
-			fail("no blueprint " + e.Blueprint + " is published")
+			fail(append(e.Problems, "no blueprint "+e.Blueprint+" is published")...)
 			continue
 		}
 		if _, ok := blueprintIDs[e.Blueprint]; !ok {
 			if blueprintIDs[e.Blueprint], err = configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, e.Blueprint); err != nil {
 				return nil, err
 			}
+		}
+		// An item that can't be written still counts as seen, so a bad value
+		// never deletes the entity it would have updated.
+		failSeen := func(problems ...string) error {
+			fail(problems...)
+			if e.Deleted || e.Entity.Identifier == "" {
+				return nil
+			}
+			return entities.Seen(ctx, blueprintIDs[e.Blueprint], integrationID, e.Entity.Identifier)
+		}
+		if len(e.Problems) > 0 {
+			if err := failSeen(e.Problems...); err != nil {
+				return nil, err
+			}
+			continue
 		}
 
 		var owned entity.OwnedError
@@ -279,7 +324,9 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, entries [
 
 		clean, problems := spec.ValidateEntity(e.Entity)
 		if len(problems) > 0 {
-			fail(problems...)
+			if err := failSeen(problems...); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		computed, _ := spec.Compute(clean)
@@ -305,9 +352,10 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, entries [
 }
 
 // reconcile deletes, after a complete run over resources, the integration's
-// entities the run didn't see. It only reconciles a blueprint when the run
-// covered every resource its mappings name, and none of its entries lacked
-// an identifier.
+// entities that neither it nor the complete run before it saw, and
+// marks those it missed for the first time. It only reconciles a blueprint
+// when the run covered every resource its mappings name, and none of its
+// entries lacked an identifier.
 func reconcile(ctx context.Context, db configdoc.DB, integrationID string, spec Spec, covered []string,
 	unsafe map[string]bool, started time.Time,
 ) (int, error) {
@@ -323,7 +371,25 @@ func reconcile(ctx context.Context, db configdoc.DB, integrationID string, spec 
 		ids = append(ids, id)
 	}
 
-	return entity.NewStore(db).Reconcile(ctx, integrationID, ids, started)
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	published, err := publishedAt(ctx, db, integrationID)
+	if err != nil {
+		return 0, err
+	}
+
+	return entity.NewStore(db).Reconcile(ctx, integrationID, ids, started, published)
+}
+
+// publishedAt is when the integration's current version was published.
+func publishedAt(ctx context.Context, db configdoc.DB, integrationID string) (time.Time, error) {
+	var at time.Time
+	err := db.QueryRowContext(ctx, `
+		SELECT v.published_at FROM config_versions v JOIN config_documents d
+			ON d.id = v.document_id AND v.version = d.published_version WHERE d.id = $1`, integrationID).Scan(&at)
+
+	return at, err
 }
 
 // reconcilable lists, in order, the blueprints a complete run over covered

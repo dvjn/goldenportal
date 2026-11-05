@@ -27,14 +27,18 @@ var Kind = configdoc.Kind[Spec]{
 		return Check(spec, published), nil
 	},
 	Preflight: func(ctx context.Context, db configdoc.DB, spec Spec) []configdoc.Issue {
-		err := spec.check(ctx, db)
-		if err == nil {
-			return nil
+		warnings, err := spec.check(ctx, db)
+		var issues []configdoc.Issue
+		if err != nil {
+			issues = append(issues, configdoc.Issue{
+				Severity: configdoc.SeverityWarning, Path: "spec.connector",
+				Message: "the connector's check failed: " + err.Error(),
+			})
 		}
-		return []configdoc.Issue{{
-			Severity: configdoc.SeverityWarning, Path: "spec.connector",
-			Message: "the connector's check failed: " + err.Error(),
-		}}
+		for _, warning := range warnings {
+			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityWarning, Path: "spec.connector", Message: "the connector's check warns: " + warning})
+		}
+		return issues
 	},
 	Diff:     Diff,
 	Affected: countEntities,
@@ -43,16 +47,22 @@ var Kind = configdoc.Kind[Spec]{
 // checkTimeout bounds a connector's check, which waits on its system.
 const checkTimeout = 15 * time.Second
 
-// check runs the connector's check, if it has one.
-func (s Spec) check(ctx context.Context, db configdoc.DB) error {
+// check runs the connector's check, if it has one, giving what it warned
+// of and why it failed.
+func (s Spec) check(ctx context.Context, db configdoc.DB) ([]string, error) {
 	checker, ok := s.config.(Checker)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
+	var warnings []string
+	err := checker.Check(ctx, db, CheckRequest{
+		Resources: s.mappedResources(), IngestURL: IngestURL(s.Identifier), WebhookSecret: WebhookSecret(s.Identifier),
+		Warn: func(warning string) { warnings = append(warnings, warning) },
+	})
 
-	return checker.Check(ctx, db)
+	return warnings, err
 }
 
 // Diff lists what publishing next over previous changes. Entities already

@@ -37,7 +37,7 @@ export function LastRun({ identifier }: Readonly<{ identifier: string }>) {
 
 // SyncNow syncs an integration that pulls now, on top of its schedule. The
 // button syncs as the schedule would next; the menu forces a complete sync,
-// which also deletes what the system no longer has.
+// which also deletes what neither it nor the complete run before it saw.
 export function SyncNow({ identifier }: Readonly<{ identifier: string }>) {
   const queryClient = useQueryClient();
   const sync = useMutation({
@@ -52,8 +52,9 @@ export function SyncNow({ identifier }: Readonly<{ identifier: string }>) {
       const counts =
         `Synced: ${run.created} created, ${run.updated} updated, ${run.deleted} deleted` +
         (run.failed > 0 ? `, ${run.failed} failed` : "");
-      // Some resources failed while the others were written.
-      if (run.error) toast.warning(counts, { description: run.error });
+      // Some resources failed while the others were written, or something else went wrong.
+      if (run.error || run.warning)
+        toast.warning(counts, { description: [run.error, run.warning].filter(Boolean).join(" ") });
       else toast.success(counts);
     },
     onError: (error) => toast.error(error.message),

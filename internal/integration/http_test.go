@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dvjn/goldenportal/internal/configdoc"
 )
 
 func httpYAML(url string) string {
@@ -291,7 +294,7 @@ func TestHTTPReceive(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			items, err := config.Receive(request(test.header), test.authenticated)
+			items, err := config.Receive(t.Context(), request(test.header), test.authenticated)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("err = %v, want %v", err, test.want)
 			}
@@ -304,7 +307,7 @@ func TestHTTPReceive(t *testing.T) {
 		})
 	}
 
-	if _, err := config.Receive(Request{Resources: config.Receives(), Body: []byte("{")}, true); !errors.Is(err, ErrNotJSON) {
+	if _, err := config.Receive(t.Context(), Request{Resources: config.Receives(), Body: []byte("{")}, true); !errors.Is(err, ErrNotJSON) {
 		t.Fatalf("bad JSON: err = %v", err)
 	}
 }
@@ -315,14 +318,14 @@ func TestHTTPCheck(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
 	defer up.Close()
 
-	if err := httpConfig(t, mustParse(t, httpYAML(up.URL))).Check(context.Background(), nil); err != nil {
+	if err := httpConfig(t, mustParse(t, httpYAML(up.URL))).Check(context.Background(), nil, CheckRequest{}); err != nil {
 		t.Fatalf("reachable: %v", err)
 	}
-	if err := httpConfig(t, mustParse(t, httpYAML(up.URL+"/x"))).Check(context.Background(), nil); err != nil {
+	if err := httpConfig(t, mustParse(t, httpYAML(up.URL+"/x"))).Check(context.Background(), nil, CheckRequest{}); err != nil {
 		t.Fatalf("reachable on another path: %v", err)
 	}
 	t.Setenv("GP_SECRET_TRACKER", "")
-	if err := httpConfig(t, mustParse(t, httpYAML(up.URL))).Check(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "GP_SECRET_TRACKER isn't set") {
+	if err := httpConfig(t, mustParse(t, httpYAML(up.URL))).Check(context.Background(), nil, CheckRequest{}); err == nil || !strings.Contains(err.Error(), "GP_SECRET_TRACKER isn't set") {
 		t.Fatalf("unset secret: %v", err)
 	}
 }
@@ -333,4 +336,33 @@ func shortenRetries(t *testing.T) {
 	backoff := retryBackoff
 	retryBackoff = time.Millisecond
 	t.Cleanup(func() { retryBackoff = backoff })
+}
+
+// TestDocumentsCantReferenceTheWebhookKey checks the server's webhook key,
+// which every integration's webhook secret derives from, is outside what a
+// document can send as a secret.
+func TestDocumentsCantReferenceTheWebhookKey(t *testing.T) {
+	if strings.HasPrefix(WebhookKeyEnv, SecretEnvPrefix) {
+		t.Fatalf("%s starts with %s, which documents can reference", WebhookKeyEnv, SecretEnvPrefix)
+	}
+	source := strings.Replace(httpYAML("https://tracker.example.com"), "{env: GP_SECRET_TRACKER}", "{env: "+WebhookKeyEnv+"}", 1)
+	_, issues := Parse(source)
+	if !configdoc.HasErrors(issues) || !strings.Contains(fmt.Sprint(issues), "starting with GP_SECRET_") {
+		t.Fatalf("issues = %+v, want the key refused", issues)
+	}
+}
+
+// TestWebhookSecret checks each integration's webhook secret is its own,
+// derived from the server's key, and that there's none without one.
+func TestWebhookSecret(t *testing.T) {
+	before := webhookKey
+	t.Cleanup(func() { webhookKey = before })
+	webhookKey = ""
+	if got := WebhookSecret("source"); got != "" {
+		t.Fatalf("without a key: %q", got)
+	}
+	webhookKey = "key"
+	if a, b := WebhookSecret("source"), WebhookSecret("other"); a == "" || a == b || a != WebhookSecret("source") {
+		t.Fatalf("secrets = %q, %q, want each integration's own, the same every time", a, b)
+	}
 }

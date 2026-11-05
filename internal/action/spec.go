@@ -767,7 +767,7 @@ func (p *parser) syncStep(node *yaml.Node, path string) *SyncStep {
 	sync.Mode = p.Text(fields["mode"], path+".mode")
 	if sync.Mode != integration.ModeIncremental && sync.Mode != integration.ModeComplete {
 		p.Errorf(configdoc.OrNode(fields["mode"], node), path+".mode",
-			"mode must be incremental, which fetches what changed, or complete, which also deletes what's gone")
+			"mode must be incremental, which fetches what changed, or complete, which also deletes what neither it nor the complete run before it saw")
 	}
 
 	return sync

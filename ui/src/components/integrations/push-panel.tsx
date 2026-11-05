@@ -36,7 +36,7 @@ export function PushPanel({ identifier }: Readonly<{ identifier: string }>) {
           <Snippet
             title="Complete Push"
             value={request(`${url}?mode=complete`)}
-            help="Also deletes what it didn't carry. Add &resources=a,b to cover only those resources."
+            help="Also deletes what neither it nor the complete run before it saw. Add &resources=a,b to cover only those resources."
           />
           <Snippet title="Delete One" value={remove} />
         </CardContent>

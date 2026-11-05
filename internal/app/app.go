@@ -85,7 +85,7 @@ func New() *gofr.App {
 	access.Register(api)
 	blueprint.Register(api, dashboard.CheckPages)
 	entity.Register(api)
-	integration.Register(api)
+	integration.Register(api, app.Config.Get("GP_BASE_URL"), app.Config.Get(integration.WebhookKeyEnv))
 	integration.RegisterIngest(app)
 	scorecard.Register(api)
 	dashboard.Register(api)

@@ -19,7 +19,8 @@ export type IntegrationSpec = {
   icon?: string;
   color?: string;
   connector: { type: string; config?: Record<string, unknown> };
-  // complete is how often a sync deletes what it didn't see; without it, every sync does.
+  // complete is how often a sync is complete, deleting what neither it nor the complete sync
+  // before it saw; without it, every sync is.
   sync?: { interval: string; complete?: string };
   // mappings are also the only blueprints the integration writes.
   mappings: Mapping[];
@@ -28,6 +29,9 @@ export type IntegrationSpec = {
   pulls: boolean;
   receives: boolean;
   checks: boolean;
+  // events is whether what it receives are its system's events, sent to a webhook its connector
+  // sets up, rather than pushes.
+  events: boolean;
 };
 
 export type Integration = ConfigDoc<IntegrationSpec>;
@@ -65,7 +69,8 @@ export type RunError = {
   problems: string[];
 };
 
-// RunMode is whether a run deleted what it didn't see, or only what it was told was deleted.
+// RunMode is whether a run deleted what neither it nor the complete run before it saw, or only
+// what it was told was deleted.
 export type RunMode = "complete" | "incremental";
 
 export type Run = {
@@ -88,6 +93,8 @@ export type Run = {
   // error is why a sync couldn't fetch some or all of its resources; it
   // deleted nothing those resources write.
   error?: string;
+  // warning is what went wrong without failing anything the run read.
+  warning?: string;
 };
 
 // IntegrationStatus is how a published integration is doing: its latest run
@@ -147,6 +154,8 @@ export type CheckResult = {
   version: "published" | "draft";
   passed: boolean;
   error?: string;
+  // warning is what won't work, though the check passed.
+  warning?: string;
 };
 
 // checkIntegration checks the connector can reach its system with the

@@ -365,11 +365,10 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Integration", "/$defs/entityMapping", integration.EntityFields, nil},
 		{"Integration", "/$defs/httpConfig", integration.HTTPConfigFields, nil},
 		{"Integration", "/$defs/httpResource", integration.HTTPResourceFields, nil},
-		{"Integration", "/$defs/httpResource/properties/headers/additionalProperties/oneOf/1", integration.HTTPHeaderFields, nil},
 		{"Integration", "/$defs/httpPush", integration.HTTPPushFields, nil},
 		{"Integration", "/$defs/signature", integration.SignatureFields, nil},
-		{"Integration", "/$defs/signature/properties/secret", integration.HTTPHeaderFields, nil},
 		{"Integration", "/$defs/httpReceive", integration.HTTPReceiveFields, nil},
+		{"Integration", "/$defs/secret", integration.SecretFields, nil},
 		{"Scorecard", "/$defs/spec", scorecard.SpecFields, nil},
 		{"Scorecard", "/$defs/tier", scorecard.TierFields, nil},
 		{"Scorecard", "/$defs/criterion", scorecard.CriterionFields, nil},
@@ -526,4 +525,40 @@ func closed(t *testing.T, root map[string]any, node any) bool {
 	}
 
 	return len(branches) > 0
+}
+
+// TestSchemaConnectorResources checks the resources the schema lets each
+// connector's mappings name are the connectors' own.
+func TestSchemaConnectorResources(t *testing.T) {
+	root := rawSchema(t, "Integration")
+	enum := func(node any) []string {
+		var out []string
+		for _, v := range node.([]any) {
+			out = append(out, v.(string))
+		}
+		slices.Sort(out)
+		return out
+	}
+	checked, fixed := 0, 0
+	for _, c := range integration.Connectors {
+		if len(c.Resources) > 0 {
+			fixed++
+		}
+	}
+	for _, branch := range resolvePointer(t, root, "/$defs/spec/allOf").([]any) {
+		id := resolvePointer(t, branch, "/if/properties/connector/properties/type/const").(string)
+		got := enum(resolvePointer(t, branch, "/then/properties/mappings/items/properties/resource/enum"))
+		for _, c := range integration.Connectors {
+			if c.ID == id {
+				want := slices.Sorted(slices.Values(c.Resources))
+				if !slices.Equal(got, want) {
+					t.Errorf("the schema lets %s mappings read %v; the connector has %v", id, got, want)
+				}
+				checked++
+			}
+		}
+	}
+	if checked != fixed {
+		t.Errorf("the schema lists the resources of %d connectors; %d have fixed ones", checked, fixed)
+	}
 }

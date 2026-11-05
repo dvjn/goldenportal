@@ -42,7 +42,7 @@ const triggerOptions: { value: RunTrigger; label: string }[] = [
 
 const outcomeOptions: { value: RunOutcome; label: string }[] = [
   { value: "succeeded", label: "Succeeded" },
-  { value: "warnings", label: "Succeeded with warnings" },
+  { value: "warnings", label: "Succeeded with Warnings" },
   { value: "failed", label: "Failed" },
 ];
 
@@ -87,7 +87,8 @@ function triggerLabel(run: Run) {
   return run.token ? `Push · ${run.token}` : "Push";
 }
 
-// A complete run deletes what it didn't see; an incremental one only what it was told was deleted.
+// A complete run deletes what neither it nor the complete run before it saw; an incremental one
+// only what it was told was deleted.
 const modeLabels: Record<RunMode, string> = {
   complete: "Complete",
   incremental: "Incremental",
@@ -159,12 +160,12 @@ const columns = [
     }),
   ),
   column.display({
-    id: "failures",
-    header: () => <span className="sr-only">Failures</span>,
+    id: "problems",
+    header: () => <span className="sr-only">Problems</span>,
     cell: ({ row }) =>
-      (row.original.error || row.original.errors.length > 0) && (
+      (row.original.error || row.original.warning || row.original.errors.length > 0) && (
         <div className="text-right">
-          <RunErrors run={row.original} />
+          <RunProblems run={row.original} />
         </div>
       ),
   }),
@@ -234,17 +235,17 @@ export function RecentRuns({
   );
 }
 
-function RunErrors({ run }: Readonly<{ run: Run }>) {
+function RunProblems({ run }: Readonly<{ run: Run }>) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <IconButton label="View failures">
+        <IconButton label="View problems">
           <CircleAlert />
         </IconButton>
       </DialogTrigger>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Failures</DialogTitle>
+          <DialogTitle>Problems</DialogTitle>
           <DialogDescription>
             {[
               run.error &&
@@ -255,12 +256,14 @@ function RunErrors({ run }: Readonly<{ run: Run }>) {
                     ? `; the first ${run.errors.length} are shown`
                     : "") +
                   ".",
+              run.warning && "It read everything it could, but warned of the problem below.",
             ]
               .filter(Boolean)
               .join(" ")}
           </DialogDescription>
         </DialogHeader>
         {run.error && <p className="font-mono text-sm break-words">{run.error}</p>}
+        {run.warning && <p className="font-mono text-sm break-words">{run.warning}</p>}
         <ul className="grid max-h-[60vh] gap-3 overflow-y-auto">
           {run.errors.map((error) => (
             <li key={error.index} className="grid gap-1 text-sm">

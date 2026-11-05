@@ -80,6 +80,7 @@ func TestParse(t *testing.T) {
 	head := "kind: Integration\nmetadata: {name: a, title: A}\nspec:\n"
 	push := head + "  connector:\n    type: http\n    config: {resources: {s: {push: {items: .body}}}}\n"
 	pull := head + "  connector: {type: portal}\n"
+	fetch := head + "  connector:\n    type: http\n    config: {resources: {s: {url: https://x.example.com}}}\n"
 	tests := []struct{ name, source, want string }{
 		{"own icon", "kind: Integration\nmetadata: {name: a, title: A, icon: plug}\nspec:\n  connector: {type: portal}", "icon comes from its connector"},
 		{"connector", head + "  connector: {type: push}", "type must be one of portal, http"},
@@ -92,8 +93,9 @@ func TestParse(t *testing.T) {
 		{"items on a mapping", push + "  mappings:\n    - resource: s\n      blueprint: s\n      items: .a\n      entity: {identifier: .id}", "items"},
 		{"sync without pulling", push + "  sync: {interval: 5m}\n  mappings: []", "only integrations that pull sync"},
 		{"short interval", pull + "  sync: {interval: 10s}\n  mappings: []", "interval must be at least 1m0s"},
-		{"complete under interval", pull + "  sync: {interval: 1h, complete: 5m}\n  mappings: []", "complete must be at least the interval"},
-		{"complete without since", pull + "  sync: {interval: 5m, complete: 1h}\n  mappings: []", "no resource url uses {{ $since }}"},
+		{"complete under interval", fetch + "  sync: {interval: 1h, complete: 5m}\n  mappings: []", "complete must be at least the interval"},
+		{"complete without since", fetch + "  sync: {interval: 5m, complete: 1h}\n  mappings: []", "no resource url uses {{ $since }}"},
+		{"complete of a connector that reads everything", pull + "  sync: {interval: 5m, complete: 1h}\n  mappings: []", "the portal connector reads everything on every sync, so every sync is complete and complete is ignored"},
 		{"no resource", pull + "  mappings:\n    - blueprint: s\n      entity: {identifier: .id}", "add the resource to map"},
 		{"unknown resource", pull + "  mappings:\n    - resource: tokens\n      blueprint: s\n      entity: {identifier: .id}", "resource must be one of users"},
 	}
@@ -193,7 +195,7 @@ func TestMapResources(t *testing.T) {
 
 func TestUsualMode(t *testing.T) {
 	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
-	daily := mustParse(t, strings.Replace(portalYAML, "sync: {interval: 5m}", "sync: {interval: 5m, complete: 24h}", 1))
+	daily := mustParse(t, strings.Replace(httpYAML("https://tracker.example.com?since={{ $since }}"), "sync: {interval: 5m}", "sync: {interval: 5m, complete: 24h}", 1))
 	published := now.Add(-48 * time.Hour)
 	tests := []struct {
 		name    string

@@ -59,8 +59,9 @@ type TxDB interface {
 // usual one.
 //
 // A complete sync then deletes the entities the integration wrote before
-// that it didn't see this time, of the blueprints whose resources it all
-// fetched. Items that fail validation still count as seen, so a bad value
+// that neither it nor the complete run before it saw, of the blueprints
+// whose resources it all fetched, so one that misses an entity by chance,
+// as a list shifting under it, doesn't delete it. Items that fail validation still count as seen, so a bad value
 // never deletes an entity, and an item without an identifier could be any
 // of its blueprint's, so that blueprint deletes nothing. An incremental
 // sync fetches what changed since the last sync that fetched everything,
@@ -138,10 +139,9 @@ func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []s
 		}
 	}
 	var resources []string
-	for _, m := range spec.Mappings {
-		if slices.Contains(puller.Pulls(), m.Resource) && !slices.Contains(resources, m.Resource) &&
-			(len(only) == 0 || slices.Contains(only, m.Resource)) {
-			resources = append(resources, m.Resource)
+	for _, resource := range spec.mappedResources() {
+		if slices.Contains(puller.Pulls(), resource) && (len(only) == 0 || slices.Contains(only, resource)) {
+			resources = append(resources, resource)
 		}
 	}
 	m, err := spec.mapper()
@@ -162,11 +162,17 @@ func syncAs(ctx context.Context, db TxDB, identifier string, asked Run, only []s
 	// The lock holds a connection while fetching, so bound the fetch to keep
 	// a slow provider from holding it indefinitely.
 	pullCtx, cancel := context.WithTimeout(ctx, pullTimeout)
-	failed, err := puller.Pull(pullCtx, db, PullRequest{Resources: resources, Since: since}, emit)
+	var warnings []string
+	request := PullRequest{Resources: resources, Since: since, Warn: func(warning string) { warnings = append(warnings, warning) }}
+	if len(only) == 0 {
+		request.IngestURL, request.WebhookSecret = IngestURL(identifier), WebhookSecret(identifier)
+	}
+	failed, err := puller.Pull(pullCtx, db, request, emit)
 	cancel()
 	if err != nil {
 		return nil, err
 	}
+	run.Warning = strings.Join(warnings, " ")
 	if len(failed) > 0 {
 		names := slices.Sorted(maps.Keys(failed))
 		reasons := make([]string, len(names))
@@ -211,6 +217,19 @@ func writeBatched(ctx context.Context, db TxDB, integrationID string, entries []
 	maps.Copy(unsafe, batchUnsafe)
 
 	return tx.Commit()
+}
+
+// mappedResources are the resources the mappings read, each once, in the
+// order they first come.
+func (s Spec) mappedResources() []string {
+	var resources []string
+	for _, m := range s.Mappings {
+		if !slices.Contains(resources, m.Resource) {
+			resources = append(resources, m.Resource)
+		}
+	}
+
+	return resources
 }
 
 // SyncableResource says why name can't be synced on its own, or nothing when

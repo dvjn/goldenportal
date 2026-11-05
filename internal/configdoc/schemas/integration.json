@@ -61,13 +61,39 @@
           "enum": ["portal", "http"],
           "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource."
         },
-        "config": { "$ref": "#/$defs/httpConfig" }
+        "config": {
+          "type": "object",
+          "description": "The connector's config. The http connector takes one; portal takes none."
+        }
       },
       "required": ["type"],
-      "if": { "properties": { "type": { "const": "http" } } },
-      "then": { "required": ["config"] },
-      "else": { "properties": { "config": false } },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "http" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/httpConfig" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "portal" } } },
+          "then": { "properties": { "config": false } }
+        }
+      ],
       "additionalProperties": false
+    },
+    "secret": {
+      "type": "object",
+      "properties": {
+        "env": {
+          "type": "string",
+          "pattern": "^GP_SECRET_",
+          "description": "An environment variable of the server, starting with GP_SECRET_."
+        }
+      },
+      "required": ["env"],
+      "additionalProperties": false,
+      "description": "A secret, read from the server's environment, never written in the document."
     },
     "httpConfig": {
       "type": "object",
@@ -106,16 +132,7 @@
           "description": "What comes before the hex, such as sha256=."
         },
         "secret": {
-          "type": "object",
-          "properties": {
-            "env": {
-              "type": "string",
-              "pattern": "^GP_SECRET_",
-              "description": "An environment variable of the server, starting with GP_SECRET_."
-            }
-          },
-          "required": ["env"],
-          "additionalProperties": false,
+          "$ref": "#/$defs/secret",
           "description": "The secret the system signs with, read from the server's environment."
         }
       },
@@ -156,16 +173,7 @@
             "oneOf": [
               { "type": "string" },
               {
-                "type": "object",
-                "properties": {
-                  "env": {
-                    "type": "string",
-                    "pattern": "^GP_SECRET_",
-                    "description": "An environment variable of the server, starting with GP_SECRET_."
-                  }
-                },
-                "required": ["env"],
-                "additionalProperties": false
+                "$ref": "#/$defs/secret"
               }
             ]
           }
@@ -193,7 +201,7 @@
     },
     "sync": {
       "type": "object",
-      "description": "Integrations that pull only: how often to sync.",
+      "description": "Integrations that pull: how often to sync.",
       "properties": {
         "interval": {
           "type": "string",
@@ -203,7 +211,7 @@
         "complete": {
           "type": "string",
           "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-          "description": "How often a sync is complete, deleting what it didn't see: a Go duration of at least the interval, such as 24h. Left out, every sync is complete. The first sync, and the first after a publish, are complete too."
+          "description": "How often a sync is complete: a Go duration of at least the interval, such as 24h. A complete run deletes the entities that neither it nor the complete run before it saw, so one missed by chance stays. Left out, every sync is complete. The first sync, and the first after a publish, are complete too. Only http integrations whose urls use {{ $since }} fetch less on the others; portal and github ones read everything on every sync, and ignore complete."
         }
       },
       "required": ["interval"],

@@ -84,7 +84,7 @@ function FeedsCard({ identifier }: Readonly<{ identifier: string }>) {
 
 // ConnectorCard says what the integration connects to and what it does
 // with it. One that pulls syncs incrementally every interval and completely,
-// deleting what the system no longer has, every complete interval; without
+// deleting what neither it nor the complete run before it saw, every complete interval; without
 // one, every sync is complete.
 function ConnectorCard({ spec }: Readonly<{ spec: IntegrationSpec }>) {
   const { data: connectors } = useQuery(connectorsQueryOptions);
@@ -119,7 +119,7 @@ function ConnectorCard({ spec }: Readonly<{ spec: IntegrationSpec }>) {
           <IconTile icon={known?.icon} color={known?.color} size="sm" />
           <span className="font-medium">{known?.title ?? spec.connector.type} Connector</span>
           {spec.pulls && <Badge variant="secondary">Pull</Badge>}
-          {spec.receives && <Badge variant="secondary">Push</Badge>}
+          {spec.receives && <Badge variant="secondary">{spec.events ? "Events" : "Push"}</Badge>}
         </div>
         {known && <p className="text-muted-foreground">{known.description}</p>}
         {(spec.pulls || check.data) && (
@@ -135,8 +135,13 @@ function ConnectorCard({ spec }: Readonly<{ spec: IntegrationSpec }>) {
               </>
             )}
             {check.data && (
-              <Detail label="Connection" help={check.data.error}>
-                {check.data.passed ? (
+              <Detail
+                label="Connection"
+                help={[check.data.error, check.data.warning].filter(Boolean).join(" ")}
+              >
+                {check.data.passed && check.data.warning ? (
+                  <Badge variant="warning">Passed with Warnings</Badge>
+                ) : check.data.passed ? (
                   <Badge variant="success">Passed</Badge>
                 ) : (
                   <Badge variant="destructive">Failed</Badge>

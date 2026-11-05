@@ -37,7 +37,10 @@ function IntegrationPage() {
   // which Sync Now runs early once published, pushed to the endpoint, or
   // both. Tokens can be made while only the draft takes pushes.
   const pulls = integration.published?.spec.pulls;
-  const receives = integration.published?.spec.receives || integration.draft?.spec.receives;
+  // Events come to a webhook the connector sets up, so there's nothing to push by hand.
+  const spec = integration.published?.spec ?? integration.draft?.spec;
+  const receives =
+    (integration.published?.spec.receives || integration.draft?.spec.receives) && !spec?.events;
 
   return (
     <DocPage

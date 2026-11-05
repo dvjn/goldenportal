@@ -20,5 +20,7 @@ func All() map[int64]migration.Migrate {
 		20261103180000: createRuns(),
 		20261104120000: addActionIngestionRuns(),
 		20261105120000: connectorItems(),
+		20261105140000: addIngestionRunWarning(),
+		20261105150000: addEntityMissedAt(),
 	}
 }

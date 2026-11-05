@@ -66,6 +66,16 @@ type PullRequest struct {
 	// Since is when the last successful sync started, less a minute, for an
 	// incremental sync; the zero time for a complete one.
 	Since time.Time
+	// IngestURL is where the system can send the integration events, on a
+	// sync of every resource once the portal knows its public URL, for
+	// connectors that set up their own webhooks.
+	IngestURL string
+	// WebhookSecret is what the system signs the integration's events with,
+	// on the same syncs, once the server has a key to derive it from.
+	WebhookSecret string
+	// Warn reports what went wrong without failing anything read, such as
+	// a webhook it couldn't set up, which the run records.
+	Warn func(string)
 }
 
 // Incremental is a Puller that can fetch only what changed since a time.
@@ -82,8 +92,10 @@ type Receiver interface {
 	Receives() []string
 	// Receive turns a request into items. authenticated is whether it came
 	// with the integration's ingestion token; without one the connector
-	// verifies it, returning ErrUnverified if it can't.
-	Receive(req Request, authenticated bool) ([]Item, error)
+	// verifies it, returning ErrUnverified if it can't. ctx bounds anything
+	// it reads from its system to complete the request; a FetchError says
+	// that failed.
+	Receive(ctx context.Context, req Request, authenticated bool) ([]Item, error)
 }
 
 // Request is a request sent to an integration's ingest endpoint.
@@ -93,12 +105,38 @@ type Request struct {
 	Header    http.Header
 	Query     url.Values
 	Body      []byte
+	// WebhookSecret is what the integration's webhooks are signed with,
+	// once the server has a key to derive it from.
+	WebhookSecret string
+}
+
+// EventReceiver is a Receiver whose requests are its system's events, each
+// about one object, sent to a webhook the connector sets up: never a whole
+// resource, so none is a complete push, and never data pushed with a token.
+type EventReceiver interface {
+	Receiver
+	ReceivesEvents()
 }
 
 // Checker is a config that can check its system is reachable.
 type Checker interface {
 	Config
-	Check(ctx context.Context, db configdoc.DB) error
+	// Check checks it can reach the system and read what it's asked to,
+	// failing with what's missing, and warns of what optional won't work.
+	Check(ctx context.Context, db configdoc.DB, c CheckRequest) error
+}
+
+// CheckRequest is what a check is asked to check.
+type CheckRequest struct {
+	// Resources are those the mappings read, for systems that grant access
+	// to each separately.
+	Resources []string
+	// IngestURL and WebhookSecret are as a sync gives them.
+	IngestURL     string
+	WebhookSecret string
+	// Warn reports something optional that won't work, though the check
+	// passes.
+	Warn func(string)
 }
 
 // Connectors are the built-in connectors.
