@@ -318,6 +318,42 @@
       "required": ["type", "title", "groupBy"],
       "additionalProperties": false
     },
+    "matrixWidget": {
+      "type": "object",
+      "description": "A table with a row for each value of a field and a column for each measure, each cell the share of that row's entities matching the measure, linking to those that don't. Default width 12.",
+      "properties": {
+        "type": { "const": "matrix" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "query": { "$ref": "#/$defs/queryRef" },
+        "groupBy": { "$ref": "#/$defs/groupBy", "description": "The path of the field whose values make the rows, such as owner." },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many rows to show, the largest. Default 10." },
+        "measures": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/measure" },
+          "description": "The columns, in order."
+        },
+        "overall": { "type": "boolean", "description": "Adds a row of each measure over every group, for a page without stats that show them." }
+      },
+      "required": ["type", "title", "groupBy", "measures"],
+      "additionalProperties": false
+    },
+    "measure": {
+      "type": "object",
+      "description": "A column of a matrix: the percent of each row's entities matching share.",
+      "properties": {
+        "title": { "type": "string", "pattern": "\\S" },
+        "filter": {
+          "$ref": "#/$defs/filter",
+          "description": "Narrows the entities the measure counts to those it applies to."
+        },
+        "share": { "$ref": "#/$defs/filter", "description": "The condition the measure is the share of." }
+      },
+      "required": ["title", "share"],
+      "additionalProperties": false
+    },
     "tableWidget": {
       "type": "object",
       "description": "A table of a query's entities, each row opening its entity. Default width 12.",
@@ -425,6 +461,7 @@
         { "$ref": "#/$defs/barWidget" },
         { "$ref": "#/$defs/donutWidget" },
         { "$ref": "#/$defs/splitWidget" },
+        { "$ref": "#/$defs/matrixWidget" },
         { "$ref": "#/$defs/tableWidget" },
         { "$ref": "#/$defs/scorecardWidget" },
         { "$ref": "#/$defs/markdownWidget" },

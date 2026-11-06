@@ -43,6 +43,13 @@ services:
   columns: [tier, {title: Owner, path: owner.title}, {title: Age, jq: '.createdAt | fromdate', unit: d}]
   sort: -lastDeployedAt
   rowLink: {path: '/catalog/service/{{ .identifier }}'}
+byOwner:
+  type: matrix
+  title: By owner
+  groupBy: owner
+  measures:
+    - {title: Documented, share: {property: docs, op: exists}}
+    - {title: Paged, filter: {property: tier, op: eq, value: critical}, share: {property: oncall, op: exists}}
 about:
   type: properties
   title: About
@@ -62,10 +69,14 @@ deploys:
 	for _, w := range widgets {
 		ids = append(ids, w.ID)
 	}
-	if got := strings.Join(ids, ","); got != "count,byTier,services,about,deploys" {
+	if got := strings.Join(ids, ","); got != "count,byTier,services,byOwner,about,deploys" {
 		t.Fatalf("widget order = %s", got)
 	}
-	count, byTier, services, deploys := widgets[0], widgets[1], widgets[2], widgets[4]
+	count, byTier, services, byOwner, deploys := widgets[0], widgets[1], widgets[2], widgets[3], widgets[5]
+	if byOwner.Limit != 10 || byOwner.Width != 12 || byOwner.Query.Blueprint != "team" || len(byOwner.Measures) != 2 ||
+		byOwner.Measures[0].Filter != nil || byOwner.Measures[1].Filter.Value != "critical" || byOwner.Measures[1].Share.Property != "oncall" {
+		t.Errorf("matrix = %+v", byOwner)
+	}
 	if op, _ := count.Value.Op(); op != OpCount || count.Value.Query.Blueprint != "team" || count.Width != 3 || count.Path != "widgets.count" || count.Link != nil {
 		t.Errorf("stat defaults = %+v", count)
 	}
@@ -159,6 +170,10 @@ func TestParseReportsProblems(t *testing.T) {
 		{"group by", "w: {type: bar, title: W}", catalog, "widgets.w.groupBy", "add the property"},
 		{"split group by", "w: {type: split, title: W}", catalog, "widgets.w.groupBy", "add the property"},
 		{"limit", "w: {type: table, title: W, limit: 500}", catalog, "widgets.w.limit", "1 to 50"},
+		{"matrix group by", "w: {type: matrix, title: W, measures: [{title: M, share: {property: a, op: exists}}]}", catalog, "widgets.w.groupBy", "add the property"},
+		{"matrix measures", "w: {type: matrix, title: W, groupBy: owner}", catalog, "widgets.w.measures", "add the measures"},
+		{"measure share", "w: {type: matrix, title: W, groupBy: owner, measures: [{title: M}]}", catalog, "widgets.w.measures[0].share", "add the condition"},
+		{"measure title", "w: {type: matrix, title: W, groupBy: owner, measures: [{share: {property: a, op: exists}}]}", catalog, "widgets.w.measures[0].title", "add the measure's title"},
 		{"entity off its page", "w: {type: table, title: W, query: {filter: {property: owner, op: eq, value: $entity}}}", catalog, "widgets.w.query.filter", "only entity pages"},
 		{"properties off entity", "w: {type: properties, title: W}", catalog, "widgets.w.type", "go on entity pages"},
 		{"input off home", "w: {type: table, title: W, query: {filter: {property: owner, op: eq, value: $input.team}}}", catalog, "widgets.w.query.filter", "only Home has it"},
@@ -170,6 +185,7 @@ func TestParseReportsProblems(t *testing.T) {
 		{"description variable off home", "w: {type: table, title: W, description: '{{ $me.name }}'}", catalog, "widgets.w.description", "only have them in markdown text"},
 		{"undeclared input", "w: {type: table, title: W, query: {blueprint: s, filter: {property: owner, op: in, values: $input.team}}}", Scope{Inputs: []string{"tier"}}, "widgets.w.query.filter", `no input "team"`},
 		{"unknown color", "w: {type: stat, title: W, value: {}, icon: rocket, color: mauve}", catalog, "widgets.w.color", "color must be one of"},
+		{"matrix overall", "w: {type: matrix, title: W, groupBy: owner, overall: yes please, measures: [{title: M, share: {property: a, op: exists}}]}", catalog, "widgets.w.overall", "true or false"},
 		{"color without icon", "w: {type: stat, title: W, value: {}, color: red}", catalog, "widgets.w.color", "add an icon"},
 		{"icon off stat", "w: {type: table, title: W, icon: rocket}", catalog, "widgets.w.icon", "unknown field"},
 		{"link is a mapping", "w: {type: table, title: W, link: path}", catalog, "widgets.w.link", "{query}, {url} or {path}"},

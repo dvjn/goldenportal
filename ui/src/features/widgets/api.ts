@@ -9,6 +9,7 @@ export type WidgetType =
   | "bar"
   | "donut"
   | "split"
+  | "matrix"
   | "table"
   | "scorecard"
   | "markdown"
@@ -32,6 +33,10 @@ export type WidgetLink = {
 // Column is a table column: a field path, read in SQL, or a title and jq
 // the server works out for each row.
 export type Column = { path?: string; title?: string; jq?: string; unit?: string };
+
+// Measure is a matrix's column: the share of each group's entities, of
+// those filter narrows them to, that match share.
+export type Measure = { title: string; filter?: Filter; share: Filter };
 
 // Value is the number a stat shows from a query's entities: their count,
 // unless it names a field to sum, average or take the least or most of,
@@ -72,6 +77,10 @@ export type Widget = {
   link?: WidgetLink;
   // rowLink is what a table's rows open instead of their entity's page.
   rowLink?: WidgetLink;
+  // measures are a matrix's columns.
+  measures?: Measure[];
+  // overall adds a matrix row of each measure over every group.
+  overall?: boolean;
   // actions and then workflows are what an actions widget offers to run, in
   // order.
   actions?: string[];
@@ -157,9 +166,17 @@ export type TableData = {
   rows: TableRow[];
   link?: LinkData;
 };
+// MatrixData has a row of cells per group, one per measure, after the
+// measures over every group. A cell no entity counts in has no value.
+export type MatrixCell = { value: number | null; count: number; total: number; link?: LinkData };
+export type MatrixData = {
+  measures: string[];
+  overall?: MatrixCell[];
+  rows: (Facet & { color?: string; cells: MatrixCell[]; link?: LinkData })[];
+};
 // TextData is a markdown widget's text, filled in for whoever is looking.
 export type TextData = { text: string };
-export type WidgetData = StatData | GroupData | TableData | TierData | TextData;
+export type WidgetData = StatData | GroupData | MatrixData | TableData | TierData | TextData;
 
 // WidgetResult is one widget's share of its page's data, or why it
 // couldn't load, so one failing widget leaves the rest.

@@ -265,12 +265,19 @@ func (c *widgetCheck) scorecard() {
 	}
 }
 
-// entities checks what bars, donuts and tables show of bp's entities.
+// entities checks what bars, donuts, matrices and tables show of bp's entities.
 func (c *widgetCheck) entities(bp blueprint.Spec) {
 	w := c.w
 	switch w.Type {
 	case widget.TypeBar, widget.TypeDonut, widget.TypeSplit:
 		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
+	case widget.TypeMatrix:
+		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
+		for i, m := range w.Measures {
+			field := fmt.Sprintf("measures[%d]", i)
+			c.fail(field+".filter", checkFilter(c.blueprints, bp, m.Filter))
+			c.fail(field+".share", checkFilter(c.blueprints, bp, m.Share))
+		}
 	case widget.TypeTable:
 		for _, column := range w.Columns {
 			if column.Path != "" {

@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   type GroupData,
   type LinkData,
+  type MatrixData,
   type StatData,
   type TableData,
   type TextData,
@@ -25,6 +26,7 @@ import {
 import { describeError } from "@/lib/api";
 import { ActionsWidget } from "./actions-widget";
 import { GroupWidget } from "./group-widget";
+import { MatrixWidget } from "./matrix-widget";
 import { PropertiesWidget } from "./properties-widget";
 import { ScorecardWidget } from "./scorecard-widget";
 import { StatWidget } from "./stat-widget";
@@ -152,6 +154,8 @@ function WidgetBody(props: WidgetProps) {
     case "donut":
     case "split":
       return <GroupWidget {...(props as WidgetProps<GroupData>)} />;
+    case "matrix":
+      return <MatrixWidget {...(props as WidgetProps<MatrixData>)} />;
     case "table":
       return <TableWidget {...(props as WidgetProps<TableData>)} />;
     case "scorecard":

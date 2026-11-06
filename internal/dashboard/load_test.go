@@ -225,3 +225,63 @@ spec:
 		t.Errorf("inputLinks = %s\nwant %s", encoded, want)
 	}
 }
+
+func TestMatrixSharesEachMeasureByGroup(t *testing.T) {
+	spec := mustParse(t, `
+kind: Dashboard
+metadata: {name: docs, title: Docs}
+spec:
+  widgets:
+    byTeam:
+      type: matrix
+      title: By Team
+      query: {blueprint: service}
+      groupBy: team
+      measures: [{title: Documented, share: {property: docs, op: eq, value: true}}]
+      overall: true
+`)
+	bp, issues := blueprint.Parse(`
+kind: Blueprint
+metadata: {name: service, title: Service}
+spec:
+  properties:
+    team: {type: string}
+    docs: {type: boolean}
+`)
+	if configdoc.HasErrors(issues) {
+		t.Fatal(issues)
+	}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.MatchExpectationsInOrder(false)
+	// The rows' query is the measure's base too, so they share a grouping.
+	mock.ExpectQuery(`^SELECT \(count\(\*\)\)::float8 FROM`).WithArgs("service").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(4))
+	mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text FROM \(SELECT e\.properties -> 'team' AS value`).WithArgs("service", 21).
+		WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title"}).
+			AddRow([]byte(`"payments"`), 3, nil).AddRow([]byte(`"search"`), 1, nil))
+	mock.ExpectQuery(`^SELECT \(count\(\*\)\)::float8 FROM`).WithArgs("service", `{"docs":true}`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text FROM \(SELECT e\.properties -> 'team' AS value`).WithArgs("service", `{"docs":true}`, 21).
+		WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title"}).AddRow([]byte(`"payments"`), 2, nil))
+
+	l := loader{ctx: t.Context(), db: db, store: entity.NewStore(db), blueprints: map[string]blueprint.Spec{"service": bp}}
+	data := l.load(spec.Widgets)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(data.Widgets["byTeam"])
+	for _, want := range []string{
+		`"measures":["Documented"]`,
+		`"overall":[{"value":50,"count":2,"total":4,"link":{"blueprint":"service","filter":{"not":{"property":"docs","op":"eq","value":true}}}}]`,
+		`{"value":"payments","count":3,"cells":[{"value":66.66666666666667,"count":2,"total":3,"link":{"blueprint":"service","filter":{"and":[{"property":"team","op":"eq","value":"payments"},{"not":{"property":"docs","op":"eq","value":true}}]}}}],"link":{"blueprint":"service","filter":{"property":"team","op":"eq","value":"payments"}}}`,
+		`{"value":"search","count":1,"cells":[{"value":0,"count":0,"total":1,"link":`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("byTeam = %s\nwant %s", encoded, want)
+		}
+	}
+}

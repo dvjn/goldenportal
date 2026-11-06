@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -61,6 +62,29 @@ type (
 		Checks    scorecard.Checks      `json:"checks"`
 		Scorecard *tableScorecard       `json:"scorecard"`
 		Link      *linkData             `json:"link,omitempty"`
+	}
+	// matrixData is a share per group per measure: a row for each of the
+	// widget's groups, a cell in it for each measure, and when asked, the
+	// shares over every group.
+	matrixData struct {
+		Measures []string     `json:"measures"`
+		Overall  []matrixCell `json:"overall,omitempty"`
+		Rows     []matrixRow  `json:"rows"`
+	}
+	// matrixRow is a group's cells, and links to its entities.
+	matrixRow struct {
+		entity.Facet
+		Cells []matrixCell `json:"cells"`
+		Link  *linkData    `json:"link,omitempty"`
+	}
+	// matrixCell is how many of how many match, with the share, and links
+	// to those that don't, the ones to work on. A cell no entity counts in
+	// has no share.
+	matrixCell struct {
+		Value *float64  `json:"value"`
+		Count int       `json:"count"`
+		Total int       `json:"total"`
+		Link  *linkData `json:"link,omitempty"`
 	}
 	textData struct {
 		Text string `json:"text"`
@@ -260,6 +284,11 @@ func (l loader) need(w widget.Widget, planFor func(*widget.Query, *filter.Filter
 			return nil
 		}
 		return l.groups(w, planFor(w.Query, w.Query.Filter))
+	case widget.TypeMatrix:
+		if w.Query == nil {
+			return nil
+		}
+		return l.matrix(w, planFor)
 	case widget.TypeTable:
 		if w.Query == nil {
 			return nil
@@ -365,13 +394,21 @@ func (l loader) scorecard(w widget.Widget, planFor func(*widget.Query, *filter.F
 	}
 }
 
-func (l loader) groups(w widget.Widget, p *plan) func() (any, error) {
-	g, ok := p.groups[w.GroupBy]
+// grouping asks a plan to count its entities by path, up to limit groups,
+// unless another widget already has.
+func (p *plan) grouping(path string, limit int) *grouping {
+	g, ok := p.groups[path]
 	if !ok {
-		g = &grouping{path: w.GroupBy}
-		p.groups[w.GroupBy] = g
+		g = &grouping{path: path}
+		p.groups[path] = g
 	}
-	g.limit = max(g.limit, w.Limit)
+	g.limit = max(g.limit, limit)
+
+	return g
+}
+
+func (l loader) groups(w widget.Widget, p *plan) func() (any, error) {
+	g := p.grouping(w.GroupBy, w.Limit)
 
 	return func() (any, error) {
 		if p.err != nil {
@@ -408,6 +445,137 @@ func (l loader) groups(w widget.Widget, p *plan) func() (any, error) {
 		}
 		return data, nil
 	}
+}
+
+// matrix works out each measure for each group, from two counts per
+// measure: of the entities it applies to, and of those matching it, each
+// grouped and in all. Rows are the query's largest groups.
+func (l loader) matrix(w widget.Widget, planFor func(*widget.Query, *filter.Filter) *plan) func() (any, error) {
+	rows := planFor(w.Query, w.Query.Filter)
+	rowGroups := rows.grouping(w.GroupBy, w.Limit)
+	type counts struct {
+		plan          *plan
+		groups        *grouping
+		total         int
+		filter, share *filter.Filter
+	}
+	count := func(f *filter.Filter) counts {
+		p := planFor(w.Query, f)
+		return counts{plan: p, groups: p.grouping(w.GroupBy, widget.MaxGroups), total: p.countIndex()}
+	}
+	measures := make([][2]counts, len(w.Measures))
+	for i, m := range w.Measures {
+		base := and(w.Query.Filter, m.Filter)
+		measures[i] = [2]counts{count(base), count(and(base, m.Share))}
+		measures[i][0].filter, measures[i][0].share = base, m.Share
+	}
+
+	return func() (any, error) {
+		if err := cmp.Or(rows.err, rowGroups.err); err != nil {
+			return nil, err
+		}
+		for _, pair := range measures {
+			for _, c := range pair {
+				if err := cmp.Or(c.plan.err, c.plan.valuesErr, c.groups.err); err != nil {
+					return nil, err
+				}
+			}
+		}
+		info, _ := entity.Describe(l.blueprints, rows.query.Blueprint, w.GroupBy)
+		single := info.Property == nil || (!info.Property.Many && info.Property.Type != "array") || info.Kind == "tier"
+		groups := make([]group, min(len(rowGroups.facets), w.Limit))
+		for i := range groups {
+			groups[i] = group{Facet: rowGroups.facets[i]}
+			if groups[i].Color == "" && info.Property != nil && info.Property.Display != nil {
+				groups[i].Color = info.Property.Display.Colors[fmt.Sprint(groups[i].Value)]
+			}
+		}
+		byEnum(groups, info.Property)
+
+		data := matrixData{Measures: make([]string, len(w.Measures)), Rows: make([]matrixRow, len(groups))}
+		for i, m := range w.Measures {
+			data.Measures[i] = m.Title
+			if w.Overall {
+				base, hit := measures[i][0], measures[i][1]
+				data.Overall = append(data.Overall, l.cell(w, base.filter, base.share, nil,
+					countOf(base.plan.values[base.total]), countOf(hit.plan.values[hit.total])))
+			}
+		}
+		for r, g := range groups {
+			data.Rows[r] = matrixRow{Facet: g.Facet}
+			op := filter.OpEq
+			if !single {
+				op = filter.OpContains
+			}
+			condition := &filter.Filter{Property: w.GroupBy, Op: op, Value: g.Value}
+			data.Rows[r].Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.bind(and(w.Query.Filter, condition))}
+			for i := range w.Measures {
+				base, hit := measures[i][0], measures[i][1]
+				data.Rows[r].Cells = append(data.Rows[r].Cells, l.cell(w, base.filter, base.share, condition,
+					facetCount(base.groups.facets, g.Value), facetCount(hit.groups.facets, g.Value)))
+			}
+		}
+		// A group no measure applies to, such as repositories without CI
+		// when every measure counts those with, has nothing to read.
+		data.Rows = slices.DeleteFunc(data.Rows, func(row matrixRow) bool {
+			return !slices.ContainsFunc(row.Cells, func(c matrixCell) bool { return c.Value != nil })
+		})
+		return data, nil
+	}
+}
+
+// cell is one share in a matrix, linking to the entities it applies to
+// that don't match, when there are any.
+func (l loader) cell(w widget.Widget, base, share, group *filter.Filter, total, count int) matrixCell {
+	c := matrixCell{Count: count, Total: total}
+	if total == 0 {
+		return c
+	}
+	value := float64(count) * 100 / float64(total)
+	c.Value = &value
+	if count < total && share != nil {
+		c.Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.bind(and(base, group, &filter.Filter{Not: share}))}
+	}
+
+	return c
+}
+
+// and is every condition given, flattened, or nil without any.
+func and(filters ...*filter.Filter) *filter.Filter {
+	var conditions []filter.Filter
+	for _, f := range filters {
+		switch {
+		case f == nil:
+		case len(f.And) > 0:
+			conditions = append(conditions, f.And...)
+		default:
+			conditions = append(conditions, *f)
+		}
+	}
+	switch len(conditions) {
+	case 0:
+		return nil
+	case 1:
+		return &conditions[0]
+	}
+
+	return &filter.Filter{And: conditions}
+}
+
+func countOf(value *float64) int {
+	if value == nil {
+		return 0
+	}
+	return int(math.Round(*value))
+}
+
+func facetCount(facets []entity.Facet, value any) int {
+	for _, f := range facets {
+		if fmt.Sprint(f.Value) == fmt.Sprint(value) {
+			return f.Count
+		}
+	}
+	return 0
 }
 
 // byEnum puts a split's groups in the order its property lists its values,
@@ -685,26 +853,7 @@ func (l loader) link(w widget.Widget, extra *filter.Filter) *linkData {
 	if _, ok := l.blueprints[link.Query.Blueprint]; !ok {
 		return nil
 	}
-	var conditions []filter.Filter
-	for _, f := range []*filter.Filter{l.bind(link.Query.Filter), l.bind(link.Filter), extra} {
-		switch {
-		case f == nil:
-		case len(f.And) > 0:
-			conditions = append(conditions, f.And...)
-		default:
-			conditions = append(conditions, *f)
-		}
-	}
-	data := &linkData{Blueprint: link.Query.Blueprint}
-	switch len(conditions) {
-	case 0:
-	case 1:
-		data.Filter = &conditions[0]
-	default:
-		data.Filter = &filter.Filter{And: conditions}
-	}
-
-	return data
+	return &linkData{Blueprint: link.Query.Blueprint, Filter: and(l.bind(link.Query.Filter), l.bind(link.Filter), extra)}
 }
 
 // groupLink links a group's entities. A group's value already met every

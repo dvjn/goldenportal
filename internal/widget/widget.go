@@ -49,6 +49,13 @@ type Widget struct {
 	Link *Link `json:"link,omitempty"`
 	// RowLink is what a table's rows open instead of their entity's page.
 	RowLink *Link `json:"rowLink,omitempty"`
+	// Measures are a matrix's columns, each a share worked out for every
+	// group, so groups can be read against each other and measures against
+	// each other in one place.
+	Measures []Measure `json:"measures,omitempty"`
+	// Overall adds a matrix row of each measure over every group, for a
+	// page without stats that show them.
+	Overall bool `json:"overall,omitempty"`
 	// Path and Line say where the widget is written, for issues.
 	Path string `json:"-"`
 	Line int    `json:"-"`
@@ -135,12 +142,22 @@ type Column struct {
 	Unit  string `json:"unit,omitempty"`
 }
 
+// Measure is a share a matrix works out for each of its groups: of the
+// query's entities, narrowed by Filter to those it applies to, the percent
+// matching Share.
+type Measure struct {
+	Title  string         `json:"title"`
+	Filter *filter.Filter `json:"filter,omitempty"`
+	Share  *filter.Filter `json:"share"`
+}
+
 // Widget types.
 const (
 	TypeStat       = "stat"
 	TypeBar        = "bar"
 	TypeDonut      = "donut"
 	TypeSplit      = "split"
+	TypeMatrix     = "matrix"
 	TypeTable      = "table"
 	TypeScorecard  = "scorecard"
 	TypeMarkdown   = "markdown"
@@ -159,6 +176,7 @@ var (
 	RowLinkFields = []string{"url", "path"}
 	LinkFields    = slices.Concat(RowLinkFields, []string{"query", "filter", "group"})
 	ColumnFields  = []string{"title", "path", "jq", "unit"}
+	MeasureFields = []string{"title", "filter", "share"}
 )
 
 // TypeFields lists the keys a widget of a type takes, or nil for a type
@@ -181,6 +199,7 @@ var types = map[string]struct {
 	TypeBar:        {[]string{"query", "groupBy", "limit", "link"}, 6},
 	TypeDonut:      {[]string{"query", "groupBy", "limit", "link"}, 4},
 	TypeSplit:      {[]string{"query", "groupBy", "limit", "link"}, 6},
+	TypeMatrix:     {[]string{"query", "groupBy", "limit", "measures", "overall"}, 12},
 	TypeTable:      {[]string{"query", "columns", "sort", "limit", "link", "rowLink"}, 12},
 	TypeScorecard:  {[]string{"scorecard", "query", "link"}, 6},
 	TypeMarkdown:   {[]string{"text"}, 6},
@@ -398,6 +417,18 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 			r.Errorf(key, path+".groupBy", "add the property to count entities by, in groupBy")
 		}
 		w.Limit = limit(r, fields["limit"], path+".limit", 8, MaxGroups)
+	case TypeMatrix:
+		w.GroupBy = r.Text(fields["groupBy"], path+".groupBy")
+		if w.GroupBy == "" {
+			r.Errorf(key, path+".groupBy", "add the property whose values make the rows, in groupBy")
+		}
+		w.Limit = limit(r, fields["limit"], path+".limit", 10, MaxGroups)
+		w.Measures = parseMeasures(r, key, fields["measures"], path+".measures", scope)
+		if n := fields["overall"]; n != nil {
+			if err := n.Decode(&w.Overall); err != nil || n.Tag != "!!bool" {
+				r.Errorf(n, path+".overall", "overall must be true or false")
+			}
+		}
 	case TypeTable:
 		w.Columns = parseColumns(r, fields["columns"], path+".columns", scope)
 		w.Sort = r.Text(fields["sort"], path+".sort")
@@ -639,6 +670,35 @@ func parseColumns(r *configdoc.Reader, node *yaml.Node, path string, scope Scope
 	return columns
 }
 
+func parseMeasures(r *configdoc.Reader, key, node *yaml.Node, path string, scope Scope) []Measure {
+	var measures []Measure
+	r.List(node, path, func(i int, item *yaml.Node) {
+		itemPath := fmt.Sprintf("%s[%d]", path, i)
+		fields, ok := r.Fields(item, itemPath, MeasureFields...)
+		if !ok {
+			return
+		}
+		m := Measure{Title: r.Text(fields["title"], itemPath+".title")}
+		if m.Title == "" {
+			r.Errorf(item, itemPath+".title", "add the measure's title")
+		}
+		if n := fields["filter"]; n != nil {
+			m.Filter = parseFilter(r, n, itemPath+".filter", scope)
+		}
+		if n := fields["share"]; n != nil {
+			m.Share = parseFilter(r, n, itemPath+".share", scope)
+		} else {
+			r.Errorf(item, itemPath+".share", "add the condition the measure is the share of, in share")
+		}
+		measures = append(measures, m)
+	})
+	if node == nil || (node.Kind == yaml.SequenceNode && len(node.Content) == 0) {
+		r.Errorf(configdoc.OrNode(node, key), path, "add the measures, each a title and a share")
+	}
+
+	return measures
+}
+
 // checkPath reports a path written the old way, with $ before a built-in
 // or a scorecard, or not as a path at all.
 func checkPath(r *configdoc.Reader, node *yaml.Node, path, text string) {
@@ -675,6 +735,13 @@ func (w Widget) Filters() []*filter.Filter {
 	}
 	if w.Link != nil && w.Link.Filter != nil {
 		filters = append(filters, w.Link.Filter)
+	}
+	for _, m := range w.Measures {
+		for _, f := range []*filter.Filter{m.Filter, m.Share} {
+			if f != nil {
+				filters = append(filters, f)
+			}
+		}
 	}
 
 	return filters
@@ -717,6 +784,13 @@ func (w Widget) MapFilters(fn func(*filter.Filter) *filter.Filter) Widget {
 		link.Query = mapQuery(link.Query)
 		link.Filter = fn(link.Filter)
 		w.Link = &link
+	}
+	if w.Measures != nil {
+		measures := make([]Measure, len(w.Measures))
+		for i, m := range w.Measures {
+			measures[i] = Measure{Title: m.Title, Filter: fn(m.Filter), Share: fn(m.Share)}
+		}
+		w.Measures = measures
 	}
 
 	return w
