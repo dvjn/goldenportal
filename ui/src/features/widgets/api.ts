@@ -88,7 +88,13 @@ export type Widget = {
 };
 
 // Tab is a page tab of widgets.
-export type Tab = { identifier: string; title: string; icon?: string; widgets: Widget[] };
+export type Tab = {
+  identifier: string;
+  title: string;
+  icon?: string;
+  when?: Filter;
+  widgets: Widget[];
+};
 
 // WidgetSource is the document a widget is written in.
 export type WidgetSource =

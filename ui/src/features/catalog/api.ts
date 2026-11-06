@@ -35,7 +35,8 @@ export type Incoming = {
   total: number;
 };
 
-export type EntityDetail = Entity & { incoming: Incoming[] };
+// hiddenTabs are the page's tabs whose when the entity doesn't meet.
+export type EntityDetail = Entity & { incoming: Incoming[]; hiddenTabs?: string[] };
 
 export type EntityPage = { entities: Entity[]; total: number };
 

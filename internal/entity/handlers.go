@@ -1,17 +1,21 @@
 package entity
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/widget"
 )
 
 // Register serves the catalog. The handlers read the request and call the
@@ -170,6 +174,8 @@ func intParam(ctx *gofr.Context, name string) (int, error) {
 type Detail struct {
 	*Entity
 	Incoming []Incoming `json:"incoming"`
+	// HiddenTabs are the page's tabs whose when the entity doesn't meet.
+	HiddenTabs []string `json:"hiddenTabs,omitempty"`
 }
 
 func get(ctx *gofr.Context) (any, error) {
@@ -178,7 +184,8 @@ func get(ctx *gofr.Context) (any, error) {
 
 // Get reads an entity with its resolved properties and incoming relations.
 func Get(ctx *gofr.Context, blueprintID, identifier string) (Detail, error) {
-	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+	p, err := auth.Require(ctx, auth.RoleMember)
+	if err != nil {
 		return Detail{}, err
 	}
 	specs, spec, err := publishedBlueprint(ctx, blueprintID)
@@ -201,8 +208,58 @@ func Get(ctx *gofr.Context, blueprintID, identifier string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
+	values := widget.MeValues(p)
+	widget.SetToday(values, time.Now())
+	hidden, err := store.HiddenTabs(ctx, Query{Blueprint: spec, Blueprints: specs}, e, values)
+	if err != nil {
+		return Detail{}, err
+	}
 
-	return Detail{Entity: e, Incoming: incoming}, nil
+	return Detail{Entity: e, Incoming: incoming, HiddenTabs: hidden}, nil
+}
+
+// HiddenTabs lists the tabs of e's page whose when e doesn't meet, in one
+// statement: each when is a share of e alone, 100 or 0. Values are what
+// they compare with besides e's own fields, such as $me.
+func (s Store) HiddenTabs(ctx context.Context, q Query, e *Entity, values widget.Values) ([]string, error) {
+	if q.Blueprint.Entity == nil {
+		return nil, nil
+	}
+	names := make([]string, 0, len(q.Blueprint.Properties))
+	for _, property := range q.Blueprint.Properties {
+		names = append(names, property.ID)
+	}
+	data := widget.EntityValues(e.Identifier, e.Title, q.Blueprint.Identifier, e.Properties, names)
+	var tabs []string
+	var shares []Aggregate
+	for _, tab := range q.Blueprint.Entity.Tabs {
+		// A when that compares only with values that aren't set has
+		// nothing left to ask, so the tab shows.
+		if when := widget.BindContext(tab.When, values, data); when != nil {
+			tabs = append(tabs, tab.ID)
+			shares = append(shares, Aggregate{Op: "share", Share: when})
+		}
+	}
+	if len(shares) == 0 {
+		return nil, nil
+	}
+	q.Filter = &Filter{Property: "identifier", Op: filter.OpEq, Value: e.Identifier}
+	m, err := NewMatch(q)
+	if err != nil {
+		return nil, err
+	}
+	met, err := s.Aggregates(ctx, m, shares)
+	if err != nil {
+		return nil, err
+	}
+	var hidden []string
+	for i, share := range met {
+		if share == nil || *share == 0 {
+			hidden = append(hidden, tabs[i])
+		}
+	}
+
+	return hidden, nil
 }
 
 func facets(ctx *gofr.Context) (any, error) {

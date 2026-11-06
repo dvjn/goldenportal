@@ -119,6 +119,11 @@ func checkPages(spec blueprint.Spec, blueprints map[string]blueprint.Spec, score
 		issues = append(issues, checkQueries(queries, blueprints)...)
 		var widgets []widget.Widget
 		for _, tab := range page.Tabs {
+			if page == spec.Entity {
+				if err := checkFilter(blueprints, spec, bind(tab.When)); err != nil {
+					issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: "spec.entity.tabs." + tab.ID + ".when", Message: err.Error()})
+				}
+			}
 			for _, w := range tab.Widgets {
 				// Check with the page entity's types, even when the widget shows another blueprint.
 				if page == spec.Entity {

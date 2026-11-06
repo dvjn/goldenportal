@@ -616,3 +616,30 @@ spec:
 		}
 	}
 }
+
+func TestCheckTabWhen(t *testing.T) {
+	own, issues := blueprint.Parse(`kind: Blueprint
+metadata: {name: job, title: Job}
+spec:
+  properties:
+    appliesTo: {type: array, items: {type: string}}
+  entity:
+    tabs:
+      adoption:
+        when: {property: appliesTo, op: contains, value: $entity.title}
+        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+      later:
+        when: {property: nope, op: exists}
+        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+`)
+	if configdoc.HasErrors(issues) {
+		t.Fatal(issues)
+	}
+	got := []string{}
+	for _, issue := range checkPages(own, map[string]blueprint.Spec{"job": own}, nil) {
+		got = append(got, issue.Severity+" "+issue.Path)
+	}
+	if want := "error spec.entity.tabs.later.when"; strings.Join(got, ", ") != want {
+		t.Fatalf("issues = %q, want %q", got, want)
+	}
+}

@@ -180,6 +180,34 @@ spec:
 	}
 }
 
+func TestParseTabWhen(t *testing.T) {
+	head := `
+kind: Blueprint
+metadata: {name: job, title: Job}
+spec:
+  properties:
+    appliesTo: {type: array, items: {type: string}}
+`
+	tab := "        when: {property: appliesTo, op: exists}\n        widgets: {n: {type: stat, title: N, value: {query: {blueprint: repository}}}}\n"
+	spec := mustParse(t, head+"  entity:\n    tabs:\n      adoption:\n"+tab)
+	if when := spec.Entity.Tabs[0].When; when == nil || when.Property != "appliesTo" || when.Op != "exists" {
+		t.Errorf("when = %+v", when)
+	}
+
+	tests := []struct{ name, page, path, message string }{
+		{"catalog tabs show no entity", "  catalog:\n    tabs:\n      adoption:\n", "spec.catalog.tabs.adoption.when", "only entity pages' tabs take it"},
+		{"the overview always shows", "  entity:\n    tabs:\n      overview:\n", "spec.entity.tabs.overview.when", "always shown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, issues := Parse(head + tt.page + tab)
+			if !HasErrors(issues) || issues[0].Path != tt.path || !strings.Contains(issues[0].Message, tt.message) {
+				t.Errorf("issues = %+v", issues)
+			}
+		})
+	}
+}
+
 func TestParseEntityLayout(t *testing.T) {
 	source := `
 kind: Blueprint

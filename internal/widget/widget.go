@@ -168,7 +168,7 @@ const (
 // The keys each mapping of a widget takes, beside its type's own, exported
 // so the documents' JSON Schemas can be checked against them.
 var (
-	TabFields    = []string{"title", "icon", "widgets"}
+	TabFields    = []string{"title", "icon", "when", "widgets"}
 	QueryFields  = []string{"blueprint", "filter"}
 	WidgetFields = []string{"type", "title", "description", "width"}
 	ValueFields  = slices.Concat([]string{"query", "unit"}, valueOps)

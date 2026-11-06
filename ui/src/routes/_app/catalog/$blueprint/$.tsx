@@ -100,7 +100,9 @@ function EntityPage() {
   const link = typeof linkValue === "string" && isWebUrl(linkValue) ? linkValue : undefined;
   const tabs = spec.entity?.tabs ?? [];
   const overview = tabs.find((t) => t.identifier === "overview");
-  const views = tabs.filter((t) => t.identifier !== "overview");
+  // A tab whose when the entity doesn't meet doesn't apply to it.
+  const hidden = new Set(entity.hiddenTabs);
+  const views = tabs.filter((t) => t.identifier !== "overview" && !hidden.has(t.identifier));
   const known: string[] = [
     "overview",
     ...views.map((v) => v.identifier),

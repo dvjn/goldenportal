@@ -304,6 +304,7 @@
           "propertyNames": { "not": { "const": "entities" } },
           "additionalProperties": {
             "properties": {
+              "when": false,
               "widgets": {
                 "additionalProperties": {
                   "not": { "properties": { "type": { "const": "properties" } }, "required": ["type"] }
@@ -328,7 +329,8 @@
         "queries": { "$ref": "#/$defs/queries" },
         "tabs": {
           "$ref": "#/$defs/tabs",
-          "propertyNames": { "not": { "enum": ["relations", "yaml"] } }
+          "propertyNames": { "not": { "enum": ["relations", "yaml"] } },
+          "properties": { "overview": { "properties": { "when": false } } }
         }
       },
       "additionalProperties": false

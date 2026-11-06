@@ -482,6 +482,10 @@
       "properties": {
         "title": { "type": "string", "description": "The tab's label. Defaults to its identifier." },
         "icon": { "$ref": "#/$defs/icon" },
+        "when": {
+          "$ref": "#/$defs/filter",
+          "description": "Entity pages only, and not the overview: the condition an entity meets to have the tab, such as {property: appliesTo, op: exists}. Other entities' pages leave it out."
+        },
         "widgets": { "$ref": "#/$defs/widgets" }
       },
       "required": ["widgets"],

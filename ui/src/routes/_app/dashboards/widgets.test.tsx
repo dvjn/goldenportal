@@ -828,6 +828,30 @@ describe("dashboards and page tabs", () => {
     expect(url.searchParams.get("entity")).toBe("ledger");
   });
 
+  it("leaves out the tabs an entity doesn't meet the when of, even when the URL asks", async () => {
+    const tab = (identifier: string, title: string) => ({
+      identifier,
+      title,
+      when: { property: "tier", op: "eq", value: "critical" },
+      widgets: [
+        { identifier: "note", type: "markdown" as const, title: "Note", width: 6, text: "Hello" },
+      ],
+    });
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(
+        withTabs({ entity: { tabs: [tab("incidents", "Incidents"), tab("oncall", "On-call")] } }),
+      ),
+      "GET catalog/service/entities/ledger": ok({ ...ledger, hiddenTabs: ["incidents"] }),
+      "GET catalog/service/scorecards": ok([]),
+    });
+    renderRoute("/catalog/service/ledger?tab=incidents");
+
+    expect(await screen.findByRole("tab", { name: "On-call" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Incidents" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("moves a dashboard's inputs into the page bar with its tabs once scrolled", async () => {
     let scrolledPast: (past: boolean) => void = () => {};
     vi.stubGlobal(
