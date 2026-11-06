@@ -116,13 +116,15 @@ export function WidgetGrid({
 }
 
 // WidgetTitle is a widget's title, with its description, such as the
-// period it covers, on hover rather than taking up the card.
+// period it covers, on hover rather than taking up the card. It sits above
+// a card-wide link's overlay, which would otherwise take the hover; a click
+// still reaches the link it's in.
 export function WidgetTitle({ widget }: Readonly<{ widget: Widget }>) {
   if (!widget.description) return <>{widget.title}</>;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="cursor-help underline decoration-muted-foreground/50 decoration-dotted underline-offset-4">
+        <span className="relative z-10 cursor-help underline decoration-muted-foreground/50 decoration-dotted underline-offset-4">
           {widget.title}
         </span>
       </TooltipTrigger>

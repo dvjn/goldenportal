@@ -518,7 +518,12 @@ describe("dashboards and page tabs", () => {
           ],
           defaults: { tier: ["critical"] },
           widgets: [
-            { ...overview.widgets[0], icon: "rocket", color: "red" },
+            {
+              ...overview.widgets[0],
+              icon: "rocket",
+              color: "red",
+              description: "Services marked critical, of all services.",
+            },
             {
               identifier: "readiness",
               type: "scorecard",
@@ -552,6 +557,12 @@ describe("dashboards and page tabs", () => {
       "[data-slot=card]",
     ) as HTMLElement;
     expect(card.querySelector(".bg-red-500\\/15 svg")).not.toBeNull();
+    // Its description shows on hovering its title, above the card's link.
+    expect(card).not.toHaveTextContent("Services marked critical");
+    await userEvent.setup().hover(within(card).getByText("Critical Services"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Services marked critical, of all services.",
+    );
     // Readiness leads with its checks passing, not the share at the top tier.
     expect(await screen.findByText("85%")).toBeInTheDocument();
     expect(screen.getByText("checks passing")).toBeInTheDocument();
