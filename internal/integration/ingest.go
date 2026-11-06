@@ -37,7 +37,8 @@ func (e ReceiveError) Error() string { return e.Reason }
 
 // FetchError is a request a connector couldn't complete because its system
 // didn't answer what it asked. Nothing the request carried was written, so
-// the sender may try it again.
+// the sender may try it again, except an event, which the next sync
+// catches up on.
 type FetchError struct{ Err error }
 
 func (e FetchError) Error() string { return e.Err.Error() }
@@ -174,10 +175,16 @@ func ingest(ctx *gofr.Context) (any, error) {
 		return nil, httpx.Error{Code: http.StatusUnprocessableEntity, Message: err.Error()}
 	case errors.As(err, &fetchErr):
 		// Recorded, so it shows with the integration's runs, and answered as
-		// a failure, so the sender's own log shows it to try again.
+		// a failure, so the sender's own log shows it to try again. An event
+		// is answered as taken: the next sync reads what it was about anyway,
+		// and a system that turns off a webhook whose deliveries keep
+		// failing, as GitLab does, would otherwise stop sending them all.
 		run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: mode, Error: err.Error(), Errors: []RunError{}}
 		if err := NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run); err != nil {
 			return nil, err
+		}
+		if w.spec.Events {
+			return run, nil
 		}
 		return nil, httpx.Error{Code: http.StatusBadGateway, Message: err.Error()}
 	case err != nil:

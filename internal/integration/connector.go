@@ -74,7 +74,7 @@ type PullRequest struct {
 	// on the same syncs, once the server has a key to derive it from.
 	WebhookSecret string
 	// Warn reports what went wrong without failing anything read, such as
-	// a webhook it couldn't set up, which the run records.
+	// a webhook it couldn't set up, which the run records. It's never nil.
 	Warn func(string)
 }
 
@@ -135,7 +135,7 @@ type CheckRequest struct {
 	IngestURL     string
 	WebhookSecret string
 	// Warn reports something optional that won't work, though the check
-	// passes.
+	// passes. It's never nil.
 	Warn func(string)
 }
 
@@ -162,6 +162,18 @@ var Connectors = []Connector{
 		Receives:    true,
 		Checks:      true,
 		parse:       parseHTTPConfig,
+	},
+	{
+		ID:          "gitlab",
+		Icon:        "git-merge",
+		Color:       "orange",
+		Title:       "GitLab",
+		Description: "Groups, projects, merge requests, issues, pipelines, deployments, members and more, read with an access token from GitLab.com or a self-managed instance, and kept fresh by each project's webhook.",
+		Pulls:       true,
+		Receives:    true,
+		Checks:      true,
+		Resources:   gitlabResources,
+		parse:       parseGitLabConfig,
 	},
 }
 

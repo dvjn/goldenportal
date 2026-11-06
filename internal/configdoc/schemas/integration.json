@@ -49,6 +49,227 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "connector": {
+                "properties": {
+                  "type": {
+                    "const": "gitlab"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "required": [
+              "connector"
+            ]
+          },
+          "then": {
+            "properties": {
+              "mappings": {
+                "items": {
+                  "description": "A gitlab mapping. Each item is GitLab's REST object as its lists give it, with what it belongs to under _gp: _gp.project, the project's full path, on everything in a project; _gp.group on members; and _gp.lastDeployment, the last successful deployment or null, on environments. A project carries what its default branch has, each null when it has none: _gp.defaultBranch, the branch, with protected and its commit; _gp.ciConfig, its CI lint, with valid, errors, warnings, includes and jobs without their scripts; and _gp.latestPipeline, its latest pipeline other than a child pipeline, as the pipelines resource gives one. A deleted tag or release carries only its name, or tag_name, and _gp, so identifiers must use only those. excludeArchived leaves archived projects out whole; a filter drops only the entities of its own mapping. The examples map each resource.",
+                  "examples": [
+                    {
+                      "resource": "groups",
+                      "blueprint": "namespace",
+                      "entity": {
+                        "identifier": ".full_path",
+                        "title": ".name",
+                        "properties": {
+                          "description": ".description",
+                          "parent": ".full_path | split(\"/\") | .[:-1] | join(\"/\") | select(. != \"\")",
+                          "url": ".web_url"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "projects",
+                      "blueprint": "repository",
+                      "filter": ".marked_for_deletion_on == null and .empty_repo != true",
+                      "entity": {
+                        "identifier": ".path_with_namespace",
+                        "title": ".name",
+                        "properties": {
+                          "service": ".path",
+                          "description": ".description",
+                          "visibility": ".visibility",
+                          "defaultBranch": ".default_branch",
+                          "archived": ".archived",
+                          "stars": ".star_count",
+                          "topics": ".topics",
+                          "url": ".web_url",
+                          "lastActivityAt": ".last_activity_at",
+                          "ci": "._gp.latestPipeline.status",
+                          "ciValid": "._gp.ciConfig.valid",
+                          "ciStages": "[._gp.ciConfig.jobs[]?.stage] | unique",
+                          "defaultBranchProtected": "._gp.defaultBranch.protected"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "tags",
+                      "blueprint": "tag",
+                      "entity": {
+                        "identifier": "._gp.project + \"@\" + .name",
+                        "title": ".name",
+                        "properties": {
+                          "repo": "._gp.project",
+                          "commit": ".commit.short_id"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "merge_requests",
+                      "blueprint": "merge-request",
+                      "entity": {
+                        "identifier": "._gp.project + \"!\" + (.iid | tostring)",
+                        "title": ".title",
+                        "properties": {
+                          "repo": "._gp.project",
+                          "state": "if .state == \"opened\" and .draft then \"draft\" else .state end",
+                          "author": ".author.username",
+                          "branch": ".source_branch",
+                          "url": ".web_url",
+                          "openedAt": ".created_at",
+                          "lastActivityAt": ".updated_at"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "issues",
+                      "blueprint": "issue",
+                      "entity": {
+                        "identifier": "._gp.project + \"#\" + (.iid | tostring)",
+                        "title": ".title",
+                        "properties": {
+                          "repo": "._gp.project",
+                          "state": ".state",
+                          "author": ".author.username",
+                          "labels": ".labels",
+                          "url": ".web_url"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "releases",
+                      "blueprint": "release",
+                      "entity": {
+                        "identifier": "._gp.project + \"@\" + .tag_name",
+                        "title": ".name // .tag_name",
+                        "properties": {
+                          "repo": "._gp.project",
+                          "tag": ".tag_name",
+                          "upcoming": ".upcoming_release",
+                          "releasedAt": ".released_at",
+                          "url": "._links.self"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "pipelines",
+                      "blueprint": "pipeline",
+                      "entity": {
+                        "identifier": ".id",
+                        "title": "._gp.project + \" \" + .ref",
+                        "properties": {
+                          "repo": "._gp.project",
+                          "ref": ".ref",
+                          "source": ".source",
+                          "status": ".status",
+                          "url": ".web_url",
+                          "triggeredAt": ".created_at"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "jobs",
+                      "blueprint": "job",
+                      "entity": {
+                        "identifier": ".id",
+                        "title": ".name",
+                        "properties": {
+                          "pipeline": ".pipeline.id | tostring",
+                          "stage": ".stage",
+                          "status": ".status",
+                          "startedAt": ".started_at",
+                          "seconds": ".duration",
+                          "url": ".web_url"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "deployments",
+                      "blueprint": "deployment",
+                      "entity": {
+                        "identifier": ".id",
+                        "title": "._gp.project + \" \" + .environment.name",
+                        "properties": {
+                          "repo": "._gp.project",
+                          "environment": ".environment.name",
+                          "version": ".sha[0:8]",
+                          "status": ".status",
+                          "startedAt": ".created_at",
+                          "finishedAt": ".finished_at"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "environments",
+                      "blueprint": "environment",
+                      "entity": {
+                        "identifier": "._gp.project + \"/\" + .name",
+                        "title": ".name",
+                        "properties": {
+                          "repo": "._gp.project",
+                          "tier": ".tier",
+                          "state": ".state",
+                          "url": ".external_url",
+                          "version": "._gp.lastDeployment.sha[0:8]",
+                          "deployedAt": "._gp.lastDeployment.finished_at"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "members",
+                      "blueprint": "group-member",
+                      "filter": ".state == \"active\"",
+                      "entity": {
+                        "identifier": "._gp.group + \"/\" + .username",
+                        "title": ".name",
+                        "properties": {
+                          "group": "._gp.group",
+                          "username": ".username",
+                          "accessLevel": ".access_level"
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "resource": {
+                      "enum": [
+                        "groups",
+                        "projects",
+                        "tags",
+                        "merge_requests",
+                        "issues",
+                        "releases",
+                        "pipelines",
+                        "jobs",
+                        "deployments",
+                        "environments",
+                        "members"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
@@ -58,12 +279,12 @@
       "description": "Where the data comes from.",
       "properties": {
         "type": {
-          "enum": ["portal", "http"],
-          "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource."
+          "enum": ["portal", "http", "gitlab"],
+          "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource. gitlab: GitLab's groups and projects and what's in them, read with an access token from GitLab.com or a self-managed instance, on a schedule and as webhook events."
         },
         "config": {
           "type": "object",
-          "description": "The connector's config. The http connector takes one; portal takes none."
+          "description": "The connector's config. The http and gitlab connectors take one; portal takes none."
         }
       },
       "required": ["type"],
@@ -73,6 +294,13 @@
           "then": {
             "required": ["config"],
             "properties": { "config": { "$ref": "#/$defs/httpConfig" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "gitlab" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/gitlabConfig" } }
           }
         },
         {
@@ -95,9 +323,79 @@
       "additionalProperties": false,
       "description": "A secret, read from the server's environment, never written in the document."
     },
+    "gitlabConfig": {
+      "type": "object",
+      "description": "The gitlab connector's config. Every sync is complete. Once the server has GP_BASE_URL and GP_WEBHOOK_KEY, syncs set up a webhook on each project they read, and never remove one. Groups and members change only on a sync.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https?://[^/]",
+          "description": "The GitLab instance's address, including any path, such as https://example.com/gitlab. Defaults to https://gitlab.com."
+        },
+        "token": {
+          "$ref": "#/$defs/secret",
+          "description": "A personal, group or project access token, read from the server's environment, with the read_api scope, or api to set up webhooks too. Its user needs at least the Reporter role in each group and project read, and Maintainer to set up their webhooks."
+        },
+        "groups": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Groups read whole, by full path, with their subgroups and their projects. List a group or one above it, not both.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.][A-Za-z0-9_.-]*(/[A-Za-z0-9_.][A-Za-z0-9_.-]*)*$"
+          }
+        },
+        "projects": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Projects read on their own, by full path, such as acme/api.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.][A-Za-z0-9_.-]*(/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+$"
+          }
+        },
+        "historyDays": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Days back a sync reads closed and merged merge requests, closed issues, pipelines with their jobs, and deployments. Older ones leave the catalog. Defaults to 30."
+        },
+        "excludeArchived": {
+          "type": "boolean",
+          "description": "Leave archived projects out, with everything in them. Defaults to false."
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "groups"
+          ]
+        },
+        {
+          "required": [
+            "projects"
+          ]
+        }
+      ],
+      "additionalProperties": false,
+      "examples": [
+        {
+          "url": "https://gitlab.example.com",
+          "token": {
+            "env": "GP_SECRET_GITLAB_TOKEN"
+          },
+          "groups": [
+            "acme"
+          ],
+          "excludeArchived": true
+        }
+      ]
+    },
     "httpConfig": {
       "type": "object",
-      "description": "The http connector's config. Only it takes one.",
+      "description": "The http connector's config.",
       "properties": {
         "push": { "$ref": "#/$defs/httpPush" },
         "resources": {
@@ -223,7 +521,7 @@
       "properties": {
         "resource": {
           "type": "string",
-          "description": "The resource whose items it maps (portal: users, groups, blueprints, integrations, actions or runs; http: a key of config.resources)."
+          "description": "The resource whose items it maps: one of the connector's resources, or for http, a key of config.resources."
         },
         "blueprint": {
           "$ref": "#/$defs/identifier",

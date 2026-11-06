@@ -205,6 +205,22 @@ func (r *Reader) Fields(node *yaml.Node, path string, allowed ...string) (map[st
 	return fields, true
 }
 
+// HasUnknownField reports whether a mapping has a key Fields refuses, so a
+// check that a field is missing can stay quiet when a misspelt key already
+// has an issue of its own.
+func HasUnknownField(node *yaml.Node, allowed ...string) bool {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if !slices.Contains(allowed, node.Content[i].Value) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Each calls fn for every entry of a mapping keyed by identifier.
 func (r *Reader) Each(node *yaml.Node, path string, fn func(id string, key, value *yaml.Node)) {
 	if node == nil {

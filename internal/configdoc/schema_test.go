@@ -370,6 +370,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Integration", "/$defs/signature", integration.SignatureFields, nil},
 		{"Integration", "/$defs/httpReceive", integration.HTTPReceiveFields, nil},
 		{"Integration", "/$defs/secret", integration.SecretFields, nil},
+		{"Integration", "/$defs/gitlabConfig", integration.GitLabConfigFields, nil},
 		{"Scorecard", "/$defs/spec", scorecard.SpecFields, nil},
 		{"Scorecard", "/$defs/tier", scorecard.TierFields, nil},
 		{"Scorecard", "/$defs/criterion", scorecard.CriterionFields, nil},
@@ -561,5 +562,43 @@ func TestSchemaConnectorResources(t *testing.T) {
 	}
 	if checked != fixed {
 		t.Errorf("the schema lists the resources of %d connectors; %d have fixed ones", checked, fixed)
+	}
+}
+
+// TestSchemaGitLabExamples checks the gitlab mappings' examples are valid
+// mappings, one for each resource, and the config's example a valid config.
+func TestSchemaGitLabExamples(t *testing.T) {
+	root := rawSchema(t, "Integration")
+	var gitlab any
+	for _, branch := range resolvePointer(t, root, "/$defs/spec/allOf").([]any) {
+		if resolvePointer(t, branch, "/if/properties/connector/properties/type/const") == "gitlab" {
+			gitlab = branch
+		}
+	}
+	configs := resolvePointer(t, root, "/$defs/gitlabConfig/examples").([]any)
+	if len(configs) == 0 {
+		t.Fatal("the gitlab config has no example")
+	}
+	var covered []string
+	for _, example := range resolvePointer(t, gitlab, "/then/properties/mappings/items/examples").([]any) {
+		mapping := example.(map[string]any)
+		doc := map[string]any{
+			"kind": "Integration", "metadata": map[string]any{"name": "gitlab", "title": "GitLab"},
+			"spec": map[string]any{"connector": map[string]any{"type": "gitlab", "config": configs[0]}, "mappings": []any{mapping}},
+		}
+		source, err := yaml.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, issues := integration.Parse(string(source)); len(issues) > 0 {
+			t.Errorf("the %s example: %v", mapping["resource"], issues)
+		}
+		covered = append(covered, mapping["resource"].(string))
+	}
+	slices.Sort(covered)
+	for _, c := range integration.Connectors {
+		if want := slices.Sorted(slices.Values(c.Resources)); c.ID == "gitlab" && !slices.Equal(covered, want) {
+			t.Errorf("the gitlab examples map %v; the connector has %v", covered, want)
+		}
 	}
 }

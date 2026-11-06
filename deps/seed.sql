@@ -638,6 +638,181 @@ spec:
             columns: [service, environment, version, startedAt]
             sort: -startedAt
             link: {query: failed}
+$yaml$),
+  ('repository', $yaml$kind: Blueprint
+metadata:
+  name: repository
+  title: Repository
+  description: A source repository.
+  icon: folder-git-2
+  color: gray
+spec:
+  properties:
+    service:
+      title: Service
+      description: The service built from it, which shares its name.
+      relation: service
+    description:
+      title: Description
+      type: string
+    visibility:
+      title: Visibility
+      type: string
+      enum: [public, internal, private]
+      display:
+        as: badge
+        colors: {public: amber, internal: indigo, private: gray}
+    defaultBranch:
+      title: Default Branch
+      type: string
+    archived:
+      title: Archived
+      type: boolean
+    ci:
+      title: CI
+      description: How the default branch's latest pipeline went.
+      type: string
+      enum: [created, waiting_for_resource, preparing, pending, running, success, failed, canceled, skipped, manual, scheduled]
+      display:
+        as: badge
+        colors: {running: sky, pending: gray, success: emerald, failed: red, canceled: gray, manual: amber}
+    ciValid:
+      title: CI Config Valid
+      description: Whether the default branch's CI configuration is valid, or empty without one.
+      type: boolean
+    ciStages:
+      title: CI Stages
+      type: array
+      items:
+        type: string
+    defaultBranchProtected:
+      title: Default Branch Protected
+      type: boolean
+    url:
+      title: URL
+      type: string
+      format: uri
+    lastActivityAt:
+      title: Last Activity
+      type: string
+      format: date-time
+  catalog:
+    columns: [service, visibility, ci, defaultBranchProtected, lastActivityAt]
+$yaml$),
+  ('merge-request', $yaml$kind: Blueprint
+metadata:
+  name: merge-request
+  title: Merge Request
+  description: A proposed change to a repository.
+  icon: git-pull-request
+  color: violet
+spec:
+  properties:
+    repo:
+      title: Repository
+      relation: repository
+      required: true
+    state:
+      title: State
+      type: string
+      enum: [opened, draft, merged, closed, locked]
+      display:
+        as: badge
+        colors: {opened: emerald, draft: gray, merged: violet, closed: rose, locked: amber}
+    author:
+      title: Author
+      type: string
+    branch:
+      title: Branch
+      type: string
+    url:
+      title: URL
+      type: string
+      format: uri
+    openedAt:
+      title: Opened
+      type: string
+      format: date-time
+    lastActivityAt:
+      title: Last Activity
+      type: string
+      format: date-time
+  catalog:
+    columns: [repo, state, author, lastActivityAt]
+$yaml$),
+  ('namespace', $yaml$kind: Blueprint
+metadata:
+  name: namespace
+  title: Namespace
+  description: A group of repositories, such as a team's.
+  icon: folder-tree
+  color: gray
+spec:
+  properties:
+    parent:
+      title: Parent
+      relation: namespace
+    description:
+      title: Description
+      type: string
+    visibility:
+      title: Visibility
+      type: string
+      enum: [public, internal, private]
+    url:
+      title: URL
+      type: string
+      format: uri
+  catalog:
+    columns: [parent, visibility]
+$yaml$),
+  ('pipeline', $yaml$kind: Blueprint
+metadata:
+  name: pipeline
+  title: Pipeline
+  description: A CI/CD pipeline run of a repository.
+  icon: workflow
+  color: teal
+spec:
+  properties:
+    repo:
+      title: Repository
+      relation: repository
+      required: true
+    ref:
+      title: Ref
+      type: string
+    source:
+      title: Trigger
+      type: string
+    status:
+      title: Status
+      type: string
+      enum: [created, waiting_for_resource, preparing, pending, running, success, failed, canceled, skipped, manual, scheduled]
+      display:
+        as: badge
+        colors:
+          created: gray
+          waiting_for_resource: gray
+          preparing: gray
+          pending: gray
+          running: sky
+          success: emerald
+          failed: red
+          canceled: gray
+          skipped: gray
+          manual: amber
+          scheduled: gray
+    triggeredAt:
+      title: Triggered
+      type: string
+      format: date-time
+    url:
+      title: URL
+      type: string
+      format: uri
+  catalog:
+    columns: [repo, ref, status, triggeredAt]
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -652,8 +827,11 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 -- token, all of it as a complete push and single teams between; the Service
 -- Registry, pulled every half hour and kept current between by events the
 -- registry signs; Incidents and Workflows, which the example actions write;
--- the Portal, which syncs the portal's own objects; and the Deploy Tracker,
--- pulled incrementally every five minutes and completely every hour.
+-- the Portal, which syncs the portal's own objects; the Deploy Tracker,
+-- pulled incrementally every five minutes and completely every hour; and
+-- GitLab, which reads the mock's acme group with an access token, and is
+-- kept current between syncs by the webhook its syncs set up on each
+-- project.
 WITH example (identifier, source) AS (VALUES
   ('team-directory', $yaml$kind: Integration
 metadata:
@@ -859,6 +1037,95 @@ spec:
           status: .status
           startedAt: .startedAt
           finishedAt: .finishedAt
+$yaml$),
+  ('gitlab', $yaml$kind: Integration
+metadata:
+  name: gitlab
+  title: GitLab
+  description: Groups, projects with their default branches and CI configs, merge requests, pipelines and deployments from the acme group on GitLab.
+spec:
+  connector:
+    type: gitlab
+    config:
+      url: http://localhost:47800/gitlab
+      token: {env: GP_SECRET_GITLAB_TOKEN}
+      groups: [acme]
+      excludeArchived: true
+      # The mock has a fortnight of history, so a week shows older merge
+      # requests and pipelines leaving the catalog.
+      historyDays: 7
+  sync:
+    interval: 30m
+  mappings:
+    - resource: groups
+      blueprint: namespace
+      entity:
+        identifier: .full_path
+        title: .name
+        properties:
+          parent: .full_path | split("/") | .[:-1] | join("/") | select(. != "")
+          description: .description
+          visibility: .visibility
+          url: .web_url
+    # A project marked for deletion is on its way out already, and one
+    # without a repository has nothing to build.
+    - resource: projects
+      blueprint: repository
+      filter: .marked_for_deletion_on == null and .empty_repo != true
+      entity:
+        identifier: .path_with_namespace
+        title: .name
+        properties:
+          service: .path
+          description: .description
+          visibility: .visibility
+          defaultBranch: .default_branch
+          archived: .archived
+          ci: ._gp.latestPipeline.status
+          ciValid: ._gp.ciConfig.valid
+          ciStages: '[._gp.ciConfig.jobs[]?.stage] | unique'
+          defaultBranchProtected: ._gp.defaultBranch.protected
+          url: .web_url
+          lastActivityAt: .last_activity_at
+    - resource: merge_requests
+      blueprint: merge-request
+      entity:
+        identifier: ._gp.project + "!" + (.iid | tostring)
+        title: .title
+        properties:
+          repo: ._gp.project
+          state: if .state == "opened" and .draft then "draft" else .state end
+          author: .author.username
+          branch: .source_branch
+          url: .web_url
+          openedAt: .created_at
+          lastActivityAt: .updated_at
+    - resource: pipelines
+      blueprint: pipeline
+      entity:
+        identifier: .id
+        title: '(._gp.project | split("/") | last) + " " + .ref + " #" + (.iid // .id | tostring)'
+        properties:
+          repo: ._gp.project
+          ref: .ref
+          source: .source
+          status: .status
+          triggeredAt: .created_at
+          url: .web_url
+    # GitLab's deployments of the services, beside the deploy tracker's.
+    - resource: deployments
+      blueprint: deployment
+      filter: .environment.name == "production" or .environment.name == "staging"
+      entity:
+        identifier: '"gitlab-" + (.id | tostring)'
+        title: (._gp.project | split("/") | last) + " " + .sha[0:8]
+        properties:
+          service: ._gp.project | split("/") | last
+          environment: .environment.name
+          version: .sha[0:8]
+          status: '{"success": "succeeded", "failed": "failed", "canceled": "failed"}[.status] // "running"'
+          startedAt: .created_at
+          finishedAt: if .status | IN("success", "failed", "canceled") then .finished_at // .updated_at else null end
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
