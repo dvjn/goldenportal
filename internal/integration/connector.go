@@ -175,6 +175,17 @@ var Connectors = []Connector{
 		Resources:   gitlabResources,
 		parse:       parseGitLabConfig,
 	},
+	{
+		ID:          "sonarqube",
+		Icon:        "gauge",
+		Color:       "sky",
+		Title:       "SonarQube",
+		Description: "Projects with their quality gate, coverage, issues, hotspots and ratings, and the repository each is bound to, read with a user token from SonarQube Server or Cloud.",
+		Pulls:       true,
+		Checks:      true,
+		Resources:   []string{sonarProjects},
+		parse:       parseSonarQubeConfig,
+	},
 }
 
 func connector(id string) (Connector, bool) {

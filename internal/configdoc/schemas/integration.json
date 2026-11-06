@@ -270,6 +270,38 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": { "connector": { "properties": { "type": { "const": "sonarqube" } }, "required": ["type"] } },
+            "required": ["connector"]
+          },
+          "then": {
+            "properties": {
+              "mappings": {
+                "items": {
+                  "description": "A sonarqube mapping. Each project is SonarQube's object as its project search gives it, with key, name and analysisDate, and under _gp: _gp.measures, its measures by metric key, numbers but for alert_status; _gp.qualityGate, its gate's status and conditions, or null if never analysed; and _gp.repository, the repository it's bound to, with alm and url, or null.",
+                  "examples": [
+                    {
+                      "resource": "projects",
+                      "blueprint": "sonar-project",
+                      "entity": {
+                        "identifier": ".key",
+                        "title": ".name",
+                        "properties": {
+                          "repo": "._gp.repository.url | select(. != null) | sub(\"^https?://[^/]+/\"; \"\")",
+                          "gate": "._gp.qualityGate.status",
+                          "coverage": "._gp.measures.coverage",
+                          "analysedAt": ".analysisDate"
+                        }
+                      }
+                    }
+                  ],
+                  "properties": { "resource": { "enum": ["projects"] } }
+                }
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
@@ -279,12 +311,12 @@
       "description": "Where the data comes from.",
       "properties": {
         "type": {
-          "enum": ["portal", "http", "gitlab"],
-          "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource. gitlab: GitLab's groups and projects and what's in them, read with an access token from GitLab.com or a self-managed instance, on a schedule and as webhook events."
+          "enum": ["portal", "http", "gitlab", "sonarqube"],
+          "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource. gitlab: GitLab's groups and projects and what's in them, read with an access token from GitLab.com or a self-managed instance, on a schedule and as webhook events. sonarqube: SonarQube's projects with their quality gate and measures, read with a user token on a schedule."
         },
         "config": {
           "type": "object",
-          "description": "The connector's config. The http and gitlab connectors take one; portal takes none."
+          "description": "The connector's config. The http, gitlab and sonarqube connectors take one; portal takes none."
         }
       },
       "required": ["type"],
@@ -301,6 +333,13 @@
           "then": {
             "required": ["config"],
             "properties": { "config": { "$ref": "#/$defs/gitlabConfig" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "sonarqube" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/sonarqubeConfig" } }
           }
         },
         {
@@ -322,6 +361,22 @@
       "required": ["env"],
       "additionalProperties": false,
       "description": "A secret, read from the server's environment, never written in the document."
+    },
+    "sonarqubeConfig": {
+      "type": "object",
+      "description": "The sonarqube connector's config. Every sync is complete, reading each project with its quality gate, its measures and the repository it's bound to, under _gp.",
+      "properties": {
+        "url": { "type": "string", "pattern": "^https?://[^/]", "description": "The SonarQube instance's address, such as https://sonarqube.example.com." },
+        "token": { "$ref": "#/$defs/secret", "description": "A user token, read from the server's environment, whose user can browse the projects. Seeing which repository a project is bound to also takes administering it; without that, projects come without one." },
+        "projects": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "The project keys to read, each a key or a pattern with *, such as acme_*. Left out, every project the token can browse.",
+          "items": { "type": "string", "pattern": "^\\S+$" }
+        }
+      },
+      "required": ["url", "token"],
+      "additionalProperties": false
     },
     "gitlabConfig": {
       "type": "object",
