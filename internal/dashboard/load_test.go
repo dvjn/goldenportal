@@ -93,7 +93,7 @@ spec:
 	}
 	for id, want := range map[string]string{
 		"count":    `{"data":{"value":4}}`,
-		"critical": `{"data":{"value":50,"unit":"%"}}`,
+		"critical": `{"data":{"value":50,"unit":"%","count":2,"total":4}}`,
 		"cost":     `{"data":{"value":1200,"unit":"USD"}}`,
 		"byOwner":  `{"data":{"groups":[{"value":"payments","title":"Payments","count":2},{"value":"search","title":"Search","count":1}],"none":1}}`,
 		"owners":   `{"data":{"groups":[{"value":"payments","title":"Payments","count":2},{"value":"search","title":"Search","count":1}],"none":1}}`,
@@ -153,6 +153,42 @@ spec:
 	want := `{"data":{"groups":[{"value":"critical","color":"rose","count":2},{"value":"standard","count":1}],"none":0}}`
 	if string(encoded) != want {
 		t.Errorf("byTier = %s\nwant %s", encoded, want)
+	}
+}
+
+func TestSplitsFollowTheirPropertysValues(t *testing.T) {
+	spec := mustParse(t, `
+kind: Dashboard
+metadata: {name: status, title: Status}
+spec:
+  widgets:
+    status: {type: split, title: Status, query: {blueprint: service}, groupBy: status}
+`)
+	bp, issues := blueprint.Parse(`
+kind: Blueprint
+metadata: {name: service, title: Service}
+spec:
+  properties:
+    status: {type: string, enum: [success, failed, canceled]}
+`)
+	if configdoc.HasErrors(issues) {
+		t.Fatal(issues)
+	}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// Most first, as the count comes, with a value the enum doesn't list.
+	mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text FROM \(SELECT e\.properties -> 'status' AS value`).
+		WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title"}).
+			AddRow([]byte(`"failed"`), 5, nil).AddRow([]byte(`"skipped"`), 3, nil).AddRow([]byte(`"success"`), 2, nil))
+
+	l := loader{ctx: t.Context(), db: db, store: entity.NewStore(db), blueprints: map[string]blueprint.Spec{"service": bp}}
+	encoded, _ := json.Marshal(l.load(spec.Widgets).Widgets["status"])
+	want := `{"data":{"groups":[{"value":"success","count":2},{"value":"failed","count":5},{"value":"skipped","count":3}],"none":0}}`
+	if string(encoded) != want {
+		t.Errorf("status = %s\nwant %s", encoded, want)
 	}
 }
 

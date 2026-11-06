@@ -151,7 +151,7 @@
         },
         "group": {
           "type": "boolean",
-          "description": "Bars and donuts only: each group opens its own entities."
+          "description": "Bars, donuts and splits only: each group opens its own entities."
         },
         "url": {
           "allOf": [{ "$ref": "#/$defs/template" }],
@@ -302,6 +302,22 @@
       "required": ["type", "title", "groupBy"],
       "additionalProperties": false
     },
+    "splitWidget": {
+      "type": "object",
+      "description": "One bar split by a field's values, each its share of a query's entities, with a legend of counts. Values come in the order the property lists them, such as a status's lifecycle. Default width 6.",
+      "properties": {
+        "type": { "const": "split" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "query": { "$ref": "#/$defs/queryRef" },
+        "groupBy": { "$ref": "#/$defs/groupBy" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many groups to show, the largest. Default 8." },
+        "link": { "$ref": "#/$defs/link" }
+      },
+      "required": ["type", "title", "groupBy"],
+      "additionalProperties": false
+    },
     "tableWidget": {
       "type": "object",
       "description": "A table of a query's entities, each row opening its entity. Default width 12.",
@@ -408,6 +424,7 @@
         { "$ref": "#/$defs/statWidget" },
         { "$ref": "#/$defs/barWidget" },
         { "$ref": "#/$defs/donutWidget" },
+        { "$ref": "#/$defs/splitWidget" },
         { "$ref": "#/$defs/tableWidget" },
         { "$ref": "#/$defs/scorecardWidget" },
         { "$ref": "#/$defs/markdownWidget" },

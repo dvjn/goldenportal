@@ -5,13 +5,21 @@ import { createContext, useContext } from "react";
 import { swatch } from "@/lib/colors";
 
 // BlueprintIcon draws the lucide icon a blueprint names, or a box when it
-// names none or one that doesn't exist.
+// names none or one that doesn't exist. Until a named icon has loaded, a
+// blank one holds its place, so the text beside it doesn't jump.
 export function BlueprintIcon({
   icon,
   className,
 }: Readonly<{ icon?: string; className?: string }>) {
   if (icon && (iconNames as readonly string[]).includes(icon)) {
-    return <DynamicIcon name={icon as IconName} className={className} aria-hidden />;
+    return (
+      <DynamicIcon
+        name={icon as IconName}
+        className={className}
+        aria-hidden
+        fallback={() => <svg width={24} height={24} className={className} aria-hidden />}
+      />
+    );
   }
   return <Box className={className} aria-hidden />;
 }
@@ -27,8 +35,9 @@ const tileSizes = {
   sm: { tile: "size-6 rounded-md", icon: "size-3.5" },
   default: { tile: "size-9", icon: "size-4.5" },
   lg: { tile: "size-10", icon: "size-5" },
-  // xl stands as tall as a stat's title over its number.
-  xl: { tile: "size-12", icon: "size-6" },
+  // stat stands as tall as a stat's title over its number, and shrinks in
+  // a card too narrow to keep the number whole beside it.
+  stat: { tile: "size-9 @[12rem]:size-12", icon: "size-4.5 @[12rem]:size-6" },
 };
 
 // IconTile sets an icon on a tile beside a title, tinted when given one of

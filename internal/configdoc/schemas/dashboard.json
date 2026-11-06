@@ -46,7 +46,7 @@
       "allOf": [
         { "not": { "properties": { "type": { "const": "properties" } }, "required": ["type"] } },
         {
-          "if": { "properties": { "type": { "enum": ["bar", "donut", "table"] } }, "required": ["type"] },
+          "if": { "properties": { "type": { "enum": ["bar", "donut", "split", "table"] } }, "required": ["type"] },
           "then": { "required": ["query"] }
         },
         {

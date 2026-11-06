@@ -20,8 +20,9 @@ type Group = {
   link?: LinkData;
 };
 
-// GroupWidget counts entities by a property's values, as bars or a donut.
-// A link to each group opens its entities; any other link is the card's.
+// GroupWidget counts entities by a property's values, as bars, a donut, or
+// one bar split into shares. A link to each group opens its entities; any
+// other link is the card's.
 export function GroupWidget({ widget, context, data, error }: WidgetProps<GroupData>) {
   if (error) return <WidgetError widget={widget} error={error} />;
   if (!data) return <WidgetLoading widget={widget} height="h-32" />;
@@ -47,6 +48,8 @@ export function GroupWidget({ widget, context, data, error }: WidgetProps<GroupD
         <p className="text-sm text-muted-foreground">Nothing to count yet.</p>
       ) : widget.type === "donut" ? (
         <Donut groups={groups} />
+      ) : widget.type === "split" ? (
+        <Split groups={groups} />
       ) : (
         <Bars groups={groups} />
       )}
@@ -99,6 +102,41 @@ function Bars({ groups }: Readonly<{ groups: Group[] }>) {
         </li>
       ))}
     </ul>
+  );
+}
+
+// Split is one bar of the groups' shares, in the order the server gives,
+// which for a property with listed values is theirs, with a legend of
+// counts and shares, as a scorecard's tiers are shown.
+function Split({ groups }: Readonly<{ groups: Group[] }>) {
+  const total = groups.reduce((sum, group) => sum + group.count, 0);
+  const share = (group: Group) => Math.round((group.count / total) * 100);
+  return (
+    <div className="grid gap-2">
+      <div
+        className="flex h-2.5 overflow-hidden rounded-full bg-muted"
+        role="img"
+        aria-label="Shares"
+      >
+        {groups.map((group) => (
+          <span
+            key={group.key}
+            className="h-full"
+            style={{ width: `${(group.count / total) * 100}%`, backgroundColor: group.color }}
+          />
+        ))}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        {groups.map((group) => (
+          <li key={group.key} className="flex min-w-0 items-center gap-1.5">
+            <span className={`size-2 shrink-0 rounded-full ${group.dot}`} aria-hidden />
+            <GroupLabel group={group} />
+            <span className="text-muted-foreground tabular-nums">{group.count}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{share(group)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -58,7 +58,7 @@ function loads(widget: Widget, source: WidgetSource) {
 }
 
 // WidgetGrid lays widgets out on a 12-column grid, in order, each as tall
-// as it needs. Source is the document they're written in. Their data loads
+// as the tallest in its row, so a row's cards line up. Source is the document they're written in. Their data loads
 // in one request, again whenever the context changes, and each widget
 // shows its own share, or why it couldn't load. When the request itself
 // fails, every widget would say the same, so the grid says it once.
@@ -91,7 +91,7 @@ export function WidgetGrid({
     );
   }
   return (
-    <div className="grid grid-cols-12 items-start gap-4">
+    <div className="grid grid-cols-12 gap-4">
       {widgets.map((widget) => {
         const result = results.data?.widgets[widget.identifier];
         let error: Error | undefined;
@@ -148,6 +148,7 @@ function WidgetBody(props: WidgetProps) {
       return <StatWidget {...(props as WidgetProps<StatData>)} />;
     case "bar":
     case "donut":
+    case "split":
       return <GroupWidget {...(props as WidgetProps<GroupData>)} />;
     case "table":
       return <TableWidget {...(props as WidgetProps<TableData>)} />;

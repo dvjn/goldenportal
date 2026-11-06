@@ -140,6 +140,7 @@ const (
 	TypeStat       = "stat"
 	TypeBar        = "bar"
 	TypeDonut      = "donut"
+	TypeSplit      = "split"
 	TypeTable      = "table"
 	TypeScorecard  = "scorecard"
 	TypeMarkdown   = "markdown"
@@ -179,6 +180,7 @@ var types = map[string]struct {
 	TypeStat:       {[]string{"value", "link", "icon", "color"}, 3},
 	TypeBar:        {[]string{"query", "groupBy", "limit", "link"}, 6},
 	TypeDonut:      {[]string{"query", "groupBy", "limit", "link"}, 4},
+	TypeSplit:      {[]string{"query", "groupBy", "limit", "link"}, 6},
 	TypeTable:      {[]string{"query", "columns", "sort", "limit", "link", "rowLink"}, 12},
 	TypeScorecard:  {[]string{"scorecard", "query", "link"}, 6},
 	TypeMarkdown:   {[]string{"text"}, 6},
@@ -390,7 +392,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		case w.Icon == "":
 			r.Errorf(n, path+".color", "color tints the icon, so add an icon too")
 		}
-	case TypeBar, TypeDonut:
+	case TypeBar, TypeDonut, TypeSplit:
 		w.GroupBy = r.Text(fields["groupBy"], path+".groupBy")
 		if w.GroupBy == "" {
 			r.Errorf(key, path+".groupBy", "add the property to count entities by, in groupBy")
@@ -518,7 +520,7 @@ var pathPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*(\.[a-zA-Z][a-zA-Z0
 func validPath(text string) bool { return pathPattern.MatchString(text) }
 
 // parseLink reads a link: a query, which opens the catalog with its
-// entities, or a url or path template. Only bars and donuts link each
+// entities, or a url or path template. Only bars, donuts and splits link each
 // group, and rows, which have no query of their own, only take templates.
 func parseLink(r *configdoc.Reader, node *yaml.Node, path, widgetType string, scope Scope) *Link {
 	if node.Kind != yaml.MappingNode {
@@ -561,8 +563,8 @@ func parseLink(r *configdoc.Reader, node *yaml.Node, path, widgetType string, sc
 	if n := fields["group"]; n != nil {
 		l.Group = r.Bool(n, path+".group")
 		switch {
-		case widgetType != TypeBar && widgetType != TypeDonut:
-			r.Errorf(n, path+".group", "only bars and donuts have groups to link")
+		case widgetType != TypeBar && widgetType != TypeDonut && widgetType != TypeSplit:
+			r.Errorf(n, path+".group", "only bars, donuts and splits have groups to link")
 		case l.Query == nil:
 			r.Errorf(n, path+".group", "group adds each group's value to a query, so it goes with query")
 		}

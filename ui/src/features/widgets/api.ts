@@ -8,6 +8,7 @@ export type WidgetType =
   | "stat"
   | "bar"
   | "donut"
+  | "split"
   | "table"
   | "scorecard"
   | "markdown"
@@ -104,7 +105,15 @@ export type LinkData = { blueprint?: string; filter?: Filter; sort?: string; hre
 
 // unit is the stat's own, or % for a share, or else the unit of the field
 // it sums up.
-export type StatData = { value: number | null; unit?: string; link?: LinkData };
+// A share also has count of total, the entities matching it of those its
+// query finds.
+export type StatData = {
+  value: number | null;
+  unit?: string;
+  count?: number;
+  total?: number;
+  link?: LinkData;
+};
 // none counts the entities without a value, which noneLink opens. A
 // group's color, such as a scorecard tier's, wins over its property's.
 export type GroupData = {

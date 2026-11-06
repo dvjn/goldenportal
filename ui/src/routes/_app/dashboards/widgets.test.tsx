@@ -456,10 +456,53 @@ describe("dashboards and page tabs", () => {
     stubApi({
       ...signedInMember,
       "GET home": ok([{ ...overview, widgets: [overview.widgets[0]] }]),
-      "GET dashboards/overview/data": loaded({ critical: { value: 25, unit: "%" } }),
+      "GET dashboards/overview/data": loaded({
+        critical: { value: 25, unit: "%", count: 1, total: 4 },
+      }),
     });
     renderRoute("/");
     expect(await screen.findByText("25%")).toBeInTheDocument();
+    // A share says what it's a share of.
+    expect(screen.getByText("1 of 4")).toBeInTheDocument();
+  });
+
+  it("shows a split as shares of one bar, in the order the server gives, each opening its group", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        {
+          ...overview,
+          widgets: [
+            {
+              identifier: "status",
+              type: "split",
+              title: "Status",
+              width: 6,
+              query: { blueprint: "service" },
+              groupBy: "status",
+              link: { query: { blueprint: "service" }, group: true },
+            },
+          ],
+        },
+      ]),
+      "GET blueprints/service": ok(service),
+      "GET dashboards/overview/data": loaded({
+        status: {
+          groups: [
+            { value: "success", count: 3, color: "emerald", link: { blueprint: "service" } },
+            { value: "failed", count: 1, color: "red", link: { blueprint: "service" } },
+          ],
+          none: 0,
+        },
+      }),
+    });
+    renderRoute("/");
+
+    const bar = await screen.findByRole("img", { name: "Shares" });
+    expect(bar.children).toHaveLength(2);
+    const legend = within(bar.parentElement as HTMLElement).getAllByRole("listitem");
+    expect(legend.map((item) => item.textContent)).toEqual(["success375%", "failed125%"]);
+    expect(screen.getByRole("link", { name: "failed" })).toBeInTheDocument();
   });
 
   it("shows a stat compactly with its icon, and a scorecard as numbers", async () => {

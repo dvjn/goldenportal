@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net/url"
 	"reflect"
@@ -34,8 +35,12 @@ const parallel = 4
 
 type (
 	statData struct {
-		Value *float64  `json:"value"`
-		Unit  string    `json:"unit,omitempty"`
+		Value *float64 `json:"value"`
+		Unit  string   `json:"unit,omitempty"`
+		// A share also says how many of how many it is, so a percentage of a
+		// handful reads as the handful it is.
+		Count *int      `json:"count,omitempty"`
+		Total *int      `json:"total,omitempty"`
 		Link  *linkData `json:"link,omitempty"`
 	}
 	groupData struct {
@@ -250,7 +255,7 @@ func (l loader) need(w widget.Widget, planFor func(*widget.Query, *filter.Filter
 		return l.stat(w, planFor(&w.Value.Query, w.Value.Query.Filter))
 	case widget.TypeScorecard:
 		return l.scorecard(w, planFor)
-	case widget.TypeBar, widget.TypeDonut:
+	case widget.TypeBar, widget.TypeDonut, widget.TypeSplit:
 		if w.Query == nil {
 			return nil
 		}
@@ -294,6 +299,10 @@ func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 	}
 	i := len(p.aggregates)
 	p.aggregates = append(p.aggregates, entity.Aggregate{Op: op, Path: path, Share: l.bind(v.Share)})
+	total := -1
+	if op == widget.OpShare {
+		total = p.countIndex()
+	}
 
 	return func() (any, error) {
 		if p.err != nil {
@@ -302,8 +311,27 @@ func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 		if p.valuesErr != nil {
 			return nil, p.valuesErr
 		}
-		return statData{Value: p.values[i], Unit: unit, Link: l.link(w, nil)}, nil
+		data := statData{Value: p.values[i], Unit: unit, Link: l.link(w, nil)}
+		if total >= 0 && p.values[i] != nil && p.values[total] != nil {
+			n := int(math.Round(*p.values[total]))
+			matched := int(math.Round(*p.values[i] * float64(n) / 100))
+			data.Count, data.Total = &matched, &n
+		}
+		return data, nil
 	}
+}
+
+// countIndex is where the plan's count of its entities is among its
+// aggregates, asking for it unless another stat already has.
+func (p *plan) countIndex() int {
+	for j, a := range p.aggregates {
+		if a.Op == widget.OpCount {
+			return j
+		}
+	}
+	p.aggregates = append(p.aggregates, entity.Aggregate{Op: widget.OpCount})
+
+	return len(p.aggregates) - 1
 }
 
 func (l loader) scorecard(w widget.Widget, planFor func(*widget.Query, *filter.Filter) *plan) func() (any, error) {
@@ -371,12 +399,35 @@ func (l loader) groups(w widget.Widget, p *plan) func() (any, error) {
 				data.Groups[i].Link = l.groupLink(w, single, &filter.Filter{Property: w.GroupBy, Op: filter.OpEq, Value: facet.Value})
 			}
 		}
+		if w.Type == widget.TypeSplit {
+			byEnum(data.Groups, info.Property)
+		}
 		// A list counts as none when it's empty, which exists can't say.
 		if g.none > 0 && linkGroups && single {
 			data.NoneLink = l.groupLink(w, single, &filter.Filter{Not: &filter.Filter{Property: w.GroupBy, Op: filter.OpExists}})
 		}
 		return data, nil
 	}
+}
+
+// byEnum puts a split's groups in the order its property lists its values,
+// such as a status's lifecycle, since a split reads as one whole left to
+// right; values it doesn't list keep their count order, after those it does.
+func byEnum(groups []group, property *blueprint.Property) {
+	if property == nil {
+		return
+	}
+	values := property.Enum
+	if values == nil && property.Items != nil {
+		values = property.Items.Enum
+	}
+	rank := func(g group) int {
+		if i := slices.IndexFunc(values, func(v any) bool { return fmt.Sprint(v) == fmt.Sprint(g.Value) }); i >= 0 {
+			return i
+		}
+		return len(values)
+	}
+	slices.SortStableFunc(groups, func(a, b group) int { return rank(a) - rank(b) })
 }
 
 func (l loader) table(w widget.Widget, p *plan) func() (any, error) {

@@ -269,7 +269,7 @@ func (c *widgetCheck) scorecard() {
 func (c *widgetCheck) entities(bp blueprint.Spec) {
 	w := c.w
 	switch w.Type {
-	case widget.TypeBar, widget.TypeDonut:
+	case widget.TypeBar, widget.TypeDonut, widget.TypeSplit:
 		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
 	case widget.TypeTable:
 		for _, column := range w.Columns {
