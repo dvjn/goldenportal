@@ -73,3 +73,25 @@ tracker:
     - {name: postgres-proxy, fails: 0.02, every: 8h, variance: 4h}
     - {name: api-gateway, fails: 0.1, every: 90m, variance: 45m}
     - {name: feature-flags, fails: 0.15, every: 30m, variance: 20m}
+
+# A GitLab instance for the gitlab integration to read, at /gitlab/api/v4,
+# with the acme group and a subgroup for each team, whose projects are named
+# for the services and whose members make the changes. It takes the token,
+# an owner's access token with the api scope, and counts rateLimit requests a
+# minute against it, sending GitLab's RateLimit headers. Something happens in
+# a project every so often, sent as an event to the project's webhooks, which
+# the integration's syncs set up, with their secret token in X-Gitlab-Token;
+# pipelines and deployments finish after a while, which sends their events
+# too.
+gitlab:
+  url: http://localhost:47800/gitlab
+  token: "${GP_SECRET_GITLAB_TOKEN}"
+  group: acme
+  subgroups:
+    payments: {members: [ada, grace], projects: [payments-api, ledger, checkout-web]}
+    search: {members: [grace, linus], projects: [search-api, indexer]}
+    identity: {members: [margaret, ada], projects: [auth-service]}
+    platform: {members: [linus, ken], projects: [api-gateway]}
+  rateLimit: 600
+  events: {every: 2m, variance: 1m}
+  pipelines: {min: 1m, max: 4m}

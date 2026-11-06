@@ -1,7 +1,8 @@
 // Command mock serves everything the local portal talks to that isn't the
 // portal: a sign-in provider, an operations API, a deploy tracker, a service
-// registry that also sends signed events, and a pusher that feeds an
-// integration over the ingest API. mock.yaml sets it up.
+// registry that also sends signed events, a GitLab group that sends webhook
+// events, and a pusher that feeds an integration over the ingest API.
+// mock.yaml sets it up.
 package main
 
 import (
@@ -23,6 +24,7 @@ type config struct {
 	Push     pushConfig     `yaml:"push"`
 	Tracker  trackerConfig  `yaml:"tracker"`
 	Registry registryConfig `yaml:"registry"`
+	GitLab   gitlabConfig   `yaml:"gitlab"`
 }
 
 func main() {
@@ -55,6 +57,10 @@ func main() {
 	registry.routes(mux)
 	newOps(cfg.Ops, registry.add).routes(mux)
 	go registry.run()
+
+	gitlab := newGitLab(cfg.GitLab)
+	gitlab.routes(mux)
+	go gitlab.run()
 
 	pusher, err := newPusher(cfg.Push, filepath.Dir(path))
 	if err != nil {
