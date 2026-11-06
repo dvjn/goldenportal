@@ -132,6 +132,18 @@ describe("catalog", () => {
     expect(await screen.findByRole("columnheader", { name: /Readiness/ })).toBeInTheDocument();
   });
 
+  it("offers no columns to choose while a blueprint has no entities", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": ok({ entities: [], total: 0 }),
+      "GET scorecards/readiness": ok(readiness),
+    });
+    renderRoute("/catalog/service");
+    expect(await screen.findByText("No service entities yet")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Columns" })).not.toBeInTheDocument();
+  });
+
   it("lists blueprints with their entity counts", async () => {
     stubApi({
       ...signedInMember,

@@ -468,12 +468,18 @@ function BlueprintCatalogPage() {
         setSearch({ f: undefined, d: undefined, where: undefined, page: undefined })
       }
       actions={
-        <ColumnsMenu
-          spec={spec}
-          shown={shown}
-          onChange={(cols) => setSearch({ cols: cols.join(",") })}
-          onReset={search.cols === undefined ? undefined : () => setSearch({ cols: undefined })}
-        />
+        // With no entities there are no columns to choose; a search or filter
+        // that matches none keeps the menu, so the toolbar doesn't shift.
+        (page.isPending ||
+          (page.data?.total ?? 0) > 0 ||
+          Boolean(search.q || search.f || search.d || search.where)) && (
+          <ColumnsMenu
+            spec={spec}
+            shown={shown}
+            onChange={(cols) => setSearch({ cols: cols.join(",") })}
+            onReset={search.cols === undefined ? undefined : () => setSearch({ cols: undefined })}
+          />
+        )
       }
       empty={
         <EmptyState
