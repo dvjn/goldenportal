@@ -186,6 +186,17 @@ var Connectors = []Connector{
 		Resources:   []string{sonarProjects},
 		parse:       parseSonarQubeConfig,
 	},
+	{
+		ID:          "authentik",
+		Icon:        "key-round",
+		Color:       "orange",
+		Title:       "authentik",
+		Description: "Users and groups with their attributes, and each group's members and parents, read with an API token from an authentik instance.",
+		Pulls:       true,
+		Checks:      true,
+		Resources:   []string{authentikUsers, authentikGroups},
+		parse:       parseAuthentikConfig,
+	},
 }
 
 func connector(id string) (Connector, bool) {

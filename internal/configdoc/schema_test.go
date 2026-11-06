@@ -372,6 +372,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Integration", "/$defs/secret", integration.SecretFields, nil},
 		{"Integration", "/$defs/gitlabConfig", integration.GitLabConfigFields, nil},
 		{"Integration", "/$defs/sonarqubeConfig", integration.SonarQubeConfigFields, nil},
+		{"Integration", "/$defs/authentikConfig", integration.AuthentikConfigFields, nil},
 		{"Scorecard", "/$defs/spec", scorecard.SpecFields, nil},
 		{"Scorecard", "/$defs/tier", scorecard.TierFields, nil},
 		{"Scorecard", "/$defs/criterion", scorecard.CriterionFields, nil},

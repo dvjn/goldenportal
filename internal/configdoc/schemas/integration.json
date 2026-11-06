@@ -302,6 +302,34 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": { "connector": { "properties": { "type": { "const": "authentik" } }, "required": ["type"] } },
+            "required": ["connector"]
+          },
+          "then": {
+            "properties": {
+              "mappings": {
+                "items": {
+                  "description": "An authentik mapping. Each user is authentik's object as its user list gives it, with username, name, email, is_active, last_login, type and attributes, and under _gp: _gp.groups, the names of the groups it's in, counting those it's in through a child group as authentik does, and _gp.directGroups, those it was added to. Each group is authentik's object, with name and attributes, and under _gp: _gp.members and _gp.directMembers, its members' usernames the same two ways, and _gp.ancestors, the names of its parents, theirs, and so on. Attributes are whatever the instance's admins set, such as a mark that a group is a team.",
+                  "examples": [
+                    {
+                      "resource": "groups",
+                      "blueprint": "team",
+                      "filter": ".attributes.goldenportal.team == true",
+                      "entity": {
+                        "identifier": ".name | ascii_downcase | gsub(\"[^a-z0-9]+\"; \"-\")",
+                        "title": ".name",
+                        "properties": { "members": "._gp.members" }
+                      }
+                    }
+                  ],
+                  "properties": { "resource": { "enum": ["users", "groups"] } }
+                }
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
@@ -311,12 +339,12 @@
       "description": "Where the data comes from.",
       "properties": {
         "type": {
-          "enum": ["portal", "http", "gitlab", "sonarqube"],
-          "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource. gitlab: GitLab's groups and projects and what's in them, read with an access token from GitLab.com or a self-managed instance, on a schedule and as webhook events. sonarqube: SonarQube's projects with their quality gate and measures, read with a user token on a schedule."
+          "enum": ["portal", "http", "gitlab", "sonarqube", "authentik"],
+          "description": "portal: the portal's own users, groups, blueprints, integrations, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource. gitlab: GitLab's groups and projects and what's in them, read with an access token from GitLab.com or a self-managed instance, on a schedule and as webhook events. sonarqube: SonarQube's projects with their quality gate and measures, read with a user token on a schedule. authentik: authentik's users and groups with their attributes, read with an API token on a schedule."
         },
         "config": {
           "type": "object",
-          "description": "The connector's config. The http, gitlab and sonarqube connectors take one; portal takes none."
+          "description": "The connector's config. The http, gitlab, sonarqube and authentik connectors take one; portal takes none."
         }
       },
       "required": ["type"],
@@ -343,6 +371,13 @@
           }
         },
         {
+          "if": { "properties": { "type": { "const": "authentik" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/authentikConfig" } }
+          }
+        },
+        {
           "if": { "properties": { "type": { "const": "portal" } } },
           "then": { "properties": { "config": false } }
         }
@@ -361,6 +396,16 @@
       "required": ["env"],
       "additionalProperties": false,
       "description": "A secret, read from the server's environment, never written in the document."
+    },
+    "authentikConfig": {
+      "type": "object",
+      "description": "The authentik connector's config. Every sync is complete, reading every user and group the token's user can view.",
+      "properties": {
+        "url": { "type": "string", "pattern": "^https?://[^/]", "description": "The authentik instance's address, such as https://auth.example.com." },
+        "token": { "$ref": "#/$defs/secret", "description": "An API token, read from the server's environment, whose user can view users and groups, such as a service account with a role that grants both." }
+      },
+      "required": ["url", "token"],
+      "additionalProperties": false
     },
     "sonarqubeConfig": {
       "type": "object",
