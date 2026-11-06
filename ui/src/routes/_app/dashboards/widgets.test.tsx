@@ -167,7 +167,7 @@ describe("dashboards and page tabs", () => {
           publishedVersion: 0,
           hasDraft: true,
           stats: { widgets: 1 },
-          facts: { order: 2, visibility: null, defaultFor: null },
+          facts: { order: 2, group: { title: "Deep Dives" }, visibility: null, defaultFor: null },
           updatedAt: "2026-10-24T10:00:00Z",
         },
         {
@@ -194,6 +194,7 @@ describe("dashboards and page tabs", () => {
     expect(services.getByTitle("Role")).toHaveTextContent("builder");
     expect(services.getAllByTitle("Group")).toHaveLength(2);
     expect(services.getByText("Published")).toBeInTheDocument();
+    expect(teams.getByText("Deep Dives")).toBeInTheDocument();
     expect(teams.getByText("Everyone")).toBeInTheDocument();
     expect(teams.getByText("Draft")).toBeInTheDocument();
     expect(teams.queryByText("Published")).not.toBeInTheDocument();
@@ -556,8 +557,8 @@ describe("dashboards and page tabs", () => {
     expect(screen.getByText("checks passing")).toBeInTheDocument();
     expect(screen.queryByText("75%")).not.toBeInTheDocument();
     expect(screen.queryByText(/reached|scored/)).not.toBeInTheDocument();
-    // Home leads with its tabs; its title only names the page.
-    expect(screen.getByRole("heading", { name: "Home" })).toHaveClass("sr-only");
+    // Home is titled with the dashboard it shows.
+    expect(screen.getByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
   });
 
   it("opens the preferred visible dashboard unless the URL chooses another", async () => {
@@ -570,14 +571,57 @@ describe("dashboards and page tabs", () => {
       ]),
     });
     renderRoute("/");
-    expect(await screen.findByRole("tab", { name: "Welcome", selected: true })).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Overview" }));
-    expect(
-      await screen.findByRole("tab", { name: "Overview", selected: true }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Welcome" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Welcome" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await user.click(screen.getByRole("link", { name: "Overview" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Welcome" })).not.toHaveAttribute("aria-current");
   });
 
-  it("shows Home's dashboards as tabs, each widget linking into the catalog", async () => {
+  it("lists Home's dashboards under Home in the sidebar, a group folding open", async () => {
+    const user = userEvent.setup();
+    const devops = { title: "DevOps", icon: "infinity" };
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        { ...overview, widgets: [] },
+        { ...welcome, group: devops },
+        { ...welcome, identifier: "security", title: "Security", order: 3, group: devops },
+      ]),
+    });
+    renderRoute("/");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
+    const fold = await screen.findByRole("button", { name: "DevOps" });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "Security" })).not.toBeInTheDocument();
+
+    await user.click(fold);
+    await user.click(await screen.findByRole("link", { name: "Security" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Security" })).toBeInTheDocument();
+    // The trail leads back through the group, which opens its first dashboard.
+    const trail = within(screen.getByRole("navigation", { name: "breadcrumb" }));
+    expect(trail.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+    expect(trail.getByRole("link", { name: "DevOps" })).toHaveAttribute("href", "/?d=welcome");
+    const sidebarHome = () =>
+      screen
+        .getAllByRole("link", { name: "Home" })
+        .find((link) => link.dataset.sidebar === "menu-button");
+    expect(screen.getByRole("link", { name: "Security" })).toHaveAttribute("aria-current", "page");
+    // Home itself isn't marked while one of its dashboards is.
+    expect(sidebarHome()).not.toHaveAttribute("data-active", "true");
+
+    // Folding Home away marks Home instead.
+    await user.click(screen.getByRole("button", { name: "Dashboards" }));
+    expect(screen.queryByRole("link", { name: "Security" })).not.toBeInTheDocument();
+    expect(sidebarHome()).toHaveAttribute("data-active", "true");
+  });
+
+  it("shows Home's dashboards one at a time, each widget linking into the catalog", async () => {
     const user = userEvent.setup();
     stubApi({
       ...signedInMember,
@@ -604,9 +648,7 @@ describe("dashboards and page tabs", () => {
     });
     renderRoute("/");
 
-    expect(
-      await screen.findByRole("tab", { name: "Overview", selected: true }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
     const count = await stat(/Services$/, "3");
     expect(count.getAttribute("href")).toMatch(/^\/catalog\/service\?view=entities&f=/);
     expect(decodeURIComponent(count.getAttribute("href") ?? "")).toContain('"tier":["critical"]');
@@ -621,7 +663,7 @@ describe("dashboards and page tabs", () => {
       'where={"not":{"property":"owner","op":"exists"}}',
     );
 
-    await user.click(screen.getByRole("tab", { name: "Welcome" }));
+    await user.click(screen.getByRole("link", { name: "Welcome" }));
     expect(await screen.findByText("at its source")).toBeInTheDocument();
   });
 

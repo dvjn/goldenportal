@@ -381,6 +381,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Dashboard", "/$defs/defaultQuery", dashboard.DefaultFields, nil},
 		{"Dashboard", "/$defs/defaultQuery/properties/query", widget.QueryFields, nil},
 		{"Dashboard", "/$defs/audience", dashboard.AudienceFields, nil},
+		{"Dashboard", "/$defs/group", dashboard.GroupFields, nil},
 		{"Action", "/$defs/spec", action.SpecFields, nil},
 		{"Action", "/$defs/access", action.AccessFields, nil},
 		{"Action", "/$defs/storedInput", blueprint.InputFields, []string{"relation", "many"}},

@@ -51,6 +51,12 @@ export function LinkIcon({ link }: Readonly<{ link: ReactNode }>) {
   return <IconTile size="lg" />;
 }
 
+// Crumb gives a link in a trail an icon its path can't tell, such as a
+// group of dashboards. PageBreadcrumbs reads it rather than rendering it.
+export function Crumb(_: Readonly<{ icon: ReactNode; children: ReactNode }>) {
+  return null;
+}
+
 function BlueprintTile({ blueprint }: Readonly<{ blueprint: string }>) {
   const { data } = useQuery(blueprints.queries.detail(blueprint));
   return <IconTile icon={data?.icon} color={data?.color} size="lg" />;
@@ -71,26 +77,34 @@ export function PageBreadcrumbs({ children, page }: PageBreadcrumbsProps) {
     <InCrumb value>
       <Breadcrumb className={cn(compact && "min-w-0")}>
         <BreadcrumbList className={cn(compact && "flex-nowrap")}>
-          {links.map((link, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: the trail never reorders.
-            <Fragment key={index}>
-              <BreadcrumbItem
-                className={cn(
-                  "gap-1.5",
-                  compact && "min-w-0 shrink-4 max-sm:hidden",
-                  compact && index === 0 && "shrink-8",
+          {links.map((child, index) => {
+            const crumb =
+              isValidElement<{ icon: ReactNode; children: ReactNode }>(child) &&
+              child.type === Crumb
+                ? child.props
+                : undefined;
+            const link = crumb ? crumb.children : child;
+            return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: the trail never reorders.
+              <Fragment key={index}>
+                <BreadcrumbItem
+                  className={cn(
+                    "gap-1.5",
+                    compact && "min-w-0 shrink-4 max-sm:hidden",
+                    compact && index === 0 && "shrink-8",
+                  )}
+                >
+                  {crumb ? crumb.icon : <LinkIcon link={link} />}
+                  <BreadcrumbLink asChild className="truncate">
+                    {link}
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                {(compact || index < links.length - 1) && (
+                  <BreadcrumbSeparator className={cn(compact && "max-sm:hidden")} />
                 )}
-              >
-                <LinkIcon link={link} />
-                <BreadcrumbLink asChild className="truncate">
-                  {link}
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              {(compact || index < links.length - 1) && (
-                <BreadcrumbSeparator className={cn(compact && "max-sm:hidden")} />
-              )}
-            </Fragment>
-          ))}
+              </Fragment>
+            );
+          })}
           {compact && (
             <BreadcrumbItem className="min-w-0 gap-1.5">
               {icon}

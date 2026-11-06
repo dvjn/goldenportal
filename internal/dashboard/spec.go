@@ -29,12 +29,22 @@ type Spec struct {
 	Icon        string `json:"icon,omitempty"`
 	Color       string `json:"color,omitempty"`
 	// Order sorts Home's tabs, lowest first.
-	Order      int             `json:"order"`
+	Order int `json:"order"`
+	// Group puts the dashboard under one tab with the others of the same
+	// group title, which picks between them from a menu.
+	Group      *Group          `json:"group,omitempty"`
 	Visibility *Audience       `json:"visibility,omitempty"`
 	DefaultFor *Audience       `json:"defaultFor,omitempty"`
 	Inputs     []Input         `json:"inputs"`
 	Queries    []widget.Query  `json:"queries"`
 	Widgets    []widget.Widget `json:"widgets"`
+}
+
+// Group is a tab several dashboards share. The first of them in Home's
+// order gives it its icon.
+type Group struct {
+	Title string `json:"title"`
+	Icon  string `json:"icon,omitempty"`
 }
 
 // Input is a value Home asks for above the dashboard. It narrows only the
@@ -84,10 +94,11 @@ var inputTypes = []string{InputEnum, InputString, InputRelation}
 // The keys each mapping of a dashboard takes, exported so the documents'
 // JSON Schema can be checked against them.
 var (
-	SpecFields     = []string{"order", "inputs", "queries", "widgets", "visibility", "defaultFor"}
+	SpecFields     = []string{"order", "group", "inputs", "queries", "widgets", "visibility", "defaultFor"}
 	InputFields    = []string{"title", "type", "values", "relation", "multiple", "default"}
 	DefaultFields  = []string{"query", "otherwise"}
 	AudienceFields = []string{"roles", "groups"}
+	GroupFields    = []string{"title", "icon"}
 )
 
 // reservedInputs can't name an input, since Home's URL uses them.
@@ -103,7 +114,7 @@ func (s Spec) Stats() map[string]int { return map[string]int{"widgets": len(s.Wi
 
 // Facts show where the dashboard sits on Home and who sees it there.
 func (s Spec) Facts() map[string]any {
-	return map[string]any{"order": s.Order, "visibility": s.Visibility, "defaultFor": s.DefaultFor}
+	return map[string]any{"order": s.Order, "group": s.Group, "visibility": s.Visibility, "defaultFor": s.DefaultFor}
 }
 
 // render fills in the viewer's $me variables in the dashboard's text, for
@@ -148,6 +159,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 			r.Errorf(n, "spec.order", "order must be a whole number")
 		}
 	}
+	spec.Group = parseGroup(r, fields["group"])
 	spec.Visibility = parseAudience(r, fields["visibility"], "spec.visibility")
 	spec.DefaultFor = parseAudience(r, fields["defaultFor"], "spec.defaultFor")
 	scope := widget.Scope{}
@@ -351,4 +363,21 @@ func texts(r *configdoc.Reader, node *yaml.Node, path string) []string {
 	})
 
 	return values
+}
+
+func parseGroup(r *configdoc.Reader, node *yaml.Node) *Group {
+	if node == nil {
+		return nil
+	}
+	fields, ok := r.Fields(node, "spec.group", GroupFields...)
+	if !ok {
+		return nil
+	}
+	g := &Group{Title: strings.TrimSpace(r.Text(fields["title"], "spec.group.title")), Icon: r.Text(fields["icon"], "spec.group.icon")}
+	if g.Title == "" {
+		r.Errorf(node, "spec.group.title", "add the group's title, which its tab shows, such as Deep Dives")
+		return nil
+	}
+
+	return g
 }

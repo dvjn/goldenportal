@@ -59,17 +59,32 @@ spec:
 	}
 }
 
-func TestFactsShowOrderAndAudience(t *testing.T) {
+func TestFactsShowPlaceAndAudience(t *testing.T) {
 	spec := mustParse(t, `kind: Dashboard
 metadata: {name: mine, title: Mine}
 spec:
   order: 3
+  group: {title: Deep Dives, icon: layers}
   visibility: {roles: [builder]}
   widgets:
     hello: {type: markdown, text: Hello}
 `)
 	encoded, _ := json.Marshal(spec.Facts())
-	if want := `{"defaultFor":null,"order":3,"visibility":{"roles":["builder"]}}`; string(encoded) != want {
+	if want := `{"defaultFor":null,"group":{"title":"Deep Dives","icon":"layers"},"order":3,"visibility":{"roles":["builder"]}}`; string(encoded) != want {
 		t.Errorf("Facts = %s, want %s", encoded, want)
+	}
+}
+
+func TestGroupProblems(t *testing.T) {
+	for _, c := range []struct{ group, want string }{
+		{"{icon: layers}", "add the group's title"},
+		{"{title: ' '}", "add the group's title"},
+		{"{title: Deep Dives, colour: red}", "colour"},
+		{"Deep Dives", "spec.group"},
+	} {
+		_, issues := Parse("kind: Dashboard\nmetadata: {name: mine, title: Mine}\nspec:\n  group: " + c.group + "\n  widgets:\n    hello: {type: markdown, text: Hello}\n")
+		if len(issues) != 1 || !strings.Contains(issues[0].Message+issues[0].Path, c.want) {
+			t.Errorf("group %s: issues = %+v, want one about %q", c.group, issues, c.want)
+		}
 	}
 }

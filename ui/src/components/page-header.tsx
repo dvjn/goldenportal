@@ -25,9 +25,6 @@ type PageHeaderProps = {
   // toolbar is a row of controls under the tabs, such as a dashboard's
   // inputs, which joins the bar with them. compact says it's the bar's.
   toolbar?: (compact: boolean) => ReactNode;
-  // headless leaves the heading out, for a page its tabs lead. The title
-  // still names the page in the document title, breadcrumbs and bar.
-  headless?: boolean;
 };
 
 // PageHeader is the header every page starts with, so titles look the same
@@ -43,7 +40,6 @@ export function PageHeader({
   icon,
   tabs,
   toolbar,
-  headless,
 }: PageHeaderProps) {
   usePageTitle(title);
   const bar = usePageBar();
@@ -63,33 +59,26 @@ export function PageHeader({
           bar.compact,
         )}
       <div ref={ref} data-slot="page-header" className="grid gap-6">
-        {/* The trail sits closer to the title it leads to than the rows below.
-            Without a heading, an empty trail would still leave the gap. */}
-        <div className={headless ? "contents" : "grid gap-3"}>
+        {/* The trail sits closer to the title it leads to than the rows below. */}
+        <div className="grid gap-3">
           <PageTrail>{crumbs}</PageTrail>
-          {headless ? (
-            <h1 className="sr-only">{title}</h1>
-          ) : (
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                {icon}
-                <div className="grid min-w-0 gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-2xl font-semibold tracking-tight">{heading ?? title}</h1>
-                    {badges && (
-                      <span data-slot="page-badges" className="contents">
-                        {badges}
-                      </span>
-                    )}
-                  </div>
-                  {description && (
-                    <div className="text-sm text-muted-foreground">{description}</div>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              {icon}
+              <div className="grid min-w-0 gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl font-semibold tracking-tight">{heading ?? title}</h1>
+                  {badges && (
+                    <span data-slot="page-badges" className="contents">
+                      {badges}
+                    </span>
                   )}
                 </div>
+                {description && <div className="text-sm text-muted-foreground">{description}</div>}
               </div>
-              {actions && <div className="flex items-center gap-2">{actions}</div>}
             </div>
-          )}
+            {actions && <div className="flex items-center gap-2">{actions}</div>}
+          </div>
         </div>
         {tabs && (
           // Kept in place while the bar shows them, so the page doesn't jump.

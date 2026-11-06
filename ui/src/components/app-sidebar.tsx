@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useMatchRoute } from "@tanstack/react-router";
+import { HomeNav } from "@/components/dashboards/dashboard-nav";
 import { NavUser } from "@/components/nav-user";
 import { pageIcons } from "@/components/page-icons";
 import { SearchCommand } from "@/components/search-command";
@@ -40,9 +41,10 @@ const buildItems = [
   { to: "/workflows", label: "Workflows", icon: pageIcons.workflows },
 ] as const;
 
-// AppSidebar is the app's navigation. Members get Home, the catalog, self-service and
-// scorecards, and their activity: their runs and what waits on their approval, counted;
-// builders also get what they build, and admins Settings.
+// AppSidebar is the app's navigation. Members get Home, with its dashboards under
+// it, the catalog, self-service and scorecards, and their activity: their runs and
+// what waits on their approval, counted; builders also get what they build, and
+// admins Settings.
 export function AppSidebar() {
   const { name, logoUrl } = useConfig();
   const { role } = useMe();
@@ -77,16 +79,20 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu className="gap-1">
-            {mainItems.map(({ to, label, icon: Icon, exact }) => (
-              <SidebarMenuItem key={to}>
-                <SidebarMenuButton asChild isActive={active(to, !exact)} tooltip={label}>
-                  <Link to={to}>
-                    <Icon />
-                    <span>{label}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
+            {mainItems.map(({ to, label, icon: Icon, exact }) =>
+              to === "/" ? (
+                <HomeNav key={to} active={active(to, !exact)} />
+              ) : (
+                <SidebarMenuItem key={to}>
+                  <SidebarMenuButton asChild isActive={active(to, !exact)} tooltip={label}>
+                    <Link to={to}>
+                      <Icon />
+                      <span>{label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ),
+            )}
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup>

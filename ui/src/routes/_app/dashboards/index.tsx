@@ -33,6 +33,11 @@ const columns = [
     enableGlobalFilter: false,
     cell: ({ getValue }) => <span className="tabular-nums">{getValue()}</span>,
   }),
+  column.accessor((dashboard) => dashboard.facts?.group?.title ?? "", {
+    id: "group",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Group" />,
+    cell: ({ getValue }) => getValue() || <EmptyValue />,
+  }),
   column.display({
     id: "audience",
     header: () => "Audience",

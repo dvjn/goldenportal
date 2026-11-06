@@ -1,16 +1,15 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LayoutDashboard, Plus } from "lucide-react";
-import { BlueprintIcon } from "@/components/catalog/blueprint-icon";
+import { IconTile } from "@/components/catalog/blueprint-icon";
 import { EmptyCard } from "@/components/empty-state";
+import { Crumb, PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { PageIcon } from "@/components/page-icons";
-import { PageTab } from "@/components/page-tabs";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import { DashboardInputBar, DashboardView, type Picked } from "@/components/widgets/dashboard-view";
 import { hasRole, useMe } from "@/features/auth";
-import { homeQueryOptions } from "@/features/dashboards";
+import { homeQueryOptions, openDashboard } from "@/features/dashboards";
 
 // HomeSearch is the open dashboard, d, and what its inputs are set to.
 type HomeSearch = Picked & { d?: string };
@@ -39,7 +38,7 @@ export const Route = createFileRoute("/_app/")({
   component: HomePage,
 });
 
-// HomePage shows the dashboards, one tab each.
+// HomePage shows one dashboard, which the sidebar lists with the others.
 function HomePage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -55,7 +54,7 @@ function HomePage() {
           title="Nothing on Home yet"
           description={
             builder
-              ? "Each dashboard shows here as a tab."
+              ? "Each dashboard shows here, listed under Home in the sidebar."
               : "Dashboards show here once a builder adds them."
           }
         >
@@ -72,21 +71,29 @@ function HomePage() {
     );
   }
 
-  const active =
-    views.find((v) => v.identifier === search.d) ?? views.find((v) => v.preferred) ?? views[0];
+  const active = openDashboard(views, search.d);
+  const group = active.group;
+  // A group isn't a page of its own, so its crumb opens its first dashboard.
+  const first = group && views.find((v) => v.group?.title === group.title);
   const onPick = (patch: Picked) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
   return (
-    <Tabs
-      value={active.identifier}
-      onValueChange={(next) => navigate({ search: { d: next }, replace: true })}
-    >
+    <>
       <PageHeader
-        title="Home"
-        icon={<PageIcon page="home" />}
-        headless
-        // The open dashboard's inputs sit with its tabs, so they join the
-        // bar together rather than sticking on their own.
+        title={active.title}
+        icon={<IconTile icon={active.icon} color={active.color} size="lg" />}
+        breadcrumbs={
+          <PageBreadcrumbs page={active.title}>
+            <Link to="/">Home</Link>
+            {group && first && (
+              <Crumb icon={<IconTile icon={group.icon} size="lg" />}>
+                <Link to="/" search={{ d: first.identifier }}>
+                  {group.title}
+                </Link>
+              </Crumb>
+            )}
+          </PageBreadcrumbs>
+        }
         toolbar={
           active.inputs.length > 0
             ? (compact) => (
@@ -99,22 +106,14 @@ function HomePage() {
               )
             : undefined
         }
-        tabs={
-          <TabsList variant="line" aria-label="Dashboards">
-            {views.map((v) => (
-              <PageTab key={v.identifier} value={v.identifier}>
-                {v.icon && <BlueprintIcon icon={v.icon} />}
-                {v.title}
-              </PageTab>
-            ))}
-          </TabsList>
-        }
       />
-      {views.map((v) => (
-        <TabsContent key={v.identifier} value={v.identifier} className="grid gap-4 pt-2">
-          <DashboardView view={v} picked={search} onPick={onPick} withInputs={false} />
-        </TabsContent>
-      ))}
-    </Tabs>
+      <DashboardView
+        key={active.identifier}
+        view={active}
+        picked={search}
+        onPick={onPick}
+        withInputs={false}
+      />
+    </>
   );
 }

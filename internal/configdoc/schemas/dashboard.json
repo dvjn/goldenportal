@@ -15,6 +15,7 @@
       "type": "object",
       "properties": {
         "order": { "type": "integer", "description": "Sorts Home's tabs, lowest first." },
+        "group": { "$ref": "#/$defs/group" },
         "visibility": {
           "$ref": "#/$defs/audience",
           "description": "Who can see the dashboard. Left out, everyone."
@@ -54,6 +55,16 @@
           "then": { "properties": { "value": { "required": ["query"] } } }
         }
       ]
+    },
+    "group": {
+      "type": "object",
+      "description": "Puts the dashboard under one tab with the others of the same title, which picks between them from a menu. The tab sits where the first of them would, and takes that one's icon.",
+      "properties": {
+        "title": { "type": "string", "pattern": "\\S" },
+        "icon": { "$ref": "#/$defs/icon" }
+      },
+      "required": ["title"],
+      "additionalProperties": false
     },
     "audience": {
       "type": "object",

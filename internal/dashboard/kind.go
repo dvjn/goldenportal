@@ -31,6 +31,9 @@ func Diff(previous, next Spec) []configdoc.Change {
 	if previous.Order != next.Order {
 		add("dashboard", "", configdoc.ChangeChanged, "changes its order from %d to %d", previous.Order, next.Order)
 	}
+	if !reflect.DeepEqual(previous.Group, next.Group) {
+		add("dashboard", "", configdoc.ChangeChanged, "changes the tab it's grouped under")
+	}
 	if previous.Title != next.Title || previous.Description != next.Description || previous.Icon != next.Icon || previous.Color != next.Color {
 		add("dashboard", "", configdoc.ChangeChanged, "changes the title, description or icon")
 	}

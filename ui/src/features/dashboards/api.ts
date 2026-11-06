@@ -31,6 +31,9 @@ export type DashboardSpec = {
   color?: string;
   // order sorts Home's tabs, lowest first.
   order: number;
+  // group puts it under one tab with the dashboards of the same group
+  // title, which picks between them from a menu.
+  group?: DashboardGroup;
   visibility?: Audience;
   defaultFor?: Audience;
   inputs: DashboardInput[];
@@ -52,6 +55,10 @@ export type HomeDashboard = DashboardSpec & {
   problems?: Record<string, string>;
 };
 
+// DashboardGroup is a tab several dashboards share. The first of them in
+// Home's order gives it its icon.
+export type DashboardGroup = { title: string; icon?: string };
+
 export type Dashboard = ConfigDoc<DashboardSpec>;
 // Audience is who a dashboard is for: anyone with one of the roles or in
 // one of the groups.
@@ -60,7 +67,12 @@ export type Audience = { roles?: string[]; groups?: string[] };
 // DashboardSummary is a dashboard as listed, with where it sits on Home
 // and who sees it there, or opens on it.
 export type DashboardSummary = DocSummary & {
-  facts?: { order: number; visibility: Audience | null; defaultFor: Audience | null };
+  facts?: {
+    order: number;
+    group?: DashboardGroup | null;
+    visibility: Audience | null;
+    defaultFor: Audience | null;
+  };
 };
 
 export const dashboards = configDocs<DashboardSpec>("dashboards");
@@ -73,6 +85,14 @@ export const homeQueryOptions = queryOptions({
   queryKey: [...dashboards.keys.all, "home"] as const,
   queryFn: listHome,
 });
+
+// openDashboard is the dashboard Home shows: the one the URL names, else
+// the viewer's preferred one, else the first.
+export function openDashboard(views: HomeDashboard[], identifier?: string) {
+  return (
+    views.find((v) => v.identifier === identifier) ?? views.find((v) => v.preferred) ?? views[0]
+  );
+}
 
 // viewDashboard is one dashboard as Home would show it to whoever is
 // looking, from the draft when a builder asks, for the preview.

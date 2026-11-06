@@ -8,4 +8,5 @@ export {
   dashboardViewQueryOptions,
   type HomeDashboard,
   homeQueryOptions,
+  openDashboard,
 } from "./api";
