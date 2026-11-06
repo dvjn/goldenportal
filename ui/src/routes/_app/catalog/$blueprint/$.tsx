@@ -94,7 +94,12 @@ function EntityPage() {
     return <UnpublishedBlueprint blueprint={blueprint} title={doc.title} page={entity.title} />;
   }
   const header = spec.entity?.header;
-  const subtitle = header?.subtitle ? propertyByID(spec, header.subtitle) : undefined;
+  // A subtitle with nothing to say leaves no placeholder under the title.
+  const subtitleValue = header?.subtitle ? entity.properties[header.subtitle] : undefined;
+  const subtitle =
+    header?.subtitle && subtitleValue != null && subtitleValue !== ""
+      ? propertyByID(spec, header.subtitle)
+      : undefined;
   const badges = (header?.badges ?? []).flatMap((id) => propertyByID(spec, id) ?? []);
   const linkValue = header?.link ? entity.properties[header.link] : undefined;
   const link = typeof linkValue === "string" && isWebUrl(linkValue) ? linkValue : undefined;

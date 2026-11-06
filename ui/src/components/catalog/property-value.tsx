@@ -168,17 +168,7 @@ export function PropertyValue({
     if (as === "badge") {
       return <ValueBadge value={value ? "Yes" : "No"} color={colors?.[String(value)]} />;
     }
-    return value ? (
-      <span className="flex items-center gap-1">
-        <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
-        Yes
-      </span>
-    ) : (
-      <span className="flex items-center gap-1 text-muted-foreground">
-        <X className="size-3.5" aria-hidden />
-        No
-      </span>
-    );
+    return <BooleanValue value={value} compact={compact} />;
   }
   if (typeof value === "object") {
     return <code className="font-mono text-xs break-all">{JSON.stringify(value)}</code>;
@@ -281,6 +271,26 @@ export function ValueBadge({
 // Empty marks a missing value, in the words the property's display gives.
 // EmptyValue stands in for a value that isn't there: the label a display
 // gives, or else a hyphen, as every empty value shows. title says why on hover.
+// BooleanValue is a yes or no, with a mark that stands out for yes. In a
+// table the mark says it alone, so a column of them scans for the gaps.
+export function BooleanValue({ value, compact }: Readonly<{ value: boolean; compact?: boolean }>) {
+  const word = value ? "Yes" : "No";
+  return value ? (
+    <span className="flex items-center gap-1" title={compact ? word : undefined}>
+      <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+      <span className={cn(compact && "sr-only")}>{word}</span>
+    </span>
+  ) : (
+    <span
+      className="flex items-center gap-1 text-muted-foreground"
+      title={compact ? word : undefined}
+    >
+      <X className="size-3.5" aria-hidden />
+      <span className={cn(compact && "sr-only")}>{word}</span>
+    </span>
+  );
+}
+
 export function EmptyValue({ label, title }: Readonly<{ label?: string; title?: string }>) {
   if (label) return <span className="text-muted-foreground">{label}</span>;
   return (

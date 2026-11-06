@@ -364,6 +364,30 @@ describe("catalog", () => {
     );
   });
 
+  it("says a link's negated conditions the plain way round", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([]),
+    });
+    const search = (value: unknown) => encodeURIComponent(JSON.stringify(value));
+    const where = {
+      and: [
+        { property: "archived", op: "ne", value: true },
+        { not: { property: "pipeline", op: "ne", value: "none" } },
+        { not: { property: "docs", op: "exists" } },
+      ],
+    };
+    renderRoute(`/catalog/service?where=${search(where)}`);
+
+    expect(await screen.findByText("archived:")).toBeInTheDocument();
+    expect(screen.getByText("No")).toBeInTheDocument();
+    expect(screen.getByText("none")).toBeInTheDocument();
+    expect(screen.getByText("no value")).toBeInTheDocument();
+    expect(screen.queryByText(/^not /)).not.toBeInTheDocument();
+  });
+
   it("filters entities by when they were updated", async () => {
     const user = userEvent.setup();
     const requests = stubApi({
@@ -529,6 +553,37 @@ describe("catalog", () => {
     expect(within(other).getByText("Owner Slack")).toBeInTheDocument();
     expect(within(other).queryByText("Tier")).not.toBeInTheDocument();
     expect(within(other).queryByText("Summary")).not.toBeInTheDocument();
+  });
+
+  it("leaves no subtitle placeholder when the entity has none", async () => {
+    const spec = service.published?.spec;
+    if (!spec) throw new Error("service is published");
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok({
+        ...service,
+        published: {
+          ...service.published,
+          spec: {
+            ...spec,
+            properties: [
+              ...spec.properties,
+              { identifier: "summary", title: "Summary", type: "string" },
+            ],
+            entity: { header: { subtitle: "summary" }, tabs: [] },
+          },
+        } as Blueprint["published"],
+      }),
+      "GET catalog/service/entities/ledger": ok({
+        ...ledger,
+        properties: { ...ledger.properties, summary: "" },
+      }),
+      "GET catalog/service/scorecards": ok([]),
+    });
+    renderRoute("/catalog/service/ledger");
+
+    expect(await screen.findByRole("heading", { name: "Ledger" })).toBeInTheDocument();
+    expect(screen.queryByText("None")).not.toBeInTheDocument();
   });
 
   it("lists the first few related entities of a group and shows the rest on request", async () => {

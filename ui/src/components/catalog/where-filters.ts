@@ -78,10 +78,43 @@ const compareDates: Record<string, string> = {
   lte: "until",
 };
 
+// opposite is the comparison a negated one reads as, so a dashboard's
+// failing side, such as not (pipeline type not none), reads as none.
+const opposite: Record<string, string> = {
+  eq: "ne",
+  ne: "eq",
+  gt: "lte",
+  gte: "lt",
+  lt: "gte",
+  lte: "gt",
+};
+
+// negate says a condition the other way round where it has a plain
+// opposite, or undefined where only "not" says it.
+function negate(filter: Filter): Filter | undefined {
+  if ("not" in filter) return filter.not;
+  if ("and" in filter || "or" in filter) return undefined;
+  const op = opposite[filter.op];
+  return op ? { ...filter, op } : undefined;
+}
+
 // describe says a condition as a chip's title and summary.
 function describe(filter: Filter, names: Map<string, Named>): { title: string; summary: string } {
   if ("not" in filter) {
+    const flipped = negate(filter.not);
+    if (flipped) return describe(flipped, names);
     const inner = describe(filter.not, names);
+    if ("property" in filter.not) {
+      switch (filter.not.op) {
+        case "exists":
+          return { title: inner.title, summary: "no value" };
+        case "contains":
+          return {
+            title: inner.title,
+            summary: inner.summary.replace(/^contains/, "doesn't contain"),
+          };
+      }
+    }
     return { title: inner.title, summary: `not ${inner.summary}` };
   }
   if ("and" in filter || "or" in filter) {
@@ -106,6 +139,9 @@ function describe(filter: Filter, names: Map<string, Named>): { title: string; s
     case "in":
       return { title, summary: (filter.values ?? []).map(label).join(", ") };
     case "ne":
+      // A yes or no that isn't one is the other, or not set, which reads
+      // as the other too.
+      if (typeof filter.value === "boolean") return { title, summary: label(!filter.value) };
       return { title, summary: `not ${label(filter.value)}` };
     case "contains":
       return { title, summary: `contains ${label(filter.value)}` };

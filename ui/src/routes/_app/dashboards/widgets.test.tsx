@@ -418,6 +418,9 @@ describe("dashboards and page tabs", () => {
       "href",
       "/integrations/ledger",
     );
+    // A long title is cut, whole on hover, so the columns stay in view.
+    expect(within(ledgerRow).getByText("Ledger")).toHaveClass("truncate");
+    expect(within(ledgerRow).getByText("Ledger")).toHaveAttribute("title", "Ledger");
     // A link that would leave the portal opens the entity instead.
     expect(screen.getByRole("link", { name: "Search" })).toHaveAttribute(
       "href",

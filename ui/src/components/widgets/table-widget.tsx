@@ -1,7 +1,12 @@
 import { cn } from "cn";
 import { RowActions, useRowActions } from "@/components/actions/entity-actions";
 import { EntityLink } from "@/components/catalog/entity-link";
-import { EmptyValue, formatNumber, PropertyValue } from "@/components/catalog/property-value";
+import {
+  BooleanValue,
+  EmptyValue,
+  formatNumber,
+  PropertyValue,
+} from "@/components/catalog/property-value";
 import { tableCellClass } from "@/components/data-table";
 import { ScoreLink } from "@/components/scorecards/scorecard-value";
 import {
@@ -66,11 +71,11 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
                   <TableCell className={cn(tableCellClass, "font-medium")}>
                     {linkable(link) ? (
                       <WidgetLink link={link} className="hover:underline">
-                        {row.title}
+                        <RowTitle title={row.title} />
                       </WidgetLink>
                     ) : (
                       <EntityLink blueprint={data.blueprint} identifier={row.identifier}>
-                        {row.title}
+                        <RowTitle title={row.title} />
                       </EntityLink>
                     )}
                   </TableCell>
@@ -155,6 +160,16 @@ function BuiltIn({ name, value }: Readonly<{ name: string; value: unknown }>) {
   return value;
 }
 
+// RowTitle cuts a long title, such as a merge request's, so the columns
+// after it stay in view; the whole title shows on hover.
+function RowTitle({ title }: Readonly<{ title: string }>) {
+  return (
+    <span className="block max-w-80 truncate" title={title}>
+      {title}
+    </span>
+  );
+}
+
 // Computed shows what a jq column worked out: numbers in its unit, and
 // lists as their items.
 function Computed({ value, unit }: Readonly<{ value: unknown; unit?: string }>) {
@@ -164,7 +179,8 @@ function Computed({ value, unit }: Readonly<{ value: unknown; unit?: string }>) 
   if (typeof value === "number") {
     return <span className="tabular-nums">{formatNumber(value, unit)}</span>;
   }
-  if (typeof value === "boolean") return value ? "Yes" : "No";
+  // A yes or no reads the same as a boolean property's.
+  if (typeof value === "boolean") return <BooleanValue value={value} compact />;
   if (Array.isArray(value)) {
     return value.length === 0 ? (
       <EmptyValue />
