@@ -51,18 +51,18 @@ func yamlIssue(err error) Issue {
 // Document is what every configuration document shares: its kind, its
 // metadata, and the spec its kind defines.
 type Document struct {
-	Kind string
-	Name string
-	Meta Meta
-	Spec *yaml.Node
-	Root *yaml.Node
+	Kind       string
+	Identifier string
+	Meta       Meta
+	Spec       *yaml.Node
+	Root       *yaml.Node
 }
 
 // The keys a document's envelope and its metadata take, exported so the
 // documents' JSON Schemas can be checked against them.
 var (
 	DocumentFields = []string{"kind", "metadata", "spec"}
-	MetadataFields = []string{"name", "title", "description", "icon", "color"}
+	MetadataFields = []string{"identifier", "title", "description", "icon", "color"}
 )
 
 // ReadDocument reads a document's envelope, kind / metadata / spec,
@@ -90,12 +90,12 @@ func ReadDocument(r *Reader, source, kind string) Document {
 
 	metadata := fields["metadata"]
 	if metadata == nil {
-		r.Errorf(root, "metadata", "add metadata with a name and a title")
+		r.Errorf(root, "metadata", "add metadata with an identifier and a title")
 	} else if meta, ok := r.Fields(metadata, "metadata", MetadataFields...); ok {
-		doc.Name = r.Text(meta["name"], "metadata.name")
-		if !ValidIdentifier(doc.Name) {
-			r.Errorf(OrNode(meta["name"], metadata), "metadata.name",
-				"name must start with a lowercase letter and use only lowercase letters, digits, - and _ (up to 63)")
+		doc.Identifier = r.Text(meta["identifier"], "metadata.identifier")
+		if !ValidIdentifier(doc.Identifier) {
+			r.Errorf(OrNode(meta["identifier"], metadata), "metadata.identifier",
+				"identifier must start with a lowercase letter and use only lowercase letters, digits, - and _ (up to 63)")
 		}
 		doc.Meta.Title = r.Text(meta["title"], "metadata.title")
 		if strings.TrimSpace(doc.Meta.Title) == "" {

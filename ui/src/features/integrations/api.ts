@@ -1,5 +1,5 @@
 import { type ConfigDoc, configDocs, type DocSummary } from "@/features/config-docs";
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, type Page } from "@/lib/api";
 
 export type Field = { identifier: string; expression: string };
 
@@ -169,11 +169,7 @@ export async function listStatus(): Promise<IntegrationStatus[]> {
   return (await api.get("integration-status").json<ApiDataResponse<IntegrationStatus[]>>()).data;
 }
 
-export type RunPage = {
-  runs: Run[];
-  // total is how many runs match the filters, across every page.
-  total: number;
-};
+export type RunPage = Page<Run>;
 
 export type RunTrigger = Run["trigger"];
 export type RunOutcome = "running" | "succeeded" | "warnings" | "failed";

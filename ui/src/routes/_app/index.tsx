@@ -51,7 +51,7 @@ function HomePage() {
         <PageHeader title="Home" icon={<PageIcon page="home" />} />
         <EmptyCard
           icon={<LayoutDashboard />}
-          title="Nothing on Home yet"
+          title="No dashboards yet"
           description={
             builder
               ? "Each dashboard shows here, listed under Home in the sidebar."

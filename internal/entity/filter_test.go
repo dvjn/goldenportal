@@ -10,7 +10,7 @@ import (
 const serviceYAML = `
 kind: Blueprint
 metadata:
-  name: service
+  identifier: service
   title: Service
 spec:
   properties:
@@ -141,8 +141,8 @@ func TestCompileFilterRejects(t *testing.T) {
 		{"empty in", `{"property":"tier","op":"in"}`, "needs values"},
 		{"in with value", `{"property":"tier","op":"in","value":"critical"}`, "takes values"},
 		{"unbound values", `{"property":"tier","op":"in","values":"$input.tier"}`, "isn't set here"},
-		{"old built-in", `{"property":"$title","op":"exists"}`, "built-in fields are written plain, as title"},
-		{"old scorecard", `{"property":"$scorecard.readiness","op":"exists"}`, "declare a scorecard property"},
+		{"dollar built-in", `{"property":"$title","op":"exists"}`, `no property "$title"`},
+		{"dollar scorecard", `{"property":"$scorecard.readiness","op":"exists"}`, `no property "$scorecard"`},
 		{"within needs a duration", `{"property":"lastDeployedAt","op":"within","value":"604800 seconds"}`, "such as 30m, 12h, 7d or 2w"},
 		{"within needs a date", `{"property":"stars","op":"within","value":"7d"}`, "only compares dates"},
 		{"scorecard result field", `{"property":"readiness.tier","op":"exists"}`, "isn't on a scorecard result"},
@@ -221,7 +221,7 @@ func TestOrderBy(t *testing.T) {
 	if _, err := c.orderBy("tags", nil); err == nil {
 		t.Error("sorting by a list should fail")
 	}
-	if _, err := c.orderBy("$updatedAt", nil); err == nil || !strings.Contains(err.Error(), "as updatedAt") {
-		t.Errorf("err = %v, want the plain spelling", err)
+	if _, err := c.orderBy("$updatedAt", nil); err == nil || !strings.Contains(err.Error(), `no property "$updatedAt"`) {
+		t.Errorf("err = %v, want an unknown property", err)
 	}
 }

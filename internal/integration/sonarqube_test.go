@@ -9,7 +9,7 @@ import (
 )
 
 const sonarYAML = `kind: Integration
-metadata: {name: sonar, title: SonarQube}
+metadata: {identifier: sonar, title: SonarQube}
 spec:
   connector:
     type: sonarqube

@@ -137,7 +137,7 @@ describe("actions", () => {
       ...builder,
       "GET actions/restart": ok(restart),
       "GET actions/restart/versions": ok([]),
-      "GET actions/restart/runs": ok({ runs: [run], total: 1 }),
+      "GET runs": ok({ items: [run], total: 1 }),
       "GET catalog": ok([]),
     });
     renderRoute("/actions/restart");
@@ -164,11 +164,11 @@ describe("actions", () => {
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(await screen.findByRole("option", { name: "Status" }));
     await user.click(await screen.findByRole("option", { name: /Interrupted/ }));
-    await waitFor(() =>
-      expect(
-        new URL(requests["GET actions/restart/runs"]?.url ?? "").searchParams.get("status"),
-      ).toBe("interrupted"),
-    );
+    await waitFor(() => {
+      const params = new URL(requests["GET runs"]?.url ?? "").searchParams;
+      expect(params.get("status")).toBe("interrupted");
+      expect(params.get("action")).toBe("restart");
+    });
   });
 
   it("describes who approves an approval step, how many and for how long", async () => {
@@ -287,11 +287,11 @@ const entityPage = {
   "GET catalog/service/entities/ledger": ok(ledger),
   "GET catalog/service/scorecards": ok([]),
   "GET catalog/service/actions": ok([restartAvailable, scale]),
-  "GET runs": ok({ runs: [run], total: 1 }),
+  "GET runs": ok({ items: [run], total: 1 }),
   "GET runs/r1": ok({ ...run, steps: [] }),
   "GET actions/restart": ok(restart),
   "GET catalog/team": ok({
-    entities: [{ blueprint: "team", identifier: "payments", title: "Payments" }],
+    items: [{ blueprint: "team", identifier: "payments", title: "Payments" }],
     total: 1,
   }),
 };

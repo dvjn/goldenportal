@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"errors"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -69,13 +68,13 @@ func authenticate(ctx *gofr.Context, secret string) (writer, error) {
 		)
 		tokenID, integration, err = NewStore(ctx.SQL).TokenIntegration(ctx, auth.HashSecret(secret))
 		if errors.Is(err, ErrTokenNotFound) {
-			return writer{}, httpx.Error{Code: http.StatusUnauthorized, Message: "the ingestion token is invalid or revoked"}
+			return writer{}, httpx.Unauthorized("the ingestion token is invalid or revoked")
 		}
 		if err != nil {
 			return writer{}, err
 		}
 		if integration != identifier {
-			return writer{}, httpx.Error{Code: http.StatusForbidden, Message: "this ingestion token is for the " + integration + " integration"}
+			return writer{}, httpx.Forbidden("this ingestion token is for the " + integration + " integration")
 		}
 	}
 
@@ -83,20 +82,16 @@ func authenticate(ctx *gofr.Context, secret string) (writer, error) {
 	record, err := store.Get(ctx, identifier)
 	switch {
 	case secret == "" && (errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published())):
-		return writer{}, unauthorized(ErrUnverified)
+		return writer{}, httpx.Unauthorized(ErrUnverified.Error())
 	case err != nil:
 		return writer{}, err
 	case !record.Published():
-		return writer{}, httpx.Error{Code: http.StatusConflict, Message: "publish the integration before ingesting"}
+		return writer{}, httpx.Conflict("publish the integration before ingesting")
 	}
 	spec, _ := Parse(record.PublishedSource)
 	id, err := store.PublishedID(ctx, identifier)
 
 	return writer{id: id, tokenID: tokenID, spec: spec}, err
-}
-
-func unauthorized(err error) error {
-	return httpx.Error{Code: http.StatusUnauthorized, Message: err.Error()}
 }
 
 // ingest hands a request to the integration's connector and writes the
@@ -113,12 +108,9 @@ func ingest(ctx *gofr.Context) (any, error) {
 	receiver, ok := w.spec.config.(Receiver)
 	if !ok || !w.spec.Receives {
 		if in.Secret == "" {
-			return nil, unauthorized(ErrUnverified)
+			return nil, httpx.Unauthorized(ErrUnverified.Error())
 		}
-		return nil, httpx.Error{
-			Code:    http.StatusConflict,
-			Message: "the " + w.spec.Identifier + " integration takes no pushes; give one of its resources a push side",
-		}
+		return nil, httpx.Conflict("the " + w.spec.Identifier + " integration takes no pushes; give one of its resources a push side")
 	}
 
 	mode := ModeIncremental
@@ -126,24 +118,21 @@ func ingest(ctx *gofr.Context) (any, error) {
 	case "", ModeIncremental:
 	case ModeComplete:
 		if in.Secret == "" {
-			return nil, httpx.Error{Code: http.StatusForbidden, Message: "a complete push needs an ingestion token"}
+			return nil, httpx.Forbidden("a complete push needs an ingestion token")
 		}
 		if w.spec.Events {
-			return nil, httpx.Error{
-				Code:    http.StatusConflict,
-				Message: "the " + w.spec.Identifier + " integration takes events, each about one object, so a push can't be complete; its syncs are",
-			}
+			return nil, httpx.Conflict("the " + w.spec.Identifier + " integration takes events, each about one object, so a push can't be complete; its syncs are")
 		}
 		mode = ModeComplete
 	default:
-		return nil, badRequest("mode must be complete or incremental")
+		return nil, httpx.BadRequest("mode must be complete or incremental")
 	}
 	resources := receiver.Receives()
 	if r := in.Query.Get("resources"); r != "" {
 		resources = strings.Split(r, ",")
 		for _, name := range resources {
 			if !slices.Contains(receiver.Receives(), name) {
-				return nil, badRequest("resources must name resources the integration receives: " + strings.Join(receiver.Receives(), ", "))
+				return nil, httpx.BadRequest("resources must name resources the integration receives: " + strings.Join(receiver.Receives(), ", "))
 			}
 		}
 	}
@@ -166,13 +155,13 @@ func ingest(ctx *gofr.Context) (any, error) {
 	)
 	switch {
 	case errors.Is(err, ErrUnverified):
-		return nil, unauthorized(err)
+		return nil, httpx.Unauthorized(err.Error())
 	case errors.As(err, &signatureErr):
-		return nil, unauthorized(err)
+		return nil, httpx.Unauthorized(err.Error())
 	case errors.Is(err, ErrNotJSON):
-		return nil, badRequest(err.Error())
+		return nil, httpx.BadRequest(err.Error())
 	case errors.As(err, &receiveErr):
-		return nil, httpx.Error{Code: http.StatusUnprocessableEntity, Message: err.Error()}
+		return nil, httpx.Unprocessable(err.Error())
 	case errors.As(err, &fetchErr):
 		// Recorded, so it shows with the integration's runs, and answered as
 		// a failure, so the sender's own log shows it to try again. An event
@@ -186,7 +175,7 @@ func ingest(ctx *gofr.Context) (any, error) {
 		if w.spec.Events {
 			return run, nil
 		}
-		return nil, httpx.Error{Code: http.StatusBadGateway, Message: err.Error()}
+		return nil, httpx.BadGateway(err.Error())
 	case err != nil:
 		return nil, err
 	}
@@ -196,7 +185,7 @@ func ingest(ctx *gofr.Context) (any, error) {
 	}
 
 	run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: mode, Errors: []RunError{}}
-	unsafe, err := write(ctx, ctx.SQL, w.id, m.Map(items), run)
+	unsafe, err := write(ctx, ctx.SQL, w.id, m.Map(ctx, items), run)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +207,7 @@ func deleteEntity(ctx *gofr.Context) (any, error) {
 	started := time.Now().UTC()
 	in := auth.IngestRequest(ctx)
 	if in.Secret == "" {
-		return nil, unauthorized(ErrUnverified)
+		return nil, httpx.Unauthorized(ErrUnverified.Error())
 	}
 	w, err := authenticate(ctx, in.Secret)
 	if err != nil {
@@ -226,7 +215,7 @@ func deleteEntity(ctx *gofr.Context) (any, error) {
 	}
 	blueprintID, err := configdoc.NewStore(ctx.SQL, blueprint.Name).PublishedID(ctx, ctx.PathParam("blueprint"))
 	if errors.Is(err, configdoc.ErrNotFound) {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such blueprint"}
+		return nil, httpx.NotFound("no such blueprint")
 	}
 	if err != nil {
 		return nil, err
@@ -236,9 +225,9 @@ func deleteEntity(ctx *gofr.Context) (any, error) {
 	var owned entity.OwnedError
 	switch {
 	case errors.Is(err, entity.ErrNotFound):
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such entity"}
+		return nil, httpx.NotFound("no such entity")
 	case errors.As(err, &owned):
-		return nil, httpx.Error{Code: http.StatusForbidden, Message: owned.Error()}
+		return nil, httpx.Forbidden(owned.Error())
 	case err != nil:
 		return nil, err
 	}
@@ -336,7 +325,7 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, entries [
 			}
 			continue
 		}
-		computed, _ := spec.Compute(clean)
+		computed, _ := spec.Compute(ctx, clean)
 		outcome, err := entities.Upsert(ctx, blueprintIDs[e.Blueprint], integrationID, clean, computed)
 		switch {
 		case errors.As(err, &owned):

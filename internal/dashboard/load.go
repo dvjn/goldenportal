@@ -215,7 +215,7 @@ func (l loader) load(widgets []widget.Widget) PageData {
 	planFor := func(q *widget.Query, f *filter.Filter) *plan {
 		bp, ok := l.blueprints[q.Blueprint]
 		if !ok {
-			return &plan{err: notFound("no published blueprint " + q.Blueprint)}
+			return &plan{err: httpx.NotFound("no published blueprint " + q.Blueprint)}
 		}
 		bound := l.bind(f)
 		encoded, _ := json.Marshal(bound)
@@ -366,7 +366,7 @@ func (p *plan) countIndex() int {
 func (l loader) scorecard(w widget.Widget, planFor func(*widget.Query, *filter.Filter) *plan) func() (any, error) {
 	sc, ok := l.scorecards[w.Scorecard]
 	if !ok {
-		return func() (any, error) { return nil, notFound("no published scorecard " + w.Scorecard) }
+		return func() (any, error) { return nil, httpx.NotFound("no published scorecard " + w.Scorecard) }
 	}
 	q := &widget.Query{Blueprint: sc.Blueprint}
 	var f *filter.Filter
@@ -508,7 +508,7 @@ func (l loader) matrix(w widget.Widget, planFor func(*widget.Query, *filter.Filt
 				op = filter.OpContains
 			}
 			condition := &filter.Filter{Property: w.GroupBy, Op: op, Value: g.Value}
-			data.Rows[r].Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.bind(and(w.Query.Filter, condition))}
+			data.Rows[r].Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.linkFilter(and(w.Query.Filter, condition))}
 			for i := range w.Measures {
 				base, hit := measures[i][0], measures[i][1]
 				data.Rows[r].Cells = append(data.Rows[r].Cells, l.cell(w, base.filter, base.share, condition,
@@ -534,7 +534,7 @@ func (l loader) cell(w widget.Widget, base, share, group *filter.Filter, total, 
 	value := float64(count) * 100 / float64(total)
 	c.Value = &value
 	if count < total && share != nil {
-		c.Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.bind(and(base, group, &filter.Filter{Not: share}))}
+		c.Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.linkFilter(and(base, group, &filter.Filter{Not: share}))}
 	}
 
 	return c
@@ -711,7 +711,7 @@ func (l loader) tableJQ(w widget.Widget, q entity.Query, rows []entity.Row, out 
 				out[i].Values[j], err = widget.RunJQ(ctx, code, input, l.env)
 			}
 			if err != nil {
-				return badRequest(fmt.Sprintf("column %s, for %s: %v", c.Title, out[i].Identifier, err))
+				return httpx.BadRequest(fmt.Sprintf("column %s, for %s: %v", c.Title, out[i].Identifier, err))
 			}
 		}
 		if w.RowLink != nil {
@@ -775,11 +775,11 @@ func (l loader) documents(q entity.Query) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := l.store.Resolve(l.ctx, l.blueprints, q.Blueprint, page.Entities); err != nil {
+	if err := l.store.Resolve(l.ctx, l.blueprints, q.Blueprint, page.Items); err != nil {
 		return nil, err
 	}
-	out := make([]any, len(page.Entities))
-	for i, e := range page.Entities {
+	out := make([]any, len(page.Items))
+	for i, e := range page.Items {
 		out[i] = entity.Document(e)
 	}
 
@@ -793,14 +793,14 @@ func (l loader) jqValue(d *documents, expression string) (*float64, error) {
 	}
 	code, err := widget.CompileJQ(expression, widget.Scope{Entity: true})
 	if err != nil {
-		return nil, badRequest("jq doesn't compile: " + err.Error())
+		return nil, httpx.BadRequest("jq doesn't compile: " + err.Error())
 	}
 	if len(d.list) > MaxJQEntities {
-		return nil, badRequest(fmt.Sprintf("jq runs over at most %d entities, and the query matches more; narrow it, or use count, sum, avg, min, max or share", MaxJQEntities))
+		return nil, httpx.BadRequest(fmt.Sprintf("jq runs over at most %d entities, and the query matches more; narrow it, or use count, sum, avg, min, max or share", MaxJQEntities))
 	}
 	result, err := widget.RunJQ(l.ctx, code, d.list, l.env)
 	if err != nil {
-		return nil, badRequest("jq: " + err.Error())
+		return nil, httpx.BadRequest("jq: " + err.Error())
 	}
 	switch v := result.(type) {
 	case nil:
@@ -815,11 +815,18 @@ func (l loader) jqValue(d *documents, expression string) (*float64, error) {
 		return &n, nil
 	}
 
-	return nil, badRequest(fmt.Sprintf("jq gave %s, which isn't a number", describe(result)))
+	return nil, httpx.BadRequest(fmt.Sprintf("jq gave %s, which isn't a number", describe(result)))
 }
 
 func (l loader) bind(f *filter.Filter) *filter.Filter {
 	return widget.BindContext(f, l.env.Values, l.env.Data)
+}
+
+// linkFilter is a filter bound and simplified for a link, which is what
+// the catalog shows as chips. It simplifies after binding, as only then
+// are the values known.
+func (l loader) linkFilter(f *filter.Filter) *filter.Filter {
+	return filter.And(l.bind(f))
 }
 
 // explain says why a widget couldn't load. A filter or path the data can't
@@ -853,23 +860,31 @@ func (l loader) link(w widget.Widget, extra *filter.Filter) *linkData {
 	if _, ok := l.blueprints[link.Query.Blueprint]; !ok {
 		return nil
 	}
-	return &linkData{Blueprint: link.Query.Blueprint, Filter: and(l.bind(link.Query.Filter), l.bind(link.Filter), extra)}
+	return &linkData{Blueprint: link.Query.Blueprint, Filter: filter.And(l.bind(link.Query.Filter), l.bind(link.Filter), extra)}
 }
 
 // groupLink links a group's entities. A group's value already met every
 // condition the widget's own query puts on a field holding one value, so
 // when the link is to that query those give way to the group's.
 func (l loader) groupLink(w widget.Widget, single bool, condition *filter.Filter) *linkData {
-	data := l.link(w, condition)
-	if data == nil || data.Filter == nil || len(data.Filter.And) == 0 || !single || !reflect.DeepEqual(w.Link.Query, w.Query) {
-		return data
+	data := l.link(w, nil)
+	if data == nil || !single || w.Link.Query == nil || !reflect.DeepEqual(w.Link.Query, w.Query) {
+		return l.link(w, condition)
 	}
-	kept := slices.DeleteFunc(slices.Clone(data.Filter.And[:len(data.Filter.And)-1]), func(f filter.Filter) bool { return f.Property == w.GroupBy })
-	if len(kept) == 0 {
-		data.Filter = condition
-	} else {
-		data.Filter = &filter.Filter{And: append(kept, *condition)}
+	var conditions []*filter.Filter
+	if data.Filter != nil {
+		parts := []filter.Filter{*data.Filter}
+		if len(data.Filter.And) > 0 {
+			parts = data.Filter.And
+		}
+		for _, part := range parts {
+			if part.Property != w.GroupBy {
+				conditions = append(conditions, &part)
+			}
+		}
 	}
+	// The group's condition goes last, so it reads after the query's.
+	data.Filter = filter.And(append(conditions, condition)...)
 
 	return data
 }

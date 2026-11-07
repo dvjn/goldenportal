@@ -16,6 +16,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
+	"github.com/dvjn/goldenportal/internal/jq"
 )
 
 const (
@@ -23,6 +24,9 @@ const (
 	maxResponseBytes = 1 << 20
 	// detailBytes is how much of a failed response the run page shows.
 	detailBytes = 2 << 10
+	// outputTimeout bounds each output's jq, which runs over a whole response
+	// of up to maxResponseBytes, so it gets longer than jq.DefaultTimeout.
+	outputTimeout = time.Second
 )
 
 var httpClient = &http.Client{}
@@ -216,14 +220,12 @@ func httpOutput(ctx context.Context, h *HTTPStep, resp response) (any, error) {
 	input := jsonish(roundTrip(resp.value()))
 	out := map[string]any{}
 	for _, output := range h.Output {
-		code, err := compileJQ(output.Value.(string))
+		code, err := jq.Compile(output.Value.(string))
 		if err != nil {
 			return nil, failed(nil, "output %s is not valid jq: %v", output.Name, err)
 		}
-		jqCtx, cancel := context.WithTimeout(ctx, time.Second)
-		value, ok := code.RunWithContext(jqCtx, input).Next()
-		cancel()
-		if err, isErr := value.(error); isErr {
+		value, ok, err := code.First(ctx, outputTimeout, input)
+		if err != nil {
 			return nil, failed(map[string]any{"status": resp.status, "body": snippet(resp.body)},
 				"output %s couldn't be read from the answer: %v", output.Name, err)
 		}

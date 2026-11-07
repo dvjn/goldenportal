@@ -2,22 +2,12 @@ package widget
 
 import (
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
 )
 
 var entityName = regexp.MustCompile(`^\$entity\.[a-zA-Z][a-zA-Z0-9_]{0,62}$`)
-
-// checkToday reports $today with a day offset, which within replaced.
-func checkToday(name string) error {
-	if name == ValueToday {
-		return nil
-	}
-
-	return fmt.Errorf("%s is gone: $today is the date alone; for the last few days, use op: within with a duration such as 7d", name)
-}
 
 func lookup(values Values, name string) ([]string, bool) {
 	value, set := values[name]

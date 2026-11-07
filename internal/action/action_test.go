@@ -19,7 +19,7 @@ import (
 const restartYAML = `
 kind: Action
 metadata:
-  name: restart
+  identifier: restart
   title: Restart
   icon: rotate-cw
 spec:
@@ -87,9 +87,9 @@ func TestParseAction(t *testing.T) {
 }
 
 func TestParseActionProblems(t *testing.T) {
-	head := "kind: Action\nmetadata: {name: a, title: A}\nspec:\n  blueprint: service\n  run: {roles: [member]}\n"
+	head := "kind: Action\nmetadata: {identifier: a, title: A}\nspec:\n  blueprint: service\n  run: {roles: [member]}\n"
 	tests := []struct{ name, source, want string }{
-		{"no run", "kind: Action\nmetadata: {name: a, title: A}\nspec:\n  blueprint: service\n  steps: [{output: {summary: hi}}]\n", "say who can run it"},
+		{"no run", "kind: Action\nmetadata: {identifier: a, title: A}\nspec:\n  blueprint: service\n  steps: [{output: {summary: hi}}]\n", "say who can run it"},
 		{"no steps", head, "add the steps"},
 		{"two types", head + "  steps: [{output: {summary: hi}, check: {blueprint: s, expect: {count: 0}, message: m}}]\n", "a step does one thing"},
 		{"unknown input", head + "  steps: [{output: {summary: '{{ $input.nope }}'}}]\n", "$input.nope names no input"},
@@ -127,7 +127,7 @@ func TestParseActionProblems(t *testing.T) {
 
 const applyYAML = `
 kind: Action
-metadata: {name: apply, title: Apply}
+metadata: {identifier: apply, title: Apply}
 spec:
   blueprint: service
   run: {roles: [member]}
@@ -149,7 +149,7 @@ spec:
 `
 
 func TestParseSync(t *testing.T) {
-	head := "kind: Action\nmetadata: {name: a, title: A}\nspec:\n  blueprint: service\n  run: {roles: [member]}\n"
+	head := "kind: Action\nmetadata: {identifier: a, title: A}\nspec:\n  blueprint: service\n  run: {roles: [member]}\n"
 	spec, issues := Parse(head + "  steps:\n    - sync: {integration: registry, resources: [services], mode: incremental}\n      timeout: 2m\n")
 	if len(issues) > 0 {
 		t.Fatalf("issues = %+v", issues)
@@ -272,7 +272,7 @@ func TestHTTPStep(t *testing.T) {
 
 const restartManyYAML = `
 kind: Workflow
-metadata: {name: restart-many, title: Restart many}
+metadata: {identifier: restart-many, title: Restart many}
 spec:
   group: Operations
   run: {roles: [member]}
@@ -303,14 +303,14 @@ func TestParseWorkflow(t *testing.T) {
 		t.Fatal("parseAny didn't read it as a workflow")
 	}
 
-	head := "kind: Workflow\nmetadata: {name: a, title: A}\nspec:\n  group: G\n  run: {roles: [member]}\n"
+	head := "kind: Workflow\nmetadata: {identifier: a, title: A}\nspec:\n  group: G\n  run: {roles: [member]}\n"
 	for want, source := range map[string]string{
 		"$entity can't be used here":     head + "  steps: [{output: {summary: $entity}}]\n",
 		"unknown field \"blueprint\"":    head + "  blueprint: service\n  steps: [{output: {summary: hi}}]\n",
 		"roles and groups":               strings.Replace(head, "{roles: [member]}", "{filter: {property: a, op: exists}}", 1) + "  steps: [{output: {summary: hi}}]\n",
 		"add the entities":               head + "  steps: [{action: {name: restart}}]\n",
 		"add the group":                  strings.Replace(head, "  group: G\n", "", 1) + "  steps: [{output: {summary: hi}}]\n",
-		"only workflows run actions":     "kind: Action\nmetadata: {name: a, title: A}\nspec:\n  blueprint: s\n  run: {roles: [member]}\n  steps: [{action: {name: b, entities: x}}]\n",
+		"only workflows run actions":     "kind: Action\nmetadata: {identifier: a, title: A}\nspec:\n  blueprint: s\n  run: {roles: [member]}\n  steps: [{action: {name: b, entities: x}}]\n",
 		"approvers are roles and groups": head + "  steps: [{approval: {approvers: {filter: {property: a, op: exists}}, require: 1, timeout: 1h}}]\n",
 		"action steps take no retry":     head + "  steps: [{action: {name: b, entities: x}, retry: {attempts: 1, backoff: 1s}}]\n",
 	} {

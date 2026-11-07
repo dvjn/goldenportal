@@ -5,7 +5,6 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -205,10 +204,7 @@ func GetSchema(ctx *gofr.Context, kind string) (json.RawMessage, error) {
 	}
 	schema, ok := Schema(kind)
 	if !ok {
-		return nil, httpx.Error{
-			Code:    http.StatusNotFound,
-			Message: fmt.Sprintf("no document kind %q; use one of %s", kind, strings.Join(SchemaKinds, ", ")),
-		}
+		return nil, httpx.NotFound(fmt.Sprintf("no document kind %q; use one of %s", kind, strings.Join(SchemaKinds, ", ")))
 	}
 
 	return schema, nil

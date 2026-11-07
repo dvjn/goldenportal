@@ -115,7 +115,7 @@ function SearchResults({ onDone }: Readonly<{ onDone: () => void }>) {
     <Command shouldFilter={false} value={selected} onValueChange={setSelected}>
       <CommandInput value={text} onValueChange={setText} placeholder="Search the portal" />
       <CommandList>
-        <CommandEmpty>{searching ? "Searching…" : "No results"}</CommandEmpty>
+        <CommandEmpty>{searching ? "Searching…" : "No matches"}</CommandEmpty>
         {/* One unheaded group gives the list the stock padding. */}
         <CommandGroup>
           {data?.map((result) => (

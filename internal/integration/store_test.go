@@ -33,7 +33,7 @@ func TestRunsFiltersAndPages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runs() error = %v", err)
 	}
-	if page.Total != 21 || len(page.Runs) != 1 || page.Runs[0].Token != "ci_bot" || page.Runs[0].Mode != ModeComplete {
+	if page.Total != 21 || len(page.Items) != 1 || page.Items[0].Token != "ci_bot" || page.Items[0].Mode != ModeComplete {
 		t.Fatalf("Runs() = %+v", page)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

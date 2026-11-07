@@ -2,8 +2,11 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 )
@@ -75,5 +78,15 @@ func TestSearchTreatsWildcardsLiterally(t *testing.T) {
 		if got := search(text); got != want {
 			t.Errorf("search(%q) = %q, want %q", text, got, want)
 		}
+	}
+}
+
+func TestEventTimestampIsOccurredAt(t *testing.T) {
+	raw, err := json.Marshal(Event{OccurredAt: time.Unix(0, 0).UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"occurredAt":"1970-01-01T00:00:00Z"`) || strings.Contains(string(raw), `"at"`) {
+		t.Errorf("event = %s", raw)
 	}
 }

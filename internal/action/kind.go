@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"slices"
 
@@ -283,7 +282,7 @@ func deletable(kind string) func(context.Context, configdoc.DB, string) error {
 			return err
 		}
 		if running > 0 {
-			return httpx.Error{Code: http.StatusConflict, Message: fmt.Sprintf("%d runs of it are still going; cancel them or let them finish first", running)}
+			return httpx.Conflict(fmt.Sprintf("%d runs of it are still going; cancel them or let them finish first", running))
 		}
 
 		return nil

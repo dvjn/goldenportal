@@ -266,5 +266,5 @@ func (b bridge) documents(kind string) (configdoc.Documents, error) {
 	if d, ok := b.services.Documents(kind); ok {
 		return d, nil
 	}
-	return nil, badArgs("kind must be blueprints, integrations, scorecards, dashboards, actions or workflows")
+	return nil, httpx.BadRequest("kind must be blueprints, integrations, scorecards, dashboards, actions or workflows")
 }

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Plug, Plus } from "lucide-react";
+import { EmptyValue } from "@/components/catalog/property-value";
 import { docColumns } from "@/components/config-docs/doc-columns";
 import {
   DataTable,
@@ -44,7 +45,7 @@ const columns = [
     enableGlobalFilter: false,
     cell: ({ row }) => {
       const run = row.original.lastRun;
-      if (!run) return <span className="text-muted-foreground">Never run</span>;
+      if (!run) return <EmptyValue title="Never run" />;
       return (
         <span className="flex items-center gap-1.5" title={formatAbsolute(run.startedAt)}>
           <RunStatus run={run} />
@@ -89,6 +90,7 @@ function IntegrationsPage() {
         actions={<NewIntegrationButton />}
       />
       <DataTable
+        noun="integrations"
         data={list}
         columns={columns}
         getRowId={(integration) => integration.identifier}

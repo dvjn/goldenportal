@@ -116,6 +116,37 @@ func listed(t *testing.T, session *mcp.ClientSession) []string {
 	return names
 }
 
+// A config document is an identifier in every tool; only a token's label
+// is a name.
+func TestToolsNameDocumentsByIdentifier(t *testing.T) {
+	session := connect(t, testServer(t, newFake()), "builder")
+	result, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range result.Tools {
+		raw, _ := json.Marshal(tool.InputSchema)
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		for _, banned := range []string{"integration", "workflow"} {
+			// list_runs filters by action and workflow, as GET runs does.
+			if banned == "workflow" && tool.Name == "list_runs" {
+				continue
+			}
+			if _, ok := schema.Properties[banned]; ok {
+				t.Errorf("%s takes %q, want identifier", tool.Name, banned)
+			}
+		}
+		if _, ok := schema.Properties["name"]; ok && tool.Name != "create_ingestion_token" {
+			t.Errorf("%s takes name, want identifier", tool.Name)
+		}
+	}
+}
+
 func TestToolsFollowRoleAndScope(t *testing.T) {
 	server := testServer(t, newFake())
 	for _, test := range []struct {
@@ -234,7 +265,7 @@ func TestToolsCallServicesAsTheCaller(t *testing.T) {
 	fake := newFake()
 	session := connect(t, testServer(t, fake), "builder")
 
-	call(t, session, "save_draft", map[string]any{"kind": "blueprints", "name": "service", "source": "kind: Blueprint"})
+	call(t, session, "save_draft", map[string]any{"kind": "blueprints", "identifier": "service", "source": "kind: Blueprint"})
 	if got := *fake.last; got.name != "SaveDraft" || got.user != "builder" || !slices.Equal(got.args, []any{"blueprints", "service", "kind: Blueprint"}) {
 		t.Errorf("save_draft called %+v", got)
 	}
@@ -242,11 +273,11 @@ func TestToolsCallServicesAsTheCaller(t *testing.T) {
 	if got := *fake.last; got.name != "Apply" || got.args[1] != true {
 		t.Errorf("apply_documents defaults to a dry run, called %+v", got)
 	}
-	call(t, session, "create_ingestion_token", map[string]any{"integration": "push", "name": "CI"})
+	call(t, session, "create_ingestion_token", map[string]any{"identifier": "push", "name": "CI"})
 	if got := *fake.last; got.name != "CreateIngestionToken" || !slices.Equal(got.args, []any{"push", "CI"}) {
 		t.Errorf("create_ingestion_token called %+v", got)
 	}
-	call(t, session, "get_dashboard_data", map[string]any{"name": "services", "inputs": map[string]any{"team": []string{"payments"}, "tier": []string{}}})
+	call(t, session, "get_dashboard_data", map[string]any{"identifier": "services", "inputs": map[string]any{"team": []string{"payments"}, "tier": []string{}}})
 	if inputs, _ := fake.last.args[1].(map[string][]string); fake.last.args[0] != "services" ||
 		!slices.Equal(inputs["team"], []string{"payments"}) || inputs["tier"] == nil || len(inputs["tier"]) != 0 {
 		t.Errorf("get_dashboard_data called %+v", *fake.last)
@@ -254,11 +285,11 @@ func TestToolsCallServicesAsTheCaller(t *testing.T) {
 
 	// A service's refusal is the tool's error, with its status; anything
 	// else is the portal's problem, which the caller isn't told the details of.
-	refused := call(t, session, "delete_document", map[string]any{"kind": "blueprints", "name": "service", "confirm": "nope"})
+	refused := call(t, session, "delete_document", map[string]any{"kind": "blueprints", "identifier": "service", "confirm": "nope"})
 	if out := output(t, refused); !refused.IsError || out.Status != http.StatusBadRequest {
 		t.Errorf("refused delete = %+v", out)
 	}
-	failed := call(t, session, "sync_integration", map[string]any{"name": "source"})
+	failed := call(t, session, "sync_integration", map[string]any{"identifier": "source"})
 	if out := output(t, failed); !failed.IsError || out.Status != http.StatusInternalServerError || strings.Contains(fmt.Sprint(out.Error), "10.0.0.5") {
 		t.Errorf("failed sync = %+v", out)
 	}

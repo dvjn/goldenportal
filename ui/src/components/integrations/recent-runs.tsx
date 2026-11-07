@@ -11,7 +11,7 @@ import {
 } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { IconButton } from "@/components/icon-button";
-import { RunStatus } from "@/components/integrations/run-status";
+import { RunStatus, runOutcomes } from "@/components/integrations/run-status";
 import {
   Dialog,
   DialogContent,
@@ -40,12 +40,10 @@ const triggerOptions: { value: RunTrigger; label: string }[] = [
   { value: "action", label: "Action" },
 ];
 
-const outcomeOptions: { value: RunOutcome; label: string }[] = [
-  { value: "running", label: "Running" },
-  { value: "succeeded", label: "Succeeded" },
-  { value: "warnings", label: "Succeeded with Warnings" },
-  { value: "failed", label: "Failed" },
-];
+const outcomeOptions = (Object.keys(runOutcomes) as RunOutcome[]).map((value) => ({
+  value,
+  label: runOutcomes[value].label,
+}));
 
 const runFilterFields: DataTableFilterField[] = [
   { kind: "options", id: "outcome", title: "Outcome", useOptions: () => outcomeOptions },
@@ -203,7 +201,8 @@ export function RecentRuns({
 
   return (
     <DataTable
-      data={page.data?.runs ?? []}
+      noun="runs"
+      data={page.data?.items ?? []}
       rowCount={page.data?.total ?? 0}
       loading={page.isPlaceholderData}
       pending={page.isPending}
@@ -228,7 +227,7 @@ export function RecentRuns({
       empty={
         <EmptyState
           icon={<History />}
-          title="Nothing has run yet"
+          title="No runs yet"
           description="Syncs show up here as they start, and pushes and action writes as they finish."
         />
       }

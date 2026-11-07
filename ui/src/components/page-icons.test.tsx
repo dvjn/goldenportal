@@ -24,7 +24,7 @@ describe("page icons", () => {
     stubApi({
       "GET config": acmeConfig,
       "GET me": ok({ ...ada, role: "member" }),
-      "GET runs": ok({ runs: [], total: 0 }),
+      "GET runs": ok({ items: [], total: 0 }),
     });
     renderRoute("/runs");
 

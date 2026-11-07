@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, type Page } from "@/lib/api";
 
 export type CatalogEntry = {
   identifier: string;
@@ -38,7 +38,7 @@ export type Incoming = {
 // hiddenTabs are the page's tabs whose when the entity doesn't meet.
 export type EntityDetail = Entity & { incoming: Incoming[]; hiddenTabs?: string[] };
 
-export type EntityPage = { entities: Entity[]; total: number };
+export type EntityPage = Page<Entity>;
 
 // Filter is the server's filter tree: and, or and not over property conditions.
 export type Filter =

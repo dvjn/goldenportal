@@ -3,7 +3,6 @@ package blueprint
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"reflect"
 	"slices"
 	"strings"
@@ -124,7 +123,7 @@ func deletable(ctx context.Context, db configdoc.DB, identifier string) error {
 	}
 	slices.Sort(related)
 
-	return httpx.Error{Code: http.StatusConflict, Message: "remove the relations to it from " + joinWords(related) + " first"}
+	return httpx.Conflict("remove the relations to it from " + joinWords(related) + " first")
 }
 
 func countEntities(ctx context.Context, db configdoc.DB, identifier string) (int, error) {
@@ -200,7 +199,7 @@ func recompute(ctx context.Context, db configdoc.DB, spec Spec) error {
 		}
 		_ = json.Unmarshal(properties, &entity.Properties)
 		_ = json.Unmarshal(relations, &entity.Relations)
-		values, _ := spec.Compute(entity)
+		values, _ := spec.Compute(ctx, entity)
 		computed, _ := json.Marshal(values)
 		updates = append(updates, update{id: id, computed: computed})
 	}

@@ -160,7 +160,7 @@ func TestRowsRejectWhatTheyCantRead(t *testing.T) {
 	for path, want := range map[string]string{
 		"dependsOn.title": "relates to many entities",
 		"nope":            `no property "nope"`,
-		"$title":          "as title",
+		"$title":          `no property "$title"`,
 	} {
 		if _, _, err := store.Rows(t.Context(), m, "", 5, []string{path}); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", path, err, want)

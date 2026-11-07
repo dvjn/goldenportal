@@ -21,7 +21,7 @@ import (
 func httpYAML(url string) string {
 	return `
 kind: Integration
-metadata: {name: tracker, title: Tracker}
+metadata: {identifier: tracker, title: Tracker}
 spec:
   connector:
     type: http
@@ -71,7 +71,7 @@ func TestParseHTTPConfig(t *testing.T) {
 		t.Fatalf("spec = %+v, config = %+v", spec, config)
 	}
 
-	head := "kind: Integration\nmetadata: {name: a, title: A}\nspec:\n  connector:\n    type: http\n"
+	head := "kind: Integration\nmetadata: {identifier: a, title: A}\nspec:\n  connector:\n    type: http\n"
 	mapping := "  mappings:\n    - resource: x\n      blueprint: s\n      entity: {identifier: .id}\n"
 	tests := []struct{ name, source, want string }{
 		{"no config", head + mapping, "add the http connector's config"},

@@ -413,7 +413,7 @@ describe("dashboards and page tabs", () => {
     const ledgerRow = screen.getByRole("link", { name: "Ledger" }).closest("tr") as HTMLElement;
     expect(within(ledgerRow).getByText("2")).toBeInTheDocument();
     expect(within(ledgerRow).getByText("5 h")).toBeInTheDocument();
-    expect(within(ledgerRow).getByText("critical")).toBeInTheDocument();
+    expect(within(ledgerRow).getByText("Critical")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ledger" })).toHaveAttribute(
       "href",
       "/integrations/ledger",
@@ -664,17 +664,18 @@ describe("dashboards and page tabs", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
     const count = await stat(/Services$/, "3");
-    expect(count.getAttribute("href")).toMatch(/^\/catalog\/service\?view=entities&f=/);
-    expect(decodeURIComponent(count.getAttribute("href") ?? "")).toContain('"tier":["critical"]');
+    expect(count.getAttribute("href")).toMatch(/^\/catalog\/service\?view=entities&filter=/);
+    expect(decodeURIComponent(count.getAttribute("href") ?? "")).toContain(
+      '"property":"tier","op":"eq","value":"critical"',
+    );
 
     const payments = await screen.findByRole("link", { name: "Payments" });
     expect(decodeURIComponent(payments.getAttribute("href") ?? "")).toContain(
-      '"owner":["payments"]',
+      '"property":"owner","op":"eq","value":"payments"',
     );
-    // What the table's filters can't say, it brings along to show and clear.
     const none = screen.getByRole("link", { name: "None" });
     expect(decodeURIComponent(none.getAttribute("href") ?? "")).toContain(
-      'where={"not":{"property":"owner","op":"exists"}}',
+      'filter=[{"not":{"property":"owner","op":"exists"}}]',
     );
 
     await user.click(screen.getByRole("link", { name: "Welcome" }));
@@ -709,7 +710,7 @@ describe("dashboards and page tabs", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(laidOut),
-      "GET catalog/service": ok({ entities: [ledger], total: 1 }),
+      "GET catalog/service": ok({ items: [ledger], total: 1 }),
       "GET catalog/service/facets": ok([]),
       "GET catalog/service/pages/catalog/overview": loaded({
         critical: {
@@ -735,7 +736,7 @@ describe("dashboards and page tabs", () => {
     ).toBeInTheDocument();
     const row = (await screen.findByRole("link", { name: "Ledger" })).closest("tr") as HTMLElement;
     expect(within(row).getByText("72%")).toBeInTheDocument();
-    expect(within(row).getByText("critical")).toHaveClass("bg-red-500/15");
+    expect(within(row).getByText("Critical")).toHaveClass("bg-red-500/15");
 
     await user.click(screen.getByRole("tab", { name: /Entities/ }));
     expect(await screen.findByRole("searchbox", { name: "Search service" })).toBeInTheDocument();
@@ -819,14 +820,16 @@ describe("dashboards and page tabs", () => {
 
     // The overview leaves out hidden properties.
     expect(await screen.findByText("Coverage")).toBeInTheDocument();
-    expect(screen.queryByText("Critical")).not.toBeInTheDocument();
+    expect(screen.queryByText("Critical", { selector: "dt" })).not.toBeInTheDocument();
 
     const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
     expect(tabs.slice(0, 2)).toEqual(["Overview", "Deployments"]);
     await user.click(screen.getByRole("tab", { name: "Deployments" }));
 
     const total = await stat(/Deployments$/, "12");
-    expect(decodeURIComponent(total.getAttribute("href") ?? "")).toContain('"service":["ledger"]');
+    expect(decodeURIComponent(total.getAttribute("href") ?? "")).toContain(
+      '"property":"service","op":"eq","value":"ledger"',
+    );
     const url = new URL(requests["GET catalog/service/pages/entity/deployments"].url);
     expect(url.searchParams.get("entity")).toBe("ledger");
   });
@@ -947,7 +950,7 @@ describe("dashboards and page tabs", () => {
       "GET home": ok([teams]),
       "GET blueprints/service": ok(service),
       "GET catalog/team": ok({
-        entities: [
+        items: [
           { ...ledger, blueprint: "team", identifier: "identity", title: "Identity" },
           { ...ledger, blueprint: "team", identifier: "payments", title: "Payments" },
         ],
@@ -960,7 +963,9 @@ describe("dashboards and page tabs", () => {
     // The default applies until someone changes it; an unset input drops
     // its condition from the link too.
     const count = await stat(/Services$/, "3");
-    expect(decodeURIComponent(count.getAttribute("href") ?? "")).toContain('"tier":["critical"]');
+    expect(decodeURIComponent(count.getAttribute("href") ?? "")).toContain(
+      '"property":"tier","op":"in","values":["critical"]',
+    );
     expect(decodeURIComponent(count.getAttribute("href") ?? "")).not.toContain("owner");
     let url = new URL(requests["GET dashboards/teams/data"].url);
     expect(url.searchParams.getAll("input.tier")).toEqual(["critical"]);
@@ -998,7 +1003,7 @@ describe("dashboards and page tabs", () => {
     });
     const narrowed = await stat(/Services$/, "3");
     expect(decodeURIComponent(narrowed.getAttribute("href") ?? "")).toContain(
-      '"owner":["payments"]',
+      '"property":"owner","op":"in","values":["payments"]',
     );
 
     await user.click(screen.getByRole("button", { name: "Reset" }));
@@ -1045,7 +1050,7 @@ describe("dashboards and page tabs", () => {
     ...signedInMember,
     "GET blueprints/service": ok(service),
     "GET catalog/team": ok({
-      entities: [{ ...ledger, blueprint: "team", identifier: "payments", title: "Payments" }],
+      items: [{ ...ledger, blueprint: "team", identifier: "payments", title: "Payments" }],
       total: 1,
     }),
     "GET dashboards/mine/data": countLike,
@@ -1060,7 +1065,9 @@ describe("dashboards and page tabs", () => {
 
     // What was found is picked, and sent as if picked by hand.
     const count = await stat(/Services$/, "3");
-    expect(decodeURIComponent(count.getAttribute("href") ?? "")).toContain('"owner":["payments"]');
+    expect(decodeURIComponent(count.getAttribute("href") ?? "")).toContain(
+      '"property":"owner","op":"in","values":["payments"]',
+    );
     const url = new URL(requests["GET dashboards/mine/data"].url);
     expect(url.searchParams.getAll("input.team")).toEqual(["payments"]);
     expect(screen.getByRole("button", { name: /^Team/ })).toHaveTextContent("Payments");

@@ -11,7 +11,7 @@ import (
 
 func TestAudience(t *testing.T) {
 	source := `kind: Dashboard
-metadata: {name: mine, title: Mine}
+metadata: {identifier: mine, title: Mine}
 spec:
   visibility: {roles: [builder], groups: [payments]}
   defaultFor: {groups: [payments, search]}
@@ -61,7 +61,7 @@ spec:
 
 func TestFactsShowPlaceAndAudience(t *testing.T) {
 	spec := mustParse(t, `kind: Dashboard
-metadata: {name: mine, title: Mine}
+metadata: {identifier: mine, title: Mine}
 spec:
   order: 3
   group: {title: Deep Dives, icon: layers}
@@ -82,7 +82,7 @@ func TestGroupProblems(t *testing.T) {
 		{"{title: Deep Dives, colour: red}", "colour"},
 		{"Deep Dives", "spec.group"},
 	} {
-		_, issues := Parse("kind: Dashboard\nmetadata: {name: mine, title: Mine}\nspec:\n  group: " + c.group + "\n  widgets:\n    hello: {type: markdown, text: Hello}\n")
+		_, issues := Parse("kind: Dashboard\nmetadata: {identifier: mine, title: Mine}\nspec:\n  group: " + c.group + "\n  widgets:\n    hello: {type: markdown, text: Hello}\n")
 		if len(issues) != 1 || !strings.Contains(issues[0].Message+issues[0].Path, c.want) {
 			t.Errorf("group %s: issues = %+v, want one about %q", c.group, issues, c.want)
 		}

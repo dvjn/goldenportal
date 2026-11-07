@@ -21,13 +21,10 @@ func TestToday(t *testing.T) {
 	if got := Bind(&filter.Filter{Property: "deployed", Op: "gte", Value: ValueToday}, values); got.Value != "2024-02-29" {
 		t.Errorf("bound %+v", got)
 	}
-	// Day offsets are gone; within takes their place.
+	// $today is the date alone, so anything after it isn't a variable.
 	for _, name := range []string{"$today-7d", "$today+1d", "$todayish"} {
-		if err := CheckText("{{ " + name + " }}"); err == nil || !strings.Contains(err.Error(), "within") {
-			t.Errorf("accepted %s: %v", name, err)
-		}
-		if err := checkVariable(name); err == nil {
-			t.Errorf("accepted filter %s", name)
+		if err := CheckText("{{ " + name + " }}"); err == nil {
+			t.Errorf("accepted %s", name)
 		}
 	}
 }

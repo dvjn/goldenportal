@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { EmptyValue } from "@/components/catalog/property-value";
 import { tableCellClass } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import {
   Table,
   TableBody,
@@ -10,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { MatrixCell, MatrixData } from "@/features/widgets";
+import { formatPercent } from "@/lib/format";
 import { WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 import { WidgetLink } from "./widget-link";
 
@@ -25,7 +27,7 @@ export function MatrixWidget({ widget, context, data, error }: WidgetProps<Matri
   return (
     <WidgetCard widget={widget} flush>
       {data.rows.length === 0 ? (
-        <p className="p-4 text-sm text-muted-foreground">Nothing to count yet.</p>
+        <EmptyState compact title="No groups yet" />
       ) : (
         <Table>
           <TableHeader>
@@ -96,7 +98,7 @@ function Share({ cell, live }: Readonly<{ cell: MatrixCell; live: boolean }>) {
           link={live ? cell.link : undefined}
           className="font-medium tabular-nums hover:underline"
         >
-          {Math.round(cell.value)}%
+          {formatPercent(cell.count, cell.total)}
         </WidgetLink>
         <span className="text-xs text-muted-foreground tabular-nums">
           {cell.count} of {cell.total}

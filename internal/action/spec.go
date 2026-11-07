@@ -13,14 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itchyny/gojq"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/integration"
+	"github.com/dvjn/goldenportal/internal/jq"
 )
 
 // DocumentKind is how action documents name their kind.
@@ -301,7 +302,7 @@ func parse(source, kind string) (Spec, []configdoc.Issue) {
 	p := &parser{roots: roots, kind: kind}
 	doc := configdoc.ReadDocument(&p.Reader, source, kind)
 	spec := Spec{
-		Kind: kind, Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Kind: kind, Identifier: doc.Identifier, Title: doc.Meta.Title, Description: doc.Meta.Description,
 		Icon: doc.Meta.Icon, Color: doc.Meta.Color,
 		Inputs: []blueprint.Property{}, Steps: []Step{}, Outputs: []Output{},
 	}
@@ -497,9 +498,6 @@ func (p *parser) texts(node *yaml.Node, path string) []string {
 		return nil
 	}
 	var values []string
-	if node.Kind == yaml.ScalarNode {
-		return []string{node.Value}
-	}
 	p.List(node, path, func(_ int, item *yaml.Node) { values = append(values, p.Text(item, path)) })
 
 	return values
@@ -509,8 +507,8 @@ func (p *parser) duration(node *yaml.Node, path string, limit time.Duration) Dur
 	if node == nil {
 		return 0
 	}
-	d, err := time.ParseDuration(p.Text(node, path))
-	if err != nil || d <= 0 {
+	d, ok := filter.ParseDuration(p.Text(node, path))
+	if !ok {
 		p.Errorf(node, path, "%s must be a duration, such as 30s or 2m", path)
 		return 0
 	}
@@ -525,15 +523,7 @@ func (p *parser) duration(node *yaml.Node, path string, limit time.Duration) Dur
 type Duration time.Duration
 
 func (d Duration) MarshalJSON() ([]byte, error) {
-	text := time.Duration(d).String()
-	if strings.HasSuffix(text, "m0s") {
-		text = strings.TrimSuffix(text, "0s")
-	}
-	if strings.HasSuffix(text, "h0m") {
-		text = strings.TrimSuffix(text, "0m")
-	}
-
-	return json.Marshal(text)
+	return json.Marshal(filter.FormatDuration(time.Duration(d)))
 }
 
 func (p *parser) step(path string, node *yaml.Node) Step {
@@ -697,7 +687,7 @@ func (p *parser) http(node *yaml.Node, path string) *HTTPStep {
 			p.Errorf(key, outputPath, "%q must start with a letter and use only letters, digits and _", name)
 		}
 		expression := p.Text(value, outputPath)
-		if _, err := compileJQ(expression); err != nil {
+		if _, err := jq.Compile(expression); err != nil {
 			p.Errorf(value, outputPath, "this is not valid jq: %v", err)
 		}
 		h.Output = append(h.Output, Output{Name: name, Value: expression})
@@ -906,15 +896,6 @@ func (p *parser) actionStep(node *yaml.Node, path string) *ActionStep {
 	}
 
 	return a
-}
-
-func compileJQ(expression string) (*gojq.Code, error) {
-	query, err := gojq.Parse(expression)
-	if err != nil {
-		return nil, err
-	}
-
-	return gojq.Compile(query)
 }
 
 func hostOf(url string) string {

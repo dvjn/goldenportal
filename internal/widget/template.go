@@ -3,19 +3,12 @@ package widget
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/itchyny/gojq"
+	"github.com/dvjn/goldenportal/internal/jq"
 )
-
-// JQTimeout bounds each jq run a widget makes, so one slow expression can't
-// hold up the page.
-const JQTimeout = 250 * time.Millisecond
 
 // jqVariables are what jq can read wherever widgets run it, in values,
 // columns and link templates. $x.y means what it does in a filter: $me is
@@ -24,40 +17,15 @@ const JQTimeout = 250 * time.Millisecond
 // the entity whose page it is, flat, as jq reads every entity.
 var jqVariables = []string{"$input", "$me", "$today", "$entity"}
 
-var nested = regexp.MustCompile(`\.(properties|scorecards)(\.[a-zA-Z_][a-zA-Z0-9_]*|\[)`)
-
-// CheckFlat reports jq written for the nested entity shape, which is gone:
-// jq reads an entity flat, its properties beside identifier and title.
-func CheckFlat(expression string) error {
-	match := nested.FindStringSubmatch(expression)
-	switch {
-	case match == nil:
-		return nil
-	case match[1] == "scorecards":
-		return fmt.Errorf(".scorecards is gone: declare a scorecard property, such as readiness, and read .readiness.tier")
-	case match[2] == "[":
-		return fmt.Errorf(".properties is gone: jq reads an entity flat, as paths do, so read each property at the top")
-	}
-
-	return fmt.Errorf("jq reads an entity flat, as paths do: write %s, not .properties%s", match[2], match[2])
-}
-
 // CompileJQ compiles jq as widgets run it, with their variables. Off entity
 // pages $entity isn't one, so using it fails to compile.
-func CompileJQ(expression string, scope Scope) (*gojq.Code, error) {
-	if err := CheckFlat(expression); err != nil {
-		return nil, err
-	}
-	query, err := gojq.Parse(expression)
-	if err != nil {
-		return nil, err
-	}
+func CompileJQ(expression string, scope Scope) (*jq.Code, error) {
 	names := jqVariables
 	if !scope.Entity {
 		names = names[:len(names)-1]
 	}
 
-	return gojq.Compile(query, gojq.WithVariables(names))
+	return jq.Compile(expression, names...)
 }
 
 // Env is what widgets load against: the values filters compare with, and
@@ -107,23 +75,11 @@ func anys(values []string) []any {
 }
 
 // RunJQ runs compiled jq on input and returns its first result, within
-// JQTimeout of ctx.
-func RunJQ(ctx context.Context, code *gojq.Code, input any, env Env) (any, error) {
-	ctx, cancel := context.WithTimeout(ctx, JQTimeout)
-	defer cancel()
-	iter := code.RunWithContext(ctx, input, env.jq()...)
-	value, ok := iter.Next()
-	if !ok {
-		return nil, nil
-	}
-	if err, isErr := value.(error); isErr {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("took longer than %s", JQTimeout)
-		}
-		return nil, err
-	}
+// the default timeout of ctx.
+func RunJQ(ctx context.Context, code *jq.Code, input any, env Env) (any, error) {
+	value, _, err := code.First(ctx, jq.DefaultTimeout, input, env.jq()...)
 
-	return value, nil
+	return value, err
 }
 
 // CheckTemplate checks a template's {{ }} jq compiles.

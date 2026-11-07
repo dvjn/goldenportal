@@ -3,6 +3,7 @@ import { type RowData, useTable } from "@tanstack/react-table";
 import { cn } from "cn";
 import { type ReactNode, useEffect, useState } from "react";
 import { CardTitleBar } from "@/components/card-sections";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +16,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { writeUiState } from "@/hooks/use-ui-state";
-import { DataTableFilterBox, type DataTableFixedFilter } from "./data-table-filter-box";
+import {
+  type DataTableChip,
+  DataTableFilterBox,
+  type DataTableFixedFilter,
+  recordChips,
+} from "./data-table-filter-box";
 import type {
   DataTableFilterChange,
   DataTableFilterField,
@@ -48,15 +54,23 @@ type DataTableProps<TData extends RowData> = {
   filters?: {
     fields: DataTableFilterField[];
     value: DataTableFilters;
+    // negated says which fields' filters are Is Not, for fields that are negatable.
+    negated?: Record<string, boolean>;
     onChange: DataTableFilterChange;
+    // chips replace the one chip per filtered field, for a table whose
+    // filters are a list that can say a field twice, or something no
+    // field can edit.
+    chips?: DataTableChip[];
   };
   // fixedFilters are filters the table shows and can remove but not edit,
-  // such as those a link brought along.
+  // such as those a link brought along. A table with chips says them there.
   fixedFilters?: DataTableFixedFilter[];
   // onClearFilters clears the filters besides the search.
   onClearFilters?: () => void;
   // actions sit at the end of the toolbar, e.g. a "New" button.
   actions?: ReactNode;
+  // noun names the rows, for "No runs match" when a search or filter hides them all.
+  noun: string;
   // empty shows when there are no rows at all, before any search or filter.
   empty: ReactNode;
   // rowCount turns on server mode: data is already the current page, searched,
@@ -88,6 +102,7 @@ export function DataTable<TData extends RowData>({
   fixedFilters,
   onClearFilters,
   actions,
+  noun,
   empty,
   rowCount,
   loading = false,
@@ -140,7 +155,15 @@ export function DataTable<TData extends RowData>({
     return () => clearTimeout(timer);
   });
 
-  const filtered = Object.keys(filters?.value ?? {}).length > 0 || Boolean(fixedFilters?.length);
+  const chips =
+    filters?.chips ??
+    recordChips(
+      filters?.fields ?? [],
+      filters?.value ?? {},
+      filters?.onChange ?? (() => {}),
+      fixedFilters,
+    );
+  const filtered = chips.length > 0;
   const searching = Boolean(search.q) || filtered;
   const total = server ? rowCount : table.getFilteredRowModel().rows.length;
 
@@ -182,11 +205,12 @@ export function DataTable<TData extends RowData>({
           label={searchLabel}
           query={query}
           onQueryChange={setQuery}
+          chips={chips}
           fields={filters?.fields ?? []}
           value={filters?.value ?? {}}
+          negated={filters?.negated}
           onChange={filters?.onChange ?? (() => {})}
           onClear={clearAll}
-          fixed={fixedFilters}
         />
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
@@ -228,13 +252,16 @@ export function DataTable<TData extends RowData>({
             </TableRow>
           ) : rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                <span className="text-muted-foreground">
-                  {search.q ? `Nothing matches "${search.q}". ` : "Nothing matches the filters. "}
-                </span>
-                <Button variant="link" className="h-auto p-0" onClick={clearAll}>
-                  {filtered ? "Clear the filters" : "Clear the search"}
-                </Button>
+              <TableCell colSpan={columns.length}>
+                <EmptyState
+                  compact
+                  title={`No ${noun} match`}
+                  description={search.q ? `Nothing found for "${search.q}".` : undefined}
+                >
+                  <Button variant="link" className="h-auto p-0" onClick={clearAll}>
+                    {filtered ? "Clear the filters" : "Clear the search"}
+                  </Button>
+                </EmptyState>
               </TableCell>
             </TableRow>
           ) : (

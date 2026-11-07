@@ -217,7 +217,7 @@ describe("runs", () => {
 
   it("lists a member's own runs, filtered by status", async () => {
     const user = userEvent.setup();
-    const requests = stubApi({ ...member, "GET runs": ok({ runs: [run], total: 1 }) });
+    const requests = stubApi({ ...member, "GET runs": ok({ items: [run], total: 1 }) });
     renderRoute("/runs");
 
     expect(await screen.findByRole("link", { name: "Restart" })).toHaveAttribute(
@@ -242,7 +242,7 @@ describe("runs", () => {
     const requests = stubApi({
       "GET config": acmeConfig,
       "GET me": ok({ ...ada, role: "builder" }),
-      "GET runs": ok({ runs: [{ ...run, via: "mcp" }], total: 1 }),
+      "GET runs": ok({ items: [{ ...run, via: "mcp" }], total: 1 }),
     });
     renderRoute("/runs");
 

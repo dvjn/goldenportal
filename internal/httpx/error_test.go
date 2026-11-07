@@ -17,6 +17,24 @@ func TestErrorCarriesTheStatusAndMessage(t *testing.T) {
 	}
 }
 
+func TestBadRequestAndNotFoundCarryTheirStatus(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{
+		{BadRequest("say more"), http.StatusBadRequest},
+		{NotFound("no such thing"), http.StatusNotFound},
+	} {
+		httpErr, ok := tc.err.(Error)
+		if !ok || httpErr.StatusCode() != tc.want {
+			t.Fatalf("%v: status = %v, want %d", tc.err, tc.err, tc.want)
+		}
+	}
+	if got := BadRequest("say more").Error(); got != "say more" {
+		t.Fatalf("Error() = %q, want the message", got)
+	}
+}
+
 func TestWriteErrorWritesTheEnvelope(t *testing.T) {
 	recorder := httptest.NewRecorder()
 

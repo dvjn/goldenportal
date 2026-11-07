@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/itchyny/gojq"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/jq"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
@@ -152,8 +152,7 @@ var (
 	ItemsFields   = []string{"type", "format", "enum"}
 	CatalogFields = []string{"columns", "queries", "tabs"}
 	EntityFields  = []string{"header", "sections", "queries", "tabs"}
-	// DisplayFields keeps column, which moved, to say where it went.
-	DisplayFields = []string{"as", "unit", "colors", "column", "filter", "hidden", "empty"}
+	DisplayFields = []string{"as", "unit", "colors", "titles", "filter", "hidden", "empty"}
 	HeaderFields  = []string{"subtitle", "badges", "link"}
 	SectionFields = []string{"title", "properties"}
 )
@@ -170,7 +169,7 @@ func Parse(source string) (Spec, []Issue) {
 	p := &parser{}
 	doc := configdoc.ReadDocument(&p.Reader, source, DocumentKind)
 	spec := Spec{
-		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Identifier: doc.Identifier, Title: doc.Meta.Title, Description: doc.Meta.Description,
 		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Properties: []Property{},
 	}
 	if doc.Spec == nil {
@@ -507,16 +506,9 @@ func (p *parser) entityPage(node *yaml.Node, path string, spec Spec) *Page {
 }
 
 // CompileExpression checks a jq expression over an entity compiles. jq
-// sees the entity flat, as paths do, so the old nested shape is an error.
+// sees the entity flat, as paths do.
 func CompileExpression(expression string) error {
-	if err := widget.CheckFlat(expression); err != nil {
-		return err
-	}
-	query, err := gojq.Parse(expression)
-	if err != nil {
-		return err
-	}
-	_, err = gojq.Compile(query)
+	_, err := jq.Compile(expression)
 
 	return err
 }

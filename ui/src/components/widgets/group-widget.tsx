@@ -1,4 +1,5 @@
 import { Cell, Pie, PieChart } from "recharts";
+import { EmptyState } from "@/components/empty-state";
 import {
   type ChartConfig,
   ChartContainer,
@@ -8,6 +9,7 @@ import {
 import type { Facet } from "@/features/catalog";
 import type { GroupData, LinkData } from "@/features/widgets";
 import { categorical, swatch } from "@/lib/colors";
+import { formatPercent } from "@/lib/format";
 import { ViewAll, WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 import { WidgetLink } from "./widget-link";
 
@@ -45,7 +47,7 @@ export function GroupWidget({ widget, context, data, error }: WidgetProps<GroupD
   return (
     <WidgetCard widget={widget} action={live && <ViewAll link={data.link} />}>
       {groups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing to count yet.</p>
+        <EmptyState compact title="No groups yet" />
       ) : widget.type === "donut" ? (
         <Donut groups={groups} />
       ) : widget.type === "split" ? (
@@ -110,7 +112,7 @@ function Bars({ groups }: Readonly<{ groups: Group[] }>) {
 // counts and shares, as a scorecard's tiers are shown.
 function Split({ groups }: Readonly<{ groups: Group[] }>) {
   const total = groups.reduce((sum, group) => sum + group.count, 0);
-  const share = (group: Group) => Math.round((group.count / total) * 100);
+  const share = (group: Group) => formatPercent(group.count, total);
   return (
     <div className="grid gap-2">
       <div
@@ -132,7 +134,7 @@ function Split({ groups }: Readonly<{ groups: Group[] }>) {
             <span className={`size-2 shrink-0 rounded-full ${group.dot}`} aria-hidden />
             <GroupLabel group={group} />
             <span className="text-muted-foreground tabular-nums">{group.count}</span>
-            <span className="text-xs text-muted-foreground tabular-nums">{share(group)}%</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{share(group)}</span>
           </li>
         ))}
       </ul>

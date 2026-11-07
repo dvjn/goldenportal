@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -212,11 +211,11 @@ func defaults(ctx context.Context, find finder, spec Spec, me, picked widget.Val
 // or else the published version.
 func source(ctx *gofr.Context, p auth.Principal, kind, name string, draft bool) (string, error) {
 	if draft && !p.Can(auth.RoleBuilder) {
-		return "", httpx.Error{Code: http.StatusForbidden, Message: "drafts need the builder role"}
+		return "", httpx.Forbidden("drafts need the builder role")
 	}
 	record, err := configdoc.NewStore(ctx.SQL, kind).Get(ctx, name)
 	if errors.Is(err, configdoc.ErrNotFound) {
-		return "", httpx.Error{Code: http.StatusNotFound, Message: "no " + kind + " " + name}
+		return "", httpx.NotFound("no " + kind + " " + name)
 	}
 	if err != nil {
 		return "", err
@@ -224,14 +223,14 @@ func source(ctx *gofr.Context, p auth.Principal, kind, name string, draft bool) 
 	if kind == Name && !p.Can(auth.RoleBuilder) {
 		spec, issues := Parse(record.PublishedSource)
 		if !record.Published() || configdoc.HasErrors(issues) || !spec.Visible(p) {
-			return "", httpx.Error{Code: http.StatusNotFound, Message: "no published dashboard " + name}
+			return "", httpx.NotFound("no published dashboard " + name)
 		}
 	}
 	if draft && record.HasDraft() {
 		return record.DraftSource, nil
 	}
 	if !record.Published() {
-		return "", httpx.Error{Code: http.StatusNotFound, Message: "no published " + kind + " " + name}
+		return "", httpx.NotFound("no published " + kind + " " + name)
 	}
 
 	return record.PublishedSource, nil
@@ -339,16 +338,16 @@ func picked(spec Spec, inputs map[string][]string) (widget.Values, error) {
 	for id, raw := range inputs {
 		i := slices.IndexFunc(spec.Inputs, func(in Input) bool { return in.ID == id })
 		if i < 0 {
-			return nil, badRequest("the dashboard has no input " + id)
+			return nil, httpx.BadRequest("the dashboard has no input " + id)
 		}
 		in := spec.Inputs[i]
 		picked := slices.DeleteFunc(slices.Clone(raw), func(value string) bool { return value == "" })
 		if len(picked) > 1 && !in.Multiple {
-			return nil, badRequest(in.ID + " takes one value")
+			return nil, httpx.BadRequest(in.ID + " takes one value")
 		}
 		for _, value := range picked {
 			if in.Type == InputEnum && !slices.Contains(in.Values, value) {
-				return nil, badRequest(in.ID + " must be one of " + strings.Join(in.Values, ", "))
+				return nil, httpx.BadRequest(in.ID + " must be one of " + strings.Join(in.Values, ", "))
 			}
 		}
 		if len(picked) == 0 {
@@ -396,18 +395,18 @@ func PageTab(ctx *gofr.Context, req PageRequest) (PageData, error) {
 	case "entity":
 		page = spec.Entity
 		if req.Entity == "" {
-			return PageData{}, badRequest("choose the entity whose page it is")
+			return PageData{}, httpx.BadRequest("choose the entity whose page it is")
 		}
 		values[widget.ValueEntity] = []string{req.Entity}
 	default:
-		return PageData{}, badRequest("page must be catalog or entity")
+		return PageData{}, httpx.BadRequest("page must be catalog or entity")
 	}
 	if page == nil {
-		return PageData{}, noTab(req.Tab)
+		return PageData{}, httpx.NotFound("no tab " + req.Tab)
 	}
 	tab, ok := widget.FindTab(page.Tabs, req.Tab)
 	if !ok {
-		return PageData{}, noTab(req.Tab)
+		return PageData{}, httpx.NotFound("no tab " + req.Tab)
 	}
 
 	env := widget.Env{Values: values}
@@ -418,7 +417,7 @@ func PageTab(ctx *gofr.Context, req PageRequest) (PageData, error) {
 	if req.Page == "entity" {
 		current, err := l.store.Get(ctx, spec.Identifier, req.Entity)
 		if errors.Is(err, entity.ErrNotFound) {
-			return PageData{}, httpx.Error{Code: http.StatusNotFound, Message: "no entity " + req.Entity}
+			return PageData{}, httpx.NotFound("no entity " + req.Entity)
 		}
 		if err != nil {
 			return PageData{}, err
@@ -436,16 +435,4 @@ func PageTab(ctx *gofr.Context, req PageRequest) (PageData, error) {
 	}
 
 	return l.load(tab.Widgets), nil
-}
-
-func noTab(tab string) error {
-	return httpx.Error{Code: http.StatusNotFound, Message: "no tab " + tab}
-}
-
-func notFound(message string) error {
-	return httpx.Error{Code: http.StatusNotFound, Message: message}
-}
-
-func badRequest(message string) error {
-	return httpx.Error{Code: http.StatusBadRequest, Message: message}
 }

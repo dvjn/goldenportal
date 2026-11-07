@@ -1,8 +1,8 @@
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, type Page } from "@/lib/api";
 
 export type AuditEvent = {
   id: number;
-  at: string;
+  occurredAt: string;
   // name is the person's, when a person did it; label is how the event
   // recorded them.
   actor: { id?: string; label: string; name?: string };
@@ -11,11 +11,7 @@ export type AuditEvent = {
   details: Record<string, unknown>;
 };
 
-export type AuditPage = {
-  events: AuditEvent[];
-  // total is how many events match the filters, across every page.
-  total: number;
-};
+export type AuditPage = Page<AuditEvent>;
 
 // AuditFilters picks a page of events. Dates are YYYY-MM-DD; to includes
 // that day. within, such as 7d, reaches back from now instead.

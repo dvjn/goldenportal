@@ -18,6 +18,7 @@ import { EmptyValue } from "@/components/catalog/property-value";
 import { Code } from "@/components/code";
 import { tableCellClass } from "@/components/data-table";
 import { Detail, DetailList } from "@/components/detail-list";
+import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -226,7 +227,9 @@ function AboutCard({
         {spec.description && <p className="text-muted-foreground">{spec.description}</p>}
         <DetailList>
           <Detail label="Entities">
-            <span className="font-medium tabular-nums">{usage?.entities ?? "-"}</span>
+            <span className="font-medium tabular-nums">
+              {usage?.entities ?? <EmptyValue title="Not counted" />}
+            </span>
           </Detail>
           {published && (
             <>
@@ -267,12 +270,15 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
       <CardTitleBar title="Written By" />
       <CardContent>
         {writers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No integration writes {spec.identifier} entities yet.{" "}
+          <EmptyState
+            compact
+            title="No writers yet"
+            description={`No integration writes ${spec.identifier} entities.`}
+          >
             <Link to="/integrations/new" className="text-foreground underline underline-offset-4">
               New Integration
             </Link>
-          </p>
+          </EmptyState>
         ) : (
           <ul className="grid gap-3">
             {writers.map((writer) => (
@@ -292,7 +298,11 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
                     className="text-xs text-muted-foreground"
                     title={writer.lastRunAt ? formatAbsolute(writer.lastRunAt) : undefined}
                   >
-                    {writer.lastRunAt ? formatRelative(writer.lastRunAt) : "Never run"}
+                    {writer.lastRunAt ? (
+                      formatRelative(writer.lastRunAt)
+                    ) : (
+                      <EmptyValue title="Never run" />
+                    )}
                   </span>
                 </div>
                 <span

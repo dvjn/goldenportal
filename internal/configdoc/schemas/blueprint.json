@@ -279,6 +279,11 @@
           "description": "Colors badges by value: each key is one of the property's values (one of its enum, if it has one).",
           "additionalProperties": { "$ref": "#/$defs/color" }
         },
+        "titles": {
+          "type": "object",
+          "description": "Titles an enum value shown in place of its own text: each key is one of the property's values (one of its enum, if it has one). Without one, the value is shown in Title Case.",
+          "additionalProperties": { "type": "string" }
+        },
         "filter": { "type": "boolean", "description": "Offers the property's values as a catalog filter. Not for lookups or objects." },
         "hidden": { "type": "boolean", "description": "Leaves the property off entity pages; it's still in the data." },
         "empty": { "type": "string", "description": "Shown when an entity has no value, such as No owner." }

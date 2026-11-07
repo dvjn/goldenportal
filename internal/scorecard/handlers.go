@@ -2,9 +2,7 @@ package scorecard
 
 import (
 	"errors"
-	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 
 	"gofr.dev/pkg/gofr"
@@ -34,7 +32,7 @@ func published(ctx *gofr.Context, name string) (Spec, string, error) {
 	store := configdoc.NewStore(ctx.SQL, Name)
 	record, err := store.Get(ctx, name)
 	if errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published()) {
-		return Spec{}, "", httpx.Error{Code: http.StatusNotFound, Message: "no published scorecard " + name}
+		return Spec{}, "", httpx.NotFound("no published scorecard " + name)
 	}
 	if err != nil {
 		return Spec{}, "", err
@@ -71,8 +69,6 @@ func GetSummary(ctx *gofr.Context, name string) (SummaryView, error) {
 	return SummaryView{Spec: spec, Summary: s}, nil
 }
 
-var pageSizes = []int{10, 20, 50, 100}
-
 // ResultsRequest asks for a page of a scorecard's results, searched by
 // Search and narrowed to Tiers, which are the scorecard's tiers or none. A
 // zero Page or Size means the first page or the smallest size.
@@ -89,11 +85,8 @@ func listResults(ctx *gofr.Context) (any, error) {
 		req.Tiers = strings.Split(value, ",")
 	}
 	var err error
-	if req.Page, err = intParam(ctx, "page"); err != nil {
-		return nil, badRequest("page must be a whole number from 1")
-	}
-	if req.Size, err = intParam(ctx, "size"); err != nil {
-		return nil, badRequest("size must be 10, 20, 50 or 100")
+	if req.Page, req.Size, err = httpx.Paging(ctx.Param); err != nil {
+		return nil, err
 	}
 
 	return httpx.Result(Results(ctx, ctx.PathParam("identifier"), req))
@@ -109,41 +102,18 @@ func Results(ctx *gofr.Context, name string, req ResultsRequest) (ResultPage, er
 		return ResultPage{}, err
 	}
 
-	q := ResultQuery{Search: req.Search, Page: 1, PageSize: pageSizes[0]}
+	q := ResultQuery{Search: req.Search}
+	if q.Page, q.PageSize, err = httpx.CheckPaging(req.Page, req.Size); err != nil {
+		return ResultPage{}, err
+	}
 	for _, tier := range req.Tiers {
 		if tier != "none" && !slices.ContainsFunc(spec.Tiers, func(t Tier) bool { return t.Name == tier }) {
-			return ResultPage{}, badRequest("tier must be the scorecard's tiers, or none")
+			return ResultPage{}, httpx.BadRequest("tier must be the scorecard's tiers, or none")
 		}
 		q.Tiers = append(q.Tiers, tier)
 	}
-	if req.Page != 0 {
-		if req.Page < 1 {
-			return ResultPage{}, badRequest("page must be a whole number from 1")
-		}
-		q.Page = req.Page
-	}
-	if req.Size != 0 {
-		if !slices.Contains(pageSizes, req.Size) {
-			return ResultPage{}, badRequest("size must be 10, 20, 50 or 100")
-		}
-		q.PageSize = req.Size
-	}
 
 	return results(ctx, ctx.SQL, id, spec, q)
-}
-
-// intParam reads a whole-number query parameter, zero when it's absent.
-func intParam(ctx *gofr.Context, name string) (int, error) {
-	value := ctx.Param(name)
-	if value == "" {
-		return 0, nil
-	}
-	n, err := strconv.Atoi(value)
-	if err == nil && n == 0 {
-		err = strconv.ErrRange
-	}
-
-	return n, err
 }
 
 // Evaluated is how many entities an evaluation scored.
@@ -166,7 +136,7 @@ func EvaluateNow(ctx *gofr.Context, name string) (Evaluated, error) {
 
 	n, err := Evaluate(ctx, ctx.SQL, name)
 	if errors.Is(err, ErrEvaluating) {
-		return Evaluated{}, httpx.Error{Code: http.StatusConflict, Message: err.Error()}
+		return Evaluated{}, httpx.Conflict(err.Error())
 	}
 	if err != nil {
 		return Evaluated{}, err
@@ -185,7 +155,7 @@ func ForEntity(ctx *gofr.Context, blueprint, identifier string) ([]EntityScoreca
 		return nil, err
 	}
 	if blueprint == "" || identifier == "" {
-		return nil, badRequest("name the entity with blueprint and identifier")
+		return nil, httpx.BadRequest("name the entity with blueprint and identifier")
 	}
 
 	return entityResults(ctx, ctx.SQL, blueprint, identifier)
@@ -206,8 +176,4 @@ func evaluateAll(ctx *gofr.Context) {
 			ctx.Errorf("evaluate scorecard %s: %v", record.Identifier, err)
 		}
 	}
-}
-
-func badRequest(message string) error {
-	return httpx.Error{Code: http.StatusBadRequest, Message: message}
 }

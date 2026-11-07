@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppWindow, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppLogo } from "@/components/app-logo";
+import { EmptyValue } from "@/components/catalog/property-value";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -99,7 +100,7 @@ const columns = [
           className="text-muted-foreground"
           title={lastUsed ? formatAbsolute(lastUsed) : undefined}
         >
-          {lastUsed ? formatRelative(lastUsed) : "Never"}
+          {lastUsed ? formatRelative(lastUsed) : <EmptyValue title="Never used" />}
         </span>
       );
     },
@@ -159,6 +160,7 @@ function AppsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title="Connected Apps" icon={<PageIcon page="apps" />} />
       <DataTable
+        noun="apps"
         data={apps}
         columns={columns}
         getRowId={(app) => app.id}
@@ -167,7 +169,7 @@ function AppsPage() {
         empty={
           <EmptyState
             icon={<AppWindow />}
-            title="No connected apps"
+            title="No apps yet"
             description="Apps you authorize, such as AI assistants connecting over MCP, show up here."
           />
         }

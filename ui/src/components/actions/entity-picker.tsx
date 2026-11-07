@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronsUpDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { OptionMark } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -68,7 +69,7 @@ export function EntityPicker({
   const [titles, setTitles] = useState<Record<string, string>>({});
   const titleOf = (identifier: string) =>
     titles[identifier] ??
-    picked.data?.entities.find((entity) => entity.identifier === identifier)?.title ??
+    picked.data?.items.find((entity) => entity.identifier === identifier)?.title ??
     identifier;
 
   function toggle(identifier: string, title: string) {
@@ -110,11 +111,15 @@ export function EntityPicker({
         <Command shouldFilter={false}>
           <CommandInput value={text} onValueChange={setText} placeholder="Search" />
           <CommandList>
-            <CommandEmpty>
-              {found.isFetching || query !== text.trim() ? "Searching…" : "Nothing matches."}
+            <CommandEmpty className="py-0">
+              {found.isFetching || query !== text.trim() ? (
+                <span className="block py-6">Searching…</span>
+              ) : (
+                <EmptyState compact title="No entities match" />
+              )}
             </CommandEmpty>
             <CommandGroup>
-              {found.data?.entities.map((entity) => (
+              {found.data?.items.map((entity) => (
                 <CommandItem
                   key={entity.identifier}
                   value={entity.identifier}

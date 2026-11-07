@@ -1,7 +1,6 @@
 package app
 
 import (
-	"net/http"
 	"strings"
 
 	"gofr.dev/pkg/gofr"
@@ -132,16 +131,16 @@ func registerSettings(app httpx.Routes, summary serverConfig, oidc *auth.OIDC, s
 		return summary, nil
 	})
 
-	app.POST("settings/configuration/actions/{id}", func(ctx *gofr.Context) (any, error) {
+	app.POST("settings/configuration/actions/{action}", func(ctx *gofr.Context) (any, error) {
 		if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
 			return nil, err
 		}
 
-		switch ctx.PathParam("id") {
+		switch ctx.PathParam("action") {
 		case "oidc.check":
 			return checkOIDC(ctx, oidc), nil
 		default:
-			return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such action"}
+			return nil, httpx.NotFound("no such action")
 		}
 	})
 }

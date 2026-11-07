@@ -53,6 +53,8 @@ export type Display = {
     | "json";
   unit?: string;
   colors?: Record<string, string>;
+  // titles replace an enum value's own text where it's shown.
+  titles?: Record<string, string>;
   // filter offers its values as a catalog filter.
   filter?: boolean;
   hidden?: boolean;

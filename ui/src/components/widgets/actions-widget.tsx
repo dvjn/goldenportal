@@ -91,8 +91,9 @@ function OfferList({
     return (
       <WidgetCard widget={widget}>
         <EmptyState
+          compact
           icon={<Zap />}
-          title="Nothing to run"
+          title="No actions yet"
           description={entity ? "None of these can be run here." : "None of these can be run."}
         />
       </WidgetCard>

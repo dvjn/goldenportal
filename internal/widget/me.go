@@ -56,24 +56,25 @@ func MeValues(p auth.Principal) Values {
 	return values
 }
 
-// checkVariable reports a $me.<name> that isn't an attribute, so a typo
-// fails at publish time rather than quietly comparing with the text. Other
-// texts are literals.
+// checkVariable reports a text starting with $ that isn't a variable, or a
+// $me.<name> that isn't an attribute, so a typo fails at publish time
+// rather than quietly comparing with the text. Other texts are literals.
 func checkVariable(text string) error {
-	if strings.HasPrefix(text, ValueToday) {
-		return checkToday(text)
-	}
-	if id, ok := strings.CutPrefix(text, "$filter."); ok {
-		return fmt.Errorf("%s is now %s%s: dashboards take inputs", text, ValueInput, id)
-	}
-	if strings.HasPrefix(text, "$entity.") && !entityName.MatchString(text) {
-		return fmt.Errorf("invalid entity variable %s", text)
-	}
-	if !strings.HasPrefix(text, ValueMe+".") {
+	switch {
+	case !strings.HasPrefix(text, "$"):
 		return nil
+	case text == ValueToday, text == ValueEntity, text == ValueMe, strings.HasPrefix(text, ValueInput):
+		return nil
+	case strings.HasPrefix(text, ValueEntity+"."):
+		if !entityName.MatchString(text) {
+			return fmt.Errorf("invalid entity variable %s", text)
+		}
+		return nil
+	case strings.HasPrefix(text, ValueMe+"."):
+		return checkMe(text)
 	}
 
-	return checkMe(text)
+	return fmt.Errorf("unknown variable %s; known: %s, %s, <id>, %s, %s", text, ValueMe, ValueInput, ValueToday, ValueEntity)
 }
 
 func checkMe(name string) error {
@@ -106,10 +107,7 @@ func CheckTextIn(text string, scope Scope) error {
 			}
 			continue
 		}
-		if strings.HasPrefix(name, ValueToday) {
-			if err := checkToday(name); err != nil {
-				return err
-			}
+		if name == ValueToday {
 			continue
 		}
 		if err := checkMe(name); err != nil {

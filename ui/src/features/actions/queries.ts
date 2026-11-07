@@ -41,7 +41,7 @@ export const runsQueryOptions = (filters: RunFilters) =>
     queryKey: runKeys.list(filters),
     queryFn: () => listRuns(filters),
     refetchInterval: (query) =>
-      soonest((query.state.data?.runs ?? []).map((run) => pollFor(run.status))),
+      soonest((query.state.data?.items ?? []).map((run) => pollFor(run.status))),
   });
 
 export const runQueryOptions = (id: string) =>

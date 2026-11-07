@@ -1,12 +1,12 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
-	"github.com/itchyny/gojq"
-
 	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/jq"
 )
 
 // Entry is one entity made from an item, the identifier of one to delete,
@@ -25,8 +25,8 @@ type mapper struct {
 
 type compiled struct {
 	blueprint                 string
-	filter, identifier, title *gojq.Code
-	properties                map[string]*gojq.Code
+	filter, identifier, title *jq.Code
+	properties                map[string]*jq.Code
 }
 
 // mapper compiles the mappings.
@@ -44,11 +44,11 @@ func (s Spec) mapper() (mapper, error) {
 }
 
 // Map turns items into entries through the mappings of each item's resource.
-func (m mapper) Map(items []Item) []Entry {
+func (m mapper) Map(ctx context.Context, items []Item) []Entry {
 	var entries []Entry
 	for _, item := range items {
 		for _, c := range m.byResource[item.Resource] {
-			if entry, ok := c.apply(item); ok {
+			if entry, ok := c.apply(ctx, item); ok {
 				entries = append(entries, entry)
 			}
 		}
@@ -57,34 +57,24 @@ func (m mapper) Map(items []Item) []Entry {
 	return entries
 }
 
-// compile parses jq that may use the variables named.
-func compile(expression string, variables ...string) (*gojq.Code, error) {
-	query, err := gojq.Parse(expression)
-	if err != nil {
-		return nil, err
-	}
-
-	return gojq.Compile(query, gojq.WithVariables(variables))
-}
-
 func (m Mapping) compile() (compiled, error) {
 	var (
-		c   = compiled{blueprint: m.Blueprint, properties: map[string]*gojq.Code{}}
+		c   = compiled{blueprint: m.Blueprint, properties: map[string]*jq.Code{}}
 		err error
 	)
 	for _, field := range []struct {
-		target     **gojq.Code
+		target     **jq.Code
 		expression string
 	}{{&c.filter, m.Filter}, {&c.identifier, m.Entity.Identifier}, {&c.title, m.Entity.Title}} {
 		if field.expression == "" {
 			continue
 		}
-		if *field.target, err = compile(field.expression); err != nil {
+		if *field.target, err = jq.Compile(field.expression); err != nil {
 			return c, err
 		}
 	}
 	for _, f := range m.Entity.Properties {
-		if c.properties[f.ID], err = compile(f.Expression); err != nil {
+		if c.properties[f.ID], err = jq.Compile(f.Expression); err != nil {
 			return c, err
 		}
 	}
@@ -94,10 +84,10 @@ func (m Mapping) compile() (compiled, error) {
 
 // apply maps one item, or reports false when the filter drops it. A deleted
 // item only needs its identifier.
-func (c compiled) apply(item Item) (Entry, bool) {
+func (c compiled) apply(ctx context.Context, item Item) (Entry, bool) {
 	input := item.Object
 	if c.filter != nil && !item.Deleted {
-		keep, err := first(c.filter, input)
+		keep, err := first(ctx, c.filter, input)
 		if err != nil {
 			return Entry{Blueprint: c.blueprint, Problems: []string{"filter: " + err.Error()}}, true
 		}
@@ -107,7 +97,7 @@ func (c compiled) apply(item Item) (Entry, bool) {
 	}
 
 	entry := Entry{Blueprint: c.blueprint, Deleted: item.Deleted, Entity: blueprint.Entity{Properties: map[string]any{}}}
-	identifier, err := first(c.identifier, input)
+	identifier, err := first(ctx, c.identifier, input)
 	if err != nil {
 		entry.Problems = append(entry.Problems, "identifier: "+err.Error())
 	}
@@ -116,14 +106,14 @@ func (c compiled) apply(item Item) (Entry, bool) {
 		return entry, true
 	}
 	if c.title != nil {
-		title, err := first(c.title, input)
+		title, err := first(ctx, c.title, input)
 		if err != nil {
 			entry.Problems = append(entry.Problems, "title: "+err.Error())
 		}
 		entry.Entity.Title, _ = title.(string)
 	}
 	for id, code := range c.properties {
-		value, err := first(code, input)
+		value, err := first(ctx, code, input)
 		if err != nil {
 			entry.Problems = append(entry.Problems, "properties."+id+": "+err.Error())
 			continue
@@ -134,38 +124,11 @@ func (c compiled) apply(item Item) (Entry, bool) {
 	return entry, true
 }
 
-// first runs code and returns its first result, with numbers as float64.
-func first(code *gojq.Code, input any) (any, error) { return firstWith(code, input) }
+// first runs code and returns its first result, or nil for none.
+func first(ctx context.Context, code *jq.Code, input any, variables ...any) (any, error) {
+	value, _, err := code.First(ctx, jq.DefaultTimeout, input, variables...)
 
-// firstWith is first with values for the code's variables.
-func firstWith(code *gojq.Code, input any, variables ...any) (any, error) {
-	iter := code.Run(input, variables...)
-	value, ok := iter.Next()
-	if !ok {
-		return nil, nil
-	}
-	if err, isErr := value.(error); isErr {
-		return nil, err
-	}
-
-	return normalise(value), nil
-}
-
-func normalise(value any) any {
-	switch v := value.(type) {
-	case int:
-		return float64(v)
-	case []any:
-		for i := range v {
-			v[i] = normalise(v[i])
-		}
-	case map[string]any:
-		for key := range v {
-			v[key] = normalise(v[key])
-		}
-	}
-
-	return value
+	return value, err
 }
 
 // identifierText accepts numeric identifiers, which many systems use.

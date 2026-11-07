@@ -79,7 +79,7 @@ const routes = {
   ]),
   "GET integrations/inventory/runs": ok({
     total: 1,
-    runs: [
+    items: [
       {
         id: 1,
         startedAt: "2026-10-24T10:00:00Z",
@@ -149,7 +149,7 @@ const pullRoutes = {
   ...routes,
   "GET integrations/portal": ok(portal),
   "GET integrations/portal/versions": ok([]),
-  "GET integrations/portal/runs": ok({ runs: [], total: 0 }),
+  "GET integrations/portal/runs": ok({ items: [], total: 0 }),
   "GET connectors": ok([
     {
       id: "portal",
@@ -246,7 +246,7 @@ describe("integrations", () => {
       ...routes,
       "GET integrations/inventory/runs": ok({
         total: 1,
-        runs: [
+        items: [
           {
             id: 2,
             startedAt: "2026-10-24T10:00:00Z",
@@ -397,7 +397,7 @@ describe("integrations", () => {
       ...pullRoutes,
       "GET integrations/portal/runs": ok({
         total: 2,
-        runs: [{ ...runningRun, id: 3, received: 500, created: 500 }, syncRun],
+        items: [{ ...runningRun, id: 3, received: 500, created: 500 }, syncRun],
       }),
     });
     renderRoute("/integrations/portal?tab=runs");
@@ -449,7 +449,7 @@ describe("integrations", () => {
       ...pullRoutes,
       "GET integrations/portal/runs": ok({
         total: 1,
-        runs: [{ ...syncRun, trigger: "schedule", error: "users: 503 Service Unavailable" }],
+        items: [{ ...syncRun, trigger: "schedule", error: "users: 503 Service Unavailable" }],
       }),
     });
     renderRoute("/integrations/portal?tab=runs");

@@ -40,3 +40,14 @@ export function formatDuration(start: string | Date, end: string | Date) {
   const minutes = Math.floor(seconds / 60);
   return seconds % 60 === 0 ? `${minutes}m` : `${minutes}m ${seconds % 60}s`;
 }
+
+// percentOf rounds down, so 100 means everything: a share can't read full
+// while one is missing. It works on whole counts to dodge float error, which
+// would turn 29 of 100 into 28.
+export function percentOf(count: number, total: number) {
+  return Math.floor((count * 100) / total);
+}
+
+export function formatPercent(count: number, total: number) {
+  return `${percentOf(count, total)}%`;
+}

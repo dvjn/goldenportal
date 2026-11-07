@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/empty-state";
 import { ChecksPassing } from "@/components/scorecards/checks-passing";
 import { TierDistribution } from "@/components/scorecards/tier-distribution";
 import type { TierData } from "@/features/widgets";
@@ -15,7 +16,7 @@ export function ScorecardWidget({ widget, context, data, error }: WidgetProps<Ti
   return (
     <WidgetCard widget={widget} action={!context.draft && <ViewAll link={data.link} />}>
       {total === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing is scored yet.</p>
+        <EmptyState compact title="No scores yet" />
       ) : (
         <div className="grid gap-3">
           <ChecksPassing passed={passed} failed={failed} />

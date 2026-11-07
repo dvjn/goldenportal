@@ -79,7 +79,7 @@ func publishedDoc(ctx context.Context, db configdoc.DB, kind, name string) (publ
 		if kind == WorkflowName {
 			noun = "workflow"
 		}
-		return published{}, httpx.Error{Code: http.StatusNotFound, Message: "no published " + noun + " " + name}
+		return published{}, httpx.NotFound("no published " + noun + " " + name)
 	}
 	if err != nil {
 		return published{}, err
@@ -108,11 +108,11 @@ func loadTarget(ctx context.Context, db configdoc.DB, blueprintName, identifier 
 	}
 	spec, ok := specs[blueprintName]
 	if !ok {
-		return target{}, httpx.Error{Code: http.StatusNotFound, Message: "no published blueprint " + blueprintName}
+		return target{}, httpx.NotFound("no published blueprint " + blueprintName)
 	}
 	e, err := entity.NewStore(db).Get(ctx, blueprintName, identifier)
 	if errors.Is(err, entity.ErrNotFound) {
-		return target{}, httpx.Error{Code: http.StatusNotFound, Message: fmt.Sprintf("no %s %s", blueprintName, identifier)}
+		return target{}, httpx.NotFound(fmt.Sprintf("no %s %s", blueprintName, identifier))
 	}
 
 	return target{entity: e, specs: specs, spec: spec}, err
@@ -221,7 +221,7 @@ func ForEntities(ctx *gofr.Context, blueprintName string, identifiers []string) 
 		return RowActions{}, err
 	}
 	if len(identifiers) > maxRows {
-		return RowActions{}, httpx.Error{Code: http.StatusBadRequest, Message: fmt.Sprintf("ask about at most %d entities at once", maxRows)}
+		return RowActions{}, httpx.BadRequest(fmt.Sprintf("ask about at most %d entities at once", maxRows))
 	}
 	out := RowActions{Actions: []Available{}, Entities: map[string][]string{}}
 	if len(identifiers) == 0 {
@@ -233,7 +233,7 @@ func ForEntities(ctx *gofr.Context, blueprintName string, identifiers []string) 
 	}
 	spec, ok := specs[blueprintName]
 	if !ok {
-		return RowActions{}, httpx.Error{Code: http.StatusNotFound, Message: "no published blueprint " + blueprintName}
+		return RowActions{}, httpx.NotFound("no published blueprint " + blueprintName)
 	}
 	actions, err := publishedActions(ctx)
 	if err != nil {
@@ -355,10 +355,10 @@ func prepare(ctx context.Context, db configdoc.DB, a published, identifier strin
 			return Run{}, err
 		}
 		if !ok {
-			return Run{}, httpx.Error{Code: http.StatusForbidden, Message: fmt.Sprintf("you can't run %s on %s", a.spec.Title, t.entity.Title)}
+			return Run{}, httpx.Forbidden(fmt.Sprintf("you can't run %s on %s", a.spec.Title, t.entity.Title))
 		}
 	} else if !a.spec.Run.matches(p) {
-		return Run{}, httpx.Error{Code: http.StatusForbidden, Message: "you can't run " + a.spec.Title}
+		return Run{}, httpx.Forbidden("you can't run " + a.spec.Title)
 	}
 	if given == nil {
 		given = map[string]any{}
@@ -460,7 +460,7 @@ func visible(ctx *gofr.Context, id string) (Run, auth.Principal, error) {
 	}
 	run, err := NewStore(ctx.SQL).Get(ctx, id)
 	if errors.Is(err, ErrRunNotFound) {
-		return Run{}, p, httpx.Error{Code: http.StatusNotFound, Message: "no such run"}
+		return Run{}, p, httpx.NotFound("no such run")
 	}
 	if err != nil {
 		return Run{}, p, err
@@ -469,7 +469,7 @@ func visible(ctx *gofr.Context, id string) (Run, auth.Principal, error) {
 		return Run{}, p, err
 	}
 	if run.requesterID != p.ID && !p.Can(auth.RoleBuilder) && !run.CanDecide && !decided(run, p) {
-		return Run{}, p, httpx.Error{Code: http.StatusNotFound, Message: "no such run"}
+		return Run{}, p, httpx.NotFound("no such run")
 	}
 
 	return run, p, nil
@@ -550,11 +550,11 @@ func Decide(ctx *gofr.Context, id, decision, comment string) (Run, error) {
 	}
 	switch {
 	case w == nil:
-		return Run{}, httpx.Error{Code: http.StatusConflict, Message: "the run isn't waiting for approval"}
+		return Run{}, httpx.Conflict("the run isn't waiting for approval")
 	case run.requesterID == p.ID:
-		return Run{}, httpx.Error{Code: http.StatusForbidden, Message: "someone else has to approve a run you asked for"}
+		return Run{}, httpx.Forbidden("someone else has to approve a run you asked for")
 	case !can:
-		return Run{}, httpx.Error{Code: http.StatusForbidden, Message: "you can't approve this run, or you already decided"}
+		return Run{}, httpx.Forbidden("you can't approve this run, or you already decided")
 	}
 	comment = strings.TrimSpace(comment)
 	action := audit.ActionRunApprove
@@ -562,18 +562,18 @@ func Decide(ctx *gofr.Context, id, decision, comment string) (Run, error) {
 	case Approve:
 	case Reject:
 		if comment == "" {
-			return Run{}, httpx.Error{Code: http.StatusBadRequest, Message: "say why you're rejecting it, as the comment"}
+			return Run{}, httpx.BadRequest("say why you're rejecting it, as the comment")
 		}
 		action = audit.ActionRunReject
 	default:
-		return Run{}, httpx.Error{Code: http.StatusBadRequest, Message: "the decision is approve or reject"}
+		return Run{}, httpx.BadRequest("the decision is approve or reject")
 	}
 
 	store := NewStore(ctx.SQL)
 	resumed, err := store.decide(ctx, id, w.position, w.step.Require,
 		Decision{Email: p.Email, Name: p.DisplayName, Decision: decision, Comment: comment, userID: p.ID})
 	if errors.Is(err, ErrDecided) {
-		return Run{}, httpx.Error{Code: http.StatusConflict, Message: "you already decided, or the step isn't waiting any more"}
+		return Run{}, httpx.Conflict("you already decided, or the step isn't waiting any more")
 	}
 	if err != nil {
 		return Run{}, err
@@ -601,7 +601,7 @@ func Approvals(ctx *gofr.Context) ([]Run, error) {
 		return nil, err
 	}
 	out := []Run{}
-	for _, run := range slices.Backward(page.Runs) {
+	for _, run := range slices.Backward(page.Items) {
 		if run.Steps, err = store.steps(ctx, run.ID); err != nil {
 			return nil, err
 		}
@@ -641,8 +641,6 @@ type RunsRequest struct {
 	Page, Size int
 }
 
-var pageSizes = []int{10, 20, 50, 100}
-
 // Runs lists runs, newest first.
 func Runs(ctx *gofr.Context, req RunsRequest) (RunPage, error) {
 	p, err := auth.Require(ctx, auth.RoleMember)
@@ -651,10 +649,9 @@ func Runs(ctx *gofr.Context, req RunsRequest) (RunPage, error) {
 	}
 	q := RunsQuery{
 		Blueprint: req.Blueprint, Entity: req.Entity, Status: req.Status, Search: req.Search, Parent: req.Parent,
-		Page: max(req.Page, 1), Size: req.Size,
 	}
-	if !slices.Contains(pageSizes, q.Size) {
-		q.Size = pageSizes[0]
+	if q.Page, q.Size, err = httpx.CheckPaging(req.Page, req.Size); err != nil {
+		return RunPage{}, err
 	}
 	if req.Mine || !p.Can(auth.RoleBuilder) {
 		q.RequestedBy = p.ID
@@ -665,7 +662,7 @@ func Runs(ctx *gofr.Context, req RunsRequest) (RunPage, error) {
 		}
 		id, err := configdoc.NewStore(ctx.SQL, kind).PublishedID(ctx, name)
 		if errors.Is(err, configdoc.ErrNotFound) {
-			return RunPage{Runs: []Run{}}, nil
+			return RunPage{Items: []Run{}}, nil
 		}
 		if err != nil {
 			return RunPage{}, err
@@ -679,7 +676,7 @@ func Runs(ctx *gofr.Context, req RunsRequest) (RunPage, error) {
 // mayChange checks the caller asked for the run or builds the portal.
 func mayChange(run Run, p auth.Principal) error {
 	if run.requesterID != p.ID && !p.Can(auth.RoleBuilder) {
-		return httpx.Error{Code: http.StatusForbidden, Message: "only whoever asked for the run, or a builder, can change it"}
+		return httpx.Forbidden("only whoever asked for the run, or a builder, can change it")
 	}
 
 	return nil
@@ -708,7 +705,7 @@ func CancelRun(ctx *gofr.Context, id string) (Run, error) {
 		return Run{}, err
 	}
 	if !ok {
-		return Run{}, httpx.Error{Code: http.StatusConflict, Message: "the run has already finished"}
+		return Run{}, httpx.Conflict("the run has already finished")
 	}
 	record(ctx, p, audit.ActionRunCancel, run, nil)
 	NewRunner(ctx.SQL, ctx.Container.Logger, baseURL).Wake(ctx, id)
@@ -731,7 +728,7 @@ func RetryRun(ctx *gofr.Context, id string) (Run, error) {
 		return Run{}, err
 	}
 	if !ok {
-		return Run{}, httpx.Error{Code: http.StatusConflict, Message: "only failed or interrupted runs can be retried"}
+		return Run{}, httpx.Conflict("only failed or interrupted runs can be retried")
 	}
 	record(ctx, p, audit.ActionRunRetry, run, nil)
 	NewRunner(ctx.SQL, ctx.Container.Logger, baseURL).Start(id)
@@ -759,26 +756,26 @@ func ResolveRun(ctx *gofr.Context, id, outcome, comment string) (Run, error) {
 	}
 	comment = strings.TrimSpace(comment)
 	if comment == "" {
-		return Run{}, httpx.Error{Code: http.StatusBadRequest, Message: "say what you checked, as the comment"}
+		return Run{}, httpx.BadRequest("say what you checked, as the comment")
 	}
 	store := NewStore(ctx.SQL)
 	var ok bool
 	switch outcome {
 	case ResolveDone:
 		if !p.Can(auth.RoleBuilder) {
-			return Run{}, httpx.Error{Code: http.StatusForbidden, Message: "only builders can say an interrupted step took effect"}
+			return Run{}, httpx.Forbidden("only builders can say an interrupted step took effect")
 		}
 		ok, err = store.requeue(ctx, id, []string{RunInterrupted}, true, p.ID, comment)
 	case ResolveFailed:
 		ok, err = store.resolveFailed(ctx, id, p.ID, comment)
 	default:
-		return Run{}, httpx.Error{Code: http.StatusBadRequest, Message: "the outcome is done or failed"}
+		return Run{}, httpx.BadRequest("the outcome is done or failed")
 	}
 	if err != nil {
 		return Run{}, err
 	}
 	if !ok {
-		return Run{}, httpx.Error{Code: http.StatusConflict, Message: "only interrupted runs need resolving"}
+		return Run{}, httpx.Conflict("only interrupted runs need resolving")
 	}
 	record(ctx, p, audit.ActionRunResolve, run, map[string]any{"outcome": outcome, "comment": comment})
 	runner := NewRunner(ctx.SQL, ctx.Container.Logger, baseURL)

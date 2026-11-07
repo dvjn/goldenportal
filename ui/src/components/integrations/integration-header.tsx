@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { EmptyValue } from "@/components/catalog/property-value";
 import { IconButton } from "@/components/icon-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ export function LastRun({ identifier }: Readonly<{ identifier: string }>) {
   const status = data?.find((s) => s.integration === identifier);
   if (!status) return null;
   const run = status.lastRun;
-  if (!run) return <Badge variant="outline">Never run</Badge>;
+  if (!run) return <EmptyValue title="Never run" />;
   return (
     <Badge variant="outline" title={formatAbsolute(run.startedAt)}>
       <RunStatus run={run} />

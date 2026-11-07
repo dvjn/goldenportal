@@ -66,6 +66,7 @@ function WorkflowsPage() {
         actions={<NewWorkflowButton />}
       />
       <DataTable
+        noun="workflows"
         data={list as WorkflowSummary[]}
         columns={columns}
         getRowId={(item) => item.identifier}

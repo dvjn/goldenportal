@@ -69,6 +69,7 @@ function BlueprintsPage() {
         actions={<NewBlueprintButton />}
       />
       <DataTable
+        noun="blueprints"
         data={rows}
         columns={columns}
         getRowId={(blueprint) => blueprint.identifier}

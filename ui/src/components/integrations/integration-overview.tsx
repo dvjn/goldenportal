@@ -7,6 +7,7 @@ import { IconTile } from "@/components/catalog/blueprint-icon";
 import { BlueprintLabel } from "@/components/catalog/blueprint-label";
 import { Code } from "@/components/code";
 import { Detail, DetailList } from "@/components/detail-list";
+import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,7 +56,7 @@ function FeedsCard({ identifier }: Readonly<{ identifier: string }>) {
       <CardTitleBar title="Feeds" />
       <CardContent>
         {status.feeds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">It doesn't write any blueprint yet.</p>
+          <EmptyState compact title="No feeds yet" description="It doesn't write any blueprint." />
         ) : (
           <ul className="grid gap-2 text-sm">
             {status.feeds.map((feed) => (

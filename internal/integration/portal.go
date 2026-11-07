@@ -24,14 +24,14 @@ type portalData struct {
 }
 
 type portalUser struct {
-	ID           string     `json:"id"`
-	Email        string     `json:"email"`
-	DisplayName  string     `json:"displayName"`
-	Username     string     `json:"username"`
-	Active       bool       `json:"active"`
-	Groups       []string   `json:"groups"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	LastSignedIn *time.Time `json:"lastSignedIn"`
+	ID             string     `json:"id"`
+	Email          string     `json:"email"`
+	DisplayName    string     `json:"displayName"`
+	Username       string     `json:"username"`
+	Active         bool       `json:"active"`
+	Groups         []string   `json:"groups"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	LastSignedInAt *time.Time `json:"lastSignedInAt"`
 }
 
 type portalGroup struct {
@@ -207,7 +207,7 @@ func portalUsers(ctx context.Context, db configdoc.DB, data *portalData) error {
 	for users.Next() {
 		var u portalUser
 		if err := users.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Username, &u.Active, pq.Array(&u.Groups),
-			&u.CreatedAt, &u.LastSignedIn); err != nil {
+			&u.CreatedAt, &u.LastSignedInAt); err != nil {
 			return err
 		}
 		data.Users = append(data.Users, u)

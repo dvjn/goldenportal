@@ -64,9 +64,6 @@ func fieldFor(specs map[string]blueprint.Spec, spec blueprint.Spec, path string)
 // relations. A relation it follows is a scalar subquery, so the value
 // comes back one per row; a many-relation can't be read through that way.
 func (r reader) read(spec blueprint.Spec, alias, path string, hops int) (field, error) {
-	if err := widget.OldPath(path); err != nil {
-		return field{}, err
-	}
 	name, rest, nested := strings.Cut(path, ".")
 	if !nested && slices.Contains(blueprint.BuiltIns, name) {
 		return builtInField(spec, alias, name), nil

@@ -2,7 +2,6 @@ package oauth
 
 import (
 	"errors"
-	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -61,9 +60,9 @@ func (s Server) check(ctx *gofr.Context, p auth.Principal, req authorizeRequest)
 	var unusable metadataError
 	switch {
 	case errors.Is(err, errNotFound):
-		return checked{}, httpx.Error{Code: http.StatusBadRequest, Message: "the app asking for access isn't registered"}
+		return checked{}, httpx.BadRequest("the app asking for access isn't registered")
 	case errors.As(err, &unusable):
-		return checked{}, httpx.Error{Code: http.StatusBadRequest, Message: unusable.Error()}
+		return checked{}, httpx.BadRequest(unusable.Error())
 	case err != nil:
 		return checked{}, err
 	}
@@ -72,7 +71,7 @@ func (s Server) check(ctx *gofr.Context, p auth.Principal, req authorizeRequest)
 		c.redirectURI = client.RedirectURIs[0]
 	}
 	if !redirectAllowed(client.RedirectURIs, c.redirectURI) {
-		return checked{}, httpx.Error{Code: http.StatusBadRequest, Message: "the app's redirect URI doesn't match any it registered"}
+		return checked{}, httpx.BadRequest("the app's redirect URI doesn't match any it registered")
 	}
 
 	switch {
@@ -182,7 +181,7 @@ func (s Server) decide(ctx *gofr.Context) (any, error) {
 		Approve bool `json:"approve"`
 	}
 	if err := ctx.Bind(&body); err != nil {
-		return nil, httpx.Error{Code: http.StatusBadRequest, Message: "the body must be a JSON object"}
+		return nil, httpx.BadRequest("the body must be a JSON object")
 	}
 	c, err := s.check(ctx, p, body.authorizeRequest)
 	if err != nil {
@@ -222,7 +221,7 @@ func (s Server) consenter(ctx *gofr.Context) (auth.Principal, error) {
 		return auth.Principal{}, err
 	}
 	if !auth.InSession(ctx) {
-		return auth.Principal{}, httpx.Error{Code: http.StatusForbidden, Message: "authorize apps from the portal, signed in"}
+		return auth.Principal{}, httpx.Forbidden("authorize apps from the portal, signed in")
 	}
 
 	return p, nil
@@ -261,11 +260,11 @@ func revokeGrant(ctx *gofr.Context) (any, error) {
 	}
 	id := ctx.PathParam("id")
 	if _, err := uuid.Parse(id); err != nil {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such app"}
+		return nil, httpx.NotFound("no such app")
 	}
 	name, err := NewStore(ctx.SQL).RevokeGrant(ctx, p.ID, id)
 	if errors.Is(err, errNotFound) {
-		return nil, httpx.Error{Code: http.StatusNotFound, Message: "no such app"}
+		return nil, httpx.NotFound("no such app")
 	}
 	if err != nil {
 		return nil, err

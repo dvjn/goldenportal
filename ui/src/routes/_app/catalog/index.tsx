@@ -50,11 +50,15 @@ function CatalogPage() {
       {entries.length === 0 ? (
         <EmptyCard
           icon={<LayoutGrid />}
-          title="Nothing in the catalog yet"
+          title="No blueprints yet"
           description="Blueprints show up here once a builder publishes them."
         />
       ) : shown.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No blueprint matches "{query}".</p>
+        <EmptyCard
+          icon={<Search />}
+          title="No blueprints match"
+          description={`Nothing is named "${query}".`}
+        />
       ) : (
         // Cards share their rows, so counts line up across a row.
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

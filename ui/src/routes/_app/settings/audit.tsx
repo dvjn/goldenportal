@@ -91,7 +91,7 @@ function describeDetails(event: AuditEvent) {
 const column = dataTableColumns<AuditEvent>();
 
 const columns = [
-  column.accessor("at", {
+  column.accessor("occurredAt", {
     header: "When",
     enableSorting: false,
     cell: ({ getValue }) => (
@@ -160,7 +160,7 @@ function AuditPage() {
     filtersFrom(search, usePageSize(search)),
   );
   const actions = search.action?.split(",") ?? [];
-  const events = data?.events ?? [];
+  const events = data?.items ?? [];
 
   function filter(patch: Partial<AuditSearch>) {
     void navigate({
@@ -173,6 +173,7 @@ function AuditPage() {
   return (
     <div className="flex flex-col gap-4">
       <DataTable
+        noun="events"
         data={events}
         rowCount={data?.total ?? 0}
         loading={isFetching}
@@ -211,7 +212,7 @@ function AuditPage() {
         empty={
           <EmptyState
             icon={<ScrollText />}
-            title="Nothing recorded yet"
+            title="No events yet"
             description="Events appear here as people sign in and make changes."
           />
         }

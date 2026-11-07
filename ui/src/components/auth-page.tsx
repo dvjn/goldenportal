@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { useConfig } from "@/features/config";
+import { useConfig } from "@/features/app-config";
 
 // AuthPage is the login-03 block's page frame: the portal brand above a centred card.
 // It sits on the page background, not bg-muted, so the card reads as raised in dark mode.

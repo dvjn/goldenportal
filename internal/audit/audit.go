@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 // Actions recorded in the audit log.
@@ -105,12 +107,12 @@ type Target struct {
 }
 
 type Event struct {
-	ID      int64          `json:"id"`
-	At      time.Time      `json:"at"`
-	Actor   Actor          `json:"actor"`
-	Action  string         `json:"action"`
-	Target  Target         `json:"target"`
-	Details map[string]any `json:"details"`
+	ID         int64          `json:"id"`
+	OccurredAt time.Time      `json:"occurredAt"`
+	Actor      Actor          `json:"actor"`
+	Action     string         `json:"action"`
+	Target     Target         `json:"target"`
+	Details    map[string]any `json:"details"`
 }
 
 // Record stores an event and writes it to the log.
@@ -150,10 +152,7 @@ type Query struct {
 }
 
 // Page is one page of events, newest first, and how many events match in all.
-type Page struct {
-	Events []Event `json:"events"`
-	Total  int     `json:"total"`
-}
+type Page = httpx.Page[Event]
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
@@ -184,27 +183,27 @@ func List(ctx context.Context, db DB, q Query) (Page, error) {
 	}
 	defer rows.Close()
 
-	page := Page{Events: []Event{}}
+	page := Page{Items: []Event{}}
 	for rows.Next() {
 		var (
 			e       Event
 			details []byte
 		)
-		if err := rows.Scan(&e.ID, &e.At, &e.Actor.ID, &e.Actor.Label, &e.Actor.Name, &e.Action,
+		if err := rows.Scan(&e.ID, &e.OccurredAt, &e.Actor.ID, &e.Actor.Label, &e.Actor.Name, &e.Action,
 			&e.Target.Type, &e.Target.ID, &e.Target.Label, &details, &page.Total); err != nil {
 			return Page{}, err
 		}
 		if err := json.Unmarshal(details, &e.Details); err != nil {
 			return Page{}, err
 		}
-		page.Events = append(page.Events, e)
+		page.Items = append(page.Items, e)
 	}
 	if err := rows.Err(); err != nil {
 		return Page{}, err
 	}
 
 	// A page past the end has no rows to carry the total, so count separately.
-	if len(page.Events) == 0 && q.Page > 1 {
+	if len(page.Items) == 0 && q.Page > 1 {
 		return countOnly(ctx, db, q)
 	}
 
@@ -233,7 +232,7 @@ func countOnly(ctx context.Context, db DB, q Query) (Page, error) {
 	}
 	defer rows.Close()
 
-	page := Page{Events: []Event{}}
+	page := Page{Items: []Event{}}
 	if rows.Next() {
 		if err := rows.Scan(&page.Total); err != nil {
 			return Page{}, err

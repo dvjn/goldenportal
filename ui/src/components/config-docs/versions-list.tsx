@@ -1,6 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Eye, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { EmptyState } from "@/components/empty-state";
 import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +27,7 @@ export function VersionsList<S>({ docs, identifier, onRestore }: VersionsListPro
   const [viewing, setViewing] = useState<number | null>(null);
 
   if (versions.length === 0) {
-    return <p className="text-sm text-muted-foreground">Nothing is published yet.</p>;
+    return <EmptyState compact title="No versions yet" />;
   }
 
   return (

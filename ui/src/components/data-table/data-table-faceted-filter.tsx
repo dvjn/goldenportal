@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import {
   Command,
   CommandEmpty,
@@ -51,7 +52,13 @@ export function DataTableFacetedOptions({
     <Command>
       <CommandInput placeholder={title} />
       <CommandList>
-        <CommandEmpty>{loading ? "Loading…" : "Nothing matches."}</CommandEmpty>
+        <CommandEmpty className="py-0">
+          {loading ? (
+            <span className="block py-6">Loading…</span>
+          ) : (
+            <EmptyState compact title="No options match" />
+          )}
+        </CommandEmpty>
         <CommandGroup>
           {options.map((option) => (
             <CommandItem

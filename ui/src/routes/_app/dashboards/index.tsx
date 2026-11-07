@@ -83,6 +83,7 @@ function DashboardsPage() {
         actions={<NewDashboardButton />}
       />
       <DataTable
+        noun="dashboards"
         data={rows}
         columns={columns}
         getRowId={(dashboard) => dashboard.identifier}

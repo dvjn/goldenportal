@@ -70,9 +70,9 @@ function RunsPage() {
         }
         empty={
           everyone
-            ? { title: "Nothing has run yet", description: "Runs of actions show up here." }
+            ? { title: "No runs yet", description: "Runs of actions show up here." }
             : {
-                title: "You haven't run anything yet",
+                title: "No runs by you yet",
                 description: "Run an action from an entity's page, and it shows up here.",
               }
         }

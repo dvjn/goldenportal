@@ -3,6 +3,9 @@ import { noticeNewBuild } from "./new-build";
 
 export type ApiDataResponse<T> = { data: T };
 
+// Page is one page of a list, and how many items match across every page.
+export type Page<T> = { items: T[]; total: number };
+
 // Problems are what's wrong with each field of a request the server turned
 // down, by field; "" holds those that aren't about one field.
 export type Problems = Record<string, string[]>;

@@ -24,6 +24,7 @@ import {
 import { SplitTitle } from "@/components/catalog/split-title";
 import { UnpublishedBlueprint } from "@/components/catalog/unpublished-blueprint";
 import { Detail, DetailList } from "@/components/detail-list";
+import { EmptyCard, EmptyState } from "@/components/empty-state";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageError } from "@/components/page-error";
 import { PageHeader } from "@/components/page-header";
@@ -255,7 +256,7 @@ function EntityPage() {
           search={runsSearch}
           hide={["entity"]}
           empty={{
-            title: "Nothing has run here yet",
+            title: "No runs yet",
             description: "Runs of actions on this entity show up here.",
           }}
         />
@@ -327,11 +328,7 @@ function Overview({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: Enti
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="grid gap-4">
         {sections.length === 0 ? (
-          <Card>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">This blueprint has no properties.</p>
-            </CardContent>
-          </Card>
+          <EmptyCard title="No properties yet" description="This blueprint has none." />
         ) : (
           sections.map((section) => (
             <Card key={section.title}>
@@ -370,7 +367,7 @@ function IncomingLink({
     <Link
       to="/catalog/$blueprint"
       params={{ blueprint: incoming.blueprint }}
-      search={{ f: { [incoming.property]: [identifier] } }}
+      search={{ filter: [{ property: incoming.property, op: "eq", value: identifier }] }}
       className="font-medium tabular-nums hover:underline"
     >
       {children}
@@ -452,13 +449,7 @@ function RowTitle({ row }: Readonly<{ row: RelationRow }>) {
 function Relations({ spec, entity }: Readonly<{ spec: BlueprintSpec; entity: EntityDetail }>) {
   const groups = relationGroups(spec, entity);
   if (groups.length === 0) {
-    return (
-      <Card>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">Nothing relates to this entity.</p>
-        </CardContent>
-      </Card>
-    );
+    return <EmptyCard title="No relations yet" description="Nothing relates to this entity." />;
   }
   return (
     <Card className="gap-0 py-0">
@@ -498,7 +489,7 @@ function RelationsSummary({
       <CardTitleBar title="Relations" />
       <CardContent className="grid px-0 text-sm">
         {groups.length === 0 ? (
-          <p className="px-4 py-3 text-muted-foreground">Nothing relates to this entity.</p>
+          <EmptyState compact title="No relations yet" />
         ) : (
           groups.map((g) => (
             <CardSection key={g.blueprint} heading={<BlueprintLabel blueprint={g.blueprint} />}>

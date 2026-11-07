@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
-import { configQueryOptions, useConfig } from "@/features/config";
+import { configQueryOptions, useConfig } from "@/features/app-config";
 import { describeError } from "@/lib/api";
 import { PageTitleProvider } from "@/lib/page-title";
 

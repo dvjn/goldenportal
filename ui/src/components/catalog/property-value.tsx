@@ -11,7 +11,8 @@ import { Progress } from "@/components/ui/progress";
 import type { Display, Property } from "@/features/blueprints";
 import type { Link } from "@/features/catalog";
 import { swatch } from "@/lib/colors";
-import { formatAbsolute, formatDate, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatDate, formatPercent, formatRelative } from "@/lib/format";
+import { valueLabel } from "./value-label";
 
 type PropertyValueProps = {
   property: Property;
@@ -69,8 +70,8 @@ export function isWebUrl(text: string) {
 }
 
 export function formatNumber(value: number, unit?: string) {
-  // Percents are whole, as scores are, so a share reads 67%, not 66.67%.
-  if (unit === "%") return `${numbers.format(Math.round(value))}%`;
+  // Percents are whole and round down, as every percent is, so 100% means all.
+  if (unit === "%") return formatPercent(Math.floor(value + 1e-9), 100);
   const text = numbers.format(value);
   return unit ? `${text} ${unit}` : text;
 }
@@ -144,8 +145,9 @@ export function PropertyValue({
     const items = value.map((item) =>
       typeof item === "object" ? JSON.stringify(item) : String(item),
     );
+    const labels = items.map((item) => valueLabel(item, { property }));
     if (as === "list") {
-      const joined = items.join(", ");
+      const joined = labels.join(", ");
       return (
         <span className={cn("break-words", cut)} title={compact ? joined : undefined}>
           {joined}
@@ -155,9 +157,9 @@ export function PropertyValue({
     return (
       <ListValue
         compact={compact}
-        items={items.map((item) => ({
+        items={items.map((item, i) => ({
           key: item,
-          node: item,
+          node: labels[i],
           tint: swatch(colors?.[item])?.badge,
         }))}
         viewAll={compact && entity && <ViewAll entity={entity} />}
@@ -166,7 +168,7 @@ export function PropertyValue({
   }
   if (typeof value === "boolean") {
     if (as === "badge") {
-      return <ValueBadge value={value ? "Yes" : "No"} color={colors?.[String(value)]} />;
+      return <ValueBadge value={valueLabel(value)} color={colors?.[String(value)]} />;
     }
     return <BooleanValue value={value} compact={compact} />;
   }
@@ -222,7 +224,7 @@ export function PropertyValue({
     case "date":
       return <span className="whitespace-nowrap">{formatDate(text)}</span>;
     case "badge":
-      return <ValueBadge value={text} color={colors?.[text]} />;
+      return <ValueBadge value={valueLabel(text, { property })} color={colors?.[text]} />;
     case "code":
       return (
         <code className={cn("font-mono text-xs break-all", cut)} title={compact ? text : undefined}>
@@ -268,13 +270,10 @@ export function ValueBadge({
   );
 }
 
-// Empty marks a missing value, in the words the property's display gives.
-// EmptyValue stands in for a value that isn't there: the label a display
-// gives, or else a hyphen, as every empty value shows. title says why on hover.
 // BooleanValue is a yes or no, with a mark that stands out for yes. In a
 // table the mark says it alone, so a column of them scans for the gaps.
 export function BooleanValue({ value, compact }: Readonly<{ value: boolean; compact?: boolean }>) {
-  const word = value ? "Yes" : "No";
+  const word = valueLabel(value);
   return value ? (
     <span className="flex items-center gap-1" title={compact ? word : undefined}>
       <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
@@ -291,8 +290,16 @@ export function BooleanValue({ value, compact }: Readonly<{ value: boolean; comp
   );
 }
 
+// EmptyValue stands in for a value that isn't there: the label a display
+// gives, or else a hyphen, as every missing value shows. title says why on hover.
 export function EmptyValue({ label, title }: Readonly<{ label?: string; title?: string }>) {
-  if (label) return <span className="text-muted-foreground">{label}</span>;
+  if (label) {
+    return (
+      <span className="text-muted-foreground" title={title}>
+        {label}
+      </span>
+    );
+  }
   return (
     <span className="text-muted-foreground" title={title}>
       <span aria-hidden>-</span>
@@ -325,7 +332,7 @@ export function CatalogViewAll({
       params={{ blueprint }}
       search={{
         view: "entities",
-        where: { property: "identifier", op: "in", values: identifiers },
+        filter: [{ property: "identifier", op: "in", values: identifiers }],
       }}
       className="hover:underline"
     >

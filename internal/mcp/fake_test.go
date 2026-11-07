@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 
 	"gofr.dev/pkg/gofr"
@@ -39,7 +38,7 @@ func (f fakeServices) record(ctx *gofr.Context, name string, args ...any) {
 	*f.last = recorded{name: name, user: p.ID, args: args}
 }
 
-func notFound() error { return httpx.Error{Code: http.StatusNotFound, Message: "not found"} }
+func notFound() error { return httpx.NotFound("not found") }
 
 func (f fakeServices) Documents(kind string) (configdoc.Documents, bool) {
 	if kind != "blueprints" && kind != "scorecards" {
@@ -55,7 +54,7 @@ func (f fakeServices) Catalog(ctx *gofr.Context) ([]entity.CatalogEntry, error) 
 
 func (f fakeServices) Entities(ctx *gofr.Context, blueprint string, req entity.ListRequest) (entity.Page, error) {
 	f.record(ctx, "Entities", blueprint, req)
-	return entity.Page{Entities: []*entity.Entity{{Identifier: "payments/" + req.Search}, {Identifier: "billing"}}}, nil
+	return entity.Page{Items: []*entity.Entity{{Identifier: "payments/" + req.Search}, {Identifier: "billing"}}}, nil
 }
 
 func (f fakeServices) Entity(ctx *gofr.Context, blueprint, identifier string) (entity.Detail, error) {
@@ -139,7 +138,7 @@ func (d fakeDocuments) SaveDraft(ctx *gofr.Context, name, source string) (config
 func (d fakeDocuments) Delete(ctx *gofr.Context, name, confirm string) error {
 	d.f.record(ctx, "Delete", d.kind, name, confirm)
 	if confirm != name {
-		return httpx.Error{Code: http.StatusBadRequest, Message: "confirm the deletion"}
+		return httpx.BadRequest("confirm the deletion")
 	}
 	return nil
 }

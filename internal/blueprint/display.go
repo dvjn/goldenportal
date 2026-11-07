@@ -20,6 +20,9 @@ type Display struct {
 	Unit string `json:"unit,omitempty"`
 	// Colors color badges by value.
 	Colors map[string]string `json:"colors,omitempty"`
+	// Titles replace an enum value's own text, such as "On Prem" for
+	// on-prem, wherever the value is shown.
+	Titles map[string]string `json:"titles,omitempty"`
 	// Filter offers the property's values as a catalog filter.
 	Filter *bool `json:"filter,omitempty"`
 	// Hidden leaves the property off entity pages; it's still in the data.
@@ -77,9 +80,15 @@ func (p *parser) display(node *yaml.Node, path string, prop Property) *Display {
 		}
 		d.Colors[value] = name
 	})
-	if n := fields["column"]; n != nil {
-		p.Errorf(n, path+".column", "default columns moved to spec.catalog.columns, a list of properties")
-	}
+	p.Each(fields["titles"], path+".titles", func(value string, key, title *yaml.Node) {
+		if d.Titles == nil {
+			d.Titles = map[string]string{}
+		}
+		if prop.Enum != nil && !slices.ContainsFunc(prop.Enum, func(v any) bool { return fmt.Sprint(v) == value }) {
+			p.Errorf(key, path+".titles."+value, "%q isn't one of the property's enum values", value)
+		}
+		d.Titles[value] = p.Text(title, path+".titles."+value)
+	})
 	if n := fields["filter"]; n != nil {
 		filter := p.Bool(n, path+".filter")
 		d.Filter = &filter

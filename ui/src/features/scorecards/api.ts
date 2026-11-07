@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { Filter } from "@/features/catalog";
 import { type ConfigDoc, configDocs, type DocSummary } from "@/features/config-docs";
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, type Page } from "@/lib/api";
 
 export type Criterion = {
   identifier: string;
@@ -71,6 +71,8 @@ export type Summary = {
   }[];
 };
 
+export type ResultPage = Page<EntityResult>;
+
 export type ResultQuery = { tier?: string; q?: string; page?: number; size?: number };
 
 export const scorecards = configDocs<ScorecardSpec>("scorecards");
@@ -89,10 +91,7 @@ export async function getSummary(identifier: string): Promise<Summary> {
   return (await api.get(`${path(identifier)}/summary`).json<ApiDataResponse<Summary>>()).data;
 }
 
-export async function listResults(
-  identifier: string,
-  query: ResultQuery,
-): Promise<{ results: EntityResult[]; total: number }> {
+export async function listResults(identifier: string, query: ResultQuery): Promise<ResultPage> {
   const searchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== "") searchParams.set(key, String(value));
@@ -100,7 +99,7 @@ export async function listResults(
   return (
     await api
       .get(`${path(identifier)}/results`, { searchParams })
-      .json<ApiDataResponse<{ results: EntityResult[]; total: number }>>()
+      .json<ApiDataResponse<ResultPage>>()
   ).data;
 }
 

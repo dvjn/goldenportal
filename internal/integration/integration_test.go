@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -13,7 +14,7 @@ import (
 const inventoryYAML = `
 kind: Integration
 metadata:
-  name: inventory
+  identifier: inventory
   title: Inventory
 spec:
   connector:
@@ -38,7 +39,7 @@ spec:
 
 const portalYAML = `
 kind: Integration
-metadata: {name: portal, title: Portal}
+metadata: {identifier: portal, title: Portal}
 spec:
   connector: {type: portal}
   sync: {interval: 5m}
@@ -77,12 +78,12 @@ func TestParse(t *testing.T) {
 		t.Fatalf("portal = %+v", portal)
 	}
 
-	head := "kind: Integration\nmetadata: {name: a, title: A}\nspec:\n"
+	head := "kind: Integration\nmetadata: {identifier: a, title: A}\nspec:\n"
 	push := head + "  connector:\n    type: http\n    config: {resources: {s: {push: {items: .body}}}}\n"
 	pull := head + "  connector: {type: portal}\n"
 	fetch := head + "  connector:\n    type: http\n    config: {resources: {s: {url: https://x.example.com}}}\n"
 	tests := []struct{ name, source, want string }{
-		{"own icon", "kind: Integration\nmetadata: {name: a, title: A, icon: plug}\nspec:\n  connector: {type: portal}", "icon comes from its connector"},
+		{"own icon", "kind: Integration\nmetadata: {identifier: a, title: A, icon: plug}\nspec:\n  connector: {type: portal}", "icon comes from its connector"},
 		{"connector", head + "  connector: {type: push}", "type must be one of portal, http"},
 		{"config", head + "  connector: {type: portal, config: {url: x}}", "takes no config"},
 		{"no mappings", push, "add a mapping for each blueprint"},
@@ -92,7 +93,8 @@ func TestParse(t *testing.T) {
 		{"unquoted list", push + "  mappings:\n    - resource: s\n      blueprint: s\n      entity:\n        identifier: .id\n        properties:\n          x: [.a]", "quote this jq expression"},
 		{"items on a mapping", push + "  mappings:\n    - resource: s\n      blueprint: s\n      items: .a\n      entity: {identifier: .id}", "items"},
 		{"sync without pulling", push + "  sync: {interval: 5m}\n  mappings: []", "only integrations that pull sync"},
-		{"short interval", pull + "  sync: {interval: 10s}\n  mappings: []", "interval must be at least 1m0s"},
+		{"short interval", pull + "  sync: {interval: 10s}\n  mappings: []", "interval must be at least 1m"},
+		{"compound interval", pull + "  sync: {interval: 1h30m}\n  mappings: []", "interval must be a duration, such as 5m or 1h"},
 		{"complete under interval", fetch + "  sync: {interval: 1h, complete: 5m}\n  mappings: []", "complete must be at least the interval"},
 		{"complete without since", fetch + "  sync: {interval: 5m, complete: 1h}\n  mappings: []", "no resource url uses {{ $since }}"},
 		{"complete of a connector that reads everything", pull + "  sync: {interval: 5m, complete: 1h}\n  mappings: []", "the portal connector reads everything on every sync, so every sync is complete and complete is ignored"},
@@ -119,7 +121,7 @@ func TestCheck(t *testing.T) {
 		t.Fatalf("unpublished blueprint: issues = %+v", issues)
 	}
 
-	service, _ := blueprint.Parse("kind: Blueprint\nmetadata: {name: service, title: Service}\nspec:\n  properties:\n    owner: {relation: team}\n    tier: {type: string, compute: '\"x\"'}")
+	service, _ := blueprint.Parse("kind: Blueprint\nmetadata: {identifier: service, title: Service}\nspec:\n  properties:\n    owner: {relation: team}\n    tier: {type: string, compute: '\"x\"'}")
 	issues := Check(spec, map[string]blueprint.Spec{"service": service})
 	if len(issues) != 1 || issues[0].Path != "spec.mappings[0].entity.properties.tier" {
 		t.Fatalf("computed property: issues = %+v", issues)
@@ -133,7 +135,7 @@ func mustMap(t *testing.T, spec Spec, items ...Item) []Entry {
 		t.Fatal(err)
 	}
 
-	return m.Map(items)
+	return m.Map(context.Background(), items)
 }
 
 func TestMap(t *testing.T) {
@@ -154,6 +156,21 @@ func TestMap(t *testing.T) {
 	}
 	if deleted := entries[1]; !deleted.Deleted || deleted.Entity.Identifier != "gone" || len(deleted.Entity.Properties) != 0 {
 		t.Fatalf("deletion = %+v", deleted)
+	}
+}
+
+func TestMapStopsWhenCancelled(t *testing.T) {
+	spec := mustParse(t, inventoryYAML)
+	m, err := spec.mapper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	entries := m.Map(ctx, []Item{{Resource: "services", Object: map[string]any{"id": float64(1), "name": "A"}}})
+	if len(entries) != 1 || len(entries[0].Problems) == 0 {
+		t.Fatalf("entries = %+v, want the item reported as a problem, not mapped", entries)
 	}
 }
 

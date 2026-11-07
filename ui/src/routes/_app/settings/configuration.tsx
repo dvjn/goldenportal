@@ -15,7 +15,7 @@ import {
   runConfigAction,
   type ServerConfiguration,
   useConfiguration,
-} from "@/features/configuration";
+} from "@/features/server-settings";
 
 export const Route = createFileRoute("/_app/settings/configuration")({
   loader: ({ context }) => context.queryClient.ensureQueryData(configurationQueryOptions),

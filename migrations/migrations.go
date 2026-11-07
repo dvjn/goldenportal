@@ -23,5 +23,6 @@ func All() map[int64]migration.Migrate {
 		20261105140000: addIngestionRunWarning(),
 		20261105150000: addEntityMissedAt(),
 		20261106120000: addRunningIngestionRuns(),
+		20261107120000: oneFormPerSetting(),
 	}
 }

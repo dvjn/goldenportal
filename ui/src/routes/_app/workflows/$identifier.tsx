@@ -50,7 +50,7 @@ function WorkflowPage() {
               search={runsSearch}
               hide={["entity"]}
               empty={{
-                title: "Nothing has run yet",
+                title: "No runs yet",
                 description: "Runs show up here once someone runs it from self-service.",
               }}
             />

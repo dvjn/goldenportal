@@ -207,16 +207,6 @@ var types = map[string]struct {
 	TypeActions:    {[]string{"actions", "workflows"}, 4},
 }
 
-// moved are fields widgets used to have, and where what they said goes now.
-var moved = map[string]string{
-	"blueprint":     "query",
-	"filter":        "query",
-	"aggregate":     "value, as count, sum, avg, min, max, share or jq",
-	"property":      "value, as sum, avg, min or max: <path>",
-	"unit":          "value.unit",
-	"ignoreFilters": "query, where inputs apply only as $input.<id> says",
-}
-
 // Context values a filter can compare with, filled in when the widget loads.
 const (
 	// ValueEntity is the identifier of the entity whose page it is.
@@ -274,7 +264,7 @@ func ParseQueries(r *configdoc.Reader, node *yaml.Node, path string, scope Scope
 		if !namePattern.MatchString(name) {
 			r.Errorf(key, queryPath, "%q must start with a letter and use only letters, digits, - and _", name)
 		}
-		q := readQuery(r, key, value, queryPath, scope, false)
+		q := readQuery(r, key, value, queryPath, scope)
 		q.Name, q.Path, q.Line = name, queryPath, key.Line
 		queries = append(queries, q)
 	})
@@ -283,13 +273,9 @@ func ParseQueries(r *configdoc.Reader, node *yaml.Node, path string, scope Scope
 }
 
 // readQuery reads a query written as blueprint and filter. On a
-// blueprint's pages the blueprint defaults to the page's. A scorecard
-// widget's query may leave it out, since the scorecard decides it.
-func readQuery(r *configdoc.Reader, key, node *yaml.Node, path string, scope Scope, optional bool) Query {
-	q := Query{}
-	if !optional {
-		q.Blueprint = scope.Blueprint
-	}
+// blueprint's pages the blueprint defaults to the page's.
+func readQuery(r *configdoc.Reader, key, node *yaml.Node, path string, scope Scope) Query {
+	q := Query{Blueprint: scope.Blueprint}
 	fields, ok := r.Fields(node, path, QueryFields...)
 	if !ok {
 		return q
@@ -300,7 +286,7 @@ func readQuery(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sco
 			r.Errorf(n, path+".blueprint", "blueprint must name a blueprint")
 		}
 	}
-	if q.Blueprint == "" && !optional {
+	if q.Blueprint == "" {
 		r.Errorf(configdoc.OrNode(node, key), path+".blueprint", "add the blueprint whose entities it picks")
 	}
 	if n := fields["filter"]; n != nil {
@@ -311,26 +297,26 @@ func readQuery(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sco
 }
 
 // queryRef reads where a widget's entities come from: the name of one of
-// the page's queries, or a query written in place. Left out, it's every
-// entity of the page's blueprint, and on Home missing, so nil.
-func queryRef(r *configdoc.Reader, key, node *yaml.Node, path string, scope Scope, optional bool) *Query {
+// the page's queries. Left out, it's every entity of the page's blueprint,
+// and on Home missing, so nil.
+func queryRef(r *configdoc.Reader, key, node *yaml.Node, path string, scope Scope) *Query {
 	switch {
 	case node == nil && scope.Blueprint == "":
-		r.Errorf(key, path, "add the query whose entities it shows, by name or as blueprint and filter")
+		r.Errorf(key, path, "add the name of the query whose entities it shows")
 		return nil
 	case node == nil:
 		return &Query{Blueprint: scope.Blueprint}
-	case node.Kind == yaml.ScalarNode:
-		i := slices.IndexFunc(scope.Queries, func(q Query) bool { return q.Name == node.Value })
-		if i < 0 {
-			r.Errorf(node, path, "no query %q is declared in queries", node.Value)
-			return nil
-		}
-		q := scope.Queries[i]
-		q.Path, q.Line = "", 0
-		return &q
+	case node.Kind != yaml.ScalarNode:
+		r.Errorf(node, path, "%s is the name of a query declared in queries", path)
+		return nil
 	}
-	q := readQuery(r, key, node, path, scope, optional)
+	i := slices.IndexFunc(scope.Queries, func(q Query) bool { return q.Name == node.Value })
+	if i < 0 {
+		r.Errorf(node, path, "no query %q is declared in queries", node.Value)
+		return nil
+	}
+	q := scope.Queries[i]
+	q.Path, q.Line = "", 0
 
 	return &q
 }
@@ -362,16 +348,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		r.Errorf(configdoc.OrNode(typeNode, key), path+".type", "type must be one of %s", strings.Join(Types(), ", "))
 		return w
 	}
-	current := *node
-	current.Content = nil
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if to, ok := moved[node.Content[i].Value]; ok {
-			r.Errorf(node.Content[i], path+"."+node.Content[i].Value, "widgets no longer take %s; it moved to %s", node.Content[i].Value, to)
-			continue
-		}
-		current.Content = append(current.Content, node.Content[i], node.Content[i+1])
-	}
-	fields, ok := r.Fields(&current, path, TypeFields(w.Type)...)
+	fields, ok := r.Fields(node, path, TypeFields(w.Type)...)
 	if !ok {
 		return w
 	}
@@ -393,7 +370,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		}
 	}
 	if slices.Contains(kind.fields, "query") && w.Type != TypeScorecard {
-		w.Query = queryRef(r, key, fields["query"], path+".query", scope, false)
+		w.Query = queryRef(r, key, fields["query"], path+".query", scope)
 	}
 	if n := fields["link"]; n != nil {
 		w.Link = parseLink(r, n, path+".link", w.Type, scope)
@@ -443,7 +420,7 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 		}
 		// The scorecard decides the blueprint, so the query only narrows it.
 		if n := fields["query"]; n != nil {
-			w.Query = queryRef(r, key, n, path+".query", scope, true)
+			w.Query = queryRef(r, key, n, path+".query", scope)
 		}
 	case TypeMarkdown:
 		w.Text = r.Text(fields["text"], path+".text")
@@ -491,18 +468,12 @@ func parseValue(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sc
 		r.Errorf(key, path, "add the value to show, as {query: <query>}, which counts its entities")
 		return nil
 	}
-	if node.Kind == yaml.MappingNode {
-		if n := configdoc.Field(node, "calc"); n != nil {
-			r.Errorf(n, path+".calc", "calc is gone: leave it out to count, or write one of sum, avg, min or max: <path>, share: <condition> or jq: <expression>")
-			return nil
-		}
-	}
 	fields, ok := r.Fields(node, path, ValueFields...)
 	if !ok {
 		return nil
 	}
 	v := &Value{Unit: r.Text(fields["unit"], path+".unit")}
-	if q := queryRef(r, node, fields["query"], path+".query", scope, false); q != nil {
+	if q := queryRef(r, node, fields["query"], path+".query", scope); q != nil {
 		v.Query = *q
 	}
 	var set []string
@@ -583,7 +554,7 @@ func parseLink(r *configdoc.Reader, node *yaml.Node, path, widgetType string, sc
 		return l
 	}
 	if n := fields["query"]; n != nil {
-		l.Query = queryRef(r, node, n, path+".query", scope, false)
+		l.Query = queryRef(r, node, n, path+".query", scope)
 	}
 	if n := fields["filter"]; n != nil {
 		if l.Query == nil {
@@ -624,22 +595,12 @@ func portalPath(path string) bool {
 	return strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "/\\")
 }
 
-// parseColumns reads a table's columns: each a field's path, or a title
-// with a path or jq worked out from the row's entity.
+// parseColumns reads a table's columns: each a mapping of a field's path,
+// or a title with jq worked out from the row's entity.
 func parseColumns(r *configdoc.Reader, node *yaml.Node, path string, scope Scope) []Column {
 	var columns []Column
 	r.List(node, path, func(i int, item *yaml.Node) {
 		itemPath := fmt.Sprintf("%s[%d]", path, i)
-		if item.Kind == yaml.ScalarNode {
-			c := Column{Path: item.Value}
-			checkPath(r, item, itemPath, c.Path)
-			columns = append(columns, c)
-			return
-		}
-		if n := configdoc.Field(item, "value"); n != nil {
-			r.Errorf(n, itemPath+".value", "value is now jq, beside a path column's path")
-			return
-		}
 		fields, ok := r.Fields(item, itemPath, ColumnFields...)
 		if !ok {
 			return
@@ -699,26 +660,11 @@ func parseMeasures(r *configdoc.Reader, key, node *yaml.Node, path string, scope
 	return measures
 }
 
-// checkPath reports a path written the old way, with $ before a built-in
-// or a scorecard, or not as a path at all.
+// checkPath reports text that isn't written as a field's path.
 func checkPath(r *configdoc.Reader, node *yaml.Node, path, text string) {
-	if err := OldPath(text); err != nil {
-		r.Errorf(node, path, "%v", err)
-	} else if !validPath(text) {
+	if !validPath(text) {
 		r.Errorf(node, path, "%q isn't a field's path, such as tier or service.owner.title", text)
 	}
-}
-
-// OldPath explains a path written with $, which marks variables, not fields.
-func OldPath(text string) error {
-	if !strings.Contains(text, "$") {
-		return nil
-	}
-	if name, ok := strings.CutPrefix(text, "$scorecard."); ok {
-		return fmt.Errorf("%s is gone: declare a scorecard property on the blueprint, such as readiness: {type: scorecard, scorecard: %s}, and write its name", text, name)
-	}
-
-	return fmt.Errorf("%s starts with $, which marks variables; built-in fields are written plain, as %s", text, strings.ReplaceAll(text, "$", ""))
 }
 
 // Filters lists every filter a widget compares with, in its queries, its
@@ -904,13 +850,12 @@ func ReadFilter(r *configdoc.Reader, node *yaml.Node, path string) *filter.Filte
 	return f
 }
 
-// checkCondition reports a condition written the old way: a path with $,
-// in with one value, or a variable in values that isn't one.
+// checkCondition reports a condition that compares the wrong way: in with
+// one value, or a variable in values that isn't one.
 func checkCondition(c *filter.Filter) error {
-	if err := OldPath(c.Property); err != nil {
-		return err
-	}
 	switch {
+	case strings.HasPrefix(c.Property, "$"):
+		return fmt.Errorf("unknown variable %s; a property is written plain, such as title", c.Property)
 	case c.Op == filter.OpIn && c.Value != nil:
 		return fmt.Errorf("in on %s takes values, a list or a variable such as values: %steam", c.Property, ValueInput)
 	case c.ValuesFrom != "" && !strings.HasPrefix(c.ValuesFrom, "$"):

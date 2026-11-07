@@ -9,7 +9,7 @@ import (
 )
 
 const authentikYAML = `kind: Integration
-metadata: {name: sso, title: authentik}
+metadata: {identifier: sso, title: authentik}
 spec:
   connector:
     type: authentik

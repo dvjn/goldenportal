@@ -16,7 +16,7 @@ import (
 const readinessYAML = `
 kind: Scorecard
 metadata:
-  name: readiness
+  identifier: readiness
   title: Readiness
 spec:
   blueprint: service
@@ -62,7 +62,7 @@ func TestParse(t *testing.T) {
 		t.Errorf("stats = %v", got)
 	}
 
-	head := "kind: Scorecard\nmetadata: {name: s, title: S}\nspec:\n  blueprint: service\n"
+	head := "kind: Scorecard\nmetadata: {identifier: s, title: S}\nspec:\n  blueprint: service\n"
 	tests := []struct{ name, source, want string }{
 		{"no tiers", head, "add the tiers"},
 		{"empty tier", head + "  tiers:\n    - name: a\n", "add the criteria"},
@@ -114,7 +114,7 @@ func TestEvaluate(t *testing.T) {
 		{
 			"silver, on-call skipped",
 			map[string]any{"owner": "a", "repository": "r", "stars": 5.0},
-			"silver", 67,
+			"silver", 66,
 			map[string]string{"manyStars": StatusFailed},
 		},
 		{
@@ -124,11 +124,11 @@ func TestEvaluate(t *testing.T) {
 			map[string]string{"pagesOnCall": StatusFailed},
 		},
 		{"gold", map[string]any{"owner": "a", "repository": "r", "stars": 500.0}, "gold", 100, nil},
-		{"a failed lower tier caps the tier", map[string]any{"repository": "r", "stars": 500.0}, "", 67, nil},
+		{"a failed lower tier caps the tier", map[string]any{"repository": "r", "stars": 500.0}, "", 66, nil},
 		{
 			"an error blocks its tier",
 			map[string]any{"owner": "a", "repository": "r", "stars": "many"},
-			"silver", 67,
+			"silver", 66,
 			map[string]string{"manyStars": StatusErrored},
 		},
 	}
@@ -188,7 +188,7 @@ func TestResultsFilterBySeveralTiers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 1 || page.Results[0].Identifier != "ledger" {
+	if page.Total != 1 || page.Items[0].Identifier != "ledger" {
 		t.Errorf("page = %+v", page)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

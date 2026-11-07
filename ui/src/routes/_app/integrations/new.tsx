@@ -7,7 +7,7 @@ import { integrations } from "@/features/integrations";
 // mapping is jq over one of those items.
 const template = `kind: Integration
 metadata:
-  name: example
+  identifier: example
   title: Example
   description: Where these entities come from.
 spec:

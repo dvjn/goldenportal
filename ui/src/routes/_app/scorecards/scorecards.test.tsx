@@ -99,7 +99,7 @@ describe("scorecards", () => {
       "GET scorecards/readiness/versions": ok([]),
       "GET scorecards/readiness/summary": ok(summary),
       "GET scorecards/readiness/results": ok({
-        results: [
+        items: [
           {
             blueprint: "service",
             identifier: "ledger",
@@ -122,7 +122,7 @@ describe("scorecards", () => {
     const row = await screen.findByRole("row", { name: /Ledger/ });
     expect(within(row).getByText("50%")).toBeInTheDocument();
     expect(within(row).getByText("Owner is on call")).toBeInTheDocument();
-    expect(await screen.findByText("67%")).toBeInTheDocument();
+    expect(await screen.findByText("66%")).toBeInTheDocument();
     expect(screen.getByText("40%")).toBeInTheDocument();
     expect(within(row).getByRole("link", { name: "Ledger" })).toHaveAttribute(
       "href",
@@ -139,7 +139,7 @@ describe("scorecards", () => {
       "GET scorecards/readiness": ok(readiness),
       "GET scorecards/readiness/versions": ok([]),
       "GET scorecards/readiness/summary": ok(summary),
-      "GET scorecards/readiness/results": ok({ results: [], total: 0 }),
+      "GET scorecards/readiness/results": ok({ items: [], total: 0 }),
     });
     const { router } = renderRoute("/scorecards/readiness");
 

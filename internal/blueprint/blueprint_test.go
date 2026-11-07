@@ -11,7 +11,7 @@ import (
 const serviceYAML = `
 kind: Blueprint
 metadata:
-  name: service
+  identifier: service
   title: Service
   description: A deployable unit of software.
   icon: server
@@ -46,7 +46,7 @@ spec:
 const teamYAML = `
 kind: Blueprint
 metadata:
-  name: team
+  identifier: team
   title: Team
 spec:
   properties:
@@ -96,13 +96,13 @@ func TestParseKeepsOrderAndDefaults(t *testing.T) {
 func TestParseDisplay(t *testing.T) {
 	spec := mustParse(t, `
 kind: Blueprint
-metadata: {name: s, title: S}
+metadata: {identifier: s, title: S}
 spec:
   properties:
     tier:
       type: string
       enum: [critical, standard]
-      display: {as: badge, colors: {critical: red}, filter: false}
+      display: {as: badge, colors: {critical: red}, titles: {critical: Business Critical}, filter: false}
     coverage:
       type: number
       maximum: 100
@@ -121,6 +121,9 @@ spec:
 	if tier.As != "badge" || tier.Colors["critical"] != "red" || *tier.Filter {
 		t.Errorf("tier display = %+v", tier)
 	}
+	if tier.Titles["critical"] != "Business Critical" {
+		t.Errorf("tier titles = %v", tier.Titles)
+	}
 	if coverage.As != "progress" || coverage.Unit != "%" {
 		t.Errorf("coverage display = %+v", coverage)
 	}
@@ -132,7 +135,7 @@ spec:
 func TestParsePages(t *testing.T) {
 	source := `
 kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     tier: {type: string}
@@ -183,12 +186,12 @@ spec:
 func TestParseTabWhen(t *testing.T) {
 	head := `
 kind: Blueprint
-metadata: {name: job, title: Job}
+metadata: {identifier: job, title: Job}
 spec:
   properties:
     appliesTo: {type: array, items: {type: string}}
 `
-	tab := "        when: {property: appliesTo, op: exists}\n        widgets: {n: {type: stat, title: N, value: {query: {blueprint: repository}}}}\n"
+	tab := "        when: {property: appliesTo, op: exists}\n        widgets: {n: {type: stat, title: N, value: {}}}\n"
 	spec := mustParse(t, head+"  entity:\n    tabs:\n      adoption:\n"+tab)
 	if when := spec.Entity.Tabs[0].When; when == nil || when.Property != "appliesTo" || when.Op != "exists" {
 		t.Errorf("when = %+v", when)
@@ -211,7 +214,7 @@ spec:
 func TestParseEntityLayout(t *testing.T) {
 	source := `
 kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     summary: {type: string}
@@ -245,7 +248,7 @@ spec:
 }
 
 func TestParseAcceptsJSON(t *testing.T) {
-	spec := mustParse(t, `{"kind": "Blueprint", "metadata": {"name": "team", "title": "Team"},
+	spec := mustParse(t, `{"kind": "Blueprint", "metadata": {"identifier": "team", "title": "Team"},
 		"spec": {"properties": {"slack": {"type": "string"}}}}`)
 	if len(spec.Properties) != 1 {
 		t.Fatalf("properties = %+v", spec.Properties)
@@ -260,35 +263,36 @@ func TestParseReportsProblemsWithLines(t *testing.T) {
 		{"not yaml", "kind: [", "", "did not find expected node content", 1},
 		{"empty", "", "", "the document is empty", 0},
 		{"two documents", "kind: Blueprint\n---\nkind: Blueprint", "", "more than one document", 2},
-		{"wrong kind", "kind: Integration\nmetadata: {name: s, title: S}\nspec: {}", "kind", "takes kind: Blueprint", 1},
+		{"wrong kind", "kind: Integration\nmetadata: {identifier: s, title: S}\nspec: {}", "kind", "takes kind: Blueprint", 1},
 		{"no metadata", "kind: Blueprint\nspec: {}", "metadata", "add metadata", 1},
-		{"bad name", "kind: Blueprint\nmetadata: {name: Service, title: S}\nspec: {}", "metadata.name", "lowercase letter", 2},
-		{"missing title", "kind: Blueprint\nmetadata:\n  name: service\nspec: {}", "metadata.title", "add a title", 3},
-		{"api version", "apiVersion: v1\nkind: Blueprint\nmetadata: {name: s, title: S}\nspec: {}", "apiVersion", `unknown field "apiVersion"`, 1},
-		{"unknown spec field", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  owner: x", "spec.owner", `unknown field "owner"`, 4},
-		{"bad type", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: text", "spec.properties.a.type", "type must be one of", 6},
-		{"enum type", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: integer\n      enum: [1, 2.5]", "spec.properties.a.enum", `"2.5" is not of type integer`, 7},
-		{"pattern", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      pattern: '('", "spec.properties.a.pattern", "not a valid regular expression", 7},
-		{"bounds", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: number\n      minimum: 5\n      maximum: 1", "spec.properties.a.minimum", "more than maximum", 7},
-		{"format on number", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: number\n      format: uri", "spec.properties.a.format", "only string values", 7},
-		{"many on a value", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      many: true", "spec.properties.a.many", "only relations can be many", 7},
-		{"type on a relation", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      relation: t\n      type: string", "spec.properties.a.type", "relations can't have type", 7},
-		{"bad field name", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    1a:\n      type: string", "spec.properties.1a", "must start with a letter", 5},
-		{"bad target", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      relation: Team", "spec.properties.a.relation", "relation must name a blueprint", 6},
-		{"long lookup", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    m:\n      lookup: a.b.c.d.e", "spec.properties.m.lookup", "1 to 3 relations", 6},
-		{"bad jq", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      type: string\n      compute: .a |", "spec.properties.c.compute", "not valid jq", 7},
-		{"lookup and compute", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      lookup: a.b\n      compute: .a", "spec.properties.c", "not both", 7},
-		{"constraint on derived", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      type: string\n      compute: .a\n      required: true", "spec.properties.c.required", "only applies to stored", 8},
-		{"display as", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: boolean\n      display: {as: progress}", "spec.properties.a.display.as", "boolean properties show as badge, check", 7},
-		{"display unit", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      display: {unit: ms}", "spec.properties.a.display.unit", "only numbers have a unit", 7},
-		{"display color", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {x: navy}", "spec.properties.a.display.colors.x", "color must be one of", 9},
-		{"display color value", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {y: red}", "spec.properties.a.display.colors.y", "isn't one of the property's enum values", 9},
-		{"compute type", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    c:\n      compute: .a", "spec.properties.c.type", "type must be one of", 5},
-		{"unknown header property", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    header: {subtitle: b}", "spec.entity.header.subtitle", `s has no property "b"`, 7},
-		{"link without uri", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    header: {link: a}", "spec.entity.header.link", "format: uri", 7},
-		{"section without title", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    sections:\n      - properties: [a]", "spec.entity.sections[0].title", "add a title", 8},
-		{"property in two sections", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    sections:\n      - {title: One, properties: [a]}\n      - {title: Two, properties: [a]}", "spec.entity.sections[1].properties[0]", "already in a section", 9},
-		{"catalog header", "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  catalog:\n    header: {}", "spec.catalog.header", `unknown field "header"`, 5},
+		{"bad name", "kind: Blueprint\nmetadata: {identifier: Service, title: S}\nspec: {}", "metadata.identifier", "lowercase letter", 2},
+		{"missing title", "kind: Blueprint\nmetadata:\n  identifier: service\nspec: {}", "metadata.title", "add a title", 3},
+		{"api version", "apiVersion: v1\nkind: Blueprint\nmetadata: {identifier: s, title: S}\nspec: {}", "apiVersion", `unknown field "apiVersion"`, 1},
+		{"unknown spec field", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  owner: x", "spec.owner", `unknown field "owner"`, 4},
+		{"bad type", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: text", "spec.properties.a.type", "type must be one of", 6},
+		{"enum type", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: integer\n      enum: [1, 2.5]", "spec.properties.a.enum", `"2.5" is not of type integer`, 7},
+		{"pattern", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      pattern: '('", "spec.properties.a.pattern", "not a valid regular expression", 7},
+		{"bounds", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: number\n      minimum: 5\n      maximum: 1", "spec.properties.a.minimum", "more than maximum", 7},
+		{"format on number", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: number\n      format: uri", "spec.properties.a.format", "only string values", 7},
+		{"many on a value", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      many: true", "spec.properties.a.many", "only relations can be many", 7},
+		{"type on a relation", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      relation: t\n      type: string", "spec.properties.a.type", "relations can't have type", 7},
+		{"bad field name", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    1a:\n      type: string", "spec.properties.1a", "must start with a letter", 5},
+		{"bad target", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      relation: Team", "spec.properties.a.relation", "relation must name a blueprint", 6},
+		{"long lookup", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    m:\n      lookup: a.b.c.d.e", "spec.properties.m.lookup", "1 to 3 relations", 6},
+		{"bad jq", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    c:\n      type: string\n      compute: .a |", "spec.properties.c.compute", "not valid jq", 7},
+		{"lookup and compute", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    c:\n      lookup: a.b\n      compute: .a", "spec.properties.c", "not both", 7},
+		{"constraint on derived", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    c:\n      type: string\n      compute: .a\n      required: true", "spec.properties.c.required", "only applies to stored", 8},
+		{"display as", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: boolean\n      display: {as: progress}", "spec.properties.a.display.as", "boolean properties show as badge, check", 7},
+		{"display unit", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      display: {unit: ms}", "spec.properties.a.display.unit", "only numbers have a unit", 7},
+		{"display color", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {x: navy}", "spec.properties.a.display.colors.x", "color must be one of", 9},
+		{"display color value", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        colors: {y: red}", "spec.properties.a.display.colors.y", "isn't one of the property's enum values", 9},
+		{"display title value", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a:\n      type: string\n      enum: [x]\n      display:\n        titles: {y: Why}", "spec.properties.a.display.titles.y", "isn't one of the property's enum values", 9},
+		{"compute type", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    c:\n      compute: .a", "spec.properties.c.type", "type must be one of", 5},
+		{"unknown header property", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    header: {subtitle: b}", "spec.entity.header.subtitle", `s has no property "b"`, 7},
+		{"link without uri", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    header: {link: a}", "spec.entity.header.link", "format: uri", 7},
+		{"section without title", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    sections:\n      - properties: [a]", "spec.entity.sections[0].title", "add a title", 8},
+		{"property in two sections", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    a: {type: string}\n  entity:\n    sections:\n      - {title: One, properties: [a]}\n      - {title: Two, properties: [a]}", "spec.entity.sections[1].properties[0]", "already in a section", 9},
+		{"catalog header", "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  catalog:\n    header: {}", "spec.catalog.header", `unknown field "header"`, 5},
 	}
 
 	for _, test := range tests {
@@ -372,13 +376,11 @@ func TestDiff(t *testing.T) {
 }
 
 func TestParseSymbols(t *testing.T) {
-	base := "kind: Blueprint\nmetadata: {name: service, title: Service}\nspec:\n  properties:\n"
+	base := "kind: Blueprint\nmetadata: {identifier: service, title: Service}\nspec:\n  properties:\n"
 	tests := []struct{ name, properties, path, message string }{
 		{"reserved title", "    title: {type: string}", "spec.properties.title", "built-in field every entity has"},
 		{"reserved updatedAt", "    updatedAt: {type: string}", "spec.properties.updatedAt", "built-in field"},
 		{"lookup with $", "    owner: {relation: team}\n    ownerName: {lookup: owner.$title}", "spec.properties.ownerName.lookup", "write owner.title"},
-		{"nested compute", "    stars: {type: number}\n    popular: {type: boolean, compute: .properties.stars > 9}", "spec.properties.popular.compute", "write .stars, not .properties.stars"},
-		{"old scorecards in compute", "    gold: {type: boolean, compute: '.scorecards.readiness.tier == \"gold\"'}", "spec.properties.gold.compute", ".scorecards is gone"},
 		{"scorecard needs a name", "    readiness: {type: scorecard}", "spec.properties.readiness.scorecard", "name the scorecard"},
 		{"scorecard type", "    readiness: {type: string, scorecard: r}", "spec.properties.readiness.type", "type: scorecard"},
 		{"scorecard constraints", "    readiness: {scorecard: r, required: true}", "spec.properties.readiness.required", "the scorecard works the value out"},
@@ -407,7 +409,7 @@ func TestParseSymbols(t *testing.T) {
 }
 
 func TestCheckScorecards(t *testing.T) {
-	spec := mustParse(t, "kind: Blueprint\nmetadata: {name: service, title: Service}\nspec:\n  properties:\n    readiness: {type: scorecard, scorecard: readiness}")
+	spec := mustParse(t, "kind: Blueprint\nmetadata: {identifier: service, title: Service}\nspec:\n  properties:\n    readiness: {type: scorecard, scorecard: readiness}")
 	for _, test := range []struct {
 		ladders map[string]Ladder
 		want    string
@@ -431,12 +433,11 @@ func TestCheckScorecards(t *testing.T) {
 }
 
 func TestCatalogColumnsAreKnownFields(t *testing.T) {
-	head := "kind: Blueprint\nmetadata: {name: s, title: S}\nspec:\n  properties:\n    tier: {type: string, display: {column: true}}\n  catalog:\n    tabs: {}\n    columns: "
+	head := "kind: Blueprint\nmetadata: {identifier: s, title: S}\nspec:\n  properties:\n    tier: {type: string}\n  catalog:\n    tabs: {}\n    columns: "
 	for columns, want := range map[string]string{
 		"[tier, tier]": "tier is already a column",
 		"[title]":      "the title column already shows the title",
 		"[nope]":       `s has no property "nope"`,
-		"[updatedAt]":  "default columns moved to spec.catalog.columns",
 	} {
 		_, issues := Parse(head + columns)
 		if !slices.ContainsFunc(issues, func(issue configdoc.Issue) bool { return strings.Contains(issue.Message, want) }) {

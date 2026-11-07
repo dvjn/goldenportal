@@ -104,7 +104,7 @@ func writeEntity(ctx context.Context, db configdoc.DB, integrationID, blueprintN
 	if len(problems) > 0 {
 		return "", EntityError{problems}
 	}
-	computed, _ := spec.Compute(clean)
+	computed, _ := spec.Compute(ctx, clean)
 	outcome, err := store.Upsert(ctx, blueprintID, integrationID, clean, computed)
 	var owned entity.OwnedError
 	if errors.As(err, &owned) {

@@ -7,7 +7,7 @@ import { workflows } from "@/features/actions";
 // catalog, and an action step runs an action on each entity given.
 const template = `kind: Workflow
 metadata:
-  name: example
+  identifier: example
   title: Example
   description: What it does, as people will see it.
   icon: sparkles

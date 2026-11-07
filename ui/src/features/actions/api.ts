@@ -2,7 +2,7 @@ import type { Role } from "@/features/auth";
 import type { Property } from "@/features/blueprints";
 import type { Filter } from "@/features/catalog";
 import { type ConfigDoc, configDocs, type DocSummary } from "@/features/config-docs";
-import { type ApiDataResponse, api } from "@/lib/api";
+import { type ApiDataResponse, api, type Page } from "@/lib/api";
 
 // Access is who can run an action: anyone with one of the roles, in one of
 // the groups, or on an entity matching the filter. Admins always can.
@@ -257,7 +257,7 @@ export type FanoutRun = {
 // FanoutOutput is what an action step gives once its runs are over.
 export type FanoutOutput = { runs: FanoutRun[]; succeeded: number; failed: number };
 
-export type RunPage = { runs: Run[]; total: number };
+export type RunPage = Page<Run>;
 
 // RunFilters picks a page of runs, newest first. Members only ever get their
 // own; builders get everyone's unless mine is set. entity needs blueprint.
@@ -348,12 +348,9 @@ export async function listRuns(filters: RunFilters): Promise<RunPage> {
   if (filters.mine) searchParams.set("mine", "true");
   if (filters.page) searchParams.set("page", String(filters.page));
   if (filters.size) searchParams.set("size", String(filters.size));
-  const path = filters.action
-    ? `actions/${encodeURIComponent(filters.action)}/runs`
-    : filters.workflow
-      ? `workflows/${encodeURIComponent(filters.workflow)}/runs`
-      : "runs";
-  return (await api.get(path, { searchParams }).json<ApiDataResponse<RunPage>>()).data;
+  if (filters.action) searchParams.set("action", filters.action);
+  if (filters.workflow) searchParams.set("workflow", filters.workflow);
+  return (await api.get("runs", { searchParams }).json<ApiDataResponse<RunPage>>()).data;
 }
 
 export async function startWorkflow(identifier: string, request: RunRequest): Promise<Run> {

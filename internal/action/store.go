@@ -13,6 +13,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 // Run statuses. A queued run waits for an instance to take it on, and a
@@ -313,10 +314,7 @@ type RunsQuery struct {
 }
 
 // RunPage is a page of runs, without their steps.
-type RunPage struct {
-	Runs  []Run `json:"runs"`
-	Total int   `json:"total"`
-}
+type RunPage = httpx.Page[Run]
 
 func (s Store) List(ctx context.Context, q RunsQuery) (RunPage, error) {
 	var where []string
@@ -361,13 +359,13 @@ func (s Store) List(ctx context.Context, q RunsQuery) (RunPage, error) {
 	}
 	defer rows.Close()
 
-	page := RunPage{Runs: []Run{}}
+	page := RunPage{Items: []Run{}}
 	for rows.Next() {
 		r, err := scanRun(rows.Scan, &page.Total)
 		if err != nil {
 			return RunPage{}, err
 		}
-		page.Runs = append(page.Runs, r)
+		page.Items = append(page.Items, r)
 	}
 
 	return page, rows.Err()

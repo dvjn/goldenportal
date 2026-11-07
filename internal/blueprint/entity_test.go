@@ -1,6 +1,7 @@
 package blueprint
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -63,7 +64,7 @@ func TestValidateEntity(t *testing.T) {
 func TestValidateEntityFormats(t *testing.T) {
 	spec := mustParse(t, `
 kind: Blueprint
-metadata: {name: thing, title: Thing}
+metadata: {identifier: thing, title: Thing}
 spec:
   properties:
     site: {type: string, format: uri}
@@ -89,7 +90,7 @@ func TestCompute(t *testing.T) {
       type: string
       compute: .stars
 `)
-	values, problems := spec.Compute(Entity{
+	values, problems := spec.Compute(context.Background(), Entity{
 		Identifier: "a",
 		Properties: map[string]any{"stars": float64(150)},
 		Relations:  map[string]any{"dependsOn": []string{"x", "y"}},
@@ -103,19 +104,35 @@ func TestCompute(t *testing.T) {
 	}
 }
 
+func TestComputeStopsWhenCancelled(t *testing.T) {
+	spec := mustParse(t, serviceYAML+`    owners:
+      type: number
+      compute: '[range(1e9)] | length'
+`)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	values, problems := spec.Compute(ctx, Entity{Identifier: "a", Properties: map[string]any{"stars": float64(1)}})
+
+	if _, ok := values["owners"]; ok || !strings.Contains(strings.Join(problems, "\n"), "properties.owners: context canceled") {
+		t.Errorf("owners = %v, problems = %v", values["owners"], problems)
+	}
+}
+
 func TestEntityWidgetVariables(t *testing.T) {
 	source := `kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     owner: {relation: team}
     coverage: {type: number}
   entity:
+    queries:
+      peers: {filter: {property: coverage, op: gte, value: $entity.coverage}}
     tabs:
       overview:
         widgets:
           about: {type: markdown, text: 'About {{ $entity.title }} ({{ $entity.blueprint }}), owned by {{ $entity.owner }}, as of {{ $today }}.'}
-          peers: {type: stat, title: Peers, value: {query: {filter: {property: coverage, op: gte, value: $entity.coverage}}}}
+          peers: {type: stat, title: Peers, value: {query: peers}}
 `
 	_, issues := Parse(source)
 	if HasErrors(issues) {

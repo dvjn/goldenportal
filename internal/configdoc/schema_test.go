@@ -348,7 +348,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Blueprint", "/$defs/spec", blueprint.SpecFields, nil},
 		{"Blueprint", "/$defs/property", blueprint.PropertyFields, nil},
 		{"Blueprint", "/$defs/items", blueprint.ItemsFields, nil},
-		{"Blueprint", "/$defs/display", blueprint.DisplayFields, []string{"column"}},
+		{"Blueprint", "/$defs/display", blueprint.DisplayFields, nil},
 		{"Blueprint", "/$defs/catalog", blueprint.CatalogFields, nil},
 		{"Blueprint", "/$defs/entity", blueprint.EntityFields, nil},
 		{"Blueprint", "/$defs/header", blueprint.HeaderFields, nil},
@@ -358,7 +358,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Blueprint", "/$defs/value", widget.ValueFields, nil},
 		{"Blueprint", "/$defs/link", widget.LinkFields, nil},
 		{"Blueprint", "/$defs/rowLink", widget.RowLinkFields, nil},
-		{"Blueprint", "/$defs/column/oneOf/1", widget.ColumnFields, nil},
+		{"Blueprint", "/$defs/column", widget.ColumnFields, nil},
 		{"Integration", "/$defs/spec", integration.SpecFields, nil},
 		{"Integration", "/$defs/connector", integration.ConnectorFields, nil},
 		{"Integration", "/$defs/sync", integration.SyncFields, nil},
@@ -586,7 +586,7 @@ func TestSchemaGitLabExamples(t *testing.T) {
 	for _, example := range resolvePointer(t, gitlab, "/then/properties/mappings/items/examples").([]any) {
 		mapping := example.(map[string]any)
 		doc := map[string]any{
-			"kind": "Integration", "metadata": map[string]any{"name": "gitlab", "title": "GitLab"},
+			"kind": "Integration", "metadata": map[string]any{"identifier": "gitlab", "title": "GitLab"},
 			"spec": map[string]any{"connector": map[string]any{"type": "gitlab", "config": configs[0]}, "mappings": []any{mapping}},
 		}
 		source, err := yaml.Marshal(doc)

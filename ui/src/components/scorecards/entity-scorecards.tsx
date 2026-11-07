@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { Check, ChevronDown, CircleCheck, CircleMinus, CircleX, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { CardTitleBar } from "@/components/card-sections";
+import { EmptyValue } from "@/components/catalog/property-value";
 import { CriterionDetails } from "@/components/scorecards/criterion-details";
 import { TierBadge, tierColors } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import {
   scorecards,
   type Tier,
 } from "@/features/scorecards";
-import { formatAbsolute } from "@/lib/format";
+import { formatAbsolute, formatPercent } from "@/lib/format";
 
 const statuses: Record<Status, { icon: typeof CircleCheck; className: string; label: string }> = {
   passed: {
@@ -96,7 +97,11 @@ function StandingCard({
           </div>
           <div className="grid justify-items-end gap-1.5">
             <span className="text-2xl leading-8 font-semibold tabular-nums">
-              {result.score === null ? "-" : `${result.score}%`}
+              {result.score === null ? (
+                <EmptyValue title="Not evaluated" />
+              ) : (
+                formatPercent(result.score, 100)
+              )}
             </span>
             <Marks criteria={criteria} result={result} label="Criteria" />
           </div>

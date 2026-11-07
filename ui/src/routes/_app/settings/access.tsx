@@ -69,6 +69,7 @@ function AccessPage() {
   return (
     <div className="flex flex-col gap-4">
       <DataTable
+        noun="grants"
         data={grants}
         columns={columns}
         getRowId={(grant) => `${grant.subjectType}:${grant.subjectId}`}

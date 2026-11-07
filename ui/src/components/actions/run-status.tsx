@@ -1,4 +1,3 @@
-import { cn } from "cn";
 import {
   CircleCheck,
   CircleDashed,
@@ -7,13 +6,11 @@ import {
   CircleX,
   Hourglass,
   Loader2,
-  type LucideIcon,
   ThumbsDown,
 } from "lucide-react";
+import { type StatusLook as Look, RunStatusMark } from "@/components/run-status-mark";
 import { Badge } from "@/components/ui/badge";
 import type { RunStatus as Status, StepStatus as StepState, StepType } from "@/features/actions";
-
-type Look = { label: string; icon: LucideIcon; className: string };
 
 // Runs and their steps share marks, as integration runs do: a check for
 // what worked, a cross for what failed. Not started yet is dashed, and a
@@ -48,22 +45,12 @@ export const stepStatuses: Record<StepState, Look> = {
   interrupted: { label: "Interrupted", ...unknown },
 };
 
-function StatusIcon({ look, label }: Readonly<{ look: Look; label: boolean }>) {
-  const Icon = look.icon;
-  return (
-    <span className="inline-flex items-center gap-1.5" title={look.label}>
-      <Icon className={cn("size-4 shrink-0", look.className)} aria-label={look.label} />
-      {label && <span>{look.label}</span>}
-    </span>
-  );
-}
-
-// RunStatus shows a run's status as an icon, and its label when asked.
+// RunStatus shows an action run's status as an icon, and its label when asked.
 export function RunStatus({
   status,
   label = false,
 }: Readonly<{ status: Status; label?: boolean }>) {
-  return <StatusIcon look={runStatuses[status]} label={label} />;
+  return <RunStatusMark look={runStatuses[status]} label={label} />;
 }
 
 // stepLook is how a step's status shows; a waiting step says what for.
@@ -76,7 +63,7 @@ export function stepLook(step: { status: StepState; type: StepType }): Look {
 }
 
 export function StepStatus({ step }: Readonly<{ step: { status: StepState; type: StepType } }>) {
-  return <StatusIcon look={stepLook(step)} label={false} />;
+  return <RunStatusMark look={stepLook(step)} />;
 }
 
 // RunStatusBadge is a run's status beside its title.

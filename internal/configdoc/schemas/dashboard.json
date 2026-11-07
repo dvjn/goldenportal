@@ -96,16 +96,14 @@
         { "$ref": "#/$defs/relationInput" }
       ],
       "if": { "properties": { "multiple": { "const": true } }, "required": ["multiple"] },
-      "else": { "properties": { "default": { "type": "string" } } }
+      "else": { "properties": { "default": { "maxItems": 1 } } }
     },
     "inputTitle": { "type": "string", "description": "The input's label. Defaults to its identifier." },
     "multiple": { "type": "boolean", "description": "Viewers can pick several values, which $input.<id> then holds; compare with op: in and values: $input.<id>." },
     "defaultValue": {
-      "description": "What the input starts at: one value, or with multiple: true a list.",
-      "oneOf": [
-        { "type": "string", "pattern": "\\S" },
-        { "type": "array", "items": { "type": "string", "pattern": "\\S" } }
-      ]
+      "description": "What the input starts at, a list: one value, or with multiple: true several.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "\\S" }
     },
     "enumInput": {
       "type": "object",
@@ -147,7 +145,7 @@
         "relation": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it offers." },
         "multiple": { "$ref": "#/$defs/multiple" },
         "default": {
-          "description": "What the input starts at: identifiers, or with multiple: true a query finding them for whoever is looking.",
+          "description": "What the input starts at: a list of identifiers, or with multiple: true a query finding them for whoever is looking.",
           "oneOf": [
             { "$ref": "#/$defs/defaultValue" },
             { "$ref": "#/$defs/defaultQuery" }

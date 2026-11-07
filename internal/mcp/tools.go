@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"slices"
 	"strings"
 
@@ -117,44 +116,44 @@ type (
 		Kind string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards, dashboards, actions or workflows"`
 	}
 	documentArgs struct {
-		Kind string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards, dashboards, actions or workflows"`
-		Name string `json:"name"`
+		Kind       string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards, dashboards, actions or workflows"`
+		Identifier string `json:"identifier"`
 	}
 	sourceArgs struct {
 		Kind   string `json:"kind"`
 		Source string `json:"source" jsonschema:"Complete YAML document with kind, metadata and spec"`
 	}
 	draftArgs struct {
-		Kind   string `json:"kind"`
-		Name   string `json:"name"`
-		Source string `json:"source"`
+		Kind       string `json:"kind"`
+		Identifier string `json:"identifier"`
+		Source     string `json:"source"`
 	}
 	versionArgs struct {
-		Kind    string `json:"kind"`
-		Name    string `json:"name"`
-		Version int    `json:"version"`
+		Kind       string `json:"kind"`
+		Identifier string `json:"identifier"`
+		Version    int    `json:"version"`
 	}
 	publishArgs struct {
 		Kind                string `json:"kind"`
-		Name                string `json:"name"`
+		Identifier          string `json:"identifier"`
 		AcknowledgeBreaking bool   `json:"acknowledgeBreaking,omitempty"`
 	}
 	deleteArgs struct {
-		Kind    string `json:"kind"`
-		Name    string `json:"name"`
-		Confirm string `json:"confirm" jsonschema:"Repeat the exact document identifier to confirm deletion"`
+		Kind       string `json:"kind"`
+		Identifier string `json:"identifier"`
+		Confirm    string `json:"confirm" jsonschema:"Repeat the exact document identifier to confirm deletion"`
 	}
 	applyArgs struct {
 		Source string `json:"source"`
 		DryRun *bool  `json:"dryRun,omitempty" jsonschema:"Defaults to true; set false explicitly to save drafts"`
 	}
 	documentRef struct {
-		Kind string `json:"kind" jsonschema:"Blueprint, Integration, Scorecard, Dashboard, Action or Workflow"`
-		Name string `json:"name"`
+		Kind       string `json:"kind" jsonschema:"Blueprint, Integration, Scorecard, Dashboard, Action or Workflow"`
+		Identifier string `json:"identifier"`
 	}
 	syncArgs struct {
-		Name string `json:"name"`
-		Mode string `json:"mode,omitempty" jsonschema:"complete deletes what neither it nor the complete run before it saw; incremental fetches what changed and deletes only what the source says was deleted. Left out, the integration's schedule decides"`
+		Identifier string `json:"identifier"`
+		Mode       string `json:"mode,omitempty" jsonschema:"complete deletes what neither it nor the complete run before it saw; incremental fetches what changed and deletes only what the source says was deleted. Left out, the integration's schedule decides"`
 	}
 	publishManyArgs struct {
 		Documents           []documentRef `json:"documents"`
@@ -172,34 +171,34 @@ type (
 		Page      int    `json:"page,omitempty"`
 		Size      int    `json:"size,omitempty" jsonschema:"Page size: 10, 20, 50 or 100; omit for the API default"`
 	}
-	nameArgs struct {
-		Name string `json:"name"`
+	identifierArgs struct {
+		Identifier string `json:"identifier"`
 	}
 	searchArgs struct {
 		Text string `json:"text" jsonschema:"Words in a title or identifier; empty lists blueprints, dashboards, scorecards and integrations"`
 	}
 	resultsArgs struct {
-		Name  string `json:"name"`
-		Tiers string `json:"tiers,omitempty" jsonschema:"Comma-separated tier names, or none for entities that reached no tier"`
-		Page  int    `json:"page,omitempty"`
-		Size  int    `json:"size,omitempty"`
+		Identifier string `json:"identifier"`
+		Tiers      string `json:"tiers,omitempty" jsonschema:"Comma-separated tier names, or none for entities that reached no tier"`
+		Page       int    `json:"page,omitempty"`
+		Size       int    `json:"size,omitempty"`
 	}
 	dashboardDataArgs struct {
-		Name   string              `json:"name"`
-		Inputs map[string][]string `json:"inputs,omitempty" jsonschema:"Values to set the dashboard's inputs to, by input identifier; an empty list clears one"`
+		Identifier string              `json:"identifier"`
+		Inputs     map[string][]string `json:"inputs,omitempty" jsonschema:"Values to set the dashboard's inputs to, by input identifier; an empty list clears one"`
 	}
 	tokenArgs struct {
-		Integration string `json:"integration"`
-		Name        string `json:"name" jsonschema:"What the token is for, such as the system that pushes with it"`
+		Identifier string `json:"identifier" jsonschema:"The integration's identifier"`
+		Label      string `json:"name" jsonschema:"What the token is for, such as the system that pushes with it"`
 	}
 	runActionArgs struct {
-		Action         string         `json:"action"`
+		Identifier     string         `json:"identifier" jsonschema:"The action's identifier, from list_entity_actions"`
 		Entity         string         `json:"entity" jsonschema:"Identifier of the entity to run it on, of the action's blueprint"`
 		Inputs         map[string]any `json:"inputs,omitempty" jsonschema:"Values for the action's inputs, by input identifier, as list_entity_actions describes them"`
 		IdempotencyKey string         `json:"idempotencyKey,omitempty" jsonschema:"Any unique text; asking again with the same key returns the first run instead of starting another"`
 	}
 	workflowArgs struct {
-		Name           string         `json:"name" jsonschema:"The workflow's identifier, from list_self_service"`
+		Identifier     string         `json:"identifier" jsonschema:"The workflow's identifier, from list_self_service"`
 		Inputs         map[string]any `json:"inputs,omitempty" jsonschema:"Values for its inputs, by input identifier"`
 		IdempotencyKey string         `json:"idempotencyKey,omitempty" jsonschema:"Any unique text; asking again with the same key returns the first run instead of starting another"`
 	}
@@ -208,17 +207,19 @@ type (
 	}
 	runsArgs struct {
 		Action    string `json:"action,omitempty"`
+		Workflow  string `json:"workflow,omitempty" jsonschema:"The runs of one workflow"`
+		Parent    string `json:"parent,omitempty" jsonschema:"The runs a workflow run started, by its id"`
 		Blueprint string `json:"blueprint,omitempty" jsonschema:"With entity, the runs on one entity"`
 		Entity    string `json:"entity,omitempty"`
-		Status    string `json:"status,omitempty" jsonschema:"Comma-separated: queued, running, succeeded, failed, cancelled or interrupted"`
+		Status    string `json:"status,omitempty" jsonschema:"Comma-separated: queued, running, waiting, succeeded, failed, rejected, cancelled or interrupted"`
 		Search    string `json:"search,omitempty" jsonschema:"Words in the action, entity or requester"`
 		Mine      bool   `json:"mine,omitempty" jsonschema:"Only runs the caller asked for; members only ever see their own"`
 		Page      int    `json:"page,omitempty"`
 		Size      int    `json:"size,omitempty"`
 	}
 	revokeTokenArgs struct {
-		Integration string `json:"integration"`
-		ID          string `json:"id" jsonschema:"The token's id, from list_ingestion_tokens"`
+		Identifier string `json:"identifier" jsonschema:"The integration's identifier"`
+		ID         string `json:"id" jsonschema:"The token's id, from list_ingestion_tokens"`
 	}
 )
 
@@ -238,31 +239,31 @@ var tools = []tool{
 		if err != nil {
 			return nil, err
 		}
-		return d.Get(ctx, a.Name)
+		return d.Get(ctx, a.Identifier)
 	})),
 	read("list_versions", "List a configuration document's published versions.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a documentArgs) (any, error) {
 		d, err := b.document(a)
 		if err != nil {
 			return nil, err
 		}
-		return d.Versions(ctx, a.Name)
+		return d.Versions(ctx, a.Identifier)
 	}),
 	read("get_version", "Read the exact source of a numbered document version.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a versionArgs) (any, error) {
-		d, err := b.document(documentArgs{a.Kind, a.Name})
+		d, err := b.document(documentArgs{a.Kind, a.Identifier})
 		if err != nil {
 			return nil, err
 		}
 		if a.Version < 1 {
-			return nil, badArgs("version must be positive")
+			return nil, httpx.BadRequest("version must be positive")
 		}
-		return d.Version(ctx, a.Name, a.Version)
+		return d.Version(ctx, a.Identifier, a.Version)
 	}),
 	withLinks(read("export_document", "Export one published document as YAML.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a documentArgs) (any, error) {
 		d, err := b.document(a)
 		if err != nil {
 			return nil, err
 		}
-		source, err := d.Export(ctx, a.Name, false)
+		source, err := d.Export(ctx, a.Identifier, false)
 		return yaml(source), err
 	})),
 	read("export_documents", "Export all published documents visible to the caller as multi-document YAML.", auth.RoleMember, func(b bridge, ctx *gofr.Context, _ empty) (any, error) {
@@ -291,43 +292,43 @@ var tools = []tool{
 		return b.services.Home(ctx)
 	}),
 	read("get_dashboard_data", "Read every widget's data on a dashboard the caller sees, with its inputs set as given or to their defaults.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a dashboardDataArgs) (any, error) {
-		return b.services.DashboardData(ctx, a.Name, a.Inputs)
+		return b.services.DashboardData(ctx, a.Identifier, a.Inputs)
 	}),
 	read("get_entity_scorecards", "Read an entity's current scorecard results.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a entityArgs) (any, error) {
 		return b.services.EntityScorecards(ctx, a.Blueprint, a.Identifier)
 	}),
-	read("get_scorecard_summary", "Read how many entities reached each of a scorecard's tiers and how each criterion fares.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
-		return b.services.ScorecardSummary(ctx, a.Name)
+	read("get_scorecard_summary", "Read how many entities reached each of a scorecard's tiers and how each criterion fares.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+		return b.services.ScorecardSummary(ctx, a.Identifier)
 	}),
 	read("list_scorecard_results", "Page a scorecard's entity results, worst tier first, optionally narrowed to some tiers.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a resultsArgs) (any, error) {
 		req := scorecard.ResultsRequest{Page: a.Page, Size: a.Size}
 		if a.Tiers != "" {
 			req.Tiers = strings.Split(a.Tiers, ",")
 		}
-		return b.services.ScorecardResults(ctx, a.Name, req)
+		return b.services.ScorecardResults(ctx, a.Identifier, req)
 	}),
-	read("get_blueprint_usage", "Read what uses a blueprint: integrations writing it, scorecards, dashboards and relations, with its entity count.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
-		return b.services.BlueprintUsage(ctx, a.Name)
+	read("get_blueprint_usage", "Read what uses a blueprint: integrations writing it, scorecards, dashboards and relations, with its entity count.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+		return b.services.BlueprintUsage(ctx, a.Identifier)
 	}),
 	read("preview_impact", "Preview the impact of publishing a saved draft, including affected entities and breaking changes.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a documentArgs) (any, error) {
 		d, err := b.document(a)
 		if err != nil {
 			return nil, err
 		}
-		return d.Impact(ctx, a.Name)
+		return d.Impact(ctx, a.Identifier)
 	}),
 	read("view_dashboard", "Read a dashboard as Home would show it to the caller, from its draft when draft is true.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a struct {
-		Name  string `json:"name"`
-		Draft bool   `json:"draft,omitempty"`
+		Identifier string `json:"identifier"`
+		Draft      bool   `json:"draft,omitempty"`
 	},
 	) (any, error) {
-		return b.services.ViewDashboard(ctx, a.Name, a.Draft)
+		return b.services.ViewDashboard(ctx, a.Identifier, a.Draft)
 	}),
-	read("list_sync_runs", "Read recent integration runs and item errors.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
-		return b.services.SyncRuns(ctx, a.Name)
+	read("list_sync_runs", "Read recent integration runs and item errors.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+		return b.services.SyncRuns(ctx, a.Identifier)
 	}),
-	read("list_ingestion_tokens", "List an integration's ingestion tokens, by name and prefix; secrets are never shown again.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
-		return b.services.IngestionTokens(ctx, a.Name)
+	read("list_ingestion_tokens", "List an integration's ingestion tokens, by name and prefix; secrets are never shown again.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+		return b.services.IngestionTokens(ctx, a.Identifier)
 	}),
 
 	read("list_entity_actions", "List the actions the caller can run on an entity, with the inputs each takes.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a entityArgs) (any, error) {
@@ -336,19 +337,19 @@ var tools = []tool{
 	read("get_run", "Read an action run: its status, each step's outcome and output, and what it gave.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
 		return b.services.Run(ctx, a.ID)
 	}),
-	read("list_runs", "Page action runs, newest first, of an action, on an entity or by the caller.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a runsArgs) (any, error) {
+	read("list_runs", "Page action runs, newest first, of an action or workflow, on an entity or by the caller.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a runsArgs) (any, error) {
 		return b.services.Runs(ctx, action.RunsRequest{
-			Action: a.Action, Blueprint: a.Blueprint, Entity: a.Entity, Status: a.Status, Search: a.Search, Mine: a.Mine, Page: a.Page, Size: a.Size,
+			Action: a.Action, Workflow: a.Workflow, Parent: a.Parent, Blueprint: a.Blueprint, Entity: a.Entity, Status: a.Status, Search: a.Search, Mine: a.Mine, Page: a.Page, Size: a.Size,
 		})
 	}),
 	define("run_action", "Run an action on an entity as the caller. It starts the run and returns it; poll get_run until it finishes. Approval steps wait for people in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a runActionArgs) (any, error) {
-		return b.services.RunAction(ctx, a.Action, action.RunRequest{Entity: a.Entity, Inputs: a.Inputs, Key: a.IdempotencyKey})
+		return b.services.RunAction(ctx, a.Identifier, action.RunRequest{Entity: a.Entity, Inputs: a.Inputs, Key: a.IdempotencyKey})
 	}),
 	read("list_self_service", "List the Self-Service catalog: the workflows the caller can run, and the actions they can run on entities they pick, by group, with their inputs.", auth.RoleMember, func(b bridge, ctx *gofr.Context, _ empty) (any, error) {
 		return b.services.SelfServiceCatalog(ctx)
 	}),
 	define("run_workflow", "Run a workflow as the caller, such as registering a service. It starts the run and returns it; poll get_run until it finishes. Approval steps wait for people in the portal.", auth.RoleMember, oauth.ScopeRun, false, false, func(b bridge, ctx *gofr.Context, a workflowArgs) (any, error) {
-		return b.services.RunWorkflow(ctx, a.Name, action.RunRequest{Inputs: a.Inputs, Key: a.IdempotencyKey})
+		return b.services.RunWorkflow(ctx, a.Identifier, action.RunRequest{Inputs: a.Inputs, Key: a.IdempotencyKey})
 	}),
 	define("cancel_run", "Cancel an action run that hasn't finished. A step already under way may still take effect.", auth.RoleMember, oauth.ScopeRun, false, true, func(b bridge, ctx *gofr.Context, a runArgs) (any, error) {
 		return b.services.CancelRun(ctx, a.ID)
@@ -368,32 +369,32 @@ var tools = []tool{
 		return d.Validate(ctx, a.Source)
 	}),
 	author("save_draft", "Create or update a document's YAML draft without publishing it.", false, func(b bridge, ctx *gofr.Context, a draftArgs) (any, error) {
-		d, err := b.document(documentArgs{a.Kind, a.Name})
+		d, err := b.document(documentArgs{a.Kind, a.Identifier})
 		if err != nil {
 			return nil, err
 		}
-		return d.SaveDraft(ctx, a.Name, a.Source)
+		return d.SaveDraft(ctx, a.Identifier, a.Source)
 	}),
 	author("discard_draft", "Discard a saved draft; an unpublished document is removed.", true, func(b bridge, ctx *gofr.Context, a documentArgs) (any, error) {
 		d, err := b.document(a)
 		if err != nil {
 			return nil, err
 		}
-		return nil, d.DiscardDraft(ctx, a.Name)
+		return nil, d.DiscardDraft(ctx, a.Identifier)
 	}),
 	author("publish_document", "Publish a saved draft as a numbered version. Preview impact first; explicitly acknowledge breaking changes when applicable.", true, func(b bridge, ctx *gofr.Context, a publishArgs) (any, error) {
-		d, err := b.document(documentArgs{a.Kind, a.Name})
+		d, err := b.document(documentArgs{a.Kind, a.Identifier})
 		if err != nil {
 			return nil, err
 		}
-		return d.Publish(ctx, a.Name, a.AcknowledgeBreaking)
+		return d.Publish(ctx, a.Identifier, a.AcknowledgeBreaking)
 	}),
 	author("delete_document", "Delete a document and dependent data allowed by its API. Requires repeating its identifier in confirm.", true, func(b bridge, ctx *gofr.Context, a deleteArgs) (any, error) {
-		d, err := b.document(documentArgs{a.Kind, a.Name})
+		d, err := b.document(documentArgs{a.Kind, a.Identifier})
 		if err != nil {
 			return nil, err
 		}
-		return nil, d.Delete(ctx, a.Name, a.Confirm)
+		return nil, d.Delete(ctx, a.Identifier, a.Confirm)
 	}),
 	author("apply_documents", "Validate multi-document YAML as a set. Defaults to dryRun=true; explicitly set false to save drafts atomically.", false, func(b bridge, ctx *gofr.Context, a applyArgs) (any, error) {
 		dry := true
@@ -405,47 +406,42 @@ var tools = []tool{
 	author("publish_documents", "Publish multiple saved drafts atomically in dependency order after reviewing their impacts.", true, func(b bridge, ctx *gofr.Context, a publishManyArgs) (any, error) {
 		refs := make([]configdoc.DocumentRef, 0, len(a.Documents))
 		for _, d := range a.Documents {
-			refs = append(refs, configdoc.DocumentRef{Kind: d.Kind, Name: d.Name})
+			refs = append(refs, configdoc.DocumentRef{Kind: d.Kind, Identifier: d.Identifier})
 		}
 		return b.services.PublishMany(ctx, refs, a.AcknowledgeBreaking)
 	}),
 	author("sync_integration", "Start syncing a published integration that pulls now, completely or incrementally, using its declared mappings. It returns the run as soon as it starts, with finishedAt null; read its outcome later with list_sync_runs, which lists the newest runs first: the run with the same id has finished once finishedAt is set.", true, func(b bridge, ctx *gofr.Context, a syncArgs) (any, error) {
-		return b.services.Sync(ctx, a.Name, a.Mode)
+		return b.services.Sync(ctx, a.Identifier, a.Mode)
 	}),
-	author("check_integration", "Check a published integration's connector can reach its system with the current config and secrets, or the draft's when it isn't published.", false, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
-		return b.services.CheckIntegration(ctx, a.Name)
+	author("check_integration", "Check a published integration's connector can reach its system with the current config and secrets, or the draft's when it isn't published.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+		return b.services.CheckIntegration(ctx, a.Identifier)
 	}),
-	author("evaluate_scorecard", "Evaluate a published scorecard now and store its current results.", false, func(b bridge, ctx *gofr.Context, a nameArgs) (any, error) {
-		return b.services.EvaluateScorecard(ctx, a.Name)
+	author("evaluate_scorecard", "Evaluate a published scorecard now and store its current results.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+		return b.services.EvaluateScorecard(ctx, a.Identifier)
 	}),
 	author("create_ingestion_token", "Create an ingestion token for an integration that takes pushes. Its secret is in this response only; hand it to the pushing system now.", false, func(b bridge, ctx *gofr.Context, a tokenArgs) (any, error) {
-		return b.services.CreateIngestionToken(ctx, a.Integration, a.Name)
+		return b.services.CreateIngestionToken(ctx, a.Identifier, a.Label)
 	}),
 	author("revoke_ingestion_token", "Revoke an integration's ingestion token; systems pushing with it stop being accepted.", true, func(b bridge, ctx *gofr.Context, a revokeTokenArgs) (any, error) {
-		return nil, b.services.RevokeIngestionToken(ctx, a.Integration, a.ID)
+		return nil, b.services.RevokeIngestionToken(ctx, a.Identifier, a.ID)
 	}),
 }
 
 // document is the service for the document a tool names.
 func (b bridge) document(a documentArgs) (configdoc.Documents, error) {
-	if a.Name == "" {
-		return nil, badArgs("name a document")
+	if a.Identifier == "" {
+		return nil, httpx.BadRequest("identify a document")
 	}
 	return b.documents(a.Kind)
 }
 
-// badArgs says what's wrong with a tool's arguments.
-func badArgs(message string) error {
-	return httpx.Error{Code: http.StatusBadRequest, Message: message}
-}
-
-func (a documentArgs) resourceLink() *mcp.ResourceLink { return documentLink(a.Kind, a.Name) }
+func (a documentArgs) resourceLink() *mcp.ResourceLink { return documentLink(a.Kind, a.Identifier) }
 
 func (a entityArgs) resourceLink() *mcp.ResourceLink {
 	return link(entityURI(a.Blueprint, a.Identifier), a.Blueprint+"/"+a.Identifier, "application/json")
 }
 
-const authoringHelp = `Documents are YAML with kind (Blueprint, Integration, Scorecard, Dashboard, Action or Workflow), metadata and spec. Every field, its allowed values and what it means are in each kind's JSON Schema: read portal://schemas/<kind> or get_document_schema before writing one. Some definitions carry examples to start from, such as a mapping of each resource a connector reads. Names are immutable URL identifiers. Blueprints come first: integrations fill them with entities, scorecards grade those entities, dashboards summarize them and actions run steps on one entity at a time. Look at existing documents of the same kind for conventions.
+const authoringHelp = `Documents are YAML with kind (Blueprint, Integration, Scorecard, Dashboard, Action or Workflow), metadata and spec. Every field, its allowed values and what it means are in each kind's JSON Schema: read portal://schemas/<kind> or get_document_schema before writing one. Some definitions carry examples to start from, such as a mapping of each resource a connector reads. A document's metadata.identifier is immutable and is its URL identifier. Blueprints come first: integrations fill them with entities, scorecards grade those entities, dashboards summarize them and actions run steps on one entity at a time. Look at existing documents of the same kind for conventions.
 
 Workflow: search or list/read existing documents; validate proposed YAML; save_draft or apply_documents(dryRun=true) then apply_documents(dryRun=false); preview_impact; publish_document or publish_documents in one atomic batch; inspect catalog/entities and sync runs. Validation returns issues with severity/path/line. An error blocks saving/publishing; warnings may refer to dependencies not published yet. Export includes only published configuration unless reading a draft explicitly through get_document.
 

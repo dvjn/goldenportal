@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itchyny/gojq"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/jq"
 )
 
 // HTTPConfig is the http connector's config: its resources, each fetched
@@ -236,7 +236,7 @@ func jqField(r *configdoc.Reader, fields map[string]*yaml.Node, path, name strin
 	if value == "" {
 		return ""
 	}
-	if _, err := compile(value, variables...); err != nil {
+	if _, err := jq.Compile(value, variables...); err != nil {
 		r.Errorf(n, path+"."+name, "%s is not valid jq: %v", name, err)
 	}
 
@@ -294,7 +294,7 @@ func (c *HTTPConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 		}
 		err := fetchPages(ctx, name, resource, sincePattern.ReplaceAllLiteralString(resource.URL, since),
 			func(page any) error {
-				items, err := resource.split(name, page)
+				items, err := resource.split(ctx, name, page)
 				if err != nil {
 					return err
 				}
@@ -322,11 +322,11 @@ type emitError struct{ err error }
 func (e emitError) Error() string { return e.err.Error() }
 
 // split turns a page into items.
-func (resource HTTPResource) split(name string, page any) ([]Item, error) {
+func (resource HTTPResource) split(ctx context.Context, name string, page any) ([]Item, error) {
 	objects := []any{page}
 	if resource.Items != "" {
 		var err error
-		if objects, err = all(resource.Items, page); err != nil {
+		if objects, err = all(ctx, resource.Items, page); err != nil {
 			return nil, fmt.Errorf("%s items: %w", name, err)
 		}
 	}
@@ -334,7 +334,7 @@ func (resource HTTPResource) split(name string, page any) ([]Item, error) {
 	for _, object := range objects {
 		item := Item{Resource: name, Object: object}
 		if resource.Deleted != "" {
-			deleted, err := all(resource.Deleted, object)
+			deleted, err := all(ctx, resource.Deleted, object)
 			if err != nil {
 				return nil, fmt.Errorf("%s deleted: %w", name, err)
 			}
@@ -347,31 +347,21 @@ func (resource HTTPResource) split(name string, page any) ([]Item, error) {
 }
 
 // all runs jq and returns every result.
-func all(expression string, input any) ([]any, error) {
-	code, err := compile(expression)
+func all(ctx context.Context, expression string, input any) ([]any, error) {
+	code, err := jq.Compile(expression)
 	if err != nil {
 		return nil, err
 	}
-	var out []any
-	iter := code.Run(input)
-	for {
-		value, ok := iter.Next()
-		if !ok {
-			return out, nil
-		}
-		if err, isErr := value.(error); isErr {
-			return nil, err
-		}
-		out = append(out, normalise(value))
-	}
+
+	return code.All(ctx, jq.DefaultTimeout, input)
 }
 
 // fetchPages fetches a resource from address, handing each page to page as
 // it arrives.
 func fetchPages(ctx context.Context, name string, resource HTTPResource, address string, page func(any) error) error {
-	var next *gojq.Code
+	var next *jq.Code
 	if resource.Next != "" {
-		code, err := compile(resource.Next, "$headers")
+		code, err := jq.Compile(resource.Next, "$headers")
 		if err != nil {
 			return err
 		}
@@ -399,7 +389,7 @@ func fetchPages(ctx context.Context, name string, resource HTTPResource, address
 			break
 		}
 
-		value, err := firstWith(next, body, headers)
+		value, err := first(ctx, next, body, headers)
 		if err != nil {
 			return fmt.Errorf("%s next: %w", name, err)
 		}
@@ -528,7 +518,7 @@ func lowerHeaders(h http.Header) map[string]any {
 }
 
 // Receive turns a request into items of the resources it asks for.
-func (c *HTTPConfig) Receive(_ context.Context, req Request, authenticated bool) ([]Item, error) {
+func (c *HTTPConfig) Receive(ctx context.Context, req Request, authenticated bool) ([]Item, error) {
 	if !authenticated {
 		if c.Push.Signature == nil {
 			return nil, ErrUnverified
@@ -550,13 +540,13 @@ func (c *HTTPConfig) Receive(_ context.Context, req Request, authenticated bool)
 	var items []Item
 	for _, name := range req.Resources {
 		push := c.Resource[name].Push
-		objects, err := all(push.Items, envelope)
+		objects, err := all(ctx, push.Items, envelope)
 		if err != nil {
 			return nil, ReceiveError{fmt.Sprintf("resources.%s.push.items: %v", name, err)}
 		}
 		deleted := false
 		if push.Deleted != "" {
-			values, err := all(push.Deleted, envelope)
+			values, err := all(ctx, push.Deleted, envelope)
 			if err != nil {
 				return nil, ReceiveError{fmt.Sprintf("resources.%s.push.deleted: %v", name, err)}
 			}

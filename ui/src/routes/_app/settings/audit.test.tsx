@@ -17,7 +17,7 @@ const signedInAdmin = { "GET config": acmeConfig, "GET me": ok({ ...ada, role: "
 
 const event = (id: number, action: string, details: Record<string, unknown> = {}) => ({
   id,
-  at: new Date().toISOString(),
+  occurredAt: new Date().toISOString(),
   actor: { id: "1", label: "ada@example.com" },
   action,
   target: { type: "group", id: "g1", label: "platform-engineers" },
@@ -41,7 +41,7 @@ function auditApi(respond: (params: URLSearchParams) => unknown) {
 describe("audit log", () => {
   it("describes each event in plain words", async () => {
     auditApi(() => ({
-      events: [event(2, "access.grant", { role: "builder" }), event(1, "auth.sign_in")],
+      items: [event(2, "access.grant", { role: "builder" }), event(1, "auth.sign_in")],
       total: 2,
     }));
     renderRoute("/settings/audit");
@@ -55,7 +55,7 @@ describe("audit log", () => {
   it("asks the server for the next page", async () => {
     const user = userEvent.setup();
     const queries = auditApi((params) => ({
-      events: [event(params.get("page") === "2" ? 1 : 2, "auth.sign_in")],
+      items: [event(params.get("page") === "2" ? 1 : 2, "auth.sign_in")],
       total: 15,
     }));
     const { router } = renderRoute("/settings/audit");
@@ -70,7 +70,7 @@ describe("audit log", () => {
 
   it("filters by action through the URL", async () => {
     const user = userEvent.setup();
-    const queries = auditApi(() => ({ events: [event(1, "token.create")], total: 1 }));
+    const queries = auditApi(() => ({ items: [event(1, "token.create")], total: 1 }));
     const { router } = renderRoute("/settings/audit?page=2");
 
     await user.click(await screen.findByRole("button", { name: "Filter" }));
@@ -86,7 +86,7 @@ describe("audit log", () => {
 
   it("filters by date with a preset", async () => {
     const user = userEvent.setup();
-    const queries = auditApi(() => ({ events: [event(1, "auth.sign_in")], total: 1 }));
+    const queries = auditApi(() => ({ items: [event(1, "auth.sign_in")], total: 1 }));
     const { router } = renderRoute("/settings/audit");
 
     await user.click(await screen.findByRole("button", { name: "Filter" }));
@@ -101,7 +101,7 @@ describe("audit log", () => {
 
   it("filters to the last days counted back from now", async () => {
     const user = userEvent.setup();
-    const queries = auditApi(() => ({ events: [event(1, "auth.sign_in")], total: 1 }));
+    const queries = auditApi(() => ({ items: [event(1, "auth.sign_in")], total: 1 }));
     const { router } = renderRoute("/settings/audit");
 
     await user.click(await screen.findByRole("button", { name: "Filter" }));
@@ -117,12 +117,12 @@ describe("audit log", () => {
     const user = userEvent.setup();
     const queries = auditApi((params) =>
       params.get("action")
-        ? { events: [], total: 0 }
-        : { events: [event(1, "auth.sign_in")], total: 1 },
+        ? { items: [], total: 0 }
+        : { items: [event(1, "auth.sign_in")], total: 1 },
     );
     const { router } = renderRoute("/settings/audit?action=token.revoke&q=ci");
 
-    expect(await screen.findByText(/Nothing matches "ci"/)).toBeInTheDocument();
+    expect(await screen.findByText("No events match")).toBeInTheDocument();
     expect(queries[0]?.get("q")).toBe("ci");
     expect(queries[0]?.get("action")).toBe("token.revoke");
 
@@ -133,9 +133,9 @@ describe("audit log", () => {
   });
 
   it("explains an empty log", async () => {
-    auditApi(() => ({ events: [], total: 0 }));
+    auditApi(() => ({ items: [], total: 0 }));
     renderRoute("/settings/audit");
 
-    expect(await screen.findByText("Nothing recorded yet")).toBeInTheDocument();
+    expect(await screen.findByText("No events yet")).toBeInTheDocument();
   });
 });

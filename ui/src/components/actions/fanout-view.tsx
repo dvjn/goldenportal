@@ -31,7 +31,7 @@ export function FanoutView({ run, step }: Readonly<{ run: Run; step: RunStep }>)
   );
   return (
     <FanoutList
-      runs={data.runs
+      runs={data.items
         .filter((child) => !others.has(child.id))
         .map((child) => ({
           id: child.id,

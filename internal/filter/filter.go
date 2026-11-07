@@ -101,11 +101,12 @@ func Parse(raw string) (*Filter, error) {
 	return &f, nil
 }
 
-var durationPattern = regexp.MustCompile(`^([1-9][0-9]{0,5})([mhdw])$`)
+var durationPattern = regexp.MustCompile(`^([1-9][0-9]{0,5})([smhdw])$`)
 
-var durationUnits = map[string]time.Duration{"m": time.Minute, "h": time.Hour, "d": 24 * time.Hour, "w": 7 * 24 * time.Hour}
+var durationUnits = map[string]time.Duration{"s": time.Second, "m": time.Minute, "h": time.Hour, "d": 24 * time.Hour, "w": 7 * 24 * time.Hour}
 
-// ParseDuration reads a within duration, such as 30m, 12h, 7d or 2w.
+// ParseDuration reads the one duration form every setting uses: a count and
+// a unit, such as 30s, 30m, 12h, 7d or 2w.
 func ParseDuration(text string) (time.Duration, bool) {
 	match := durationPattern.FindStringSubmatch(text)
 	if match == nil {
@@ -114,4 +115,18 @@ func ParseDuration(text string) (time.Duration, bool) {
 	n, _ := strconv.Atoi(match[1])
 
 	return time.Duration(n) * durationUnits[match[2]], true
+}
+
+// FormatDuration writes d in that form, in the largest unit that holds it
+// exactly, so a value read and written back reads the same. A part second
+// rounds up, as a timeout shorter than asked would cut a step short.
+func FormatDuration(d time.Duration) string {
+	seconds := int64((d + time.Second - 1) / time.Second)
+	for _, unit := range []string{"w", "d", "h", "m"} {
+		if size := int64(durationUnits[unit] / time.Second); seconds%size == 0 {
+			return fmt.Sprintf("%d%s", seconds/size, unit)
+		}
+	}
+
+	return fmt.Sprintf("%ds", seconds)
 }

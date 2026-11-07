@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/filter"
 )
 
 // DocumentKind is how integration documents name their kind.
@@ -130,7 +131,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	r := &configdoc.Reader{}
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
 	spec := Spec{
-		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Identifier: doc.Identifier, Title: doc.Meta.Title, Description: doc.Meta.Description,
 		Mappings: []Mapping{},
 	}
 	metadata := configdoc.Field(doc.Root, "metadata")
@@ -244,16 +245,17 @@ func parseSync(r *configdoc.Reader, spec *Spec, node *yaml.Node) {
 	}
 }
 
-// syncInterval reads one of spec.sync's durations, at least MinSyncInterval.
+// syncInterval reads one of spec.sync's durations, at least MinSyncInterval
+// (the message spells it as 1m).
 func syncInterval(r *configdoc.Reader, node, parent *yaml.Node, name string) (time.Duration, bool) {
 	path := "spec.sync." + name
-	every, err := time.ParseDuration(r.Text(node, path))
+	every, ok := filter.ParseDuration(r.Text(node, path))
 	switch {
-	case err != nil:
+	case !ok:
 		r.Errorf(configdoc.OrNode(node, parent), path, "%s must be a duration, such as 5m or 1h", name)
 		return 0, false
 	case every < MinSyncInterval:
-		r.Errorf(node, path, "%s must be at least %s", name, MinSyncInterval)
+		r.Errorf(node, path, "%s must be at least 1m", name)
 		return 0, false
 	}
 

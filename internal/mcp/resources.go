@@ -22,7 +22,7 @@ import (
 // read calls services as the caller, like a tool.
 const (
 	guideURI            = "portal://guide/authoring"
-	documentTemplate    = "portal://documents/{kind}/{name}"
+	documentTemplate    = "portal://documents/{kind}/{identifier}"
 	entityTemplate      = "portal://entities/{blueprint}/{+identifier}"
 	documentURIPrefix   = "portal://documents/"
 	entityURIPrefix     = "portal://entities/"
@@ -33,7 +33,7 @@ var documentKinds = []string{"blueprints", "integrations", "scorecards", "dashbo
 
 func schemaURI(kind string) string { return "portal://schemas/" + kind }
 
-func documentURI(kind, name string) string { return documentURIPrefix + kind + "/" + name }
+func documentURI(kind, identifier string) string { return documentURIPrefix + kind + "/" + identifier }
 
 func entityURI(blueprint, identifier string) string {
 	return entityURIPrefix + blueprint + "/" + identifier
@@ -61,13 +61,13 @@ func addResources(s *mcp.Server, b bridge) {
 		Description: "A blueprint, integration, scorecard, dashboard, action or workflow as published, in YAML",
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		uri := req.Params.URI
-		kind, name, _ := strings.Cut(strings.TrimPrefix(uri, documentURIPrefix), "/")
-		d, err := b.document(documentArgs{kind, name})
+		kind, identifier, _ := strings.Cut(strings.TrimPrefix(uri, documentURIPrefix), "/")
+		d, err := b.document(documentArgs{kind, identifier})
 		if err != nil {
 			return nil, mcp.ResourceNotFoundError(uri)
 		}
 		out := b.run(ctx, func(g *gofr.Context) (any, error) {
-			source, err := d.Export(g, name, false)
+			source, err := d.Export(g, identifier, false)
 			return yaml(source), err
 		})
 		if err := readError(uri, out); err != nil {
@@ -149,8 +149,6 @@ func (b bridge) suggest(ctx context.Context, argument, typed string, known map[s
 	switch argument {
 	case "kind":
 		candidates = documentKinds
-	case "name":
-		candidates = b.identifiers(ctx, known["kind"])
 	case "blueprint":
 		candidates = b.identifiers(ctx, "blueprints")
 	case "scorecard":
@@ -161,13 +159,18 @@ func (b bridge) suggest(ctx context.Context, argument, typed string, known map[s
 			candidates = append(candidates, c.ID)
 		}
 	case "identifier":
+		// A document template names its kind; an entity template its blueprint.
+		if kind, ok := known["kind"]; ok {
+			candidates = b.identifiers(ctx, kind)
+			break
+		}
 		// Entity search matches anywhere in a title or identifier, which is
 		// what someone typing part of a name wants, so its results stand.
 		page, _ := quietly(b, ctx, func(g *gofr.Context) (entity.Page, error) {
 			return b.services.Entities(g, known["blueprint"], entity.ListRequest{Search: typed, Size: 20})
 		})
 		var values []string
-		for _, e := range page.Entities {
+		for _, e := range page.Items {
 			values = append(values, e.Identifier)
 		}
 		return values
@@ -207,6 +210,6 @@ func link(uri, name, mimeType string) *mcp.ResourceLink {
 	return &mcp.ResourceLink{URI: uri, Name: name, MIMEType: mimeType}
 }
 
-func documentLink(kind, name string) *mcp.ResourceLink {
-	return link(documentURI(kind, name), fmt.Sprintf("%s/%s", kind, name), "application/yaml")
+func documentLink(kind, identifier string) *mcp.ResourceLink {
+	return link(documentURI(kind, identifier), fmt.Sprintf("%s/%s", kind, identifier), "application/yaml")
 }

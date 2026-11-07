@@ -49,7 +49,7 @@ function ActionPage() {
               scope={{ action: identifier }}
               search={runsSearch}
               empty={{
-                title: "Nothing has run yet",
+                title: "No runs yet",
                 description: "Runs show up here once someone runs it from an entity's page.",
               }}
             />

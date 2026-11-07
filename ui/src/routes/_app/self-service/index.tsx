@@ -72,7 +72,7 @@ function SelfServicePage() {
       {everything.length === 0 ? (
         <EmptyCard
           icon={<ConciergeBell />}
-          title="Nothing to run yet"
+          title="No actions yet"
           description="What builders offer to run shows up here."
         />
       ) : (
@@ -90,12 +90,15 @@ function SelfServicePage() {
             />
           </InputGroup>
           {groups.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Nothing matches "{q}".{" "}
+            <EmptyCard
+              icon={<Search />}
+              title="No actions match"
+              description={`Nothing is named "${q}".`}
+            >
               <Button variant="link" className="h-auto p-0" onClick={() => searchFor("")}>
                 Clear the search
               </Button>
-            </p>
+            </EmptyCard>
           )}
           {groups.map((group) => (
             <section key={group.title} className="grid gap-3" aria-label={group.title}>

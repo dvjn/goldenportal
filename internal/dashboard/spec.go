@@ -132,7 +132,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	r := &configdoc.Reader{}
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
 	spec := Spec{
-		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Identifier: doc.Identifier, Title: doc.Meta.Title, Description: doc.Meta.Description,
 		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Inputs: []Input{}, Queries: []widget.Query{}, Widgets: []widget.Widget{},
 	}
 	for _, name := range []string{"title", "description"} {
@@ -143,10 +143,6 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 		}
 	}
 	if doc.Spec == nil {
-		return spec, r.Issues
-	}
-	if n := configdoc.Field(doc.Spec, "filters"); n != nil {
-		r.Errorf(n, "spec.filters", "filters are now inputs: rename spec.filters to spec.inputs, and $filter.<id> to $input.<id>")
 		return spec, r.Issues
 	}
 	fields, ok := r.Fields(doc.Spec, "spec", SpecFields...)
@@ -279,10 +275,6 @@ func parseInput(r *configdoc.Reader, path, id string, key, node *yaml.Node) Inpu
 // parseDefaultQuery reads a default written as a query and what to start
 // at when it finds nothing.
 func parseDefaultQuery(r *configdoc.Reader, node *yaml.Node, path string, f Input) *DefaultQuery {
-	if configdoc.Field(node, "from") != nil || configdoc.Field(node, "where") != nil {
-		r.Errorf(node, path, "a default is now a query: write {query: {blueprint: %s, filter: <condition>}, otherwise: everything|nothing}", orName(f.Relation))
-		return nil
-	}
 	if f.Type != InputRelation || !f.Multiple {
 		r.Errorf(node, path, "a default query picks entities, so only a relation input with multiple: true can have one")
 		return nil
@@ -324,25 +316,13 @@ func parseDefaultQuery(r *configdoc.Reader, node *yaml.Node, path string, f Inpu
 	return d
 }
 
-func orName(blueprint string) string {
-	if blueprint == "" {
-		return "<blueprint>"
-	}
-
-	return blueprint
-}
-
-// parseDefault reads one value, or for a multiple input a list of them.
+// parseDefault reads a default, always a list: one value, or for a
+// multiple input several.
 func parseDefault(r *configdoc.Reader, node *yaml.Node, path string, f Input) []string {
-	var values []string
-	switch {
-	case node.Kind == yaml.ScalarNode:
-		values = []string{node.Value}
-	case !f.Multiple:
+	values := texts(r, node, path)
+	if len(values) > 1 && !f.Multiple {
 		r.Errorf(node, path, "default is one value; set multiple: true to default to several")
 		return nil
-	default:
-		values = texts(r, node, path)
 	}
 	for _, value := range values {
 		switch {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -216,7 +215,7 @@ func (s *syncing) pull(ctx context.Context) error {
 	run := s.run
 	unsafe := map[string]bool{}
 	emit := func(_ string, items []Item) error {
-		entries := s.mapping.Map(items)
+		entries := s.mapping.Map(ctx, items)
 		for start := 0; start < len(entries); start += writeBatch {
 			if err := writeBatched(ctx, s.db, s.id, entries[start:min(start+writeBatch, len(entries))], run, unsafe); err != nil {
 				return err
@@ -368,7 +367,7 @@ func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 		return nil, err
 	}
 	if mode != "" && mode != ModeComplete && mode != ModeIncremental {
-		return nil, badRequest("mode must be complete or incremental")
+		return nil, httpx.BadRequest("mode must be complete or incremental")
 	}
 	if _, err := integrationID(ctx, identifier); err != nil {
 		return nil, err
@@ -377,7 +376,7 @@ func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 	s, err := startSync(ctx, ctx.SQL, identifier, Run{Trigger: TriggerManual, Mode: mode}, nil)
 	switch {
 	case errors.Is(err, ErrSyncing), errors.Is(err, ErrNotPull), errors.Is(err, ErrUnsynced):
-		return nil, httpx.Error{Code: http.StatusConflict, Message: err.Error()}
+		return nil, httpx.Conflict(err.Error())
 	case err != nil:
 		return nil, err
 	}

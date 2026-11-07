@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useConfig } from "@/features/app-config";
 import {
   type AuthorizeRequest,
   decideConsent,
@@ -29,7 +30,6 @@ import {
   scopeLabels,
 } from "@/features/apps";
 import { meQueryOptions, useMe } from "@/features/auth";
-import { useConfig } from "@/features/config";
 import { isUnauthorized } from "@/lib/api";
 import { usePageTitle } from "@/lib/page-title";
 

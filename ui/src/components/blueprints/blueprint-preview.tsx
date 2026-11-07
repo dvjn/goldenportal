@@ -1,10 +1,11 @@
 import { PropertyType } from "@/components/blueprints/property-type";
+import { EmptyState } from "@/components/empty-state";
 import type { BlueprintSpec } from "@/features/blueprints";
 
 // BlueprintPreview is a compact list of a blueprint's properties.
 export function BlueprintPreview({ spec }: Readonly<{ spec: BlueprintSpec }>) {
   if (spec.properties.length === 0) {
-    return <p className="text-sm text-muted-foreground">No properties yet.</p>;
+    return <EmptyState compact title="No properties yet" />;
   }
 
   return (

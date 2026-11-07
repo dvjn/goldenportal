@@ -13,6 +13,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 var ErrNotFound = errors.New("entity not found")
@@ -250,10 +251,7 @@ type Query struct {
 	PageSize int
 }
 
-type Page struct {
-	Entities []*Entity `json:"entities"`
-	Total    int       `json:"total"`
-}
+type Page = httpx.Page[*Entity]
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
@@ -328,13 +326,13 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 	}
 	defer rows.Close()
 
-	page := Page{Entities: []*Entity{}}
+	page := Page{Items: []*Entity{}}
 	for rows.Next() {
 		e, err := scanEntity(rows.Scan, &page.Total)
 		if err != nil {
 			return Page{}, err
 		}
-		page.Entities = append(page.Entities, e)
+		page.Items = append(page.Items, e)
 	}
 
 	return page, rows.Err()

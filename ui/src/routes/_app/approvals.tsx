@@ -112,6 +112,7 @@ function ApprovalsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title="Approvals" icon={<PageIcon page="approvals" />} />
       <DataTable
+        noun="approvals"
         data={runs}
         columns={columns}
         getRowId={(run) => run.id}
@@ -120,7 +121,7 @@ function ApprovalsPage() {
         empty={
           <EmptyState
             icon={<Stamp />}
-            title="Nothing waits on you"
+            title="No approvals yet"
             description="Runs that need your approval show up here."
           />
         }

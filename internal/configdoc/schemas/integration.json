@@ -603,13 +603,13 @@
       "properties": {
         "interval": {
           "type": "string",
-          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-          "description": "A Go duration of at least 1m, such as 5m or 1h. Defaults to 15m. With complete, syncs at this interval are incremental."
+          "pattern": "^[1-9][0-9]{0,5}[smhdw]$",
+          "description": "A duration of at least 1m, such as 5m or 1h. Defaults to 15m. With complete, syncs at this interval are incremental."
         },
         "complete": {
           "type": "string",
-          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-          "description": "How often a sync is complete: a Go duration of at least the interval, such as 24h. A complete run deletes the entities that neither it nor the complete run before it saw, so one missed by chance stays. Left out, every sync is complete. The first sync, and the first after a publish, are complete too. Only http integrations whose urls use {{ $since }} fetch less on the others; portal and github ones read everything on every sync, and ignore complete."
+          "pattern": "^[1-9][0-9]{0,5}[smhdw]$",
+          "description": "How often a sync is complete: a duration of at least the interval, such as 24h. A complete run deletes the entities that neither it nor the complete run before it saw, so one missed by chance stays. Left out, every sync is complete. The first sync, and the first after a publish, are complete too. Only http integrations whose urls use {{ $since }} fetch less on the others; portal and github ones read everything on every sync, and ignore complete."
         }
       },
       "required": ["interval"],

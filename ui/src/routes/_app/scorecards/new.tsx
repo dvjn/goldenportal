@@ -9,7 +9,7 @@ import { type ScorecardSpec, scorecards } from "@/features/scorecards";
 // readiness: {type: scorecard, scorecard: example}.
 const template = `kind: Scorecard
 metadata:
-  name: example
+  identifier: example
   title: Example
   description: What good looks like.
 spec:

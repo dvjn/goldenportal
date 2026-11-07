@@ -23,7 +23,7 @@ import (
 const overviewYAML = `
 kind: Dashboard
 metadata:
-  name: overview
+  identifier: overview
   title: Overview
 spec:
   order: 2
@@ -110,10 +110,10 @@ func TestParse(t *testing.T) {
 	}
 
 	for source, path := range map[string]string{
-		"kind: Dashboard\nmetadata: {name: d, title: D}\nspec: {order: 1}":                                                "spec.widgets",
-		"kind: Dashboard\nmetadata: {name: d, title: D}\nspec:\n  page: home\n  widgets: {w: {type: markdown, text: x}}":  "spec.page",
-		"kind: Dashboard\nmetadata: {name: d, title: D}\nspec:\n  widgets:\n    w: {type: properties, title: W}":          "spec.widgets.w.type",
-		"kind: Dashboard\nmetadata: {name: d, title: D}\nspec:\n  filters: {}\n  widgets: {w: {type: markdown, text: x}}": "spec.filters",
+		"kind: Dashboard\nmetadata: {identifier: d, title: D}\nspec: {order: 1}":                                                "spec.widgets",
+		"kind: Dashboard\nmetadata: {identifier: d, title: D}\nspec:\n  page: home\n  widgets: {w: {type: markdown, text: x}}":  "spec.page",
+		"kind: Dashboard\nmetadata: {identifier: d, title: D}\nspec:\n  widgets:\n    w: {type: properties, title: W}":          "spec.widgets.w.type",
+		"kind: Dashboard\nmetadata: {identifier: d, title: D}\nspec:\n  filters: {}\n  widgets: {w: {type: markdown, text: x}}": "spec.filters",
 	} {
 		_, issues := Parse(source)
 		if !strings.Contains(issuePaths(issues), path) {
@@ -135,12 +135,13 @@ func TestParseInputProblems(t *testing.T) {
 		{"relation", "f: {type: relation}", "spec.inputs.f.relation", "name the blueprint"},
 		{"relation values", "f: {type: relation, relation: team, values: [a]}", "spec.inputs.f.values", "only enum inputs"},
 		{"string values", "f: {type: string, values: [a]}", "spec.inputs.f.values", "any text"},
-		{"default off the enum", "f: {type: enum, values: [a], default: b}", "spec.inputs.f.default", "not one of the values"},
+		{"scalar default", "f: {type: string, default: a}", "spec.inputs.f.default", "must be a list"},
+		{"default off the enum", "f: {type: enum, values: [a], default: [b]}", "spec.inputs.f.default", "not one of the values"},
 		{"several defaults", "f: {type: enum, values: [a, b], default: [a, b]}", "spec.inputs.f.default", "one value"},
-		{"empty default", "f: {type: string, default: ''}", "spec.inputs.f.default", "can't be empty"},
+		{"empty default", "f: {type: string, default: ['']}", "spec.inputs.f.default", "can't be empty"},
 		{"query on enum", "f: {type: enum, values: [a], default: {query: {blueprint: team}}}", "spec.inputs.f.default", "multiple: true"},
 		{"query on one relation", "f: {type: relation, relation: team, default: {query: {blueprint: team}}}", "spec.inputs.f.default", "multiple: true"},
-		{"old from and where", "f: {type: relation, relation: team, multiple: true, default: {from: team, where: {property: p, op: eq, value: x}}}", "spec.inputs.f.default", "a default is now a query"},
+		{"default field", "f: {type: relation, relation: team, multiple: true, default: {from: team}}", "spec.inputs.f.default.from", "unknown field"},
 		{"query without blueprint", "f: {type: relation, relation: team, multiple: true, default: {query: {filter: {property: p, op: eq, value: x}}}}", "spec.inputs.f.default.query.blueprint", "name the blueprint"},
 		{"query of elsewhere", "f: {type: relation, relation: team, multiple: true, default: {query: {blueprint: group}}}", "spec.inputs.f.default.query.blueprint", "must be team"},
 		{"default without query", "f: {type: relation, relation: team, multiple: true, default: {otherwise: nothing}}", "spec.inputs.f.default.query", "add the query"},
@@ -150,13 +151,13 @@ func TestParseInputProblems(t *testing.T) {
 		{"query filter misspells me", "f: {type: relation, relation: team, multiple: true, default: {query: {blueprint: team, filter: {property: p, op: eq, value: $me.grops}}}}", "spec.inputs.f.default.query.filter", "unknown variable $me.grops; known: $me, $me.email, $me.name, $me.role, $me.groups"},
 		{"otherwise", "f: {type: relation, relation: team, multiple: true, default: {query: {blueprint: team}, otherwise: all}}", "spec.inputs.f.default.otherwise", "nothing or everything"},
 		{"property", "f: {type: string, property: a}", "spec.inputs.f.property", "unknown field"},
-		{"undeclared", "f: {type: string}", "spec.widgets.w.value.query.filter", `no input "g"`},
+		{"undeclared", "f: {type: string}", "spec.queries.g.filter", `no input "g"`},
 		{"unused", "f: {type: string}", "spec.inputs.f", "no query compares with $input.f, so the input narrows nothing"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, issues := Parse("kind: Dashboard\nmetadata: {name: d, title: D}\nspec:\n  inputs:\n    " + test.inputs +
-				"\n  widgets:\n    w: {type: stat, title: W, value: {query: {blueprint: s, filter: {property: p, op: eq, value: $input.g}}}}\n")
+			_, issues := Parse("kind: Dashboard\nmetadata: {identifier: d, title: D}\nspec:\n  inputs:\n    " + test.inputs +
+				"\n  queries:\n    g: {blueprint: s, filter: {property: p, op: eq, value: $input.g}}\n  widgets:\n    w: {type: stat, title: W, value: {query: g}}\n")
 			for _, issue := range issues {
 				if issue.Path == test.path && strings.Contains(issue.Message, test.message) {
 					return
@@ -170,7 +171,7 @@ func TestParseInputProblems(t *testing.T) {
 func TestParseMeAttributes(t *testing.T) {
 	spec := mustParse(t, `
 kind: Dashboard
-metadata: {name: d, title: "{{ $me.name }}'s services", description: "You're in {{$me.groups}}."}
+metadata: {identifier: d, title: "{{ $me.name }}'s services", description: "You're in {{$me.groups}}."}
 spec:
   inputs:
     team:
@@ -180,9 +181,10 @@ spec:
       default: {query: {blueprint: team, filter: {property: identifier, op: in, values: $me.groups}}}
   queries:
     teams: {blueprint: team, filter: {property: identifier, op: in, values: $input.team}}
+    owned: {blueprint: s, filter: {property: owner, op: eq, value: $me.groups}}
   widgets:
     hello: {type: markdown, text: "Hello {{ $me.name }}, a $5 coffee?"}
-    mine: {type: stat, title: "Owned by {{ $me.email }}", value: {query: {blueprint: s, filter: {property: owner, op: eq, value: $me.groups}}}}
+    mine: {type: stat, title: "Owned by {{ $me.email }}", value: {query: owned}}
 `)
 	me := widget.MeValues(auth.Principal{Email: "ada@example.com", DisplayName: "Ada", Role: auth.RoleBuilder, Groups: []string{"payments", "search"}})
 	got := spec.render(me)
@@ -197,11 +199,11 @@ spec:
 	}
 
 	tests := []struct{ name, source, path, message string }{
-		{"title", "metadata: {name: d, title: 'Hi {{ $me.nmae }}'}\nspec:\n  widgets:\n    w: {type: markdown, text: x}", "metadata.title", "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups"},
-		{"description", "metadata: {name: d, title: D, description: '{{ $entity }}'}\nspec:\n  widgets:\n    w: {type: markdown, text: x}", "metadata.description", "$entity is only available on entity pages"},
-		{"widget text", "metadata: {name: d, title: D}\nspec:\n  widgets:\n    w: {type: markdown, text: 'Hi {{ $input.team }}'}", "spec.widgets.w.text", "unknown variable $input.team"},
-		{"widget title", "metadata: {name: d, title: D}\nspec:\n  widgets:\n    w: {type: stat, title: 'Hi {{ }}', value: {query: {blueprint: s}}}", "spec.widgets.w.title", "{{ }} must name a variable"},
-		{"filter", "metadata: {name: d, title: D}\nspec:\n  widgets:\n    w: {type: stat, title: W, value: {query: {blueprint: s, filter: {property: p, op: eq, value: $me.id}}}}", "spec.widgets.w.value.query.filter", "unknown variable $me.id"},
+		{"title", "metadata: {identifier: d, title: 'Hi {{ $me.nmae }}'}\nspec:\n  widgets:\n    w: {type: markdown, text: x}", "metadata.title", "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups"},
+		{"description", "metadata: {identifier: d, title: D, description: '{{ $entity }}'}\nspec:\n  widgets:\n    w: {type: markdown, text: x}", "metadata.description", "$entity is only available on entity pages"},
+		{"widget text", "metadata: {identifier: d, title: D}\nspec:\n  widgets:\n    w: {type: markdown, text: 'Hi {{ $input.team }}'}", "spec.widgets.w.text", "unknown variable $input.team"},
+		{"widget title", "metadata: {identifier: d, title: D}\nspec:\n  widgets:\n    w: {type: stat, title: 'Hi {{ }}', value: {}}", "spec.widgets.w.title", "{{ }} must name a variable"},
+		{"filter", "metadata: {identifier: d, title: D}\nspec:\n  queries:\n    q: {blueprint: s, filter: {property: p, op: eq, value: $me.id}}\n  widgets:\n    w: {type: stat, title: W, value: {query: q}}", "spec.queries.q.filter", "unknown variable $me.id"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -328,7 +330,7 @@ var ada = widget.MeValues(auth.Principal{Email: "ada@example.com", DisplayName: 
 
 func TestViewKeepsHomeUpWhenALookupFails(t *testing.T) {
 	good := mustParse(t, overviewYAML)
-	broken := mustParse(t, strings.NewReplacer("name: overview", "name: broken", "title: Overview", "title: 'Hello {{ $me.name }}'",
+	broken := mustParse(t, strings.NewReplacer("identifier: overview", "identifier: broken", "title: Overview", "title: 'Hello {{ $me.name }}'",
 		"property: members", "property: people").Replace(overviewYAML))
 	team := blueprint.Spec{Identifier: "team"}
 	find := func(ctx context.Context, _ string, where *filter.Filter) ([]string, error) {
@@ -388,7 +390,7 @@ func TestHomeDashboardJSON(t *testing.T) {
 func TestCheckInputs(t *testing.T) {
 	team, issues := blueprint.Parse(`
 kind: Blueprint
-metadata: {name: team, title: Team}
+metadata: {identifier: team, title: Team}
 spec:
   properties:
     members: {relation: user, many: true}
@@ -440,7 +442,7 @@ func issuePaths(issues []configdoc.Issue) string {
 func TestCheckWidget(t *testing.T) {
 	bp, issues := blueprint.Parse(`
 kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     tier: {type: string, enum: [a, b]}
@@ -530,12 +532,13 @@ func TestLink(t *testing.T) {
 		encoded, _ := json.Marshal(link)
 		return string(encoded)
 	}
-	// The unset team drops, and the link's own filter joins the query's.
-	want := `{"blueprint":"service","filter":{"and":[{"property":"owner","op":"in","values":["payments","search"]},{"property":"tier","op":"in","values":["critical"]},{"property":"tier","op":"eq","value":"critical"}]}}`
+	// The unset team drops, and the link's own filter joins the query's,
+	// where the query's one-value in and the link's eq are one condition.
+	want := `{"blueprint":"service","filter":{"and":[{"property":"owner","op":"in","values":["payments","search"]},{"property":"tier","op":"eq","value":"critical"}]}}`
 	if got := encode(l.link(spec.Widgets[0], nil)); got != want {
 		t.Errorf("stat link = %s\nwant %s", got, want)
 	}
-	want = `{"blueprint":"service","filter":{"and":[{"property":"owner","op":"in","values":["payments","search"]},{"property":"tier","op":"in","values":["critical"]},{"property":"tier","op":"eq","value":"standard"}]}}`
+	want = `{"blueprint":"service","filter":{"and":[{"property":"owner","op":"in","values":["payments","search"]},{"property":"tier","op":"eq","value":"critical"},{"property":"tier","op":"eq","value":"standard"}]}}`
 	if got := encode(l.link(spec.Widgets[1], &filter.Filter{Property: "tier", Op: "eq", Value: "standard"})); got != want {
 		t.Errorf("group link = %s\nwant %s", got, want)
 	}
@@ -589,19 +592,23 @@ func TestDiff(t *testing.T) {
 
 func TestEntityVariableTypes(t *testing.T) {
 	own, issues := blueprint.Parse(`kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     coverage: {type: number}
     critical: {type: boolean}
     owners: {relation: team, many: true}
   entity:
+    queries:
+      coverage: {blueprint: other, filter: {property: coverage, op: gte, value: $entity.coverage}}
+      critical: {blueprint: other, filter: {property: critical, op: eq, value: $entity.critical}}
+      owners: {blueprint: other, filter: {property: owner, op: eq, value: $entity.owners}}
     tabs:
       overview:
         widgets:
-          coverage: {type: stat, title: Coverage, value: {query: {blueprint: other, filter: {property: coverage, op: gte, value: $entity.coverage}}}}
-          critical: {type: stat, title: Critical, value: {query: {blueprint: other, filter: {property: critical, op: eq, value: $entity.critical}}}}
-          owners: {type: stat, title: Owners, value: {query: {blueprint: other, filter: {property: owner, op: eq, value: $entity.owners}}}}
+          coverage: {type: stat, title: Coverage, value: {query: coverage}}
+          critical: {type: stat, title: Critical, value: {query: critical}}
+          owners: {type: stat, title: Owners, value: {query: owners}}
 `)
 	if configdoc.HasErrors(issues) {
 		t.Fatal(issues)
@@ -619,7 +626,7 @@ spec:
 
 func TestCheckTabWhen(t *testing.T) {
 	own, issues := blueprint.Parse(`kind: Blueprint
-metadata: {name: job, title: Job}
+metadata: {identifier: job, title: Job}
 spec:
   properties:
     appliesTo: {type: array, items: {type: string}}
@@ -627,10 +634,10 @@ spec:
     tabs:
       adoption:
         when: {property: appliesTo, op: contains, value: $entity.title}
-        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+        widgets: {n: {type: stat, title: N, value: {}}}
       later:
         when: {property: nope, op: exists}
-        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+        widgets: {n: {type: stat, title: N, value: {}}}
 `)
 	if configdoc.HasErrors(issues) {
 		t.Fatal(issues)

@@ -1,5 +1,6 @@
 import { CalendarRange, ChevronLeft, ListFilter, ListFilterPlus } from "lucide-react";
 import { useState } from "react";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -11,6 +12,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   type DateRange,
   datePresets,
@@ -31,6 +33,9 @@ export type DataTableFilterField =
       useOptions: () => DataTableOption[] | undefined;
       // multiple is false when picking a value replaces the last one.
       multiple?: boolean;
+      // negatable offers an Is Not choice, which a table whose filters
+      // can't say it leaves out.
+      negatable?: boolean;
     }
   | { kind: "date"; id: string; title: string };
 
@@ -41,7 +46,12 @@ export type DataTableFilterValue = string[] | DateRange;
 export type DataTableFilters = Record<string, DataTableFilterValue>;
 
 // DataTableFilterChange sets a field's filter; undefined removes it.
-export type DataTableFilterChange = (id: string, value: DataTableFilterValue | undefined) => void;
+// negated is only given for fields that are negatable.
+export type DataTableFilterChange = (
+  id: string,
+  value: DataTableFilterValue | undefined,
+  negated?: boolean,
+) => void;
 
 // DataTableFilterFields lists the fields a filter can be added for. It's the
 // first step of the picker, kept apart so typed filters can suggest from it too.
@@ -53,7 +63,9 @@ export function DataTableFilterFields({
     <Command>
       <CommandInput placeholder="Filter by…" />
       <CommandList>
-        <CommandEmpty>Nothing matches.</CommandEmpty>
+        <CommandEmpty className="py-0">
+          <EmptyState compact title="No filters match" />
+        </CommandEmpty>
         <CommandGroup>
           {fields.map((field) => (
             <CommandItem key={field.id} value={field.title} onSelect={() => onSelect(field)}>
@@ -72,39 +84,71 @@ export function DataTableFilterFields({
 export function DataTableFilterEditor({
   field,
   value,
+  negated,
   onChange,
 }: Readonly<{
   field: DataTableFilterField;
   value: DataTableFilterValue | undefined;
-  onChange: (value: DataTableFilterValue) => void;
+  negated?: boolean;
+  onChange: (value: DataTableFilterValue, negated?: boolean) => void;
 }>) {
   if (field.kind === "date") {
     return <DateEditor value={Array.isArray(value) ? {} : (value ?? {})} onChange={onChange} />;
   }
   return (
-    <OptionsEditor field={field} selected={Array.isArray(value) ? value : []} onChange={onChange} />
+    <OptionsEditor
+      field={field}
+      selected={Array.isArray(value) ? value : []}
+      negated={negated}
+      onChange={onChange}
+    />
   );
 }
 
 function OptionsEditor({
   field,
   selected,
+  negated,
   onChange,
 }: Readonly<{
   field: Extract<DataTableFilterField, { kind: "options" }>;
   selected: string[];
-  onChange: (values: string[]) => void;
+  negated?: boolean;
+  onChange: (values: string[], negated?: boolean) => void;
 }>) {
   const options = field.useOptions();
+  // A choice made before any value is picked has no filter to live in yet.
+  const [not, setNot] = useState(negated ?? false);
+  const say = (values: string[]) => onChange(values, field.negatable ? not : undefined);
   return (
-    <DataTableFacetedOptions
-      title={field.title}
-      options={options ?? []}
-      loading={options === undefined}
-      selected={selected}
-      onChange={onChange}
-      multiple={field.multiple}
-    />
+    <>
+      {field.negatable && (
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          spacing={0}
+          value={not ? "not" : "is"}
+          onValueChange={(next) => {
+            if (!next) return;
+            setNot(next === "not");
+            onChange(selected, next === "not");
+          }}
+          aria-label={`${field.title} match`}
+          className="m-1 w-fit"
+        >
+          <ToggleGroupItem value="is">Is</ToggleGroupItem>
+          <ToggleGroupItem value="not">Is Not</ToggleGroupItem>
+        </ToggleGroup>
+      )}
+      <DataTableFacetedOptions
+        title={field.title}
+        options={options ?? []}
+        loading={options === undefined}
+        selected={selected}
+        onChange={say}
+        multiple={field.multiple}
+      />
+    </>
   );
 }
 
@@ -167,10 +211,12 @@ export function dateFilterLabel(range: DateRange) {
 export function DataTableFilterPicker({
   fields,
   value,
+  negated,
   onChange,
 }: Readonly<{
   fields: DataTableFilterField[];
   value: DataTableFilters;
+  negated?: Record<string, boolean>;
   onChange: DataTableFilterChange;
 }>) {
   const [open, setOpen] = useState(false);
@@ -211,7 +257,8 @@ export function DataTableFilterPicker({
               <DataTableFilterEditor
                 field={picked}
                 value={value[picked.id]}
-                onChange={(next) => onChange(picked.id, next)}
+                negated={negated?.[picked.id]}
+                onChange={(next, not) => onChange(picked.id, next, not)}
               />
             </div>
           </>

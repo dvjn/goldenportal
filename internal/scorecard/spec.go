@@ -88,7 +88,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	r := &configdoc.Reader{}
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
 	spec := Spec{
-		Identifier: doc.Name, Title: doc.Meta.Title, Description: doc.Meta.Description,
+		Identifier: doc.Identifier, Title: doc.Meta.Title, Description: doc.Meta.Description,
 		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Tiers: []Tier{},
 	}
 	if doc.Spec == nil {
@@ -173,8 +173,8 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 		}
 		c.Description = r.Text(criterionFields["description"], criterionPath+".description")
 		c.Fix = r.Text(criterionFields["fix"], criterionPath+".fix")
-		c.Check = jq(r, criterionFields["check"], value, criterionPath+".check", true)
-		c.When = jq(r, criterionFields["when"], value, criterionPath+".when", false)
+		c.Check = readJQ(r, criterionFields["check"], value, criterionPath+".check", true)
+		c.When = readJQ(r, criterionFields["when"], value, criterionPath+".when", false)
 		tier.Criteria = append(tier.Criteria, c)
 	})
 	if len(tier.Criteria) == 0 {
@@ -184,7 +184,7 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 	return tier
 }
 
-func jq(r *configdoc.Reader, node, parent *yaml.Node, path string, required bool) string {
+func readJQ(r *configdoc.Reader, node, parent *yaml.Node, path string, required bool) string {
 	if node == nil {
 		if required {
 			r.Errorf(parent, path, "add a jq check that gives true or false, such as .owner != null")

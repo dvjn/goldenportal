@@ -3,15 +3,16 @@
 // is how a filter says it too.
 export type DateRange = { from?: string; to?: string; within?: string };
 
-const durationPattern = /^([1-9]\d{0,5})([mhdw])$/;
+const durationPattern = /^([1-9]\d{0,5})([smhdw])$/;
 const durationUnits: Record<string, [ms: number, unit: string]> = {
+  s: [1000, "second"],
   m: [60_000, "minute"],
   h: [3_600_000, "hour"],
   d: [86_400_000, "day"],
   w: [604_800_000, "week"],
 };
 
-// isDuration reports a within duration, such as 30m, 12h, 7d or 2w.
+// isDuration reports a duration, such as 30s, 30m, 12h, 7d or 2w.
 export function isDuration(text: unknown): text is string {
   return typeof text === "string" && durationPattern.test(text);
 }

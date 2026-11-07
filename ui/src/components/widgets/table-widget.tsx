@@ -8,6 +8,7 @@ import {
   PropertyValue,
 } from "@/components/catalog/property-value";
 import { tableCellClass } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { ScoreLink } from "@/components/scorecards/scorecard-value";
 import {
   Table,
@@ -45,7 +46,7 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
   return (
     <WidgetCard widget={widget} action={live && <ViewAll link={data.link} />} flush>
       {data.rows.length === 0 ? (
-        <p className="p-4 text-sm text-muted-foreground">Nothing matches yet.</p>
+        <EmptyState compact title="No entities yet" />
       ) : (
         <Table>
           <TableHeader>

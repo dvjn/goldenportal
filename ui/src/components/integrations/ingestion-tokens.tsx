@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmIconButton } from "@/components/confirm-icon-button";
+import { EmptyState } from "@/components/empty-state";
 import { SecretReveal } from "@/components/secret-reveal";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,7 +42,7 @@ export function IngestionTokens({ identifier }: Readonly<{ identifier: string }>
   return (
     <div className="grid gap-3">
       {tokens.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No tokens yet, so nothing can push.</p>
+        <EmptyState compact title="No tokens yet" description="Nothing can push without one." />
       ) : (
         <ul className="grid gap-2">
           {tokens.map((token) => (

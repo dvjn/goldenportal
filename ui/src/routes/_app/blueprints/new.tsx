@@ -10,7 +10,7 @@ import { blueprints } from "@/features/blueprints";
 // property the scorecard whose result it holds.
 const template = `kind: Blueprint
 metadata:
-  name: example
+  identifier: example
   title: Example
   description: What entities of this blueprint are.
 spec:

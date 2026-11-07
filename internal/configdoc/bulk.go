@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"gofr.dev/pkg/gofr"
@@ -74,8 +73,8 @@ func PendingSources(ctx context.Context, kind string) map[string]string {
 
 // Planned is what applying one document would do.
 type Planned struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
+	Kind       string `json:"kind"`
+	Identifier string `json:"identifier"`
 	// Action is create, update or unchanged, against the draft or, without
 	// one, the published version.
 	Action   string   `json:"action"`
@@ -98,7 +97,7 @@ type applyRequest struct {
 func apply(ctx *gofr.Context) (any, error) {
 	var req applyRequest
 	if err := ctx.Bind(&req); err != nil {
-		return nil, badRequest(`send the YAML as {"source": "..."}`)
+		return nil, httpx.BadRequest(`send the YAML as {"source": "..."}`)
 	}
 
 	return Apply(ctx, req.Source, ctx.Param("dryRun") == "true")
@@ -122,7 +121,7 @@ func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 	}
 	chunks := SplitDocuments(source)
 	if len(chunks) == 0 {
-		return Applied{}, badRequest("there are no documents to apply")
+		return Applied{}, httpx.BadRequest("there are no documents to apply")
 	}
 
 	type entry struct {
@@ -141,7 +140,7 @@ func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 		if !ok {
 			result.Valid = false
 			result.Documents = append(result.Documents, Planned{
-				Kind: document, Name: name, Changes: []Change{},
+				Kind: document, Identifier: name, Changes: []Change{},
 				Issues: shift([]Issue{{
 					Severity: SeverityError, Path: "kind", Line: 1,
 					Message: fmt.Sprintf("unknown kind %q; use %s", document, strings.Join(documentKinds(), " or ")),
@@ -153,9 +152,9 @@ func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 		if name != "" && seen[key] {
 			result.Valid = false
 			result.Documents = append(result.Documents, Planned{
-				Kind: document, Name: name, Changes: []Change{},
+				Kind: document, Identifier: name, Changes: []Change{},
 				Issues: shift([]Issue{{
-					Severity: SeverityError, Path: "metadata.name", Line: 1,
+					Severity: SeverityError, Path: "metadata.identifier", Line: 1,
 					Message: fmt.Sprintf("%s %s is in the file twice", document, name),
 				}}, chunk.Line),
 			})
@@ -188,10 +187,7 @@ func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 		return result, nil
 	}
 	if !result.Valid {
-		return Applied{}, httpx.Error{
-			Code:    http.StatusUnprocessableEntity,
-			Message: "some documents have problems; apply with dryRun=true to see them",
-		}
+		return Applied{}, httpx.Unprocessable("some documents have problems; apply with dryRun=true to see them")
 	}
 
 	tx, err := ctx.SQL.Begin()
@@ -203,7 +199,7 @@ func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 		if result.Documents[i].Action == ActionUnchanged {
 			continue
 		}
-		if err := e.kind.saveDraftAs(ctx, tx, p, result.Documents[i].Name, e.chunk.Source); err != nil {
+		if err := e.kind.saveDraftAs(ctx, tx, p, result.Documents[i].Identifier, e.chunk.Source); err != nil {
 			return Applied{}, err
 		}
 	}
@@ -223,12 +219,12 @@ func peek(source string) (kind, name string) {
 	var envelope struct {
 		Kind     string `yaml:"kind"`
 		Metadata struct {
-			Name string `yaml:"name"`
+			Identifier string `yaml:"identifier"`
 		} `yaml:"metadata"`
 	}
 	_ = root.Decode(&envelope)
 
-	return envelope.Kind, envelope.Metadata.Name
+	return envelope.Kind, envelope.Metadata.Identifier
 }
 
 // shift moves issue lines from a document's own lines to the whole file's.
@@ -253,8 +249,8 @@ func documentKinds() []string {
 
 // DocumentRef names a document.
 type DocumentRef struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
+	Kind       string `json:"kind"`
+	Identifier string `json:"identifier"`
 }
 
 type publishManyRequest struct {
@@ -264,18 +260,18 @@ type publishManyRequest struct {
 
 // Published is a document that was published, and its new version.
 type Published struct {
-	Kind     string `json:"kind"`
-	Name     string `json:"name"`
-	Version  int    `json:"version"`
-	Breaking bool   `json:"breaking"`
-	title    string
-	changes  int
+	Kind       string `json:"kind"`
+	Identifier string `json:"identifier"`
+	Version    int    `json:"version"`
+	Breaking   bool   `json:"breaking"`
+	title      string
+	changes    int
 }
 
 func publishMany(ctx *gofr.Context) (any, error) {
 	var req publishManyRequest
 	if err := ctx.Bind(&req); err != nil {
-		return nil, badRequest(`send the drafts to publish as {"documents": [{"kind": "Blueprint", "name": "service"}]}`)
+		return nil, httpx.BadRequest(`send the drafts to publish as {"documents": [{"kind": "Blueprint", "identifier": "service"}]}`)
 	}
 
 	return PublishMany(ctx, req.Documents, req.AcknowledgeBreaking)
@@ -289,13 +285,13 @@ func PublishMany(ctx *gofr.Context, documents []DocumentRef, acknowledgeBreaking
 		return nil, err
 	}
 	if len(documents) == 0 {
-		return nil, badRequest(`send the drafts to publish as {"documents": [{"kind": "Blueprint", "name": "service"}]}`)
+		return nil, httpx.BadRequest(`send the drafts to publish as {"documents": [{"kind": "Blueprint", "identifier": "service"}]}`)
 	}
 
 	refs := append([]DocumentRef(nil), documents...)
 	for _, ref := range refs {
 		if _, ok := kindFor(ref.Kind); !ok {
-			return nil, badRequest(fmt.Sprintf("unknown kind %q; use %s", ref.Kind, strings.Join(documentKinds(), " or ")))
+			return nil, httpx.BadRequest(fmt.Sprintf("unknown kind %q; use %s", ref.Kind, strings.Join(documentKinds(), " or ")))
 		}
 	}
 	sortRefs(refs)
@@ -303,14 +299,14 @@ func PublishMany(ctx *gofr.Context, documents []DocumentRef, acknowledgeBreaking
 	pending := map[string]map[string]string{}
 	for _, ref := range refs {
 		k, _ := kindFor(ref.Kind)
-		source, err := k.draftSource(ctx, ctx.SQL, ref.Name)
+		source, err := k.draftSource(ctx, ctx.SQL, ref.Identifier)
 		if err != nil {
 			return nil, err
 		}
 		if pending[ref.Kind] == nil {
 			pending[ref.Kind] = map[string]string{}
 		}
-		pending[ref.Kind][ref.Name] = source
+		pending[ref.Kind][ref.Identifier] = source
 	}
 
 	tx, err := ctx.SQL.Begin()
@@ -324,7 +320,7 @@ func PublishMany(ctx *gofr.Context, documents []DocumentRef, acknowledgeBreaking
 	out := make([]Published, 0, len(refs))
 	for _, ref := range refs {
 		k, _ := kindFor(ref.Kind)
-		published, err := k.publishDraft(&checkCtx, tx, p, ref.Name, acknowledgeBreaking)
+		published, err := k.publishDraft(&checkCtx, tx, p, ref.Identifier, acknowledgeBreaking)
 		if err != nil {
 			return nil, err
 		}

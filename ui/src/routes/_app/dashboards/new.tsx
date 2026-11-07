@@ -3,14 +3,14 @@ import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { type DashboardSpec, dashboards } from "@/features/dashboards";
 
 // Widgets lay out on 12 columns, in order, and share the queries named
-// above them. $ marks a variable, such as an input's $input.team, and
-// fields are plain paths, such as owner.title; in takes values, a list or
-// a variable. A stat counts its query unless it names a field to sum, avg,
-// min or max, or a share; columns are paths, {title, path} or {title, jq},
-// where jq reads a flat entity: .tier, not .properties.tier.
+// above them, by name. $ marks a variable, such as an input's $input.team,
+// and fields are plain paths, such as owner.title; in takes values, a list
+// or a variable. A stat counts its query unless it names a field to sum,
+// avg, min or max, or a share; columns are {path} or {title, jq}, where jq
+// reads a flat entity: .tier.
 const template = `kind: Dashboard
 metadata:
-  name: example
+  identifier: example
   title: Example
   icon: layout-dashboard
 spec:
@@ -28,6 +28,9 @@ spec:
     services:
       blueprint: service
       filter: {property: owner, op: in, values: $input.team}
+    updatedThisWeek:
+      blueprint: service
+      filter: {property: updatedAt, op: within, value: 7d}
   widgets:
     services:
       type: stat
@@ -47,8 +50,8 @@ spec:
     recent:
       type: table
       title: Recently Updated
-      query: {blueprint: service, filter: {property: updatedAt, op: within, value: 7d}}
-      columns: [tier, owner.title, {title: Tags, jq: '.tags | length'}]
+      query: updatedThisWeek
+      columns: [{path: tier}, {path: owner.title}, {title: Tags, jq: '.tags | length'}]
       sort: -updatedAt
 `;
 

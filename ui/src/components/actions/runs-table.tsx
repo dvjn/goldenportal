@@ -204,8 +204,9 @@ export function RunsTable({
 
   return (
     <DataTable
+      noun="runs"
       title={title}
-      data={page.data?.runs ?? []}
+      data={page.data?.items ?? []}
       rowCount={page.data?.total ?? 0}
       loading={page.isPlaceholderData}
       pending={page.isPending}

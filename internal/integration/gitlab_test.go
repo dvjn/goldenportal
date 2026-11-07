@@ -27,7 +27,7 @@ import (
 // mapping for each resource.
 const gitlabYAML = `
 kind: Integration
-metadata: {name: gitlab, title: GitLab}
+metadata: {identifier: gitlab, title: GitLab}
 spec:
   connector:
     type: gitlab
@@ -214,7 +214,7 @@ func TestParseGitLabConfig(t *testing.T) {
 		t.Errorf("API = %s, want it under the instance's relative URL", relative.apiURL())
 	}
 
-	head := "kind: Integration\nmetadata: {name: a, title: A}\nspec:\n  connector:\n    type: gitlab\n    config:\n"
+	head := "kind: Integration\nmetadata: {identifier: a, title: A}\nspec:\n  connector:\n    type: gitlab\n    config:\n"
 	mapping := "  mappings:\n    - resource: projects\n      blueprint: project\n      entity: {identifier: .path_with_namespace}\n"
 	token := "      token: {env: GP_SECRET_T}\n"
 	tests := []struct{ name, source, want string }{

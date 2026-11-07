@@ -148,7 +148,7 @@ describe("connected apps", () => {
     const row = (await screen.findByText("Claude Code")).closest("tr") as HTMLElement;
     expect(within(row).getByText("Read")).toBeInTheDocument();
     expect(within(row).getByText("Author")).toBeInTheDocument();
-    expect(within(row).getByText("Never")).toBeInTheDocument();
+    expect(within(row).getByText("Never used")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.click(within(row).getByRole("button", { name: "Revoke Claude Code" }));

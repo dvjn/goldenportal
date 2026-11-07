@@ -7,7 +7,7 @@ import { actions } from "@/features/actions";
 // $entity, $input, $me and $step refer to what a run has so far.
 const template = `kind: Action
 metadata:
-  name: example
+  identifier: example
   title: Example
   description: What it does, as people will see it.
   icon: zap

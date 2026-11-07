@@ -8,17 +8,23 @@ import { EntityLink } from "@/components/catalog/entity-link";
 import { EmptyValue, PropertyValue } from "@/components/catalog/property-value";
 import { SplitTitle } from "@/components/catalog/split-title";
 import { UnpublishedBlueprint } from "@/components/catalog/unpublished-blueprint";
-import { useWhereFilters, withoutCondition } from "@/components/catalog/where-filters";
+import { valueLabel } from "@/components/catalog/value-label";
+import {
+  chipsOf,
+  dateFilter,
+  optionsFilter,
+  replaceConditions,
+  useFixedSummaries,
+} from "@/components/catalog/where-filters";
 import {
   DataTable,
+  type DataTableChip,
   DataTableColumnHeader,
   type DataTableFilterField,
   type DataTableFilters,
+  type DataTableFilterValue,
   type DataTableOption,
-  type DateRange,
   dataTableColumns,
-  dateRangeBounds,
-  isDuration,
   pageSize,
   type TableSearch,
   usePageSize,
@@ -54,19 +60,12 @@ import { scorecards } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 import { usePageTitle } from "@/lib/page-title";
 
-// Filters maps a property to the values it's filtered to.
-type Filters = Record<string, (string | number | boolean)[]>;
-
 // CatalogSearch is the page's state in the URL: view is the open tab, a
 // dashboard or "entities", and the rest is the table's; cols lists the
-// shown columns.
+// shown columns, and filter the conditions every entity listed meets.
 type CatalogSearch = TableSearch & {
   view?: string;
-  f?: Filters;
-  // d maps a date property, or updatedAt, to the range of days it's filtered to.
-  d?: Record<string, DateRange>;
-  // where is a filter a widget's link brought along that f and d can't say.
-  where?: Filter;
+  filter?: Filter[];
   cols?: string;
 };
 
@@ -76,88 +75,41 @@ function validateCatalogSearch(search: Record<string, unknown>): CatalogSearch {
   return {
     ...validateTableSearch(search),
     view: text(search.view),
-    f: validFilters(search.f),
-    d: validDates(search.d),
-    where: validWhere(search.where),
+    filter: validFilter(search.filter),
     cols: text(search.cols),
   };
 }
 
-function validFilters(f: unknown): Filters | undefined {
-  if (typeof f !== "object" || f === null || Array.isArray(f)) return undefined;
-  const filters: Filters = {};
-  for (const [key, values] of Object.entries(f)) {
-    if (
-      Array.isArray(values) &&
-      values.length > 0 &&
-      values.every((value) => ["string", "number", "boolean"].includes(typeof value))
-    ) {
-      filters[key] = values;
-    }
-  }
-  return Object.keys(filters).length > 0 ? filters : undefined;
+// isCondition checks a condition's shape; the server checks what it says.
+function isCondition(value: unknown): value is Filter {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const filter = value as Record<string, unknown>;
+  if (Array.isArray(filter.and)) return filter.and.every(isCondition);
+  if (Array.isArray(filter.or)) return filter.or.every(isCondition);
+  if ("not" in filter) return isCondition(filter.not);
+  return typeof filter.property === "string" && typeof filter.op === "string";
 }
 
-// validWhere keeps a filter's shape; the server checks what it says.
-function validWhere(where: unknown): Filter | undefined {
-  return typeof where === "object" && where !== null && !Array.isArray(where)
-    ? (where as Filter)
-    : undefined;
-}
-
-const day = /^\d{4}-\d{2}-\d{2}$/;
-
-function validDates(d: unknown): Record<string, DateRange> | undefined {
-  if (typeof d !== "object" || d === null || Array.isArray(d)) return undefined;
-  const dates: Record<string, DateRange> = {};
-  for (const [key, range] of Object.entries(d)) {
-    if (typeof range !== "object" || range === null) continue;
-    const { from, to, within } = range as Record<string, unknown>;
-    if (isDuration(within)) {
-      dates[key] = { within };
-      continue;
-    }
-    const valid: DateRange = {
-      from: typeof from === "string" && day.test(from) ? from : undefined,
-      to: typeof to === "string" && day.test(to) ? to : undefined,
-    };
-    if (valid.from || valid.to) dates[key] = valid;
-  }
-  return Object.keys(dates).length > 0 ? dates : undefined;
-}
-
-// toFilter turns the picked values into the server's filter: each property
-// matches any of its values, dates fall in their ranges, and every property
-// must match, as must where.
-function toFilter(
-  filters: Filters | undefined,
-  dates: Record<string, DateRange> | undefined,
-  where?: Filter,
-): Filter | undefined {
-  const conditions: Filter[] = Object.entries(filters ?? {}).map(([property, values]) => ({
-    property,
-    op: "in",
-    values,
-  }));
-  for (const [property, range] of Object.entries(dates ?? {})) {
-    // The server reaches back from its own now, as dashboards do.
-    if (range.within) {
-      conditions.push({ property, op: "within", value: range.within });
-      continue;
-    }
-    const { from, before } = dateRangeBounds(range);
-    if (from) conditions.push({ property, op: "gte", value: from });
-    if (before) conditions.push({ property, op: "lt", value: before });
-  }
-  if (where) conditions.push(where);
-  return conditions.length > 0 ? { and: conditions } : undefined;
+// validFilter keeps the conditions that have a shape. A URL written by hand
+// may repeat one, which would be a chip each, so a repeat is left out.
+function validFilter(filter: unknown): Filter[] | undefined {
+  if (!Array.isArray(filter)) return undefined;
+  const seen = new Set<string>();
+  const conditions = filter.filter((condition) => {
+    if (!isCondition(condition)) return false;
+    const key = JSON.stringify(condition);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return conditions.length > 0 ? conditions : undefined;
 }
 
 function queryFrom(blueprint: string, search: CatalogSearch, size: number): EntityQuery {
   return {
     blueprint,
     q: search.q,
-    filter: toFilter(search.f, search.d, search.where),
+    filter: search.filter && { and: search.filter },
     sort: search.sort,
     page: search.page,
     size,
@@ -243,15 +195,19 @@ function BlueprintCatalogPage() {
     ...entitiesQueryOptions(queryFrom(blueprint, search, usePageSize(search))),
     placeholderData: keepPreviousData,
   });
-  const whereFilters = useWhereFilters(blueprint, search.where);
+  const conditions = search.filter ?? [];
+  const chipModels = chipsOf(conditions);
+  const fixedSummaries = useFixedSummaries(
+    blueprint,
+    chipModels.flatMap((chip) => (chip.kind === "fixed" ? [chip.filter] : [])),
+  );
   const rowActions = useRowActions(
     blueprint,
-    (page.data?.entities ?? []).map((entity) => entity.identifier),
+    (page.data?.items ?? []).map((entity) => entity.identifier),
   );
 
   if (!spec) return <UnpublishedBlueprint blueprint={blueprint} title={doc.title} />;
 
-  const filters = search.f ?? {};
   const shown = search.cols?.split(",") ?? defaultColumns(spec);
   const setSearch = (patch: Partial<CatalogSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
@@ -343,9 +299,8 @@ function BlueprintCatalogPage() {
     }),
   ];
 
-  const dates = search.d ?? {};
-  const setDates = (key: string, range: DateRange) =>
-    setSearch({ d: validDates({ ...dates, [key]: range }), page: undefined });
+  const setFilter = (next: Filter[]) =>
+    setSearch({ filter: next.length > 0 ? next : undefined, page: undefined });
   // Every filter is offered, shown as a column or not. A date property whose
   // display asks for a filter gets the date one, not a list of its values.
   const filterFields: DataTableFilterField[] = [
@@ -357,6 +312,7 @@ function BlueprintCatalogPage() {
           id: property.identifier,
           title: property.title,
           useOptions: propertyOptions(blueprint, property),
+          negatable: true,
         }),
       ),
     ...spec.properties.filter(dateFilterable).map(
@@ -368,30 +324,98 @@ function BlueprintCatalogPage() {
     ),
     { kind: "date", id: "updatedAt", title: "Updated" },
   ];
-  // A link can filter by any property, so one without a field of its own
-  // gets one while it's filtered, to show and change it.
-  for (const id of Object.keys(filters)) {
-    if (filterFields.some((field) => field.id === id)) continue;
+  // A link can filter by any property, so a chip whose property has no field
+  // of its own gets one, to show and change it.
+  const fieldFor = (kind: "options" | "date", id: string, values: string[]) => {
+    const own = filterFields.find((field) => field.id === id && field.kind === kind);
+    if (own) return own;
     const property = spec.properties.find((p) => p.identifier === id);
-    filterFields.push({
-      kind: "options",
+    const title = property?.title ?? id;
+    if (kind === "date") return { kind, id, title } satisfies DataTableFilterField;
+    return {
+      kind,
       id,
-      title: property?.title ?? id,
+      title,
+      negatable: true,
       useOptions: () =>
-        filters[id]?.map((value) => ({ value: JSON.stringify(value), label: String(value) })),
+        values.map((key) => ({
+          value: key,
+          label: valueLabel(JSON.parse(key) as unknown, { property }),
+        })),
+    } satisfies DataTableFilterField;
+  };
+  const chips: DataTableChip[] = [];
+  const filterValue: DataTableFilters = {};
+  const negated: Record<string, boolean> = {};
+  let fixedChips = 0;
+  for (const chip of chipModels) {
+    const onRemove = () => setFilter(replaceConditions(conditions, chip.indices, []));
+    if (chip.kind === "fixed") {
+      chips.push({ ...fixedSummaries[fixedChips++], onRemove });
+      continue;
+    }
+    const field = fieldFor(chip.kind, chip.property, chip.kind === "options" ? chip.values : []);
+    if (chip.kind === "date") {
+      filterValue[chip.property] = chip.range;
+      chips.push({
+        title: field.title,
+        field,
+        value: chip.range,
+        onChange: (value) =>
+          setFilter(
+            replaceConditions(
+              conditions,
+              chip.indices,
+              dateFilter(chip.property, Array.isArray(value) ? {} : value),
+            ),
+          ),
+        onRemove,
+      });
+      continue;
+    }
+    // Property values are keyed by their JSON, so values of any type fit the picker.
+    filterValue[chip.property] = chip.values;
+    negated[chip.property] = chip.negated;
+    chips.push({
+      title: field.title,
+      summary: chip.values.length === 0 ? (chip.negated ? "No Value" : "Any Value") : undefined,
+      field,
+      value: chip.values,
+      negated: chip.negated,
+      onChange: (value, not) =>
+        setFilter(
+          replaceConditions(
+            conditions,
+            chip.indices,
+            optionsConditions(
+              chip.property,
+              Array.isArray(value) ? value : [],
+              not ?? chip.negated,
+              chip.values.length === 0,
+            ),
+          ),
+        ),
+      onRemove,
     });
   }
-  for (const id of Object.keys(dates)) {
-    if (filterFields.some((field) => field.id === id)) continue;
-    const title = spec.properties.find((p) => p.identifier === id)?.title ?? id;
-    filterFields.push({ kind: "date", id, title });
-  }
-  // Property values are keyed by their JSON, so values of any type fit the picker.
-  const filterValue: DataTableFilters = {
-    ...Object.fromEntries(
-      Object.entries(filters).map(([id, values]) => [id, values.map((v) => JSON.stringify(v))]),
-    ),
-    ...dates,
+  // Picking a value for a property that has a chip changes it; otherwise
+  // the condition joins the rest.
+  const pick = (id: string, value: DataTableFilterValue | undefined, not?: boolean) => {
+    const field = filterFields.find((f) => f.id === id);
+    if (!field) return;
+    const chip = chipModels.find(
+      (c) => c.kind !== "fixed" && c.kind === field.kind && c.property === id,
+    );
+    const next =
+      field.kind === "date"
+        ? dateFilter(id, Array.isArray(value) ? {} : (value ?? {}))
+        : optionsConditions(
+            id,
+            Array.isArray(value) ? value : [],
+            not ?? false,
+            chip?.kind === "options" && chip.values.length === 0,
+          );
+    setFilter(chip ? replaceConditions(conditions, chip.indices, next) : [...conditions, ...next]);
   };
   // The blueprint's own tabs come first, then the entities table every catalog page has.
   const views = spec.catalog?.tabs ?? [];
@@ -427,7 +451,8 @@ function BlueprintCatalogPage() {
 
   const table = (
     <DataTable
-      data={page.data?.entities ?? []}
+      noun="entities"
+      data={page.data?.items ?? []}
       columns={columns}
       getRowId={(entity) => entity.identifier}
       search={search}
@@ -440,39 +465,15 @@ function BlueprintCatalogPage() {
       filters={{
         fields: filterFields,
         value: filterValue,
-        onChange: (id, value) => {
-          if (filterFields.find((field) => field.id === id)?.kind === "date") {
-            setDates(id, Array.isArray(value) ? {} : (value ?? {}));
-            return;
-          }
-          const values = Array.isArray(value) ? value : [];
-          setSearch({
-            f: validFilters({
-              ...filters,
-              [id]: values.map((v) => JSON.parse(v) as unknown),
-            }),
-            page: undefined,
-          });
-        },
+        negated,
+        onChange: pick,
+        chips,
       }}
-      fixedFilters={whereFilters.map(({ title, summary }, index) => ({
-        title,
-        summary,
-        onRemove: () =>
-          setSearch({
-            where: search.where && withoutCondition(search.where, index),
-            page: undefined,
-          }),
-      }))}
-      onClearFilters={() =>
-        setSearch({ f: undefined, d: undefined, where: undefined, page: undefined })
-      }
+      onClearFilters={() => setFilter([])}
       actions={
         // With no entities there are no columns to choose; a search or filter
         // that matches none keeps the menu, so the toolbar doesn't shift.
-        (page.isPending ||
-          (page.data?.total ?? 0) > 0 ||
-          Boolean(search.q || search.f || search.d || search.where)) && (
+        (page.isPending || (page.data?.total ?? 0) > 0 || Boolean(search.q || search.filter)) && (
           <ColumnsMenu
             spec={spec}
             shown={shown}
@@ -540,6 +541,18 @@ function BlueprintCatalogPage() {
   );
 }
 
+// optionsConditions says picked values as conditions. With none picked, a
+// chip that only tested for a value stays that test, as toggling it between
+// any value and no value does, and any other has nothing left to say.
+function optionsConditions(
+  property: string,
+  keys: string[],
+  negated: boolean,
+  testsForValue: boolean,
+): Filter[] {
+  return keys.length === 0 && !testsForValue ? [] : [optionsFilter(property, keys, negated)];
+}
+
 // propertyOptions is the hook a property's filter loads its options with,
 // once the filter is picked.
 function propertyOptions(blueprint: string, property: Property) {
@@ -569,17 +582,24 @@ function usePropertyOptions(blueprint: string, property: Property): DataTableOpt
   const counts = new Map(facets.data?.map((facet) => [JSON.stringify(facet.value), facet]));
   const values = fixed ?? facets.data?.map((facet) => facet.value) ?? [];
 
+  const titles = new Map<string, string>(
+    property.scorecard
+      ? [["", "No Tier"], ...(tiers ?? []).map((tier) => [tier.name, tier.title] as const)]
+      : (facets.data ?? []).flatMap((facet) =>
+          typeof facet.value === "string" && facet.title
+            ? [[facet.value, facet.title] as const]
+            : [],
+        ),
+  );
+
   return values.map((value) => {
     const key = JSON.stringify(value);
     const facet = counts.get(key);
-    const label = property.scorecard
-      ? (tiers?.find((tier) => tier.name === value)?.title ?? "No tier")
-      : typeof value === "boolean"
-        ? value
-          ? "Yes"
-          : "No"
-        : (facet?.title ?? String(value));
-    return { value: key, label, count: facet?.count ?? (facets.data ? 0 : undefined) };
+    return {
+      value: key,
+      label: valueLabel(value, { property, titles }),
+      count: facet?.count ?? (facets.data ? 0 : undefined),
+    };
   });
 }
 

@@ -120,7 +120,7 @@ describe("settings", () => {
     await user.click(await screen.findByRole("tab", { name: "Audit Log" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings/audit"));
-    expect(await screen.findByText("Nothing recorded yet")).toBeInTheDocument();
+    expect(await screen.findByText("No events yet")).toBeInTheDocument();
   });
 });
 

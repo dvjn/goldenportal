@@ -68,6 +68,7 @@ function ActionsPage() {
         actions={<NewActionButton />}
       />
       <DataTable
+        noun="actions"
         data={list as ActionSummary[]}
         columns={columns}
         getRowId={(action) => action.identifier}

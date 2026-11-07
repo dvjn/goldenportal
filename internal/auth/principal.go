@@ -3,7 +3,6 @@ package auth
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/dvjn/goldenportal/internal/audit"
 	"github.com/dvjn/goldenportal/internal/httpx"
@@ -54,10 +53,10 @@ func ParseRole(value string) (Role, bool) {
 func Require(ctx context.Context, role Role) (Principal, error) {
 	p, ok := FromContext(ctx)
 	if !ok {
-		return Principal{}, httpx.Error{Code: http.StatusUnauthorized, Message: "sign in to continue"}
+		return Principal{}, httpx.Unauthorized("sign in to continue")
 	}
 	if !p.Can(role) {
-		return Principal{}, httpx.Error{Code: http.StatusForbidden, Message: "this needs the " + string(role) + " role"}
+		return Principal{}, httpx.Forbidden("this needs the " + string(role) + " role")
 	}
 
 	return p, nil

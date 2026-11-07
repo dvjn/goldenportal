@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 var ErrTokenNotFound = errors.New("ingestion token not found")
@@ -209,10 +210,7 @@ type RunQuery struct {
 }
 
 // RunPage is one page of runs, newest first, and how many runs match in all.
-type RunPage struct {
-	Runs  []Run `json:"runs"`
-	Total int   `json:"total"`
-}
+type RunPage = httpx.Page[Run]
 
 // Run outcomes: a running run hasn't finished, a failed run fetched nothing,
 // and a run with warnings skipped some items, or warned of something else
@@ -243,7 +241,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 	}
 	args := []any{integrationID, search, pq.Array(q.Triggers), pq.Array(q.Outcomes)}
 
-	page := RunPage{Runs: []Run{}}
+	page := RunPage{Items: []Run{}}
 	if err := s.db.QueryRowContext(ctx, `SELECT count(*)`+runFilter, args...).Scan(&page.Total); err != nil {
 		return RunPage{}, err
 	}
@@ -268,7 +266,7 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 		if err := json.Unmarshal(errors, &r.Errors); err != nil {
 			return RunPage{}, err
 		}
-		page.Runs = append(page.Runs, r)
+		page.Items = append(page.Items, r)
 	}
 
 	return page, rows.Err()

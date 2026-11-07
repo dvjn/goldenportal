@@ -38,7 +38,7 @@ export const runsQueryOptions = (identifier: string, filters: RunFilters) =>
   queryOptions({
     queryKey: [...integrationKeys.runs(identifier), filters],
     queryFn: () => listRuns(identifier, filters),
-    refetchInterval: (query) => pollWhileRunning(query.state.data?.runs ?? []),
+    refetchInterval: (query) => pollWhileRunning(query.state.data?.items ?? []),
   });
 
 export function useIntegrations() {

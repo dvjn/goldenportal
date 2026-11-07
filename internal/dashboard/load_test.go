@@ -18,7 +18,7 @@ import (
 
 const planYAML = `
 kind: Dashboard
-metadata: {name: plan, title: Plan}
+metadata: {identifier: plan, title: Plan}
 spec:
   inputs:
     tier: {type: enum, values: [critical, standard], multiple: true}
@@ -26,6 +26,9 @@ spec:
     services:
       blueprint: service
       filter: {property: tier, op: in, values: $input.tier}
+    unknownField:
+      blueprint: service
+      filter: {property: nope, op: exists}
   widgets:
     count: {type: stat, title: Services, value: {query: services}}
     critical: {type: stat, title: Critical, value: {query: services, share: {property: tier, op: eq, value: critical}}}
@@ -33,8 +36,8 @@ spec:
     byOwner: {type: bar, title: By Owner, query: services, groupBy: owner, limit: 3}
     owners: {type: donut, title: Owners, query: services, groupBy: owner, limit: 5}
     byTier: {type: bar, title: By Tier, query: services, groupBy: tier}
-    list: {type: table, title: Services, query: services, columns: [tier, {title: Team, path: owner.title}], sort: -cost, limit: 5}
-    broken: {type: stat, title: Broken, value: {query: {blueprint: service, filter: {property: nope, op: exists}}}}
+    list: {type: table, title: Services, query: services, columns: [{path: tier}, {title: Team, path: owner.title}], sort: -cost, limit: 5}
+    broken: {type: stat, title: Broken, value: {query: unknownField}}
     note: {type: markdown, text: Hello}
 `
 
@@ -42,7 +45,7 @@ func TestLoadPlansEachQueryOnce(t *testing.T) {
 	spec := mustParse(t, planYAML)
 	bp, issues := blueprint.Parse(`
 kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     tier: {type: string}
@@ -124,14 +127,16 @@ spec:
 func TestGroupsTakeTheirPropertysColors(t *testing.T) {
 	spec := mustParse(t, `
 kind: Dashboard
-metadata: {name: tiers, title: Tiers}
+metadata: {identifier: tiers, title: Tiers}
 spec:
+  queries:
+    services: {blueprint: service}
   widgets:
-    byTier: {type: donut, title: By Tier, query: {blueprint: service}, groupBy: tier}
+    byTier: {type: donut, title: By Tier, query: services, groupBy: tier}
 `)
 	bp, issues := blueprint.Parse(`
 kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     tier: {type: string, enum: [critical, standard], display: {as: badge, colors: {critical: rose}}}
@@ -159,14 +164,16 @@ spec:
 func TestSplitsFollowTheirPropertysValues(t *testing.T) {
 	spec := mustParse(t, `
 kind: Dashboard
-metadata: {name: status, title: Status}
+metadata: {identifier: status, title: Status}
 spec:
+  queries:
+    services: {blueprint: service}
   widgets:
-    status: {type: split, title: Status, query: {blueprint: service}, groupBy: status}
+    status: {type: split, title: Status, query: services, groupBy: status}
 `)
 	bp, issues := blueprint.Parse(`
 kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     status: {type: string, enum: [success, failed, canceled]}
@@ -195,7 +202,7 @@ spec:
 func TestInputLinksNameRelationInputs(t *testing.T) {
 	spec := mustParse(t, `
 kind: Dashboard
-metadata: {name: team, title: Team}
+metadata: {identifier: team, title: Team}
 spec:
   inputs:
     team: {type: relation, relation: team, multiple: true}
@@ -229,20 +236,22 @@ spec:
 func TestMatrixSharesEachMeasureByGroup(t *testing.T) {
 	spec := mustParse(t, `
 kind: Dashboard
-metadata: {name: docs, title: Docs}
+metadata: {identifier: docs, title: Docs}
 spec:
+  queries:
+    services: {blueprint: service}
   widgets:
     byTeam:
       type: matrix
       title: By Team
-      query: {blueprint: service}
+      query: services
       groupBy: team
       measures: [{title: Documented, share: {property: docs, op: eq, value: true}}]
       overall: true
 `)
 	bp, issues := blueprint.Parse(`
 kind: Blueprint
-metadata: {name: service, title: Service}
+metadata: {identifier: service, title: Service}
 spec:
   properties:
     team: {type: string}

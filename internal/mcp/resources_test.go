@@ -70,8 +70,8 @@ func TestCompletionSuggestsWhatTheCallerSees(t *testing.T) {
 		want     []string
 	}{
 		{resource, "kind", "s", nil, []string{"scorecards"}},
-		{resource, "name", "se", map[string]string{"kind": "blueprints"}, []string{"service"}},
-		{resource, "name", "", map[string]string{"kind": "widgets"}, nil},
+		{resource, "identifier", "se", map[string]string{"kind": "blueprints"}, []string{"service"}},
+		{resource, "identifier", "", map[string]string{"kind": "widgets"}, nil},
 		{&mcp.CompleteReference{Type: "ref/resource", URI: entityTemplate}, "identifier", "pay", map[string]string{"blueprint": "service"}, []string{"payments/pay", "billing"}},
 		{&mcp.CompleteReference{Type: "ref/prompt", Name: "explain_entity"}, "blueprint", "t", nil, []string{"team"}},
 	} {
@@ -149,7 +149,7 @@ func TestPromptsCarryWhatTheTaskNeeds(t *testing.T) {
 
 func TestReadsLinkToTheirResource(t *testing.T) {
 	session := connect(t, testServer(t, newFake()), "member")
-	result := call(t, session, "get_document", map[string]any{"kind": "blueprints", "name": "service"})
+	result := call(t, session, "get_document", map[string]any{"kind": "blueprints", "identifier": "service"})
 	if len(result.Content) != 2 {
 		t.Fatalf("content = %+v", result.Content)
 	}
@@ -160,7 +160,7 @@ func TestReadsLinkToTheirResource(t *testing.T) {
 		t.Errorf("structured result lost: %+v", result.StructuredContent)
 	}
 	// A failed read links to nothing.
-	missing := call(t, session, "get_document", map[string]any{"kind": "blueprints", "name": "missing"})
+	missing := call(t, session, "get_document", map[string]any{"kind": "blueprints", "identifier": "missing"})
 	if !missing.IsError || len(missing.Content) != 1 {
 		t.Errorf("missing = %+v", missing)
 	}

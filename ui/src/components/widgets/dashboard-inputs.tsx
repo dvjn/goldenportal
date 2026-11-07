@@ -172,7 +172,7 @@ function RelationInput({ input, values, links, onChange }: InputProps & { links?
   return (
     <LabelledPicker
       input={input}
-      labels={[...toOptions(entities.data?.entities), ...named]}
+      labels={[...toOptions(entities.data?.items), ...named]}
       values={values}
     >
       <RelationOptions input={input} values={values} onChange={onChange} />
@@ -185,7 +185,7 @@ function RelationOptions({ input, values, onChange }: InputProps) {
   return (
     <InputOptions
       input={input}
-      options={toOptions(data?.entities)}
+      options={toOptions(data?.items)}
       values={values}
       onChange={onChange}
       loading={isPending}

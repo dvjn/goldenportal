@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
-	"time"
 
-	"github.com/itchyny/gojq"
+	"github.com/dvjn/goldenportal/internal/jq"
 )
 
 // Criterion outcomes. Skipped is neutral; errored blocks its tier without
@@ -18,9 +16,6 @@ const (
 	StatusSkipped = "skipped"
 	StatusErrored = "errored"
 )
-
-// CheckTimeout bounds each jq run, so one slow check can't stall the rest.
-const CheckTimeout = 250 * time.Millisecond
 
 // Result is how one entity did on a scorecard.
 type Result struct {
@@ -45,20 +40,20 @@ type CriterionResult struct {
 
 // compiled holds a scorecard's checks, compiled once for all entities.
 type compiled struct {
-	check, when map[string]*gojq.Code
+	check, when map[string]*jq.Code
 }
 
 func compileSpec(spec Spec) (compiled, error) {
-	c := compiled{check: map[string]*gojq.Code{}, when: map[string]*gojq.Code{}}
+	c := compiled{check: map[string]*jq.Code{}, when: map[string]*jq.Code{}}
 	for _, tier := range spec.Tiers {
 		for _, criterion := range tier.Criteria {
-			code, err := compileJQ(criterion.Check)
+			code, err := jq.Compile(criterion.Check)
 			if err != nil {
 				return c, fmt.Errorf("%s check: %w", criterion.ID, err)
 			}
 			c.check[criterion.ID] = code
 			if criterion.When != "" {
-				if c.when[criterion.ID], err = compileJQ(criterion.When); err != nil {
+				if c.when[criterion.ID], err = jq.Compile(criterion.When); err != nil {
 					return c, fmt.Errorf("%s when: %w", criterion.ID, err)
 				}
 			}
@@ -66,15 +61,6 @@ func compileSpec(spec Spec) (compiled, error) {
 	}
 
 	return c, nil
-}
-
-func compileJQ(expression string) (*gojq.Code, error) {
-	query, err := gojq.Parse(expression)
-	if err != nil {
-		return nil, err
-	}
-
-	return gojq.Compile(query)
 }
 
 // evaluate scores one entity, given as the document checks run against.
@@ -107,7 +93,8 @@ func (c compiled) evaluate(ctx context.Context, spec Spec, input map[string]any)
 	}
 
 	if applicable := result.Passed + result.Failed + result.Errored; applicable > 0 {
-		score := int(math.Round(100 * float64(result.Passed) / float64(applicable)))
+		// Whole numbers round down, so 100 means every check passed.
+		score := 100 * result.Passed / applicable
 		result.Score = &score
 	}
 
@@ -139,20 +126,13 @@ func (c compiled) run(ctx context.Context, id string, input map[string]any) Crit
 var errNotBool = errors.New("gave something other than true or false")
 
 // runBool runs a check and takes its first result, which must be a boolean.
-func runBool(ctx context.Context, code *gojq.Code, input map[string]any) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, CheckTimeout)
-	defer cancel()
-
-	iter := code.RunWithContext(ctx, input)
-	value, ok := iter.Next()
+func runBool(ctx context.Context, code *jq.Code, input map[string]any) (bool, error) {
+	value, ok, err := code.First(ctx, jq.DefaultTimeout, input)
+	if err != nil {
+		return false, err
+	}
 	if !ok {
 		return false, errors.New("gave no result")
-	}
-	if err, isErr := value.(error); isErr {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return false, fmt.Errorf("took longer than %s", CheckTimeout)
-		}
-		return false, err
 	}
 	passed, ok := value.(bool)
 	if !ok {

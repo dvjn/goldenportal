@@ -15,16 +15,16 @@ func TestHiddenTabs(t *testing.T) {
 	spec, issues := blueprint.Parse(serviceYAML + `  entity:
     tabs:
       always:
-        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+        widgets: {n: {type: stat, title: N, value: {}}}
       critical:
         when: {property: tier, op: eq, value: critical}
-        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+        widgets: {n: {type: stat, title: N, value: {}}}
       tagged:
         when: {property: tags, op: contains, value: $entity.title}
-        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+        widgets: {n: {type: stat, title: N, value: {}}}
       mine:
         when: {property: owner, op: in, values: $me.groups}
-        widgets: {n: {type: stat, title: N, value: {query: {}}}}
+        widgets: {n: {type: stat, title: N, value: {}}}
 `)
 	if blueprint.HasErrors(issues) {
 		t.Fatal(issues)

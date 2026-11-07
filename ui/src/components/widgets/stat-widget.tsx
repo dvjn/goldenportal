@@ -1,11 +1,12 @@
 import { cn } from "cn";
 import type { ReactNode } from "react";
 import { IconTile } from "@/components/catalog/blueprint-icon";
-import { formatNumber } from "@/components/catalog/property-value";
+import { EmptyValue, formatNumber } from "@/components/catalog/property-value";
 import { interactiveCard, stretchedLink } from "@/components/link-card";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LinkData, StatData, Widget } from "@/features/widgets";
+import { formatPercent } from "@/lib/format";
 import { WidgetError, type WidgetProps, WidgetTitle } from "./widget-grid";
 import { linkable, WidgetLink } from "./widget-link";
 
@@ -26,7 +27,13 @@ export function StatWidget({ widget, context, data, error }: WidgetProps<StatDat
   return (
     <StatCard widget={widget} link={link}>
       <span className="text-2xl font-semibold tracking-tight tabular-nums">
-        {data.value === null ? "-" : formatNumber(data.value, data.unit)}
+        {data.value === null ? (
+          <EmptyValue title="Nothing to measure" />
+        ) : data.unit === "%" && data.count !== undefined && data.total ? (
+          formatPercent(data.count, data.total)
+        ) : (
+          formatNumber(data.value, data.unit)
+        )}
       </span>
       {data.count !== undefined && data.total !== undefined && (
         <span className="truncate text-xs text-muted-foreground tabular-nums">

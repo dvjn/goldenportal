@@ -58,7 +58,7 @@ const catalog: SelfServiceCatalog = {
 };
 
 const services = {
-  entities: [
+  items: [
     { blueprint: "service", identifier: "ledger", title: "Ledger" },
     { blueprint: "service", identifier: "search-api", title: "Search API" },
   ],
@@ -166,7 +166,7 @@ describe("self-service", () => {
       "POST workflows/restart-services/runs": ok(parent),
       "GET runs/p1": ok(parent),
       "GET workflows/restart-services": fail(404, "not found"),
-      "GET runs": ok({ runs: [], total: 0 }),
+      "GET runs": ok({ items: [], total: 0 }),
     });
     const { router } = renderRoute("/self-service");
 
@@ -195,7 +195,7 @@ describe("self-service", () => {
   });
 
   it("leaves the entity blank for a workflow in the runs table", async () => {
-    stubApi({ ...member, "GET runs": ok({ runs: [{ ...parent, steps: undefined }], total: 1 }) });
+    stubApi({ ...member, "GET runs": ok({ items: [{ ...parent, steps: undefined }], total: 1 }) });
     renderRoute("/runs?who=all");
 
     const row = (await screen.findByRole("link", { name: "Restart services" })).closest(
@@ -222,7 +222,7 @@ describe("self-service", () => {
       "GET workflows/restart-services": fail(404, "not found"),
       "GET self-service": ok(catalog),
       "GET runs": ok({
-        runs: [child("c1", "ledger", "running"), child("c2", "search-api", "succeeded")],
+        items: [child("c1", "ledger", "running"), child("c2", "search-api", "succeeded")],
         total: 2,
       }),
     });
@@ -353,8 +353,8 @@ describe("workflows", () => {
       ...builder,
       "GET workflows/restart-services": ok(doc),
       "GET workflows/restart-services/versions": ok([]),
-      "GET workflows/restart-services/runs": ok({
-        runs: [{ ...parent, steps: undefined }],
+      "GET runs": ok({
+        items: [{ ...parent, steps: undefined }],
         total: 1,
       }),
     });
@@ -376,6 +376,6 @@ describe("workflows", () => {
       "href",
       "/runs/p1",
     );
-    expect(requests["GET workflows/restart-services/runs"]).toBeDefined();
+    expect(new URL(requests["GET runs"].url).searchParams.get("workflow")).toBe("restart-services");
   });
 });

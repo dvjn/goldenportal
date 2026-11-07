@@ -20,8 +20,8 @@ func TestSplitDocuments(t *testing.T) {
 
 func TestReadDocument(t *testing.T) {
 	r := &Reader{}
-	doc := ReadDocument(r, "kind: Blueprint\nmetadata:\n  name: service\n  title: Service\n  icon: server\nspec: {}\n", "Blueprint")
-	if len(r.Issues) != 0 || doc.Name != "service" || doc.Meta.Title != "Service" || doc.Meta.Icon != "server" || doc.Spec == nil {
+	doc := ReadDocument(r, "kind: Blueprint\nmetadata:\n  identifier: service\n  title: Service\n  icon: server\nspec: {}\n", "Blueprint")
+	if len(r.Issues) != 0 || doc.Identifier != "service" || doc.Meta.Title != "Service" || doc.Meta.Icon != "server" || doc.Spec == nil {
 		t.Fatalf("doc = %+v, issues = %+v", doc, r.Issues)
 	}
 }

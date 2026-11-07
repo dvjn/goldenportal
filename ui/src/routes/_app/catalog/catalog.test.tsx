@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Blueprint } from "@/features/blueprints";
-import type { EntityDetail, EntityPage } from "@/features/catalog";
+import type { EntityDetail, EntityPage, Filter } from "@/features/catalog";
 import { readUiState, writeUiState } from "@/hooks/use-ui-state";
 import { acmeConfig, ada, fail, ok, stubApi } from "@/test/api";
 import { renderRoute } from "@/test/render";
@@ -15,6 +15,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+// instant is the start of a day, as the date filter writes it.
+const instant = (day: string) => new Date(`${day}T00:00:00`).toISOString();
 
 const signedInMember = { "GET config": acmeConfig, "GET me": ok({ ...ada, role: "member" }) };
 
@@ -63,7 +66,7 @@ const ledger: EntityDetail = {
   ],
 };
 
-const page: EntityPage = { entities: [ledger], total: 1 };
+const page: EntityPage = { items: [ledger], total: 1 };
 
 const readiness = {
   identifier: "readiness",
@@ -94,7 +97,7 @@ describe("catalog", () => {
     const requests = stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET catalog/service": ok({ entities: [scored], total: 1 }),
+      "GET catalog/service": ok({ items: [scored], total: 1 }),
       "GET scorecards/readiness": ok(readiness),
       "GET catalog/service/facets": ok([]),
     });
@@ -121,7 +124,7 @@ describe("catalog", () => {
         JSON.parse(
           new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null",
         ),
-      ).toEqual({ and: [{ property: "readiness", op: "in", values: ["gold"] }] }),
+      ).toEqual({ and: [{ property: "readiness", op: "eq", value: "gold" }] }),
     );
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Columns" }));
@@ -136,7 +139,7 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
-      "GET catalog/service": ok({ entities: [], total: 0 }),
+      "GET catalog/service": ok({ items: [], total: 0 }),
       "GET scorecards/readiness": ok(readiness),
     });
     renderRoute("/catalog/service");
@@ -218,7 +221,7 @@ describe("catalog", () => {
     expect(screen.queryByText(/3 entities/)).not.toBeInTheDocument();
 
     const row = (await screen.findByRole("link", { name: /Ledger/ })).closest("tr") as HTMLElement;
-    expect(within(row).getByText("critical")).toBeInTheDocument();
+    expect(within(row).getByText("Critical")).toBeInTheDocument();
     expect(within(row).getByRole("link", { name: "Payments" })).toHaveAttribute(
       "href",
       "/catalog/team/payments",
@@ -229,17 +232,20 @@ describe("catalog", () => {
     await user.click(await screen.findByRole("option", { name: "Owner" }));
     await user.click(await screen.findByRole("button", { name: "Back to fields" }));
     await user.click(await screen.findByRole("option", { name: "Tier" }));
-    await user.click(await screen.findByRole("option", { name: "critical" }));
+    await user.click(await screen.findByRole("option", { name: "Critical" }));
 
     await vi.waitFor(() => {
       const url = new URL(requests["GET catalog/service"].url);
       expect(JSON.parse(url.searchParams.get("filter") ?? "null")).toEqual({
-        and: [{ property: "tier", op: "in", values: ["critical"] }],
+        and: [{ property: "tier", op: "eq", value: "critical" }],
       });
     });
-    expect(router.state.location.search).toMatchObject({ f: { tier: ["critical"] } });
+    expect(router.state.location.search).toMatchObject({
+      filter: [{ property: "tier", op: "eq", value: "critical" }],
+    });
+    expect(router.state.location.search).not.toHaveProperty("f");
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("button", { name: "Tier: critical" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tier: Critical" })).toBeInTheDocument();
   });
 
   it("keeps filters as chips in the search box to edit, remove and clear", async () => {
@@ -252,12 +258,15 @@ describe("catalog", () => {
     });
     const search = (value: unknown) => encodeURIComponent(JSON.stringify(value));
     const { router } = renderRoute(
-      `/catalog/service?f=${search({ tier: ["critical"], owner: ["payments"] })}&d=${search({
-        updatedAt: { from: "2026-10-01", to: "2026-10-15" },
-      })}`,
+      `/catalog/service?filter=${search([
+        { property: "tier", op: "in", values: ["critical"] },
+        { property: "owner", op: "eq", value: "payments" },
+        { property: "updatedAt", op: "gte", value: instant("2026-10-01") },
+        { property: "updatedAt", op: "lt", value: instant("2026-10-16") },
+      ])}`,
     );
 
-    expect(await screen.findByRole("button", { name: "Tier: critical" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Tier: Critical" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Owner: Payments" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Updated: Oct 1 - Oct 15" })).toBeInTheDocument();
     // Headers only sort; filters live in the box.
@@ -265,29 +274,37 @@ describe("catalog", () => {
       within(screen.getByRole("columnheader", { name: /Tier/ })).getAllByRole("button"),
     ).toHaveLength(1);
 
-    await user.click(screen.getByRole("button", { name: "Tier: critical" }));
-    await user.click(await screen.findByRole("option", { name: "standard" }));
+    await user.click(screen.getByRole("button", { name: "Tier: Critical" }));
+    await user.click(await screen.findByRole("option", { name: "Standard" }));
     await vi.waitFor(() =>
-      expect(router.state.location.search).toMatchObject({
-        f: { tier: ["critical", "standard"], owner: ["payments"] },
-      }),
+      expect(router.state.location.search.filter?.slice(0, 2)).toEqual([
+        { property: "tier", op: "in", values: ["critical", "standard"] },
+        { property: "owner", op: "eq", value: "payments" },
+      ]),
     );
     expect(
-      await screen.findByRole("button", { name: "Tier: critical, standard" }),
+      await screen.findByRole("button", { name: "Tier: Critical, Standard" }),
     ).toBeInTheDocument();
     await user.keyboard("{Escape}");
 
     await user.click(screen.getByRole("button", { name: "Remove Owner filter" }));
     await vi.waitFor(() =>
-      expect(router.state.location.search.f).toEqual({ tier: ["critical", "standard"] }),
+      expect(
+        (router.state.location.search.filter as Filter[] | undefined)?.map(
+          (c) => "property" in c && c.property,
+        ),
+      ).toEqual(["tier", "updatedAt", "updatedAt"]),
     );
     expect(screen.queryByRole("button", { name: /^Owner:/ })).not.toBeInTheDocument();
 
     const box = screen.getByRole("searchbox", { name: "Search service" });
     await user.click(box);
     await user.keyboard("{Backspace}");
-    await vi.waitFor(() => expect(router.state.location.search.d).toBeUndefined());
-    expect(router.state.location.search.f).toEqual({ tier: ["critical", "standard"] });
+    await vi.waitFor(() =>
+      expect(router.state.location.search.filter).toEqual([
+        { property: "tier", op: "in", values: ["critical", "standard"] },
+      ]),
+    );
     await vi.waitFor(() => {
       const filter = JSON.parse(
         new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null",
@@ -301,7 +318,7 @@ describe("catalog", () => {
     await vi.waitFor(() => expect(router.state.location.search.q).toBe("ledger"));
     await user.click(screen.getByRole("button", { name: "Clear search and filters" }));
     await vi.waitFor(() => {
-      expect(router.state.location.search).not.toHaveProperty("f");
+      expect(router.state.location.search.filter).toBeUndefined();
       expect(router.state.location.search.q).toBeUndefined();
     });
     expect(screen.queryByRole("button", { name: /^Tier:/ })).not.toBeInTheDocument();
@@ -336,35 +353,115 @@ describe("catalog", () => {
     const search = (value: unknown) => encodeURIComponent(JSON.stringify(value));
     const slack = { property: "owner.slack", op: "exists" };
     const lead = { property: "owner.lead", op: "in", values: ["ada", "grace"] };
-    const { router } = renderRoute(
-      `/catalog/service?f=${search({ version: ["1.2"] })}&where=${search({ and: [slack, lead] })}`,
-    );
+    const version = { property: "version", op: "in", values: ["1.2"] };
+    const { router } = renderRoute(`/catalog/service?filter=${search([version, slack, lead])}`);
 
     // A property without a filter of its own gets one while it's filtered.
     expect(await screen.findByRole("button", { name: "version: 1.2" })).toBeInTheDocument();
-    // Each condition of where is a chip, named by the properties it follows.
+    // What the menu can't say is a chip too, named by the properties it follows.
     expect(await screen.findByText("Owner › Slack:")).toBeInTheDocument();
-    expect(screen.getByText("any value")).toBeInTheDocument();
+    expect(screen.getByText("Any Value")).toBeInTheDocument();
     expect(screen.getByText("Owner › Lead:")).toBeInTheDocument();
     expect(screen.getByText("ada, grace")).toBeInTheDocument();
     const filter = () =>
       JSON.parse(new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null");
-    await vi.waitFor(() =>
-      expect(filter()).toEqual({
-        and: [{ property: "version", op: "in", values: ["1.2"] }, { and: [slack, lead] }],
-      }),
-    );
+    await vi.waitFor(() => expect(filter()).toEqual({ and: [version, slack, lead] }));
 
     await user.click(screen.getByRole("button", { name: "Remove Owner › Slack filter" }));
-    await vi.waitFor(() => expect(router.state.location.search.where).toEqual(lead));
+    await vi.waitFor(() => expect(router.state.location.search.filter).toEqual([version, lead]));
+    await vi.waitFor(() => expect(filter()).toEqual({ and: [version, lead] }));
+  });
+
+  it("shows a link that repeats a condition once", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([]),
+    });
+    const tier = { property: "tier", op: "eq", value: "critical" };
+    renderRoute(`/catalog/service?filter=${encodeURIComponent(JSON.stringify([tier, tier]))}`);
+
+    expect(await screen.findByRole("button", { name: "Tier: Critical" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Remove .* filter$/ })).toHaveLength(1);
+  });
+
+  it("shows what the filter menu can't edit as chips, which only remove", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([]),
+    });
+    const either = {
+      or: [
+        { property: "tier", op: "eq", value: "critical" },
+        { property: "tier", op: "eq", value: "standard" },
+      ],
+    };
+    const tier = { property: "tier", op: "in", values: ["critical", "standard"] };
+    const { router } = renderRoute(
+      `/catalog/service?filter=${encodeURIComponent(JSON.stringify([either, tier, { property: "tier", op: "ne", value: "standard" }]))}`,
+    );
+
+    expect(await screen.findByText("Any Of:")).toBeInTheDocument();
+    expect(await screen.findByText("Tier: Critical or Tier: Standard")).toBeInTheDocument();
+    // The first condition on a property is the one that's editable.
+    expect(screen.getByRole("button", { name: "Tier: Critical, Standard" })).toBeInTheDocument();
+    expect(screen.getByText("Not Standard")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tier: Not Standard" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Remove Any Of filter" }));
     await vi.waitFor(() =>
-      expect(filter()).toEqual({
-        and: [{ property: "version", op: "in", values: ["1.2"] }, lead],
-      }),
+      expect(router.state.location.search.filter).toEqual([
+        tier,
+        { property: "tier", op: "ne", value: "standard" },
+      ]),
     );
   });
 
-  it("says a link's negated conditions the plain way round", async () => {
+  it("edits a negated chip with Is and Is Not", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": ok(page),
+      "GET catalog/service/facets": ok([]),
+    });
+    const filter = [{ property: "tier", op: "ne", value: "critical" }];
+    const { router } = renderRoute(
+      `/catalog/service?filter=${encodeURIComponent(JSON.stringify(filter))}`,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Tier: Not Critical" }));
+    expect(screen.getByRole("radio", { name: "Is Not" })).toBeChecked();
+    await user.click(await screen.findByRole("option", { name: "Standard" }));
+    await vi.waitFor(() =>
+      expect(router.state.location.search.filter).toEqual([
+        { not: { property: "tier", op: "in", values: ["critical", "standard"] } },
+      ]),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Tier: Not Critical, Standard" }),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("radio", { name: "Is" }));
+    await vi.waitFor(() =>
+      expect(router.state.location.search.filter).toEqual([
+        { property: "tier", op: "in", values: ["critical", "standard"] },
+      ]),
+    );
+    await vi.waitFor(() =>
+      expect(
+        JSON.parse(
+          new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null",
+        ),
+      ).toEqual({ and: [{ property: "tier", op: "in", values: ["critical", "standard"] }] }),
+    );
+  });
+
+  it("says a link's negated conditions as chips", async () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok(service),
@@ -372,20 +469,19 @@ describe("catalog", () => {
       "GET catalog/service/facets": ok([]),
     });
     const search = (value: unknown) => encodeURIComponent(JSON.stringify(value));
-    const where = {
-      and: [
-        { property: "archived", op: "ne", value: true },
-        { not: { property: "pipeline", op: "ne", value: "none" } },
-        { not: { property: "docs", op: "exists" } },
-      ],
-    };
-    renderRoute(`/catalog/service?where=${search(where)}`);
+    const filter = [
+      { property: "archived", op: "ne", value: true },
+      { not: { property: "pipeline", op: "in", values: ["none", "manual"] } },
+      { not: { property: "docs", op: "exists" } },
+      { not: { property: "owner.slack", op: "contains", value: "dev" } },
+    ];
+    renderRoute(`/catalog/service?filter=${search(filter)}`);
 
     expect(await screen.findByText("archived:")).toBeInTheDocument();
-    expect(screen.getByText("No")).toBeInTheDocument();
-    expect(screen.getByText("none")).toBeInTheDocument();
-    expect(screen.getByText("no value")).toBeInTheDocument();
-    expect(screen.queryByText(/^not /)).not.toBeInTheDocument();
+    expect(screen.getByText("Not Yes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "pipeline: Not none, manual" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "docs: No Value" })).toBeInTheDocument();
+    expect(await screen.findByText("Lacks dev")).toBeInTheDocument();
   });
 
   it("filters entities by when they were updated", async () => {
@@ -410,9 +506,9 @@ describe("catalog", () => {
         { property: "updatedAt", op: "lt", value: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
       ]);
     });
-    expect(router.state.location.search.d).toEqual({
-      updatedAt: { to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) },
-    });
+    expect(router.state.location.search.filter).toEqual([
+      { property: "updatedAt", op: "lt", value: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+    ]);
     await user.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: "Updated: Older than 90 days" })).toBeInTheDocument();
   });
@@ -425,16 +521,21 @@ describe("catalog", () => {
       "GET catalog/service": ok(page),
       "GET catalog/service/facets": ok([]),
     });
-    const search = encodeURIComponent(JSON.stringify({ updatedAt: { from: "2026-10-01" } }));
-    const { router } = renderRoute(`/catalog/service?d=${search}`);
+    // A link may bound a day by its date alone.
+    const search = encodeURIComponent(
+      JSON.stringify([{ property: "updatedAt", op: "gte", value: "2026-10-01" }]),
+    );
+    const { router } = renderRoute(`/catalog/service?filter=${search}`);
 
     await user.click(await screen.findByRole("button", { name: "Updated: From Oct 1" }));
     const days = await screen.findAllByRole("button", { name: /October 15th, 2026/ });
     await user.click(days[0]);
+    // An edit writes the picker's own instants.
     await vi.waitFor(() =>
-      expect(router.state.location.search.d).toEqual({
-        updatedAt: { from: "2026-10-01", to: "2026-10-15" },
-      }),
+      expect(router.state.location.search.filter).toEqual([
+        { property: "updatedAt", op: "gte", value: instant("2026-10-01") },
+        { property: "updatedAt", op: "lt", value: instant("2026-10-16") },
+      ]),
     );
   });
 
@@ -442,7 +543,7 @@ describe("catalog", () => {
     stubApi({
       ...signedInMember,
       "GET blueprints/service": ok({ ...service, published: null }),
-      "GET catalog/service": ok({ entities: [], total: 0 }),
+      "GET catalog/service": ok({ items: [], total: 0 }),
     });
     renderRoute("/catalog/service");
 

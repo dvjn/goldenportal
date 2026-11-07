@@ -34,7 +34,7 @@ import {
   scorecards,
   summaryQueryOptions,
 } from "@/features/scorecards";
-import { formatAbsolute, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatPercent, formatRelative, percentOf } from "@/lib/format";
 
 // ScorecardSearch is the entities table's state in the URL; tier is a
 // comma-separated list of tier names, with "none" for entities that
@@ -216,7 +216,7 @@ function CriteriaCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary
               {tier.criteria.map((criterion) => {
                 const c = counts.get(criterion.identifier);
                 const applicable = c ? c.passed + c.failed + c.errored : 0;
-                const rate = applicable > 0 && c ? Math.round((c.passed / applicable) * 100) : null;
+                const rate = applicable > 0 && c ? percentOf(c.passed, applicable) : null;
                 return (
                   <li
                     key={criterion.identifier}
@@ -237,7 +237,11 @@ function CriteriaCard({ spec, summary }: Readonly<{ spec: ScorecardSpec; summary
                       />
                     </div>
                     <span className="text-right text-xs text-muted-foreground tabular-nums">
-                      {rate === null ? "-" : `${rate}%`}
+                      {c && rate !== null ? (
+                        formatPercent(c.passed, applicable)
+                      ) : (
+                        <EmptyValue title="No entity has been checked" />
+                      )}
                       {c && c.errored > 0 && (
                         <span className="block text-destructive">{c.errored} errored</span>
                       )}
@@ -295,9 +299,14 @@ function EntitiesTable({
     column.accessor("score", {
       enableSorting: false,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Score" />,
-      cell: ({ getValue }) => (
-        <span className="tabular-nums">{getValue() === null ? "-" : `${getValue()}%`}</span>
-      ),
+      cell: ({ getValue }) => {
+        const score = getValue();
+        return (
+          <span className="tabular-nums">
+            {score === null ? <EmptyValue title="Not evaluated" /> : formatPercent(score, 100)}
+          </span>
+        );
+      },
     }),
     column.display({
       id: "failing",
@@ -335,8 +344,9 @@ function EntitiesTable({
 
   return (
     <DataTable
+      noun="entities"
       title="Entities"
-      data={page.data?.results ?? []}
+      data={page.data?.items ?? []}
       columns={columns}
       getRowId={(r) => `${r.blueprint}/${r.identifier}`}
       search={search}
@@ -377,7 +387,7 @@ function EntitiesTable({
       }
       empty={
         <EmptyState
-          title="Nothing scored yet"
+          title="No scores yet"
           description={`Entities of ${spec.blueprint} show up here once they're evaluated.`}
         />
       }

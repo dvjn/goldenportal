@@ -13,6 +13,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 // Name is the configdoc kind scorecards are stored as.
@@ -94,17 +95,17 @@ func evaluateIn(ctx context.Context, db configdoc.DB, spec Spec) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if err := entities.Resolve(ctx, specs, bp, result.Entities); err != nil {
+		if err := entities.Resolve(ctx, specs, bp, result.Items); err != nil {
 			return 0, err
 		}
-		for _, e := range result.Entities {
+		for _, e := range result.Items {
 			outcome := checks.evaluate(ctx, spec, Input(e))
 			if err := saveResult(ctx, db, scorecardID, e.ID, outcome); err != nil {
 				return 0, err
 			}
 			scored = append(scored, e.ID)
 		}
-		if len(result.Entities) < evaluationPage {
+		if len(result.Items) < evaluationPage {
 			break
 		}
 	}
@@ -265,10 +266,7 @@ type ResultQuery struct {
 	PageSize int
 }
 
-type ResultPage struct {
-	Results []EntityResult `json:"results"`
-	Total   int            `json:"total"`
-}
+type ResultPage = httpx.Page[EntityResult]
 
 func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec, q ResultQuery) (ResultPage, error) {
 	tierOrder := []string{""}
@@ -303,13 +301,13 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 	}
 	defer rows.Close()
 
-	page := ResultPage{Results: []EntityResult{}}
+	page := ResultPage{Items: []EntityResult{}}
 	for rows.Next() {
 		r, err := scanResult(rows.Scan, &page.Total)
 		if err != nil {
 			return ResultPage{}, err
 		}
-		page.Results = append(page.Results, r)
+		page.Items = append(page.Items, r)
 	}
 
 	return page, rows.Err()

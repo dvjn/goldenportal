@@ -31,7 +31,7 @@
       "type": "object",
       "description": "What identifies the document and how it's shown in lists.",
       "properties": {
-        "name": {
+        "identifier": {
           "$ref": "#/$defs/identifier",
           "description": "The document's identifier. It can't change once published, since other documents and data refer to it."
         },
@@ -52,7 +52,7 @@
           "description": "Tints the icon's tile, so it needs an icon."
         }
       },
-      "required": ["name", "title"],
+      "required": ["identifier", "title"],
       "dependentRequired": {
         "color": ["icon"]
       },
@@ -122,16 +122,13 @@
     },
     "queries": {
       "type": "object",
-      "description": "Named queries the page's widgets share, keyed by name, which widgets write in place of a query.",
+      "description": "Named queries the page's widgets share, keyed by name, which widgets refer to by name.",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": { "$ref": "#/$defs/query" }
     },
     "queryRef": {
-      "description": "The entities it shows: the name of one of the page's queries, or a query written in place. On a blueprint's pages, left out it's every entity of the blueprint; on Home it's required.",
-      "oneOf": [
-        { "$ref": "#/$defs/name" },
-        { "$ref": "#/$defs/query" }
-      ]
+      "description": "The entities it shows: the name of one of the page's queries. On a blueprint's pages, left out it's every entity of the blueprint; on Home it's required.",
+      "$ref": "#/$defs/name"
     },
     "template": {
       "type": "string",
@@ -216,24 +213,19 @@
       "additionalProperties": false
     },
     "column": {
-      "description": "A table column: a field's path, or a titled column with a path or jq over the row's entity.",
+      "description": "A table column: a field's path, or a titled column with jq over the row's entity.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The column's heading. A path column defaults to its field's title." },
+        "path": { "$ref": "#/$defs/path" },
+        "jq": { "$ref": "#/$defs/jq", "description": "jq over the row's entity, giving the cell's value." },
+        "unit": { "type": "string", "description": "Follows numbers in the column, such as ms." }
+      },
       "oneOf": [
-        { "$ref": "#/$defs/path" },
-        {
-          "type": "object",
-          "properties": {
-            "title": { "type": "string", "description": "The column's heading. A path column defaults to its field's title." },
-            "path": { "$ref": "#/$defs/path" },
-            "jq": { "$ref": "#/$defs/jq", "description": "jq over the row's entity, giving the cell's value." },
-            "unit": { "type": "string", "description": "Follows numbers in the column, such as ms." }
-          },
-          "oneOf": [
-            { "required": ["path"] },
-            { "required": ["jq", "title"] }
-          ],
-          "additionalProperties": false
-        }
-      ]
+        { "required": ["path"] },
+        { "required": ["jq", "title"] }
+      ],
+      "additionalProperties": false
     },
     "widgetTitle": {
       "type": "string",

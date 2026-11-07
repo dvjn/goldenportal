@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -26,8 +25,6 @@ const (
 	tokenDisplayLength = len(tokenPrefix) + 8
 	maxTokenName       = 100
 )
-
-var runPageSizes = []int{10, 20, 50, 100}
 
 var (
 	// portalURL is the portal's public URL, which systems send events to.
@@ -105,13 +102,13 @@ func ListConnectors(ctx *gofr.Context) ([]Connector, error) {
 // it, so it needs to exist, though not be published.
 func integrationID(ctx *gofr.Context, identifier string) (string, error) {
 	if !configdoc.ValidIdentifier(identifier) {
-		return "", notFound()
+		return "", httpx.NotFound("no such integration")
 	}
 	var id string
 	err := ctx.SQL.QueryRowContext(ctx, `SELECT id FROM config_documents WHERE kind = $1 AND identifier = $2`,
 		Name, identifier).Scan(&id)
 	if err != nil {
-		return "", notFound()
+		return "", httpx.NotFound("no such integration")
 	}
 
 	return id, nil
@@ -146,7 +143,7 @@ type CreatedToken struct {
 func createToken(ctx *gofr.Context) (any, error) {
 	var req createTokenRequest
 	if err := ctx.Bind(&req); err != nil {
-		return nil, badRequest("the request body is not valid JSON")
+		return nil, httpx.BadRequest("the request body is not valid JSON")
 	}
 
 	return httpx.Result(CreateToken(ctx, ctx.PathParam("identifier"), req.Name))
@@ -164,11 +161,11 @@ func CreateToken(ctx *gofr.Context, integration, name string) (CreatedToken, err
 	}
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > maxTokenName {
-		return CreatedToken{}, badRequest("give the token a name of up to 100 characters")
+		return CreatedToken{}, httpx.BadRequest("give the token a name of up to 100 characters")
 	}
 
 	if !receives(ctx, integration) {
-		return CreatedToken{}, httpx.Error{Code: http.StatusConflict, Message: "the " + integration + " integration takes no pushes, so it has no ingestion tokens; give one of its resources a push side"}
+		return CreatedToken{}, httpx.Conflict("the " + integration + " integration takes no pushes, so it has no ingestion tokens; give one of its resources a push side")
 	}
 
 	secret := tokenPrefix + auth.NewSecret()
@@ -197,12 +194,12 @@ func RevokeToken(ctx *gofr.Context, integration, tokenID string) error {
 		return err
 	}
 	if _, err := uuid.Parse(tokenID); err != nil {
-		return httpx.Error{Code: http.StatusNotFound, Message: "no such token"}
+		return httpx.NotFound("no such token")
 	}
 
 	name, err := NewStore(ctx.SQL).RevokeToken(ctx, id, tokenID)
 	if errors.Is(err, ErrTokenNotFound) {
-		return httpx.Error{Code: http.StatusNotFound, Message: "no such token"}
+		return httpx.NotFound("no such token")
 	}
 	if err != nil {
 		return err
@@ -226,11 +223,8 @@ func listRuns(ctx *gofr.Context) (any, error) {
 	// trigger and outcome are comma-separated lists.
 	req := RunsRequest{Search: ctx.Param("q"), Triggers: listParam(ctx, "trigger"), Outcomes: listParam(ctx, "outcome")}
 	var err error
-	if req.Page, err = intParam(ctx, "page"); err != nil {
-		return nil, badRequest("page must be a whole number from 1")
-	}
-	if req.Size, err = intParam(ctx, "size"); err != nil {
-		return nil, badRequest("size must be 10, 20, 50 or 100")
+	if req.Page, req.Size, err = httpx.Paging(ctx.Param); err != nil {
+		return nil, err
 	}
 
 	return httpx.Result(Runs(ctx, ctx.PathParam("identifier"), req))
@@ -246,18 +240,9 @@ func Runs(ctx *gofr.Context, integration string, req RunsRequest) (RunPage, erro
 		return RunPage{}, err
 	}
 
-	q := RunQuery{Search: req.Search, Page: 1, PageSize: runPageSizes[0]}
-	if req.Page != 0 {
-		if req.Page < 1 {
-			return RunPage{}, badRequest("page must be a whole number from 1")
-		}
-		q.Page = req.Page
-	}
-	if req.Size != 0 {
-		if !slices.Contains(runPageSizes, req.Size) {
-			return RunPage{}, badRequest("size must be 10, 20, 50 or 100")
-		}
-		q.PageSize = req.Size
+	q := RunQuery{Search: req.Search}
+	if q.Page, q.PageSize, err = httpx.CheckPaging(req.Page, req.Size); err != nil {
+		return RunPage{}, err
 	}
 	if q.Triggers, err = oneOf("trigger", req.Triggers, TriggerSchedule, TriggerManual, TriggerPush, TriggerAction); err != nil {
 		return RunPage{}, err
@@ -282,33 +267,11 @@ func listParam(ctx *gofr.Context, name string) []string {
 func oneOf(name string, values []string, allowed ...string) ([]string, error) {
 	for _, v := range values {
 		if !slices.Contains(allowed, v) {
-			return nil, badRequest("unknown " + name + " " + strconv.Quote(v))
+			return nil, httpx.BadRequest("unknown " + name + " " + strconv.Quote(v))
 		}
 	}
 
 	return values, nil
-}
-
-// intParam reads a whole-number query parameter, zero when it's absent.
-func intParam(ctx *gofr.Context, name string) (int, error) {
-	value := ctx.Param(name)
-	if value == "" {
-		return 0, nil
-	}
-	n, err := strconv.Atoi(value)
-	if err == nil && n == 0 {
-		err = strconv.ErrRange
-	}
-
-	return n, err
-}
-
-func notFound() error {
-	return httpx.Error{Code: http.StatusNotFound, Message: "no such integration"}
-}
-
-func badRequest(message string) error {
-	return httpx.Error{Code: http.StatusBadRequest, Message: message}
 }
 
 // CheckResult is how a connector's check went.
@@ -344,10 +307,10 @@ func CheckNow(ctx *gofr.Context, identifier string) (CheckResult, error) {
 	}
 	spec, issues := Parse(source)
 	if configdoc.HasErrors(issues) {
-		return CheckResult{}, httpx.Error{Code: http.StatusConflict, Message: "fix the " + result.Version + "'s errors before checking it"}
+		return CheckResult{}, httpx.Conflict("fix the " + result.Version + "'s errors before checking it")
 	}
 	if !spec.Checks {
-		return CheckResult{}, httpx.Error{Code: http.StatusConflict, Message: "the " + spec.Connector.Type + " connector can't check its system"}
+		return CheckResult{}, httpx.Conflict("the " + spec.Connector.Type + " connector can't check its system")
 	}
 	warnings, err := spec.check(ctx, ctx.SQL)
 	result.Warning = strings.Join(warnings, " ")

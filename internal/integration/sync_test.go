@@ -267,7 +267,7 @@ func TestSyncableResource(t *testing.T) {
 func TestWriteSeesWhatItCantWrite(t *testing.T) {
 	db, mock, metrics := gofrSQL.NewSQLMocks(t)
 	metrics.EXPECT().RecordHistogram(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-	deployment := "kind: Blueprint\nmetadata: {name: deployment, title: Deployment}\nspec:\n  properties:\n    status: {type: string, required: true}\n"
+	deployment := "kind: Blueprint\nmetadata: {identifier: deployment, title: Deployment}\nspec:\n  properties:\n    status: {type: string, required: true}\n"
 	now := time.Now()
 	mock.ExpectQuery(`SELECT ` + recordColumnsSQL + ` WHERE b.kind = $1 ORDER BY b.identifier`).
 		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("deployment", 1, deployment, now, "", "", now, "", now))

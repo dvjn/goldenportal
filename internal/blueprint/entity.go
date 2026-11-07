@@ -1,6 +1,7 @@
 package blueprint
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/mail"
@@ -11,7 +12,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/itchyny/gojq"
+	"github.com/dvjn/goldenportal/internal/jq"
 )
 
 // Entity is an entity's data. Integrations write relations among the
@@ -121,7 +122,7 @@ func (s Spec) ValidateEntity(in Entity) (Entity, []string) {
 // paths see it: its properties and relations beside identifier, title and
 // blueprint. A value that fails or doesn't match its type is left out,
 // with the reason.
-func (s Spec) Compute(entity Entity) (map[string]any, []string) {
+func (s Spec) Compute(ctx context.Context, entity Entity) (map[string]any, []string) {
 	values := map[string]any{}
 	var problems []string
 
@@ -137,7 +138,7 @@ func (s Spec) Compute(entity Entity) (map[string]any, []string) {
 		if prop.Compute == "" {
 			continue
 		}
-		value, err := evaluate(prop.Compute, input)
+		value, err := evaluate(ctx, prop.Compute, input)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("properties.%s: %v", prop.ID, err))
 			continue
@@ -156,39 +157,14 @@ func (s Spec) Compute(entity Entity) (map[string]any, []string) {
 }
 
 // evaluate runs a jq expression and returns its first result.
-func evaluate(expression string, input any) (any, error) {
-	query, err := gojq.Parse(expression)
+func evaluate(ctx context.Context, expression string, input any) (any, error) {
+	code, err := jq.Compile(expression)
 	if err != nil {
 		return nil, err
 	}
-	iter := query.Run(input)
-	value, ok := iter.Next()
-	if !ok {
-		return nil, nil
-	}
-	if err, isErr := value.(error); isErr {
-		return nil, err
-	}
+	value, _, err := code.First(ctx, jq.DefaultTimeout, input)
 
-	return normalise(value), nil
-}
-
-// normalise turns gojq's ints into float64, as JSON decoding gives.
-func normalise(value any) any {
-	switch v := value.(type) {
-	case int:
-		return float64(v)
-	case []any:
-		for i := range v {
-			v[i] = normalise(v[i])
-		}
-	case map[string]any:
-		for key := range v {
-			v[key] = normalise(v[key])
-		}
-	}
-
-	return value
+	return value, err
 }
 
 // relationsForJQ gives gojq values it understands: []any, not []string.

@@ -18,8 +18,8 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { approvalsQueryOptions } from "@/features/actions";
+import { useConfig } from "@/features/app-config";
 import { hasRole, useMe } from "@/features/auth";
-import { useConfig } from "@/features/config";
 
 const mainItems = [
   { to: "/", label: "Home", icon: pageIcons.home, exact: true },

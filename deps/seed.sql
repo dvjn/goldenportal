@@ -44,7 +44,7 @@ ON CONFLICT DO NOTHING;
 WITH example (identifier, source) AS (VALUES
   ('team', $yaml$kind: Blueprint
 metadata:
-  name: team
+  identifier: team
   title: Team
   description: A group of people who own things in the catalog.
   icon: users
@@ -74,6 +74,12 @@ spec:
       owned:
         blueprint: service
         filter: {property: owner, op: eq, value: $entity}
+      criticalOwned:
+        blueprint: service
+        filter:
+          and:
+            - {property: owner, op: eq, value: $entity}
+            - {property: tier, op: eq, value: critical}
     tabs:
       services:
         title: Services
@@ -87,13 +93,7 @@ spec:
           critical:
             type: stat
             title: Critical
-            value:
-              query:
-                blueprint: service
-                filter:
-                  and:
-                    - {property: owner, op: eq, value: $entity}
-                    - {property: tier, op: eq, value: critical}
+            value: {query: criticalOwned}
             link: {query: owned, filter: {property: tier, op: eq, value: critical}}
           readiness:
             type: scorecard
@@ -105,12 +105,12 @@ spec:
             type: table
             title: Services
             query: owned
-            columns: [readiness, tier, language, lastDeployedAt]
+            columns: [{path: readiness}, {path: tier}, {path: language}, {path: lastDeployedAt}]
             link: {query: owned}
 $yaml$),
   ('service', $yaml$kind: Blueprint
 metadata:
-  name: service
+  identifier: service
   title: Service
   description: A deployable unit of software.
   icon: server
@@ -205,7 +205,7 @@ spec:
             type: table
             title: Critical Services
             query: critical
-            columns: [readiness, owner, language, lastDeployedAt]
+            columns: [{path: readiness}, {path: owner}, {path: language}, {path: lastDeployedAt}]
             sort: -lastDeployedAt
             link: {query: critical}
   entity:
@@ -281,7 +281,7 @@ spec:
             title: Recent
             width: 9
             query: deployments
-            columns: [environment, status, startedAt]
+            columns: [{path: environment}, {path: status}, {path: startedAt}]
             sort: -startedAt
             limit: 5
             link: {query: deployments}
@@ -327,14 +327,14 @@ spec:
             title: Incidents
             width: 8
             query: incidents
-            columns: [severity, status, openedBy, openedAt, resolvedAt]
+            columns: [{path: severity}, {path: status}, {path: openedBy}, {path: openedAt}, {path: resolvedAt}]
             sort: -openedAt
             limit: 8
             link: {query: incidents}
 $yaml$),
   ('user', $yaml$kind: Blueprint
 metadata:
-  name: user
+  identifier: user
   title: User
   description: Someone who can sign in to the portal.
   icon: user
@@ -359,7 +359,7 @@ spec:
 $yaml$),
   ('group', $yaml$kind: Blueprint
 metadata:
-  name: group
+  identifier: group
   title: Group
   description: A group from the identity provider.
   icon: users-round
@@ -373,7 +373,7 @@ spec:
 $yaml$),
   ('blueprint', $yaml$kind: Blueprint
 metadata:
-  name: blueprint
+  identifier: blueprint
   title: Blueprint
   description: A kind of entity in the catalog.
   icon: shapes
@@ -396,7 +396,7 @@ spec:
 $yaml$),
   ('integration', $yaml$kind: Blueprint
 metadata:
-  name: integration
+  identifier: integration
   title: Integration
   description: Where entities come from.
   icon: plug
@@ -430,7 +430,7 @@ spec:
 $yaml$),
   ('incident', $yaml$kind: Blueprint
 metadata:
-  name: incident
+  identifier: incident
   title: Incident
   description: Something broken that people are fixing. The Open incident action adds them.
   icon: siren
@@ -476,7 +476,7 @@ spec:
 $yaml$),
   ('action', $yaml$kind: Blueprint
 metadata:
-  name: action
+  identifier: action
   title: Action
   description: Something people run on an entity from its page, such as a restart. The Portal integration keeps these up to date.
   icon: zap
@@ -518,7 +518,7 @@ spec:
 $yaml$),
   ('run', $yaml$kind: Blueprint
 metadata:
-  name: run
+  identifier: run
   title: Run
   description: One run of an action in the last 30 days, without its inputs or outputs. The Portal integration keeps these up to date.
   icon: play
@@ -570,7 +570,7 @@ spec:
 $yaml$),
   ('deployment', $yaml$kind: Blueprint
 metadata:
-  name: deployment
+  identifier: deployment
   title: Deployment
   description: A release of a service to an environment.
   icon: rocket
@@ -635,13 +635,13 @@ spec:
             type: table
             title: Failed
             query: failed
-            columns: [service, environment, version, startedAt]
+            columns: [{path: service}, {path: environment}, {path: version}, {path: startedAt}]
             sort: -startedAt
             link: {query: failed}
 $yaml$),
   ('repository', $yaml$kind: Blueprint
 metadata:
-  name: repository
+  identifier: repository
   title: Repository
   description: A source repository.
   icon: folder-git-2
@@ -701,7 +701,7 @@ spec:
 $yaml$),
   ('merge-request', $yaml$kind: Blueprint
 metadata:
-  name: merge-request
+  identifier: merge-request
   title: Merge Request
   description: A proposed change to a repository.
   icon: git-pull-request
@@ -742,7 +742,7 @@ spec:
 $yaml$),
   ('namespace', $yaml$kind: Blueprint
 metadata:
-  name: namespace
+  identifier: namespace
   title: Namespace
   description: A group of repositories, such as a team's.
   icon: folder-tree
@@ -768,7 +768,7 @@ spec:
 $yaml$),
   ('pipeline', $yaml$kind: Blueprint
 metadata:
-  name: pipeline
+  identifier: pipeline
   title: Pipeline
   description: A CI/CD pipeline run of a repository.
   icon: workflow
@@ -835,7 +835,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 WITH example (identifier, source) AS (VALUES
   ('team-directory', $yaml$kind: Integration
 metadata:
-  name: team-directory
+  identifier: team-directory
   title: Team Directory
   description: Teams and their channels, from the team directory.
 spec:
@@ -859,7 +859,7 @@ spec:
 $yaml$),
   ('service-registry', $yaml$kind: Integration
 metadata:
-  name: service-registry
+  identifier: service-registry
   title: Service Registry
   description: Services from the deployment registry. Retired ones are left out.
 spec:
@@ -899,7 +899,7 @@ spec:
 $yaml$),
   ('incidents', $yaml$kind: Integration
 metadata:
-  name: incidents
+  identifier: incidents
   title: Incidents
   description: Incidents, which the Open incident and Resolve actions write.
 spec:
@@ -924,7 +924,7 @@ spec:
 $yaml$),
   ('portal', $yaml$kind: Integration
 metadata:
-  name: portal
+  identifier: portal
   title: Portal
   description: The portal's own users, groups, blueprints, integrations, actions and recent runs.
 spec:
@@ -941,7 +941,7 @@ spec:
         properties:
           email: .email
           active: .active
-          lastSignedIn: .lastSignedIn
+          lastSignedIn: .lastSignedInAt
           groups: .groups
     - resource: groups
       blueprint: group
@@ -1004,7 +1004,7 @@ spec:
 $yaml$),
   ('deploy-tracker', $yaml$kind: Integration
 metadata:
-  name: deploy-tracker
+  identifier: deploy-tracker
   title: Deploy Tracker
   description: Deployments, pulled from the deploy tracker's API.
 spec:
@@ -1040,7 +1040,7 @@ spec:
 $yaml$),
   ('gitlab', $yaml$kind: Integration
 metadata:
-  name: gitlab
+  identifier: gitlab
   title: GitLab
   description: Groups, projects with their default branches and CI configs, merge requests, pipelines and deployments from the acme group on GitLab.
 spec:
@@ -1150,7 +1150,7 @@ ON CONFLICT (secret_hash) DO NOTHING;
 WITH example (identifier, source) AS (VALUES
   ('service-readiness', $yaml$kind: Scorecard
 metadata:
-  name: service-readiness
+  identifier: service-readiness
   title: Service Readiness
   description: What a service needs before people can rely on it.
   icon: shield-check
@@ -1203,7 +1203,7 @@ spec:
 $yaml$),
   ('team-basics', $yaml$kind: Scorecard
 metadata:
-  name: team-basics
+  identifier: team-basics
   title: Team Basics
   description: How to reach a team.
   icon: contact
@@ -1242,7 +1242,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 WITH example (identifier, source) AS (VALUES
   ('services', $yaml$kind: Dashboard
 metadata:
-  name: services
+  identifier: services
   title: Services
   icon: server
   color: blue
@@ -1338,10 +1338,10 @@ spec:
       title: Services
       query: services
       columns:
-        - readiness
+        - {path: readiness}
         - {title: Failing Checks, path: readiness.failed}
-        - tier
-        - lastDeployedAt
+        - {path: tier}
+        - {path: lastDeployedAt}
       sort: -lastDeployedAt
       limit: 8
       link: {query: services}
@@ -1349,14 +1349,14 @@ spec:
       type: table
       title: Recent Deployments
       query: deployments
-      columns: [service, environment, status, startedAt]
+      columns: [{path: service}, {path: environment}, {path: status}, {path: startedAt}]
       sort: -startedAt
       limit: 8
       link: {query: deployments}
 $yaml$),
   ('operations', $yaml$kind: Dashboard
 metadata:
-  name: operations
+  identifier: operations
   title: Operations
   description: Incidents, and the actions people run on services.
   icon: activity
@@ -1457,7 +1457,7 @@ spec:
       width: 6
       title: Open Incidents
       query: open
-      columns: [severity, service, openedBy, openedAt]
+      columns: [{path: severity}, {path: service}, {path: openedBy}, {path: openedAt}]
       sort: -openedAt
       limit: 8
       link: {query: open}
@@ -1466,21 +1466,21 @@ spec:
       width: 6
       title: Actions
       query: actions
-      columns: [runsOn, approvals, runs, lastRunStatus]
+      columns: [{path: runsOn}, {path: approvals}, {path: runs}, {path: lastRunStatus}]
       sort: -runs
       link: {query: actions}
     recent:
       type: table
       title: Recent Runs
       query: runs
-      columns: [action, entity, requester, status, startedAt]
+      columns: [{path: action}, {path: entity}, {path: requester}, {path: status}, {path: startedAt}]
       sort: -startedAt
       limit: 8
       link: {query: runs}
 $yaml$),
   ('portal', $yaml$kind: Dashboard
 metadata:
-  name: portal
+  identifier: portal
   title: Portal
   description: What the portal holds and where it comes from.
   icon: database
@@ -1492,6 +1492,8 @@ spec:
     activeUsers:
       blueprint: user
       filter: {property: active, op: eq, value: true}
+    blueprints:
+      blueprint: blueprint
     integrations:
       blueprint: integration
     failing:
@@ -1510,7 +1512,7 @@ spec:
       title: Blueprints
       icon: shapes
       color: blue
-      value: {query: {blueprint: blueprint}}
+      value: {query: blueprints}
       link: {path: /blueprints}
     integrations:
       type: stat
@@ -1530,7 +1532,7 @@ spec:
       type: table
       title: Integrations
       query: integrations
-      columns: [connector, lastRunOutcome, entities, lastRunAt]
+      columns: [{path: connector}, {path: lastRunOutcome}, {path: entities}, {path: lastRunAt}]
       sort: -entities
       rowLink: {path: '/integrations/{{ .identifier }}'}
       link: {query: integrations}
@@ -1552,7 +1554,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 WITH example (identifier, source) AS (VALUES
   ('restart', $yaml$kind: Action
 metadata:
-  name: restart
+  identifier: restart
   title: Restart
   description: Restarts the service in one environment.
   icon: rotate-cw
@@ -1600,7 +1602,7 @@ spec:
 $yaml$),
   ('scale', $yaml$kind: Action
 metadata:
-  name: scale
+  identifier: scale
   title: Scale
   description: Sets how many replicas the service runs in one environment.
   icon: scaling
@@ -1662,7 +1664,7 @@ spec:
 $yaml$),
   ('open-incident', $yaml$kind: Action
 metadata:
-  name: open-incident
+  identifier: open-incident
   title: Open incident
   description: Opens an incident on the service with its own channel, and adds it to the catalog.
   icon: siren
@@ -1735,7 +1737,7 @@ spec:
 $yaml$),
   ('resolve-incident', $yaml$kind: Action
 metadata:
-  name: resolve-incident
+  identifier: resolve-incident
   title: Resolve
   description: Resolves an open incident.
   icon: circle-check
@@ -1786,7 +1788,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 WITH example (identifier, source) AS (VALUES
   ('restart-services', $yaml$kind: Workflow
 metadata:
-  name: restart-services
+  identifier: restart-services
   title: Restart services
   description: Restarts several services in one environment, each only where you can restart it.
   icon: rotate-cw
@@ -1837,7 +1839,7 @@ spec:
 $yaml$),
   ('register-service', $yaml$kind: Workflow
 metadata:
-  name: register-service
+  identifier: register-service
   title: Register a service
   description: Creates a repository for a new service and registers the service, which the catalog then syncs, once a platform engineer approves.
   icon: package-plus

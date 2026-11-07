@@ -69,7 +69,7 @@ const dashboard = {
   }),
   "GET catalog": ok([{ identifier: "service", title: "Service", entities: 2 }]),
   "GET catalog/service": ok({
-    entities: [{ blueprint: "service", identifier: "ledger", title: "Ledger" }],
+    items: [{ blueprint: "service", identifier: "ledger", title: "Ledger" }],
     total: 1,
   }),
 };
@@ -128,7 +128,7 @@ describe("actions widget", () => {
 
     expect(await screen.findByText("Couldn't load")).toBeInTheDocument();
     expect(screen.getByText("you can't see the catalog")).toBeInTheDocument();
-    expect(screen.queryByText("Nothing to run")).not.toBeInTheDocument();
+    expect(screen.queryByText("No actions yet")).not.toBeInTheDocument();
   });
 
   it("says so when there's nothing to run", async () => {
@@ -143,7 +143,7 @@ describe("actions widget", () => {
     });
     renderRoute("/");
 
-    expect(await screen.findByText("Nothing to run")).toBeInTheDocument();
+    expect(await screen.findByText("No actions yet")).toBeInTheDocument();
   });
 
   it("runs on the page's entity, leaving out what the viewer can't run there", async () => {
@@ -186,7 +186,7 @@ describe("actions widget", () => {
       "GET catalog/service/scorecards": ok([]),
       "GET catalog/service/actions": ok([restart]),
       "GET self-service": dashboard["GET self-service"],
-      "GET runs": ok({ runs: [], total: 0 }),
+      "GET runs": ok({ items: [], total: 0 }),
     });
     renderRoute("/catalog/service/ledger?tab=incidents");
 

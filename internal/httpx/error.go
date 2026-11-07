@@ -16,6 +16,36 @@ type Error struct {
 func (e Error) Error() string   { return e.Message }
 func (e Error) StatusCode() int { return e.Code }
 
+// BadRequest is the one 400 every handler answers with.
+func BadRequest(message string) error {
+	return Error{Code: http.StatusBadRequest, Message: message}
+}
+
+// NotFound is the one 404 every handler answers with.
+func NotFound(message string) error {
+	return Error{Code: http.StatusNotFound, Message: message}
+}
+
+func Unauthorized(message string) error {
+	return Error{Code: http.StatusUnauthorized, Message: message}
+}
+
+func Forbidden(message string) error {
+	return Error{Code: http.StatusForbidden, Message: message}
+}
+
+func Conflict(message string) error {
+	return Error{Code: http.StatusConflict, Message: message}
+}
+
+func Unprocessable(message string) error {
+	return Error{Code: http.StatusUnprocessableEntity, Message: message}
+}
+
+func BadGateway(message string) error {
+	return Error{Code: http.StatusBadGateway, Message: message}
+}
+
 type errorBody struct {
 	Error struct {
 		Message string `json:"message"`

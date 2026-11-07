@@ -15,18 +15,36 @@ import (
 
 func parse(t *testing.T, source string, scope Scope) ([]Widget, []configdoc.Issue) {
 	t.Helper()
+
+	return parseWith(t, "", source, scope)
+}
+
+// parseWith reads widgets beside the queries they name, as a page does.
+func parseWith(t *testing.T, queries, source string, scope Scope) ([]Widget, []configdoc.Issue) {
+	t.Helper()
+	r := &configdoc.Reader{}
+	if queries != "" {
+		var node yaml.Node
+		if err := yaml.Unmarshal([]byte(queries), &node); err != nil {
+			t.Fatal(err)
+		}
+		scope.Queries = ParseQueries(r, node.Content[0], "queries", scope)
+	}
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(source), &node); err != nil {
 		t.Fatal(err)
 	}
-	r := &configdoc.Reader{}
 	widgets := Parse(r, node.Content[0], "widgets", scope)
 
 	return widgets, r.Issues
 }
 
 func TestParse(t *testing.T) {
-	widgets, issues := parse(t, `
+	widgets, issues := parseWith(t, `
+teams: {}
+ownedServices: {blueprint: service, filter: {property: owner, op: eq, value: $entity}}
+deployments: {blueprint: deployment}
+`, `
 count:
   type: stat
   title: Services
@@ -35,12 +53,12 @@ byTier:
   type: donut
   title: By tier
   groupBy: tier
-  link: {query: {}, group: true}
+  link: {query: teams, group: true}
 services:
   type: table
   title: Services
-  query: {blueprint: service, filter: {property: owner, op: eq, value: $entity}}
-  columns: [tier, {title: Owner, path: owner.title}, {title: Age, jq: '.createdAt | fromdate', unit: d}]
+  query: ownedServices
+  columns: [{path: tier}, {title: Owner, path: owner.title}, {title: Age, jq: '.createdAt | fromdate', unit: d}]
   sort: -lastDeployedAt
   rowLink: {path: '/catalog/service/{{ .identifier }}'}
 byOwner:
@@ -58,7 +76,7 @@ deploys:
   title: Deploys
   icon: rocket
   color: red
-  value: {query: {blueprint: deployment}, sum: cost, unit: $}
+  value: {query: deployments, sum: cost, unit: $}
   link: {url: 'https://deploys.example.com/?team={{ $entity.identifier }}'}
 `, Scope{Blueprint: "team", Entity: true})
 	if configdoc.HasErrors(issues) {
@@ -147,25 +165,21 @@ func TestParseReportsProblems(t *testing.T) {
 	}{
 		{"bad type", "w: {type: pie}", home, "widgets.w.type", "type must be one of"},
 		{"wrong field", "w: {type: markdown, text: x, groupBy: a}", home, "widgets.w.groupBy", "unknown field"},
-		{"old shape", "w: {type: stat, title: W, blueprint: s, aggregate: count}", home, "widgets.w.blueprint", "moved to query"},
-		{"old ignoreFilters", "w: {type: bar, title: W, query: {blueprint: s}, groupBy: a, ignoreFilters: [team]}", home, "widgets.w.ignoreFilters", "no longer take ignoreFilters"},
-		{"home needs a query", "w: {type: bar, title: W, groupBy: a}", home, "widgets.w.query", "add the query"},
+		{"unknown widget field", "w: {type: stat, title: W, blueprint: s, aggregate: count}", home, "widgets.w.blueprint", "unknown field"},
+		{"home needs a query", "w: {type: bar, title: W, groupBy: a}", home, "widgets.w.query", "add the name of the query"},
 		{"stat needs a value", "w: {type: stat, title: W}", catalog, "widgets.w.value", "add the value"},
-		{"home value needs a query", "w: {type: stat, title: W, value: {}}", home, "widgets.w.value.query", "add the query"},
-		{"inline query needs a blueprint on home", "w: {type: table, title: W, query: {filter: {property: a, op: exists}}}", home, "widgets.w.query.blueprint", "add the blueprint"},
+		{"home value needs a query", "w: {type: stat, title: W, value: {}}", home, "widgets.w.value.query", "add the name of the query"},
+		{"query in place", "w: {type: table, title: W, query: {blueprint: s}}", home, "widgets.w.query", "name of a query declared in queries"},
+		{"value query in place", "w: {type: stat, title: W, value: {query: {blueprint: s}}}", home, "widgets.w.value.query", "name of a query declared in queries"},
+		{"link query in place", "w: {type: bar, title: W, groupBy: a, link: {query: {blueprint: s}}}", catalog, "widgets.w.link.query", "name of a query declared in queries"},
 		{"unknown query", "w: {type: table, title: W, query: services}", home, "widgets.w.query", `no query "services"`},
-		{"old calc", "w: {type: stat, title: W, value: {calc: count}}", catalog, "widgets.w.value.calc", "calc is gone"},
+		{"unknown value field", "w: {type: stat, title: W, value: {calc: count}}", catalog, "widgets.w.value.calc", "unknown field"},
 		{"bad jq value", "w: {type: stat, title: W, value: {jq: 'map(.x'}}", catalog, "widgets.w.value.jq", "doesn't compile"},
-		{"nested jq", "w: {type: stat, title: W, value: {jq: 'map(.properties.cost) | add'}}", catalog, "widgets.w.value.jq", "write .cost, not .properties.cost"},
 		{"jq value with entity off its page", "w: {type: stat, title: W, value: {jq: '$entity.x'}}", catalog, "widgets.w.value.jq", "$entity"},
 		{"two ops", "w: {type: stat, title: W, value: {sum: cost, avg: cost}}", catalog, "widgets.w.value.avg", "takes one of"},
 		{"sum takes a path", "w: {type: stat, title: W, value: {sum: 'cost * 2'}}", catalog, "widgets.w.value.sum", "path of a number field"},
 		{"share has no unit", "w: {type: stat, title: W, value: {share: {property: a, op: exists}, unit: h}}", catalog, "widgets.w.value.unit", "percent"},
-		{"in takes values", "w: {type: table, title: W, query: {filter: {property: a, op: in, value: [x]}}}", catalog, "widgets.w.query.filter", "in on a takes values"},
-		{"values is a list or a variable", "w: {type: table, title: W, query: {filter: {property: a, op: in, values: x}}}", catalog, "widgets.w.query.filter", "values on a is a list"},
-		{"old built-in", "w: {type: table, title: W, query: {filter: {property: $title, op: exists}}}", catalog, "widgets.w.query.filter", "built-in fields are written plain, as title"},
-		{"old scorecard", "w: {type: table, title: W, columns: [$scorecard.readiness]}", catalog, "widgets.w.columns[0]", "declare a scorecard property"},
-		{"old day offset", "w: {type: table, title: W, query: {filter: {property: at, op: gte, value: $today-7d}}}", catalog, "widgets.w.query.filter", "use op: within"},
+		{"bare column", "w: {type: table, title: W, columns: [tier]}", catalog, "widgets.w.columns[0]", "must be a mapping"},
 		{"width", "w: {type: markdown, text: x, width: 13}", home, "widgets.w.width", "1 to 12"},
 		{"group by", "w: {type: bar, title: W}", catalog, "widgets.w.groupBy", "add the property"},
 		{"split group by", "w: {type: split, title: W}", catalog, "widgets.w.groupBy", "add the property"},
@@ -174,16 +188,11 @@ func TestParseReportsProblems(t *testing.T) {
 		{"matrix measures", "w: {type: matrix, title: W, groupBy: owner}", catalog, "widgets.w.measures", "add the measures"},
 		{"measure share", "w: {type: matrix, title: W, groupBy: owner, measures: [{title: M}]}", catalog, "widgets.w.measures[0].share", "add the condition"},
 		{"measure title", "w: {type: matrix, title: W, groupBy: owner, measures: [{share: {property: a, op: exists}}]}", catalog, "widgets.w.measures[0].title", "add the measure's title"},
-		{"entity off its page", "w: {type: table, title: W, query: {filter: {property: owner, op: eq, value: $entity}}}", catalog, "widgets.w.query.filter", "only entity pages"},
 		{"properties off entity", "w: {type: properties, title: W}", catalog, "widgets.w.type", "go on entity pages"},
-		{"input off home", "w: {type: table, title: W, query: {filter: {property: owner, op: eq, value: $input.team}}}", catalog, "widgets.w.query.filter", "only Home has it"},
-		{"old filter variable", "w: {type: table, title: W, query: {filter: {property: owner, op: eq, value: $filter.team}}}", catalog, "widgets.w.query.filter", "now $input.team"},
-		{"unknown me attribute", "w: {type: table, title: W, query: {filter: {property: owner, op: in, values: [$me.nmae]}}}", catalog, "widgets.w.query.filter", "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups"},
 		{"unknown text variable", "w: {type: markdown, text: 'Hi {{ $me.nmae }}'}", catalog, "widgets.w.text", "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups"},
 		{"empty token", "w: {type: markdown, text: 'Hi {{}}'}", catalog, "widgets.w.text", "{{}} must name a variable, like {{ $me.name }}"},
 		{"title variable off home", "w: {type: table, title: '{{ $me.name }}'}", catalog, "widgets.w.title", "only have them in markdown text"},
 		{"description variable off home", "w: {type: table, title: W, description: '{{ $me.name }}'}", catalog, "widgets.w.description", "only have them in markdown text"},
-		{"undeclared input", "w: {type: table, title: W, query: {blueprint: s, filter: {property: owner, op: in, values: $input.team}}}", Scope{Inputs: []string{"tier"}}, "widgets.w.query.filter", `no input "team"`},
 		{"unknown color", "w: {type: stat, title: W, value: {}, icon: rocket, color: mauve}", catalog, "widgets.w.color", "color must be one of"},
 		{"matrix overall", "w: {type: matrix, title: W, groupBy: owner, overall: yes please, measures: [{title: M, share: {property: a, op: exists}}]}", catalog, "widgets.w.overall", "true or false"},
 		{"color without icon", "w: {type: stat, title: W, value: {}, color: red}", catalog, "widgets.w.color", "add an icon"},
@@ -191,7 +200,6 @@ func TestParseReportsProblems(t *testing.T) {
 		{"link is a mapping", "w: {type: table, title: W, link: path}", catalog, "widgets.w.link", "{query}, {url} or {path}"},
 		{"link takes one", "w: {type: table, title: W, link: {url: 'https://x', path: /x}}", catalog, "widgets.w.link", "one of query, url or path"},
 		{"link filter needs a query", "w: {type: table, title: W, link: {path: /x, filter: {property: a, op: exists}}}", catalog, "widgets.w.link.filter", "goes with query"},
-		{"group off groups", "w: {type: table, title: W, link: {query: {}, group: true}}", catalog, "widgets.w.link.group", "only bars, donuts and splits"},
 		{"group needs a query", "w: {type: bar, title: W, groupBy: a, link: {path: /x, group: true}}", catalog, "widgets.w.link.group", "goes with query"},
 		{"url scheme", "w: {type: table, title: W, link: {url: 'javascript:alert(1)'}}", catalog, "widgets.w.link.url", "https://"},
 		{"path leaves", "w: {type: table, title: W, link: {path: '//evil.example.com'}}", catalog, "widgets.w.link.path", "path in the portal"},
@@ -199,13 +207,46 @@ func TestParseReportsProblems(t *testing.T) {
 		{"row link query", "w: {type: table, title: W, rowLink: {query: {}}}", catalog, "widgets.w.rowLink.query", "unknown field"},
 		{"column title", "w: {type: table, title: W, columns: [{jq: .x}]}", catalog, "widgets.w.columns[0].title", "add the column's title"},
 		{"column jq", "w: {type: table, title: W, columns: [{title: X, jq: '.x |'}]}", catalog, "widgets.w.columns[0].jq", "doesn't compile"},
-		{"old column value", "w: {type: table, title: W, columns: [{title: X, value: .x}]}", catalog, "widgets.w.columns[0].value", "now jq"},
+		{"unknown column field", "w: {type: table, title: W, columns: [{title: X, value: .x}]}", catalog, "widgets.w.columns[0].value", "unknown field"},
 		{"column path and jq", "w: {type: table, title: W, columns: [{title: X, path: x, jq: .x}]}", catalog, "widgets.w.columns[0]", "not both"},
 		{"scorecard query of nothing", "w: {type: scorecard, title: W, scorecard: s, query: nope}", catalog, "widgets.w.query", `no query "nope"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, issues := parse(t, test.source, test.scope)
+			for _, issue := range issues {
+				if issue.Path == test.path && strings.Contains(issue.Message, test.message) {
+					return
+				}
+			}
+			t.Fatalf("issues = %+v, want %s: %s", issues, test.path, test.message)
+		})
+	}
+}
+
+func TestParseReportsProblemsInQueries(t *testing.T) {
+	home, catalog := Scope{}, Scope{Blueprint: "service"}
+	tests := []struct {
+		name, queries, source string
+		scope                 Scope
+		path, message         string
+	}{
+		{"blueprint on home", "q: {filter: {property: a, op: exists}}", "w: {type: table, title: W, query: q}", home, "queries.q.blueprint", "add the blueprint"},
+		{"in takes values", "q: {filter: {property: a, op: in, value: [x]}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "in on a takes values"},
+		{"values is a list or a variable", "q: {filter: {property: a, op: in, values: x}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "values on a is a list"},
+		{"entity off its page", "q: {filter: {property: owner, op: eq, value: $entity}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "only entity pages"},
+		{"input off home", "q: {filter: {property: owner, op: eq, value: $input.team}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "only Home has it"},
+		{"unknown me attribute", "q: {filter: {property: owner, op: in, values: [$me.nmae]}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups"},
+		{"unknown variable", "q: {filter: {property: at, op: gte, value: $today-7d}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "unknown variable $today-7d"},
+		{"unknown variable in values", "q: {filter: {property: at, op: in, values: [$tier]}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "unknown variable $tier"},
+		{"variable as a property", "q: {filter: {property: $title, op: exists}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "unknown variable $title"},
+		{"scorecard as a property", "q: {filter: {property: $scorecard.readiness, op: exists}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "unknown variable $scorecard.readiness"},
+		{"undeclared input", "q: {blueprint: s, filter: {property: owner, op: in, values: $input.team}}", "w: {type: table, title: W, query: q}", Scope{Inputs: []string{"tier"}}, "queries.q.filter", `no input "team"`},
+		{"group off groups", "q: {}", "w: {type: table, title: W, link: {query: q, group: true}}", catalog, "widgets.w.link.group", "only bars, donuts and splits"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, issues := parseWith(t, test.queries, test.source, test.scope)
 			for _, issue := range issues {
 				if issue.Path == test.path && strings.Contains(issue.Message, test.message) {
 					return
@@ -223,7 +264,7 @@ deployments:
   title: Deployments
   icon: rocket
   widgets:
-    count: {type: stat, title: Deployments, value: {query: {blueprint: deployment}}}
+    count: {type: stat, title: Deployments, value: {}}
 entities:
   widgets:
     note: {type: markdown, text: hi}
@@ -358,26 +399,22 @@ func TestFilterJSONValues(t *testing.T) {
 }
 
 func TestParseMeVariables(t *testing.T) {
-	r := &configdoc.Reader{}
-	var node yaml.Node
-	if err := yaml.Unmarshal([]byte(`
+	queries := "owned: {blueprint: s, filter: {property: owner, op: eq, value: $me.groups}}"
+	source := `
 hello: {type: markdown, text: "Hi {{ $me.name }}, you're in {{$me.groups}}. Pay $5."}
-mine: {type: stat, title: "{{ $me.email }}", description: "As {{ $me.role }}", value: {query: {blueprint: s, filter: {property: owner, op: eq, value: $me.groups}}}}
-`), &node); err != nil {
-		t.Fatal(err)
-	}
-	widgets := Parse(r, node.Content[0], "widgets", Scope{})
-	if len(r.Issues) > 0 {
-		t.Fatalf("issues = %+v", r.Issues)
+mine: {type: stat, title: "{{ $me.email }}", description: "As {{ $me.role }}", value: {query: owned}}
+`
+	widgets, issues := parseWith(t, queries, source, Scope{})
+	if len(issues) > 0 {
+		t.Fatalf("issues = %+v", issues)
 	}
 	if f := widgets[1].Value.Query.Filter; f.Value != ValueMe+".groups" {
 		t.Fatalf("filter = %+v", f)
 	}
 	// Markdown text takes variables on a blueprint's pages too.
-	r = &configdoc.Reader{}
-	Parse(r, node.Content[0], "widgets", Scope{Blueprint: "s"})
-	if len(r.Issues) != 2 || r.Issues[0].Path != "widgets.mine.title" || r.Issues[1].Path != "widgets.mine.description" {
-		t.Fatalf("issues = %+v", r.Issues)
+	_, issues = parseWith(t, queries, source, Scope{Blueprint: "s"})
+	if len(issues) != 2 || issues[0].Path != "widgets.mine.title" || issues[1].Path != "widgets.mine.description" {
+		t.Fatalf("issues = %+v", issues)
 	}
 }
 

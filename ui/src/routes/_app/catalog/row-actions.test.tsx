@@ -64,7 +64,7 @@ describe("row actions", () => {
       ...member,
       "GET blueprints/service": ok(service),
       "GET catalog/service": ok({
-        entities: [entity("ledger", "Ledger"), entity("a,b", "Odd One"), entity("idle", "Idle")],
+        items: [entity("ledger", "Ledger"), entity("a,b", "Odd One"), entity("idle", "Idle")],
         total: 3,
       }),
       "GET catalog/service/facets": ok([]),
