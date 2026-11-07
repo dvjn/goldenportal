@@ -3,6 +3,14 @@ services:
     image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.4-bookworm}
     container_name: ${POSTGRES_CONTAINER:-goldenportal-postgres}
     user: root
+    # Statement statistics, and the plans of statements slower than 300 ms
+    # in its log, for finding what's slow.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements,auto_explain
+      - -c
+      - auto_explain.log_min_duration=300ms
     environment:
       POSTGRES_USER: ${DB_USER:-goldenportal}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-goldenportal-local-dev-password}

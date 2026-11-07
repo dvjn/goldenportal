@@ -10,8 +10,9 @@ sso:
   clients:
     - id: ${GP_OIDC_CLIENT_ID}
       secret: ${GP_OIDC_CLIENT_SECRET}
-      # Any localhost port, so the Vite dev server and a locally built binary both work.
-      redirect: ^http://localhost:\d+/api/web/auth/callback$
+      # Any host, so the Vite dev server, a locally built binary and an address
+      # set in configs/.dev.local.env all work.
+      redirect: ^https?://[^/]+/api/web/auth/callback$
   users:
     - {email: admin@example.com, name: Dev Admin}
     - {email: member@example.com, name: Dev Member}

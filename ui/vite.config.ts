@@ -39,6 +39,9 @@ export default defineConfig({
   server: {
     port: 47273,
     strictPort: true,
+    // configs/.dev.local.env can serve the dev server at another address.
+    host: process.env.VITE_DEV_HOST,
+    allowedHosts: process.env.GP_BASE_URL ? [new URL(process.env.GP_BASE_URL).hostname] : [],
     proxy: {
       "/api": {
         target: process.env.VITE_DEV_API_PROXY_TARGET ?? "http://localhost:47200",

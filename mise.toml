@@ -19,7 +19,7 @@ run = "mise run dev"
 [tasks."dev:seed"]
 description = "Load deps/seed.sql once the API has migrated the database (safe to run again)"
 depends = ["deps:up"]
-env = { _.file = "configs/.dev.env" }
+env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = '''
 set -eu
 compose="docker compose --env-file configs/.dev.env -f deps.dev.yaml"
@@ -43,7 +43,7 @@ echo "Seed data loaded"
 [tasks."api:dev"]
 description = "Run the API with hot reload"
 depends = ["deps:up"]
-env = { _.file = "configs/.dev.env" }
+env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = "air --build.cmd 'go build -o .local/tmp/goldenportal ./cmd/goldenportal' --build.bin .local/tmp/goldenportal -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,deps,.local' --misc.clean_on_exit true"
 
 [tasks.build]
@@ -71,6 +71,7 @@ run = "podman build --platform linux/amd64,linux/arm64 --manifest goldenportal:l
 [tasks."ui:dev"]
 description = "Run the Vite dev server on port 47273, proxying /api to the API"
 dir = "ui"
+env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = "pnpm install --frozen-lockfile && pnpm dev"
 
 [tasks."ui:build"]
@@ -85,7 +86,7 @@ run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
 
 [tasks."deps:up"]
 description = "Start local Postgres and the mock services"
-env = { _.file = "configs/.dev.env" }
+env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = '''
 set -eu
 mkdir -p .local/postgres
@@ -102,13 +103,14 @@ until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgr
   fi
   sleep 1
 done
+docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgres psql -q -U "$DB_USER" -d "$DB_NAME" -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
 
 echo "PostgreSQL ready. Mock services at http://localhost:47800."
 '''
 
 [tasks."deps:reset"]
 description = "Delete the local Golden Portal database"
-env = { _.file = "configs/.dev.env" }
+env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = '''
 set -eu
 docker compose --env-file configs/.dev.env -f deps.dev.yaml stop postgres >/dev/null 2>&1 || true
@@ -121,12 +123,12 @@ echo "Deleted the local database"
 
 [tasks."deps:down"]
 description = "Stop local Postgres and the mock services"
-env = { _.file = "configs/.dev.env" }
+env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml down"
 
 [tasks."deps:logs"]
 description = "Follow local dependency logs"
-env = { _.file = "configs/.dev.env" }
+env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml logs -f"
 
 [tasks.fmt]
