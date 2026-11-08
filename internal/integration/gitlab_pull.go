@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // gitlabEnabled reports whether a project has what resource needs turned
@@ -190,7 +191,7 @@ func (p *gitlabPull) pullGroups(ctx context.Context) ([]map[string]any, error) {
 	for _, path := range p.config.Groups {
 		group, err := p.find(ctx, "group", path)
 		if err != nil {
-			if err := p.fail(gitlabResources, path, err); err != nil {
+			if err := p.fail(ctx, gitlabResources, path, err); err != nil {
 				return nil, err
 			}
 			continue
@@ -207,12 +208,12 @@ func (p *gitlabPull) pullGroups(ctx context.Context) ([]map[string]any, error) {
 			return nil
 		})
 		if err := skipGone(err); err != nil {
-			if err := p.fail(gitlabGroupResources, path, err); err != nil {
+			if err := p.fail(ctx, gitlabGroupResources, path, err); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		if err := p.fail([]string{gitlabGroups}, path, p.emitObjects(gitlabGroups, all, nil)); err != nil {
+		if err := p.fail(ctx, []string{gitlabGroups}, path, p.emitObjects(gitlabGroups, all, nil)); err != nil {
 			return nil, err
 		}
 		if !p.want[gitlabMembers] {
@@ -223,7 +224,7 @@ func (p *gitlabPull) pullGroups(ctx context.Context) ([]map[string]any, error) {
 			err := p.read(ctx, listing{path: "groups/" + idOf(g["id"]) + "/members"}, func(members []map[string]any) error {
 				return p.emitObjects(gitlabMembers, members, map[string]any{"group": fullPath})
 			})
-			if err := p.fail([]string{gitlabMembers}, fullPath, skipGone(err)); err != nil {
+			if err := p.fail(ctx, []string{gitlabMembers}, fullPath, skipGone(err)); err != nil {
 				return nil, err
 			}
 		}
@@ -338,7 +339,7 @@ func (p *gitlabPull) readProjects(ctx context.Context, groups []map[string]any) 
 			}
 			return nil
 		})
-		if err := p.fail(gitlabProjectResources, fullPath, skipGone(err)); err != nil {
+		if err := p.fail(ctx, gitlabProjectResources, fullPath, skipGone(err)); err != nil {
 			return err
 		}
 	}
@@ -346,7 +347,7 @@ func (p *gitlabPull) readProjects(ctx context.Context, groups []map[string]any) 
 		project, err := p.find(ctx, "project", path)
 		switch {
 		case err != nil:
-			if err := p.fail(gitlabProjectResources, path, err); err != nil {
+			if err := p.fail(ctx, gitlabProjectResources, path, err); err != nil {
 				return err
 			}
 		case p.config.ExcludeArchived && project["archived"] == true:
@@ -681,12 +682,14 @@ func gitlabWithLastDeployment(ctx context.Context, client *gitlabClient, base, f
 }
 
 // pullProject reads one project.
-func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) error {
+func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) (err error) {
 	fullPath, _ := project["path_with_namespace"].(string)
+	ctx, span := telemetry.Start(ctx, "pull project", telemetry.Scope.String(fullPath))
+	defer func() { telemetry.End(span, err) }()
 	base := "projects/" + idOf(project["id"]) + "/"
 	parent := map[string]any{"project": fullPath}
-	simple := func(resource, path string) func() error {
-		return func() error {
+	simple := func(resource, path string) func(context.Context) error {
+		return func(ctx context.Context) error {
 			return p.read(ctx, listing{path: base + path}, func(objects []map[string]any) error {
 				return p.emitObjects(resource, objects, parent)
 			})
@@ -694,24 +697,26 @@ func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) er
 	}
 	steps := []struct {
 		resources []string
-		run       func() error
+		run       func(ctx context.Context) error
 	}{
-		{[]string{gitlabProjects}, func() error {
+		{[]string{gitlabProjects}, func(ctx context.Context) error {
 			if err := gitlabWithDefaultBranch(ctx, p.client, p.groups, project); err != nil {
 				return err
 			}
 			return p.emitObjects(gitlabProjects, []map[string]any{project}, nil)
 		}},
 		{[]string{gitlabTags}, simple(gitlabTags, "repository/tags")},
-		{[]string{gitlabMergeRequests}, func() error { return p.readOpenAndRecent(ctx, gitlabMergeRequests, base+"merge_requests", parent) }},
-		{[]string{gitlabIssues}, func() error { return p.readOpenAndRecent(ctx, gitlabIssues, base+"issues", parent) }},
+		{[]string{gitlabMergeRequests}, func(ctx context.Context) error {
+			return p.readOpenAndRecent(ctx, gitlabMergeRequests, base+"merge_requests", parent)
+		}},
+		{[]string{gitlabIssues}, func(ctx context.Context) error { return p.readOpenAndRecent(ctx, gitlabIssues, base+"issues", parent) }},
 		{[]string{gitlabReleases}, simple(gitlabReleases, "releases")},
-		{[]string{gitlabPipelines, gitlabJobs}, func() error { return p.pullPipelines(ctx, base, fullPath) }},
-		{[]string{gitlabDeployments}, func() error {
+		{[]string{gitlabPipelines, gitlabJobs}, func(ctx context.Context) error { return p.pullPipelines(ctx, base, fullPath) }},
+		{[]string{gitlabDeployments}, func(ctx context.Context) error {
 			l := listing{path: base + "deployments?order_by=id&sort=desc", stop: p.olderThan("created_at")}
 			return p.read(ctx, l, func(objects []map[string]any) error { return p.emitObjects(gitlabDeployments, objects, parent) })
 		}},
-		{[]string{gitlabEnvironments}, func() error {
+		{[]string{gitlabEnvironments}, func(ctx context.Context) error {
 			return p.read(ctx, listing{path: base + "environments"}, func(environments []map[string]any) error {
 				for _, environment := range environments {
 					if err := gitlabWithLastDeployment(ctx, p.client, base, fullPath, environment); err != nil {
@@ -726,16 +731,24 @@ func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) er
 		if !p.wantsAny(s.resources) || !gitlabEnabled(project, s.resources[0]) {
 			continue
 		}
-		err := s.run()
-		if apiGone(err) {
-			err = p.unlessGone(ctx, base, err)
-		}
-		if err := p.fail(s.resources, fullPath, err); err != nil {
+		if err := p.step(ctx, s.resources, fullPath, base, s.run); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// step reads resources of a project, as a span of its own.
+func (p *gitlabPull) step(ctx context.Context, resources []string, fullPath, base string, run func(context.Context) error) error {
+	ctx, span := telemetry.Start(ctx, "read "+resources[0], telemetry.Resource.String(resources[0]))
+	err := run(ctx)
+	if apiGone(err) {
+		err = p.unlessGone(ctx, base, err)
+	}
+	telemetry.End(span, err)
+
+	return p.fail(ctx, resources, fullPath, err)
 }
 
 // unlessGone is err, a 404 on part of a project, unless the project is gone
@@ -802,7 +815,7 @@ func (p *gitlabPull) pullPipelines(ctx context.Context, base, fullPath string) e
 			return p.emitObjects(gitlabJobs, jobs, parent)
 		})
 		if err := skipGone(err); err != nil {
-			return p.fail([]string{gitlabJobs}, fullPath, err)
+			return p.fail(ctx, []string{gitlabJobs}, fullPath, err)
 		}
 	}
 

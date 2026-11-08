@@ -27,6 +27,20 @@ services:
       timeout: 3s
       retries: 20
 
+  # Where the API sends its spans and the UI's, as configs/.dev.env says;
+  # its UI is at http://localhost:47686. deps/jaeger.yaml sets it up.
+  jaeger:
+    image: ${JAEGER_IMAGE:-docker.io/jaegertracing/jaeger:2.22.0}
+    container_name: ${JAEGER_CONTAINER:-goldenportal-jaeger}
+    user: root
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    ports:
+      - "${JAEGER_UI_PORT:-47686}:16686"
+      - "${JAEGER_OTLP_PORT:-47317}:4317"
+    volumes:
+      - ./deps/jaeger.yaml:/etc/jaeger/config.yaml:ro
+      - ./.local/jaeger:/var/lib/jaeger
+
   # Everything else the portal talks to in development: sign-in, an ops API,
   # a deploy tracker, a service registry, GitLab and a pusher.
   # deps/mock/mock.yaml sets it up.

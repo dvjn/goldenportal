@@ -30,7 +30,7 @@ func Register(app httpx.Routes, portalURL string) {
 	app.POST("runs/{id}/decide", decide)
 	app.GET("approvals", approvals)
 	app.AddCronJob(SweepSchedule, "carry-on-action-runs", func(ctx *gofr.Context) {
-		NewRunner(ctx.SQL, ctx.Container.Logger, baseURL).Sweep(ctx)
+		NewRunner(ctx.SQL, baseURL).Sweep(ctx)
 	})
 }
 

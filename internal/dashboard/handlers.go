@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
@@ -18,6 +19,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/scorecard"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
@@ -141,7 +143,7 @@ func explain(err error) string {
 
 func logProblems(ctx *gofr.Context, spec Spec, problems map[string]error) {
 	for id, err := range problems {
-		ctx.Errorf("find the default of input %s on dashboard %s: %v", id, spec.Identifier, err)
+		telemetry.Error(ctx, "input default not found", err, telemetry.Dashboard.String(spec.Identifier), attribute.String("gp.input", id))
 	}
 }
 
@@ -243,7 +245,9 @@ func dashboardData(ctx *gofr.Context) (any, error) {
 // Data loads every widget on a dashboard, as Home shows it to whoever is
 // looking, with its inputs as picked, by input identifier. An empty list
 // clears an input, and an input left out takes its default.
-func Data(ctx *gofr.Context, name string, inputs map[string][]string, draft bool) (PageData, error) {
+func Data(ctx *gofr.Context, name string, inputs map[string][]string, draft bool) (_ PageData, err error) {
+	end := telemetry.Within(ctx, "load dashboard", telemetry.Dashboard.String(name), attribute.Bool("gp.draft", draft))
+	defer func() { end(err) }()
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
 		return PageData{}, err
@@ -313,7 +317,7 @@ func newLoader(ctx *gofr.Context, env widget.Env, own *blueprint.Spec) (loader, 
 
 	return loader{
 		ctx: ctx, db: ctx.SQL, store: entity.NewStore(ctx.SQL), blueprints: blueprints, ladders: ladders,
-		scorecards: scorecards, env: env, logf: ctx.Errorf,
+		scorecards: scorecards, env: env, log: telemetry.Error,
 	}, nil
 }
 
@@ -375,7 +379,10 @@ type PageRequest struct {
 
 // PageTab loads every widget on one tab of a blueprint's pages. Entity
 // pages need the entity, for $entity.
-func PageTab(ctx *gofr.Context, req PageRequest) (PageData, error) {
+func PageTab(ctx *gofr.Context, req PageRequest) (_ PageData, err error) {
+	end := telemetry.Within(ctx, "load tab", telemetry.Blueprint.String(req.Blueprint), attribute.String("gp.page", req.Page),
+		attribute.String("gp.tab", req.Tab), attribute.Bool("gp.draft", req.Draft))
+	defer func() { end(err) }()
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
 		return PageData{}, err

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
@@ -14,6 +16,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // Run modes.
@@ -99,7 +102,30 @@ func authenticate(ctx *gofr.Context, secret string) (writer, error) {
 // ?mode=complete, with an ingestion token, also deletes what neither it nor the complete run before it saw
 // of the resources it covers: ?resources=, or every resource the
 // integration receives.
-func ingest(ctx *gofr.Context) (any, error) {
+func ingest(ctx *gofr.Context) (_ any, err error) {
+	var span trace.Span
+	ctx.Context, span = telemetry.Start(ctx.Context, "receive push",
+		telemetry.Integration.String(ctx.PathParam("integration")), telemetry.Trigger.String(TriggerPush))
+	started := time.Now()
+	run, err := receive(ctx)
+	if run != nil {
+		attrs := runAttributes(run)
+		span.SetAttributes(attrs...)
+		if run.Error != "" {
+			telemetry.Warn(ctx, "push failed", errors.New(run.Error), append(attrs, telemetry.Duration.Int64(time.Since(started).Milliseconds()))...)
+		} else {
+			telemetry.Info(ctx, "push received", append(attrs, telemetry.Duration.Int64(time.Since(started).Milliseconds()))...)
+		}
+	}
+	telemetry.End(span, err)
+	if err != nil {
+		return nil, err
+	}
+
+	return run, nil
+}
+
+func receive(ctx *gofr.Context) (*Run, error) {
 	in := auth.IngestRequest(ctx)
 	w, err := authenticate(ctx, in.Secret)
 	if err != nil {
@@ -251,7 +277,24 @@ func dbNow(ctx context.Context, db configdoc.DB) (time.Time, error) {
 // reported without stopping the rest. It returns the blueprints a complete
 // run mustn't reconcile, because an entry of theirs had no identifier and
 // could have been any of their entities.
-func write(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) (map[string]bool, error) {
+func write(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) (_ map[string]bool, err error) {
+	ctx, span := telemetry.Start(ctx, "write batch", telemetry.Items.Int(len(entries)))
+	before := *run
+	defer func() {
+		counts := []attribute.KeyValue{
+			telemetry.Created.Int(run.Created - before.Created), telemetry.Updated.Int(run.Updated - before.Updated),
+			telemetry.Unchanged.Int(run.Unchanged - before.Unchanged), telemetry.Deleted.Int(run.Deleted - before.Deleted),
+			telemetry.Failed.Int(run.Failed - before.Failed),
+		}
+		span.SetAttributes(counts...)
+		telemetry.Debug(ctx, "batch written", append(counts, telemetry.Items.Int(len(entries)))...)
+		telemetry.End(span, err)
+	}()
+
+	return writeEntries(telemetry.QuietSQL(ctx), db, integrationID, entries, run)
+}
+
+func writeEntries(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) (map[string]bool, error) {
 	blueprints, err := blueprint.Published(ctx, db)
 	if err != nil {
 		return nil, err
@@ -268,6 +311,8 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, entries [
 			e.Problems = append(e.Problems, "it has no identifier, so this run deleted no "+e.Blueprint+" entities")
 		}
 		fail := func(problems ...string) {
+			telemetry.Debug(ctx, "item not written", telemetry.Blueprint.String(e.Blueprint),
+				attribute.String("gp.entity", e.Entity.Identifier), attribute.StringSlice("gp.problems", problems))
 			run.Failed++
 			if len(run.Errors) < MaxRunErrors {
 				run.Errors = append(run.Errors, RunError{
@@ -354,7 +399,12 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, entries [
 // entries lacked an identifier.
 func reconcile(ctx context.Context, db configdoc.DB, integrationID string, spec Spec, covered []string,
 	unsafe map[string]bool, started time.Time,
-) (int, error) {
+) (deleted int, err error) {
+	ctx, span := telemetry.Start(ctx, "reconcile")
+	defer func() {
+		span.SetAttributes(telemetry.Deleted.Int(deleted))
+		telemetry.End(span, err)
+	}()
 	var ids []string
 	for _, bp := range spec.reconcilable(covered, unsafe) {
 		id, err := configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, bp)

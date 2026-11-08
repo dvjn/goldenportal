@@ -7,12 +7,15 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
@@ -104,7 +107,16 @@ func list(ctx *gofr.Context) (any, error) {
 }
 
 // List returns a page of one blueprint's entities.
-func List(ctx *gofr.Context, blueprintID string, req ListRequest) (Page, error) {
+func List(ctx *gofr.Context, blueprintID string, req ListRequest) (page Page, err error) {
+	name := "list entities"
+	if req.Search != "" {
+		name = "search entities"
+	}
+	end := telemetry.Within(ctx, name, telemetry.Blueprint.String(blueprintID))
+	defer func() {
+		trace.SpanFromContext(ctx).SetAttributes(telemetry.Items.Int(len(page.Items)), attribute.Int("gp.total", page.Total))
+		end(err)
+	}()
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return Page{}, err
 	}
@@ -125,7 +137,7 @@ func List(ctx *gofr.Context, blueprintID string, req ListRequest) (Page, error) 
 	}
 
 	store := NewStore(ctx.SQL)
-	page, err := store.List(ctx, q)
+	page, err = store.List(ctx, q)
 	var filterErr FilterError
 	if errors.As(err, &filterErr) {
 		return Page{}, httpx.BadRequest(filterErr.Error())
@@ -237,7 +249,9 @@ func facets(ctx *gofr.Context) (any, error) {
 }
 
 // Facets counts a property's values, for filter options.
-func Facets(ctx *gofr.Context, blueprintID, property string) ([]Facet, error) {
+func Facets(ctx *gofr.Context, blueprintID, property string) (_ []Facet, err error) {
+	end := telemetry.Within(ctx, "read facets", telemetry.Blueprint.String(blueprintID), attribute.String("gp.property", property))
+	defer func() { end(err) }()
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
 		return nil, err
 	}

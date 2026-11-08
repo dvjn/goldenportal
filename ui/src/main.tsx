@@ -1,12 +1,14 @@
-import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 import { ThemeProvider } from "./components/theme-provider";
+import { configQueryOptions } from "./features/app-config";
 import { authKeys } from "./features/auth";
 import { isUnauthorized } from "./lib/api";
 import { reloadOnStaleChunks } from "./lib/new-build";
+import { mutationTracing, startTracing } from "./lib/tracing";
 import { createAppRouter } from "./router";
 
 const queryClient = new QueryClient({
@@ -22,10 +24,12 @@ const queryClient = new QueryClient({
       void router.navigate({ to: "/sign-in", search: { redirect: router.state.location.href } });
     },
   }),
+  mutationCache: new MutationCache(mutationTracing),
 });
 
 const router = createAppRouter(queryClient);
 reloadOnStaleChunks();
+void startTracing(router, queryClient.ensureQueryData(configQueryOptions));
 
 declare module "@tanstack/react-router" {
   interface Register {

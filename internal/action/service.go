@@ -397,7 +397,7 @@ func create(ctx *gofr.Context, a published, run Run, p auth.Principal) (Run, err
 			details["entity"] = run.Entity.Blueprint + "/" + run.Entity.Identifier
 		}
 		auth.Record(ctx, p, audit.ActionRun, audit.Target{Type: a.spec.docKind(), ID: a.spec.Identifier, Label: a.spec.Title}, details)
-		NewRunner(ctx.SQL, ctx.Container.Logger, baseURL).Start(id)
+		NewRunner(ctx.SQL, baseURL).Start(ctx, id)
 	}
 
 	return store.Get(ctx, id)
@@ -579,9 +579,9 @@ func Decide(ctx *gofr.Context, id, decision, comment string) (Run, error) {
 		return Run{}, err
 	}
 	record(ctx, p, action, run, map[string]any{"step": run.Steps[w.position].Title, "comment": comment})
-	runner := NewRunner(ctx.SQL, ctx.Container.Logger, baseURL)
+	runner := NewRunner(ctx.SQL, baseURL)
 	if resumed {
-		runner.Start(id)
+		runner.Start(ctx, id)
 	} else {
 		runner.Wake(ctx, id)
 	}
@@ -708,7 +708,7 @@ func CancelRun(ctx *gofr.Context, id string) (Run, error) {
 		return Run{}, httpx.Conflict("the run has already finished")
 	}
 	record(ctx, p, audit.ActionRunCancel, run, nil)
-	NewRunner(ctx.SQL, ctx.Container.Logger, baseURL).Wake(ctx, id)
+	NewRunner(ctx.SQL, baseURL).Wake(ctx, id)
 
 	return NewStore(ctx.SQL).Get(ctx, id)
 }
@@ -731,7 +731,7 @@ func RetryRun(ctx *gofr.Context, id string) (Run, error) {
 		return Run{}, httpx.Conflict("only failed or interrupted runs can be retried")
 	}
 	record(ctx, p, audit.ActionRunRetry, run, nil)
-	NewRunner(ctx.SQL, ctx.Container.Logger, baseURL).Start(id)
+	NewRunner(ctx.SQL, baseURL).Start(ctx, id)
 
 	return NewStore(ctx.SQL).Get(ctx, id)
 }
@@ -778,9 +778,9 @@ func ResolveRun(ctx *gofr.Context, id, outcome, comment string) (Run, error) {
 		return Run{}, httpx.Conflict("only interrupted runs need resolving")
 	}
 	record(ctx, p, audit.ActionRunResolve, run, map[string]any{"outcome": outcome, "comment": comment})
-	runner := NewRunner(ctx.SQL, ctx.Container.Logger, baseURL)
+	runner := NewRunner(ctx.SQL, baseURL)
 	if outcome == ResolveDone {
-		runner.Start(id)
+		runner.Start(ctx, id)
 	} else {
 		runner.Wake(ctx, id)
 	}

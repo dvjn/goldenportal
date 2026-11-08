@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // What calling a code host's REST API takes, whichever it is: staying within
@@ -114,7 +116,8 @@ func newAPIClient(system, apiURL string) (*apiClient, error) {
 		message:   func([]byte) string { return "" },
 	}
 	c.http = &http.Client{
-		Timeout: httpTimeout,
+		Timeout:   httpTimeout,
+		Transport: telemetry.Transport(nil),
 		// A system may redirect within its API, as GitHub does for a moved
 		// repository. Anywhere else mustn't get the credentials.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -344,7 +347,7 @@ func (c *apiClient) send(ctx context.Context, method, address string, cred crede
 		if err := c.waitForReset(ctx, cred.bucket); err != nil {
 			return nil, nil, err
 		}
-		body, header, status, err := c.sendOnce(ctx, method, address, cred, payload)
+		body, header, status, err := c.sendOnce(telemetry.Attempt(ctx, attempt), method, address, cred, payload)
 		if err == nil {
 			return body, header, nil
 		}
@@ -359,7 +362,7 @@ func (c *apiClient) send(ctx context.Context, method, address string, cred crede
 		case limit.wait > c.maxWait:
 			return nil, header, fmt.Errorf("%w, and asked to wait %s before trying again", err, limit.wait.Round(time.Second))
 		default:
-			if err := sleep(ctx, limit.wait); err != nil {
+			if err := waitOut(ctx, waitRateLimit, limit.wait, err); err != nil {
 				return nil, header, errors.Join(err, ctx.Err())
 			}
 		}
@@ -368,13 +371,35 @@ func (c *apiClient) send(ctx context.Context, method, address string, cred crede
 			return nil, header, err
 		case limit != nil:
 		case (status == 0 || status >= 500) && c.retryable(method, address):
-			if err := sleep(ctx, retryBackoff<<attempt); err != nil {
+			if err := waitOut(ctx, waitRetry, retryBackoff<<attempt, err); err != nil {
 				return nil, header, errors.Join(err, ctx.Err())
 			}
 		default:
 			return nil, header, err
 		}
 	}
+}
+
+// What a request waits for before it's sent again.
+const (
+	waitRateLimit = "wait for rate limit"
+	waitRetry     = "wait to retry"
+)
+
+// waitOut holds a request back for wait, after why, as a span of its own,
+// so a trace shows where a sync's time went. why is nil when an earlier
+// answer held back every request with the credential.
+func waitOut(ctx context.Context, name string, wait time.Duration, why error) error {
+	ctx, span := telemetry.Start(ctx, name, telemetry.Wait.Int64(wait.Milliseconds()))
+	if why != nil {
+		telemetry.Warn(ctx, "request failed; trying again", why, telemetry.Wait.Int64(wait.Milliseconds()))
+	} else {
+		telemetry.Warn(ctx, "rate limit spent; waiting", nil, telemetry.Wait.Int64(wait.Milliseconds()))
+	}
+	err := sleep(ctx, wait)
+	telemetry.End(span, err)
+
+	return err
 }
 
 // sendOnce makes a request once. status is 0 when there was no answer to
@@ -462,5 +487,5 @@ func (c *apiClient) waitForReset(ctx context.Context, bucket string) error {
 		return rateLimitError{system: c.system, until: until}
 	}
 
-	return sleep(ctx, wait)
+	return waitOut(ctx, waitRateLimit, wait, nil)
 }

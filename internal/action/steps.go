@@ -11,12 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/jq"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 const (
@@ -29,10 +32,17 @@ const (
 	outputTimeout = time.Second
 )
 
-var httpClient = &http.Client{}
+var httpClient = &http.Client{Transport: telemetry.Transport(nil)}
 
 // runStep runs one step and gives its output.
-func (rn Runner) runStep(ctx context.Context, store Store, run Run, position int, step Step, scope Scope) (any, error) {
+func (rn Runner) runStep(ctx context.Context, store Store, run Run, position int, step Step, scope Scope) (_ any, err error) {
+	ctx, span := telemetry.Start(ctx, "step "+step.Type, attribute.String("gp.step", step.ID))
+	defer func() { telemetry.End(span, err) }()
+
+	return rn.stepOutput(ctx, store, run, position, step, scope)
+}
+
+func (rn Runner) stepOutput(ctx context.Context, store Store, run Run, position int, step Step, scope Scope) (any, error) {
 	if err := store.startStep(ctx, run.ID, position); err != nil {
 		return nil, err
 	}
@@ -77,7 +87,7 @@ func (rn Runner) httpStep(ctx context.Context, store Store, run Run, position in
 		attempts += step.Retry.Attempts
 	}
 	for attempt := 1; ; attempt++ {
-		resp, wait, err := rn.call(ctx, run, position, step, scope)
+		resp, wait, err := rn.call(telemetry.Attempt(ctx, attempt-1), run, position, step, scope)
 		if err == nil {
 			if !succeeded(h.Success, resp.status) {
 				err = failed(map[string]any{"status": resp.status, "body": snippet(resp.body)},
@@ -95,14 +105,29 @@ func (rn Runner) httpStep(ctx context.Context, store Store, run Run, position in
 		if wait == 0 {
 			wait = time.Duration(step.Retry.Backoff)
 		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(min(wait, maxBackoff)):
+		if err := waitToRetry(ctx, min(wait, maxBackoff), err); err != nil {
+			return nil, err
 		}
 		if err := store.startStep(ctx, run.ID, position); err != nil {
 			return nil, err
 		}
+	}
+}
+
+// waitToRetry waits before the next attempt, as a span of its own, so a
+// run's trace shows where its time went.
+func waitToRetry(ctx context.Context, wait time.Duration, failed error) error {
+	ctx, span := telemetry.Start(ctx, "wait to retry", telemetry.Wait.Int64(wait.Milliseconds()))
+	telemetry.Warn(ctx, "request failed; trying again", failed)
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		telemetry.End(span, ctx.Err())
+		return ctx.Err()
+	case <-timer.C:
+		span.End()
+		return nil
 	}
 }
 

@@ -85,11 +85,11 @@ dir = "ui"
 run = "pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test"
 
 [tasks."deps:up"]
-description = "Start local Postgres and the mock services"
+description = "Start local Postgres, Jaeger and the mock services"
 env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = '''
 set -eu
-mkdir -p .local/postgres
+mkdir -p .local/postgres .local/jaeger
 docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d --remove-orphans
 # podman compose keeps a container on its old image, and the mock holds no state.
 docker compose --env-file configs/.dev.env -f deps.dev.yaml up -d --build --force-recreate mock
@@ -105,7 +105,7 @@ until docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgr
 done
 docker compose --env-file configs/.dev.env -f deps.dev.yaml exec -T postgres psql -q -U "$DB_USER" -d "$DB_NAME" -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
 
-echo "PostgreSQL ready. Mock services at http://localhost:47800."
+echo "PostgreSQL ready. Mock services at http://localhost:47800, traces at http://localhost:$JAEGER_UI_PORT."
 '''
 
 [tasks."deps:reset"]
@@ -122,7 +122,7 @@ echo "Deleted the local database"
 '''
 
 [tasks."deps:down"]
-description = "Stop local Postgres and the mock services"
+description = "Stop local Postgres, Jaeger and the mock services"
 env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = "docker compose --env-file configs/.dev.env -f deps.dev.yaml down"
 

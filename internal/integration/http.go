@@ -18,6 +18,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/jq"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // HTTPConfig is the http connector's config: its resources, each fetched
@@ -92,7 +93,7 @@ var (
 	headerNamePattern   = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 	// sincePattern is where a URL takes the time to fetch changes since.
 	sincePattern = regexp.MustCompile(`\{\{\s*\$since\s*\}\}`)
-	httpClient   = &http.Client{Timeout: httpTimeout}
+	httpClient   = &http.Client{Timeout: httpTimeout, Transport: telemetry.Transport(nil)}
 	// retryBackoff is the wait before the first retry when the answer names
 	// none, doubling for each one after. Tests shorten it.
 	retryBackoff = time.Second
@@ -292,9 +293,10 @@ func (c *HTTPConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 			failed[name] = fmt.Errorf("no resource %q is fetched", name)
 			continue
 		}
-		err := fetchPages(ctx, name, resource, sincePattern.ReplaceAllLiteralString(resource.URL, since),
+		readCtx, span := telemetry.Start(ctx, "read "+name, telemetry.Resource.String(name))
+		err := fetchPages(readCtx, name, resource, sincePattern.ReplaceAllLiteralString(resource.URL, since),
 			func(page any) error {
-				items, err := resource.split(ctx, name, page)
+				items, err := resource.split(readCtx, name, page)
 				if err != nil {
 					return err
 				}
@@ -303,6 +305,10 @@ func (c *HTTPConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 				}
 				return nil
 			})
+		telemetry.End(span, err)
+		if err != nil && !errors.As(err, new(emitError)) {
+			telemetry.Warn(readCtx, "resource not read", err)
+		}
 		var emitErr emitError
 		switch {
 		case errors.As(err, &emitErr):
@@ -416,7 +422,7 @@ func fetchPages(ctx context.Context, name string, resource HTTPResource, address
 // returns the page and the answer's headers, by lowercase name.
 func fetchJSON(ctx context.Context, address string, headers map[string]HeaderValue) (any, map[string]any, error) {
 	for retry := 0; ; retry++ {
-		page, answered, wait, err := fetchJSONOnce(ctx, address, headers)
+		page, answered, wait, err := fetchJSONOnce(telemetry.Attempt(ctx, retry), address, headers)
 		if wait < 0 || retry == pageRetries {
 			return page, answered, err
 		}
@@ -426,7 +432,7 @@ func fetchJSON(ctx context.Context, address string, headers map[string]HeaderVal
 		if wait > maxRetryWait {
 			return nil, nil, fmt.Errorf("%w, and asked to wait %s before trying again", err, wait.Round(time.Second))
 		}
-		if sleep(ctx, wait) != nil {
+		if waitOut(ctx, waitRetry, wait, err) != nil {
 			return nil, nil, errors.Join(err, ctx.Err())
 		}
 	}

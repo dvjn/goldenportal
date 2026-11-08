@@ -10,6 +10,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // EvaluateSchedule is how often every scorecard is re-evaluated, as a cron
@@ -165,15 +166,14 @@ func ForEntity(ctx *gofr.Context, blueprint, identifier string) ([]EntityScoreca
 func evaluateAll(ctx *gofr.Context) {
 	records, err := configdoc.NewStore(ctx.SQL, Name).List(ctx)
 	if err != nil {
-		ctx.Errorf("list scorecards to evaluate: %v", err)
+		telemetry.Error(ctx, "list scorecards to evaluate", err)
 		return
 	}
 	for _, record := range records {
 		if !record.Published() {
 			continue
 		}
-		if _, err := Evaluate(ctx, ctx.SQL, record.Identifier); err != nil && !errors.Is(err, ErrEvaluating) {
-			ctx.Errorf("evaluate scorecard %s: %v", record.Identifier, err)
-		}
+		// Evaluate logs how it went.
+		_, _ = Evaluate(ctx, ctx.SQL, record.Identifier)
 	}
 }

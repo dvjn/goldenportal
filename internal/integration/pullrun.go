@@ -1,11 +1,17 @@
 package integration
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // What reading a code host whole on each sync takes, whichever it is:
@@ -44,13 +50,21 @@ func (p *pullRun) wantsAny(resources []string) bool {
 // fail records why part of a resource couldn't be read, so a complete sync
 // deletes none of it, unless err is a failure to write what was read, an
 // emitError, which stops the sync and is returned.
-func (p *pullRun) fail(resources []string, scope string, err error) error {
+func (p *pullRun) fail(ctx context.Context, resources []string, scope string, err error) error {
 	if err == nil {
 		return nil
 	}
 	var emitErr emitError
 	if errors.As(err, &emitErr) {
 		return err
+	}
+	if p.wantsAny(resources) {
+		attrs := []attribute.KeyValue{telemetry.Scope.String(scope), attribute.StringSlice("gp.resources", resources)}
+		// The sync goes on without it, so its span notes the failure rather
+		// than failing.
+		trace.SpanFromContext(ctx).AddEvent("scope not read", trace.WithAttributes(
+			append(attrs, attribute.String("exception.message", telemetry.Scrub(err.Error())))...))
+		telemetry.Warn(ctx, "scope not read", err, attrs...)
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()

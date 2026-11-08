@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // Run statuses. A queued run waits for an instance to take it on, and a
@@ -449,6 +451,14 @@ func (s Store) finish(ctx context.Context, runID, status, message string, output
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE runs SET status = $2, error = $3, outputs = $4, finished_at = now(), lease_until = NULL
 		WHERE id = $1 AND status = 'running'`, runID, status, message, encoded)
+	if err == nil {
+		attrs := []attribute.KeyValue{telemetry.RunID.String(runID), attribute.String("gp.run.status", status)}
+		if message != "" {
+			telemetry.Warn(ctx, "action run finished", errors.New(message), attrs...)
+		} else {
+			telemetry.Info(ctx, "action run finished", attrs...)
+		}
+	}
 
 	return err
 }

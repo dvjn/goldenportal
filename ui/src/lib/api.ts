@@ -1,5 +1,6 @@
 import ky, { type BeforeErrorHook, HTTPError, NetworkError, TimeoutError } from "ky";
 import { noticeNewBuild } from "./new-build";
+import { tracedFetch } from "./tracing";
 
 export type ApiDataResponse<T> = { data: T };
 
@@ -72,6 +73,7 @@ export function createApi(prefix: string) {
     prefix,
     credentials: "include",
     timeout: 30000,
+    fetch: tracedFetch,
     headers: {
       Accept: "application/json",
       // The server rejects state-changing requests without this header, which

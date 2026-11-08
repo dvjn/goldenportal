@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // AuthentikConfig reads an authentik instance's users and groups, each
@@ -141,11 +142,11 @@ func (c *AuthentikConfig) Pull(ctx context.Context, _ configdoc.DB, p PullReques
 	}
 	// Each side names the other by primary key, so both are read whichever
 	// the sync asked for.
-	users, err := authentikList(ctx, client, "core/users/?include_groups=false")
+	users, err := authentikRead(ctx, client, authentikUsers, "core/users/?include_groups=false")
 	if err != nil {
 		return failed(err)
 	}
-	groups, err := authentikList(ctx, client, "core/groups/?include_users=false")
+	groups, err := authentikRead(ctx, client, authentikGroups, "core/groups/?include_users=false")
 	if err != nil {
 		return failed(err)
 	}
@@ -263,6 +264,16 @@ func authentikItems(resource string, objects []map[string]any) []Item {
 }
 
 // authentikList reads every page of a list.
+// authentikRead lists a resource, as a span of its own.
+func authentikRead(ctx context.Context, client *apiClient, resource, path string) ([]map[string]any, error) {
+	ctx, span := telemetry.Start(ctx, "read "+resource, telemetry.Resource.String(resource))
+	objects, err := authentikList(ctx, client, path)
+	span.SetAttributes(telemetry.Items.Int(len(objects)))
+	telemetry.End(span, err)
+
+	return objects, err
+}
+
 func authentikList(ctx context.Context, client *apiClient, path string) ([]map[string]any, error) {
 	var out []map[string]any
 	for page := 1; ; page++ {

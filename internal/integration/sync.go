@@ -10,12 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"gofr.dev/pkg/gofr"
 	gofrSQL "gofr.dev/pkg/gofr/datasource/sql"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // What started a run.
@@ -98,11 +101,29 @@ type syncing struct {
 	mapping    mapper
 	request    PullRequest
 	run        *Run
+	// traced carries the sync's span, which finish ends, on whatever
+	// context it finishes on.
+	traced  context.Context
+	span    trace.Span
+	started time.Time
 }
 
 // startSync takes the integration's lock and records the run as running,
 // so a second sync fails fast and Sync Now can answer before the fetch.
 func startSync(ctx context.Context, db TxDB, identifier string, asked Run, only []string) (_ *syncing, err error) {
+	ctx, span := telemetry.Start(ctx, "sync", telemetry.Integration.String(identifier), telemetry.Trigger.String(asked.Trigger))
+	defer func() {
+		switch {
+		case err == nil:
+			return
+		case errors.Is(err, ErrSyncing), errors.Is(err, ErrNotPull), errors.Is(err, ErrUnsynced):
+			telemetry.Debug(ctx, "sync not started", attribute.String("gp.reason", err.Error()))
+			span.End()
+		default:
+			telemetry.Error(ctx, "sync not started", err)
+			telemetry.End(span, err)
+		}
+	}()
 	store := configdoc.NewStore(db, Name)
 	record, err := store.Get(ctx, identifier)
 	if err != nil {
@@ -185,19 +206,45 @@ func startSync(ctx context.Context, db TxDB, identifier string, asked Run, only 
 		request.IngestURL, request.WebhookSecret = IngestURL(identifier), WebhookSecret(identifier)
 	}
 
+	span.SetAttributes(telemetry.RunID.Int64(run.ID), telemetry.Mode.String(mode))
+
 	return &syncing{
 		db: db, lock: lock, id: id, identifier: identifier, spec: spec, puller: puller, mapping: m,
-		request: request, run: run,
+		request: request, run: run, traced: ctx, span: span, started: time.Now(),
 	}, nil
+}
+
+// runAttributes are what spans and logs say of a run.
+func runAttributes(run *Run) []attribute.KeyValue {
+	return []attribute.KeyValue{
+		telemetry.RunID.Int64(run.ID), telemetry.Trigger.String(run.Trigger), telemetry.Mode.String(run.Mode),
+		telemetry.Received.Int(run.Received), telemetry.Created.Int(run.Created), telemetry.Updated.Int(run.Updated),
+		telemetry.Unchanged.Int(run.Unchanged), telemetry.Deleted.Int(run.Deleted), telemetry.Failed.Int(run.Failed),
+	}
 }
 
 // finish fetches and writes what the sync started, then records how it
 // ended. A sync that fails is recorded too, so the failure shows with the
 // integration's runs and the scheduler waits out the interval instead of
 // retrying, and burning provider rate limits, every minute.
-func (s *syncing) finish(ctx context.Context) (*Run, error) {
+func (s *syncing) finish(ctx context.Context) (_ *Run, err error) {
+	ctx = telemetry.Resume(ctx, s.traced)
+	defer func() {
+		attrs := runAttributes(s.run)
+		s.span.SetAttributes(attrs...)
+		attrs = append(attrs, telemetry.Duration.Int64(time.Since(s.started).Milliseconds()))
+		switch {
+		case err != nil:
+			telemetry.Error(ctx, "sync failed", err, attrs...)
+		case s.run.Error != "":
+			telemetry.Warn(ctx, "sync finished with failures", errors.New(s.run.Error), attrs...)
+		default:
+			telemetry.Info(ctx, "sync finished", attrs...)
+		}
+		telemetry.End(s.span, err)
+	}()
 	defer func() { _ = s.lock.Rollback() }()
-	err := s.pull(ctx)
+	err = s.pull(ctx)
 	if err != nil {
 		s.run.Error = err.Error()
 	}
@@ -328,7 +375,7 @@ func (s Spec) usualMode(h syncHistory, now time.Time) string {
 func syncAll(ctx *gofr.Context) {
 	records, err := configdoc.NewStore(ctx.SQL, Name).List(ctx)
 	if err != nil {
-		ctx.Errorf("list integrations to sync: %v", err)
+		telemetry.Error(ctx, "list integrations to sync", err)
 		return
 	}
 	for _, record := range records {
@@ -341,15 +388,14 @@ func syncAll(ctx *gofr.Context) {
 		}
 		last, err := NewStore(ctx.SQL).LastSync(ctx, record.Identifier)
 		if err != nil {
-			ctx.Errorf("find the last sync of %s: %v", record.Identifier, err)
+			telemetry.Error(ctx, "find the last sync", err, telemetry.Integration.String(record.Identifier))
 			continue
 		}
 		if !last.IsZero() && time.Since(last) < spec.SyncEvery()-syncSlack {
 			continue
 		}
-		if _, err := Sync(ctx, ctx.SQL, record.Identifier, TriggerSchedule, ""); err != nil && !errors.Is(err, ErrSyncing) {
-			ctx.Errorf("sync %s: %v", record.Identifier, err)
-		}
+		// Sync logs how it went.
+		_, _ = Sync(ctx, ctx.SQL, record.Identifier, TriggerSchedule, "")
 	}
 }
 
@@ -384,13 +430,9 @@ func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 	started := *s.run
 	// A sync can outlast the request, whose context is cancelled when the
 	// client goes and mustn't be used once the handler returns, so it runs
-	// on a context of its own, still bounded by pullTimeout.
-	logger := ctx.Container.Logger
-	background(func() {
-		if _, err := s.finish(context.Background()); err != nil {
-			logger.Errorf("sync %s: %v", identifier, err)
-		}
-	})
+	// on a context of its own, still bounded by pullTimeout. finish logs how
+	// it went.
+	background(func() { _, _ = s.finish(context.Background()) })
 
 	return &started, nil
 }

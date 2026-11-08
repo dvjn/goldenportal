@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -83,7 +85,7 @@ spec:
 		ctx: t.Context(), db: db, store: entity.NewStore(db),
 		blueprints: map[string]blueprint.Spec{"service": bp, "team": {Identifier: "team"}},
 		env:        widget.Env{Values: widget.Values{widget.ValueInput + "tier": {"critical"}}},
-		logf:       func(format string, args ...any) { logged = append(logged, format) },
+		log:        func(_ context.Context, msg string, _ error, _ ...attribute.KeyValue) { logged = append(logged, msg) },
 	}
 	data := l.load(spec.Widgets)
 	if err := mock.ExpectationsWereMet(); err != nil {

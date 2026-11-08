@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"gofr.dev/pkg/gofr/logging"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/integration"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 const (
@@ -31,23 +32,23 @@ const SweepSchedule = "* * * * *"
 // Runner carries runs out. Every instance has one; they share the work
 // through the database.
 type Runner struct {
-	db     integration.TxDB
-	logger logging.Logger
+	db integration.TxDB
 	// baseURL is the portal's public URL, for links to runs and entities.
 	baseURL string
 }
 
-func NewRunner(db integration.TxDB, logger logging.Logger, baseURL string) Runner {
-	return Runner{db: db, logger: logger, baseURL: strings.TrimSuffix(baseURL, "/")}
+func NewRunner(db integration.TxDB, baseURL string) Runner {
+	return Runner{db: db, baseURL: strings.TrimSuffix(baseURL, "/")}
 }
 
-// Start takes on a run straight away, rather than at the next sweep.
-func (rn Runner) Start(id string) {
+// Start takes on a run straight away, rather than at the next sweep. The
+// run outlives ctx, the request that asked for it, and is traced under it.
+func (rn Runner) Start(ctx context.Context, id string) {
+	ctx = telemetry.Resume(context.Background(), ctx)
 	go func() {
-		ctx := context.Background()
 		claimed, ok, err := NewStore(rn.db).claim(ctx, id, lease)
 		if err != nil {
-			rn.logger.Errorf("Couldn't take on run %s: %v", id, err)
+			telemetry.Error(ctx, "couldn't take on run", err, telemetry.RunID.String(id))
 			return
 		}
 		if ok {
@@ -61,12 +62,12 @@ func (rn Runner) Start(id string) {
 func (rn Runner) Sweep(ctx context.Context) {
 	store := NewStore(rn.db)
 	if err := store.expire(ctx); err != nil {
-		rn.logger.Errorf("Couldn't end overdue approvals: %v", err)
+		telemetry.Error(ctx, "couldn't end overdue approvals", err)
 	}
 	// A run can end without its workflow hearing, as when an instance
 	// stops just then, so check on those still waiting.
 	if parents, err := store.waitingParents(ctx); err != nil {
-		rn.logger.Errorf("Couldn't look for workflows waiting on runs: %v", err)
+		telemetry.Error(ctx, "couldn't look for workflows waiting on runs", err)
 	} else {
 		for _, parent := range parents {
 			rn.settle(ctx, store, parent)
@@ -75,13 +76,13 @@ func (rn Runner) Sweep(ctx context.Context) {
 	for {
 		id, ok, err := store.claim(ctx, "", lease)
 		if err != nil {
-			rn.logger.Errorf("Couldn't look for runs: %v", err)
+			telemetry.Error(ctx, "couldn't look for runs", err)
 			return
 		}
 		if !ok {
 			return
 		}
-		go rn.execute(context.Background(), id)
+		go rn.execute(telemetry.Resume(context.Background(), ctx), id)
 	}
 }
 
@@ -89,6 +90,8 @@ func (rn Runner) Sweep(ctx context.Context) {
 // renewing the lease while it goes. It stops when the lease is lost, as
 // when someone cancels the run.
 func (rn Runner) execute(parent context.Context, id string) {
+	parent, span := telemetry.Start(parent, "action run", telemetry.RunID.String(id))
+	defer span.End()
 	ctx, stop := context.WithCancel(parent)
 	defer stop()
 	store := NewStore(rn.db)
@@ -109,10 +112,11 @@ func (rn Runner) execute(parent context.Context, id string) {
 	}()
 
 	if err := rn.carryOn(ctx, store, id); err != nil && !errors.Is(err, context.Canceled) {
-		rn.logger.Errorf("Run %s stopped: %v", id, err)
-		_ = store.finish(context.Background(), id, RunFailed, "The portal couldn't carry the run on: "+err.Error(), nil)
+		telemetry.Fail(span, err)
+		telemetry.Error(ctx, "run stopped", err)
+		_ = store.finish(context.WithoutCancel(ctx), id, RunFailed, "The portal couldn't carry the run on: "+err.Error(), nil)
 	}
-	rn.Wake(context.Background(), id)
+	rn.Wake(context.WithoutCancel(ctx), id)
 }
 
 func (rn Runner) carryOn(ctx context.Context, store Store, id string) error {
@@ -120,6 +124,7 @@ func (rn Runner) carryOn(ctx context.Context, store Store, id string) error {
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(ctx).SetAttributes(telemetry.Action.String(run.Action))
 	source, err := store.source(ctx, run.documentID, run.Version)
 	if err != nil {
 		return err

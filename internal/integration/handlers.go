@@ -47,6 +47,7 @@ func Register(app httpx.Routes, baseURL, key string) {
 	app.POST("integrations/{identifier}/sync", syncNow)
 	app.POST("integrations/{identifier}/check", checkNow)
 	app.AddCronJob(SyncSchedule, "sync-pull-integrations", syncAll)
+	app.AddCronJob(PruneSchedule, "prune-push-runs", prunePushRunsJob)
 	app.OnStart(func(ctx *gofr.Context) error { return NewStore(ctx.SQL).finishInterrupted(ctx) })
 	app.GET("blueprints/{identifier}/usage", blueprintUsage)
 	app.GET("integration-status", listStatus)

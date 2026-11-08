@@ -7,10 +7,12 @@ import (
 	"slices"
 	"strings"
 
+	"go.opentelemetry.io/otel/trace"
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // Limit is how many results each source returns, and twice it how many a
@@ -47,7 +49,12 @@ func Register(app httpx.Routes, s Service) {
 // Search returns every source's results in one list, closest first: exact
 // matches, then those starting with the text, then those containing it.
 // Ties keep the order of sources, then go by title.
-func (s Service) Search(ctx *gofr.Context, text string) ([]Result, error) {
+func (s Service) Search(ctx *gofr.Context, text string) (results []Result, err error) {
+	end := telemetry.Within(ctx, "search")
+	defer func() {
+		trace.SpanFromContext(ctx).SetAttributes(telemetry.Items.Int(len(results)))
+		end(err)
+	}()
 	p, err := auth.Require(ctx, auth.RoleMember)
 	if err != nil {
 		return nil, err

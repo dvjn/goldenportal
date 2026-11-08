@@ -19,6 +19,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/search"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 	"github.com/dvjn/goldenportal/internal/web"
 	"github.com/dvjn/goldenportal/migrations"
 	"gofr.dev/pkg/gofr"
@@ -27,7 +28,9 @@ import (
 )
 
 func New() *gofr.App {
+	telemetry.InstallSQL()
 	app := gofr.New()
+	telemetry.SetLogger(app.Logger())
 	api := webRoutes{app}
 	app.Migrate(migrations.All())
 
@@ -63,10 +66,11 @@ func New() *gofr.App {
 	}
 	app.UseMiddleware(favicon, web.SPA(web.Dist()), web.BuildHeader(web.Build(web.Dist())), httpx.WithQuery)
 	mcpLimits := portalmcp.NewLimiter()
+	relay := telemetry.NewRelay(app.Config)
 	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search, action.Search)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
-		backend := auth.Middleware(store, secureCookies)(oidc.Routes(store)(next))
+		backend := auth.Middleware(store, secureCookies)(oidc.Routes(store)(browserTraces(relay)(next)))
 		// MCP tools call the services as the token's user, who the MCP
 		// endpoint already signed in.
 		newContext := func(ctx context.Context) *gofr.Context {
@@ -76,10 +80,11 @@ func New() *gofr.App {
 		return scimServer.Routes(c.SQL)(oauthServer.Routes(c.SQL)(mcp))
 	})
 
-	api.GET("config", configHandler(Config{
-		Name:    name,
-		LogoURL: app.Config.Get("GP_LOGO_URL"),
-	}))
+	config := Config{Name: name, LogoURL: app.Config.Get("GP_LOGO_URL")}
+	if relay != nil {
+		config.Tracing = &TracingConfig{SampleRatio: relay.SampleRatio}
+	}
+	api.GET("config", configHandler(config))
 	auth.NewHandlers(secureCookies).Register(api)
 	oauthServer.Register(api)
 	access.Register(api)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // SonarQubeConfig reads a SonarQube instance's projects, each with its
@@ -168,30 +169,49 @@ func (c *SonarQubeConfig) Pull(ctx context.Context, _ configdoc.DB, p PullReques
 	if err != nil {
 		return failed(err)
 	}
-	projects, err := c.projects(ctx, client)
+	listCtx, span := telemetry.Start(ctx, "read "+sonarProjects, telemetry.Resource.String(sonarProjects))
+	projects, err := c.projects(listCtx, client)
+	if err == nil {
+		span.SetAttributes(telemetry.Items.Int(len(projects)))
+	}
+	telemetry.End(span, err)
 	if err != nil {
 		return failed(err)
 	}
-	measures, err := sonarMeasures(ctx, client, projects)
+	measuresCtx, span := telemetry.Start(ctx, "read measures", telemetry.Items.Int(len(projects)))
+	measures, err := sonarMeasures(measuresCtx, client, projects)
+	telemetry.End(span, err)
 	if err != nil {
 		return failed(err)
 	}
 	items := make([]Item, 0, len(projects))
 	for _, project := range projects {
-		key, _ := project["key"].(string)
-		gate, err := sonarGate(ctx, client, key)
-		if err != nil {
+		if err := pullSonarProject(ctx, client, project, measures); err != nil {
 			return failed(err)
 		}
-		repository, err := sonarRepository(ctx, client, key)
-		if err != nil {
-			return failed(err)
-		}
-		project[parentKey] = map[string]any{"measures": measures[key], "qualityGate": gate, "repository": repository}
 		items = append(items, Item{Resource: sonarProjects, Object: project})
 	}
 
 	return nil, emit(sonarProjects, items)
+}
+
+// pullSonarProject reads what's kept under a project's _gp besides its
+// measures: its quality gate and the repository it's bound to.
+func pullSonarProject(ctx context.Context, client *apiClient, project map[string]any, measures map[string]map[string]any) (err error) {
+	key, _ := project["key"].(string)
+	ctx, span := telemetry.Start(ctx, "pull project", telemetry.Scope.String(key))
+	defer func() { telemetry.End(span, err) }()
+	gate, err := sonarGate(ctx, client, key)
+	if err != nil {
+		return err
+	}
+	repository, err := sonarRepository(ctx, client, key)
+	if err != nil {
+		return err
+	}
+	project[parentKey] = map[string]any{"measures": measures[key], "qualityGate": gate, "repository": repository}
+
+	return nil
 }
 
 // projects lists the projects the token can browse that Projects selects.

@@ -15,11 +15,14 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/scorecard"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
@@ -157,7 +160,8 @@ type loader struct {
 	ladders    map[string]blueprint.Ladder
 	scorecards map[string]scorecard.Spec
 	env        widget.Env
-	logf       func(format string, args ...any)
+	// log logs what failed without the viewer being told why.
+	log func(ctx context.Context, msg string, err error, attrs ...attribute.KeyValue)
 }
 
 // plan is what a page's widgets need of one query's entities, gathered so
@@ -175,6 +179,8 @@ type plan struct {
 	pages      map[string]*page
 	tiers      map[string]*tiers
 	documents  *documents
+	// widgets are the widgets that read it, for its statements' spans.
+	widgets []string
 }
 
 type grouping struct {
@@ -234,7 +240,14 @@ func (l loader) load(widgets []widget.Widget) PageData {
 
 	assemble := map[string]func() (any, error){}
 	for _, w := range widgets {
-		if fn := l.need(w, planFor); fn != nil {
+		read := func(q *widget.Query, f *filter.Filter) *plan {
+			p := planFor(q, f)
+			if !slices.Contains(p.widgets, w.ID) {
+				p.widgets = append(p.widgets, w.ID)
+			}
+			return p
+		}
+		if fn := l.need(w, read); fn != nil {
 			assemble[w.ID] = fn
 		}
 	}
@@ -251,7 +264,9 @@ func (l loader) load(widgets []widget.Widget) PageData {
 		if !ok {
 			continue
 		}
+		_, span := telemetry.Start(l.ctx, "load widget", telemetry.Widget.String(w.ID), telemetry.WidgetType.String(w.Type))
 		data, err := fn()
+		telemetry.End(span, err)
 		if err != nil {
 			out.Widgets[w.ID] = result{Error: l.explain(w, err)}
 			continue
@@ -690,7 +705,7 @@ func (l loader) tableJQ(w widget.Widget, q entity.Query, rows []entity.Row, out 
 	}
 	q.Filter = &filter.Filter{Property: "identifier", Op: filter.OpIn, Values: identifiers}
 	q.Sort, q.Page, q.PageSize = "", 1, len(rows)
-	docs, err := l.documents(q)
+	docs, err := l.documents(l.ctx, q)
 	if err != nil {
 		return err
 	}
@@ -728,26 +743,46 @@ func (l loader) tasks(p *plan) []func() {
 		return nil
 	}
 	var tasks []func()
+	// Each statement is a span of its own, saying which widgets wait on it,
+	// since widgets that read the same query share it.
+	read := func(name string, fn func(ctx context.Context) error, attrs ...attribute.KeyValue) func() {
+		return func() {
+			ctx, span := telemetry.Start(l.ctx, name, append(attrs, telemetry.Blueprint.String(p.query.Blueprint.Identifier),
+				attribute.StringSlice("gp.widgets", p.widgets))...)
+			telemetry.End(span, fn(ctx))
+		}
+	}
 	if len(p.aggregates) > 0 {
-		tasks = append(tasks, func() { p.values, p.valuesErr = l.store.Aggregates(l.ctx, p.match, p.aggregates) })
+		tasks = append(tasks, read("read aggregates", func(ctx context.Context) error {
+			p.values, p.valuesErr = l.store.Aggregates(ctx, p.match, p.aggregates)
+			return p.valuesErr
+		}))
 	}
 	for _, g := range p.groups {
-		tasks = append(tasks, func() { g.facets, g.none, g.err = l.store.Group(l.ctx, p.match, g.path, g.limit) })
+		tasks = append(tasks, read("read groups", func(ctx context.Context) error {
+			g.facets, g.none, g.err = l.store.Group(ctx, p.match, g.path, g.limit)
+			return g.err
+		}, attribute.String("gp.group_by", g.path)))
 	}
 	for _, pg := range p.pages {
-		tasks = append(tasks, func() { pg.rows, pg.total, pg.err = l.store.Rows(l.ctx, p.match, pg.sort, pg.limit, pg.paths) })
+		tasks = append(tasks, read("read rows", func(ctx context.Context) error {
+			pg.rows, pg.total, pg.err = l.store.Rows(ctx, p.match, pg.sort, pg.limit, pg.paths)
+			return pg.err
+		}))
 	}
 	for _, t := range p.tiers {
-		tasks = append(tasks, func() {
-			t.counts, t.checks, t.err = scorecard.Tiers(l.ctx, l.db, t.scorecard, l.blueprints, p.query.Blueprint, p.query.Filter)
-		})
+		tasks = append(tasks, read("read tiers", func(ctx context.Context) error {
+			t.counts, t.checks, t.err = scorecard.Tiers(ctx, l.db, t.scorecard, l.blueprints, p.query.Blueprint, p.query.Filter)
+			return t.err
+		}, telemetry.Scorecard.String(t.scorecard.Identifier)))
 	}
 	if d := p.documents; d != nil {
-		tasks = append(tasks, func() {
+		tasks = append(tasks, read("read documents", func(ctx context.Context) error {
 			q := p.query
 			q.Page, q.PageSize = 1, MaxJQEntities+1
-			d.list, d.err = l.documents(q)
-		})
+			d.list, d.err = l.documents(ctx, q)
+			return d.err
+		}))
 	}
 
 	return tasks
@@ -770,12 +805,12 @@ func run(tasks []func()) {
 
 // documents loads a page of q's entities as jq reads them, with their
 // relations' titles, lookups and scorecard results.
-func (l loader) documents(q entity.Query) ([]any, error) {
-	page, err := l.store.List(l.ctx, q)
+func (l loader) documents(ctx context.Context, q entity.Query) ([]any, error) {
+	page, err := l.store.List(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	if err := l.store.Resolve(l.ctx, l.blueprints, q.Blueprint, page.Items); err != nil {
+	if err := l.store.Resolve(ctx, l.blueprints, q.Blueprint, page.Items); err != nil {
 		return nil, err
 	}
 	out := make([]any, len(page.Items))
@@ -841,7 +876,7 @@ func (l loader) explain(w widget.Widget, err error) string {
 	case errors.As(err, &httpErr):
 		return httpErr.Message
 	}
-	l.logf("load widget %s: %v", w.ID, err)
+	l.log(l.ctx, "widget not loaded", err, telemetry.Widget.String(w.ID), telemetry.WidgetType.String(w.Type))
 
 	return "the widget's data couldn't be loaded"
 }
@@ -901,7 +936,7 @@ func (l loader) template(ctx context.Context, w widget.Widget, link *widget.Link
 		err = checkHref(href, link.Path != "")
 	}
 	if err != nil {
-		l.logf("link of widget %s: %v", w.ID, err)
+		l.log(ctx, "widget link not made", err, telemetry.Widget.String(w.ID))
 		return nil
 	}
 

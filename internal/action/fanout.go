@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // fanOut starts an action on each entity an action step names, as whoever
@@ -80,7 +81,7 @@ func (rn Runner) fanOut(ctx context.Context, store Store, run Run, position int,
 		if err != nil {
 			return err
 		}
-		rn.Start(id)
+		rn.Start(ctx, id)
 	}
 	if len(refused) > 0 {
 		if err := store.setRefused(ctx, run.ID, position, refused); err != nil {
@@ -133,7 +134,7 @@ func (rn Runner) Wake(ctx context.Context, id string) {
 // ended, then carries the run on.
 func (rn Runner) settle(ctx context.Context, store Store, id string) {
 	if err := rn.trySettle(ctx, store, id); err != nil {
-		rn.logger.Errorf("Couldn't check on the runs %s started: %v", id, err)
+		telemetry.Error(ctx, "couldn't check on the runs a workflow started", err, telemetry.RunID.String(id))
 	}
 }
 
@@ -194,7 +195,7 @@ func (rn Runner) trySettle(ctx context.Context, store Store, id string) error {
 		return err
 	}
 	if resumed {
-		rn.Start(id)
+		rn.Start(ctx, id)
 	} else if failure != "" {
 		rn.Wake(ctx, id)
 	}

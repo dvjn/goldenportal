@@ -14,6 +14,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
 // Name is the configdoc kind scorecards are stored as.
@@ -35,7 +36,30 @@ const evaluationPage = 100
 
 // Evaluate scores every entity in a published scorecard's scope and stores
 // the results, dropping those of entities no longer in scope.
-func Evaluate(ctx context.Context, db TxDB, name string) (int, error) {
+func Evaluate(ctx context.Context, db TxDB, name string) (scored int, err error) {
+	ctx, span := telemetry.Start(ctx, "evaluate scorecard", telemetry.Scorecard.String(name))
+	started := time.Now()
+	defer func() {
+		span.SetAttributes(telemetry.Items.Int(scored))
+		took := telemetry.Duration.Int64(time.Since(started).Milliseconds())
+		switch {
+		case errors.Is(err, ErrEvaluating):
+			telemetry.Debug(ctx, "scorecard already being evaluated")
+			span.End()
+			return
+		case err != nil:
+			telemetry.Error(ctx, "scorecard not evaluated", err, took)
+		default:
+			// Every scorecard is evaluated every minute, so this is routine.
+			telemetry.Debug(ctx, "scorecard evaluated", telemetry.Items.Int(scored), took)
+		}
+		telemetry.End(span, err)
+	}()
+
+	return evaluate(ctx, db, name)
+}
+
+func evaluate(ctx context.Context, db TxDB, name string) (int, error) {
 	record, err := configdoc.NewStore(db, Name).Get(ctx, name)
 	if err != nil {
 		return 0, err
