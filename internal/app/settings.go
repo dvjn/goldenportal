@@ -7,6 +7,7 @@ import (
 	"gofr.dev/pkg/gofr/config"
 
 	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/scim"
 )
@@ -71,6 +72,9 @@ type serverInfo struct {
 	HTTPPort    string `json:"httpPort"`
 	MetricsPort string `json:"metricsPort"`
 	LogLevel    string `json:"logLevel"`
+	// RetentionSchedule is when rows older than their blueprint keeps them
+	// are deleted, a cron expression.
+	RetentionSchedule string `json:"retentionSchedule"`
 }
 
 func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server) serverConfig {
@@ -108,11 +112,12 @@ func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server)
 			SSLMode:     cfg.Get("DB_SSL_MODE"),
 		},
 		Server: serverInfo{
-			Environment: cfg.Get("APP_ENV"),
-			Version:     cfg.Get("APP_VERSION"),
-			HTTPPort:    cfg.GetOrDefault("HTTP_PORT", "8000"),
-			MetricsPort: cfg.GetOrDefault("METRICS_PORT", "2121"),
-			LogLevel:    cfg.GetOrDefault("LOG_LEVEL", "INFO"),
+			Environment:       cfg.Get("APP_ENV"),
+			Version:           cfg.Get("APP_VERSION"),
+			HTTPPort:          cfg.GetOrDefault("HTTP_PORT", "8000"),
+			MetricsPort:       cfg.GetOrDefault("METRICS_PORT", "2121"),
+			LogLevel:          cfg.GetOrDefault("LOG_LEVEL", "INFO"),
+			RetentionSchedule: cfg.GetOrDefault(entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule),
 		},
 	}
 }

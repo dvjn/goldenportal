@@ -24,8 +24,48 @@
           "additionalProperties": { "$ref": "#/$defs/property" }
         },
         "catalog": { "$ref": "#/$defs/catalog" },
-        "entity": { "$ref": "#/$defs/entity" }
+        "entity": { "$ref": "#/$defs/entity" },
+        "retention": { "$ref": "#/$defs/retention" }
       },
+      "additionalProperties": false
+    },
+    "retention": {
+      "type": "object",
+      "description": "Deletes rows once the date-time property by is older than keep, such as pipelines a month after they started. A scheduled job deletes them, daily unless the instance says otherwise. Rows whose by is empty, such as merge requests still open, are kept. Without retention, rows are kept for ever. Once published to keep rows longer, the next sync of each integration writing the blueprint reads back as far as the new keep. Every integration mapping that writes the blueprint must use mode: upsert.",
+      "properties": {
+        "by": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,62}$",
+          "description": "The stored date-time property rows are kept by, such as startedAt or closedAt."
+        },
+        "keep": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}[smhdw]$",
+          "description": "How long rows are kept, at least 1d, such as 30d or 52w."
+        },
+        "rules": {
+          "type": "array",
+          "description": "Keep the rows a filter matches longer, such as production deployments for a year. A row is kept for the longest keep of the rules it matches.",
+          "items": { "$ref": "#/$defs/retentionRule" }
+        }
+      },
+      "required": ["by", "keep"],
+      "additionalProperties": false
+    },
+    "retentionRule": {
+      "type": "object",
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/filter",
+          "description": "The rows to keep longer. It compares the row's own stored and computed properties and relations with eq, ne, in or exists, against values written here."
+        },
+        "keep": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}[smhdw]$",
+          "description": "How long the rows it matches are kept, at least the blueprint's keep, such as 365d."
+        }
+      },
+      "required": ["filter", "keep"],
       "additionalProperties": false
     },
     "property": {

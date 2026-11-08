@@ -39,19 +39,26 @@ var Kind = configdoc.Kind[Spec]{
 	Published: published,
 }
 
-// PagesChecker checks the widgets on a blueprint's pages against the
-// blueprints and scorecards they show, which this package can't import.
-type PagesChecker func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error)
+// Checker checks a blueprint against what this package can't import: the
+// widgets on its pages against the blueprints and scorecards they show,
+// and its retention against the integrations that write it.
+type Checker func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error)
 
-func Register(app httpx.Routes, checkPages PagesChecker) {
+func Register(app httpx.Routes, checkers ...Checker) {
 	kind := Kind
 	kind.Check = func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error) {
 		issues, err := Kind.Check(ctx, db, spec)
 		if err != nil {
 			return nil, err
 		}
-		more, err := checkPages(ctx, db, spec)
-		return append(issues, more...), err
+		for _, check := range checkers {
+			more, err := check(ctx, db, spec)
+			if err != nil {
+				return nil, err
+			}
+			issues = append(issues, more...)
+		}
+		return issues, nil
 	}
 	configdoc.Register(app, kind)
 }
@@ -143,6 +150,11 @@ func published(ctx context.Context, db configdoc.DB, previous *Spec, next Spec) 
 	if previous == nil {
 		return nil
 	}
+	if previous.RetainedBy() != next.RetainedBy() {
+		if err := retainBy(ctx, db, next); err != nil {
+			return err
+		}
+	}
 
 	removedProperties, removedRelations := []string{}, []string{}
 	for _, prop := range previous.Properties {
@@ -171,6 +183,22 @@ func published(ctx context.Context, db configdoc.DB, previous *Spec, next Spec) 
 
 	return recompute(ctx, db, next)
 }
+
+// retainBy fills each entity's occurred_at from the property its blueprint
+// now keeps rows by, or empties it when rows are kept for ever. Values were
+// checked as RFC 3339 when written, which the pattern only guards.
+func retainBy(ctx context.Context, db configdoc.DB, spec Spec) error {
+	const at = `CASE WHEN $3 <> '' AND e.properties ->> $3 ~ $4 THEN (e.properties ->> $3)::timestamptz END`
+	_, err := db.ExecContext(ctx, `
+		UPDATE entities e SET occurred_at = `+at+`
+		FROM config_documents b
+		WHERE b.id = e.blueprint_id AND b.kind = $1 AND b.identifier = $2 AND e.occurred_at IS DISTINCT FROM `+at,
+		Name, spec.Identifier, spec.RetainedBy(), rfc3339Pattern)
+
+	return err
+}
+
+const rfc3339Pattern = `^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$`
 
 // recompute recomputes the computed properties of every entity of spec.
 func recompute(ctx context.Context, db configdoc.DB, spec Spec) error {

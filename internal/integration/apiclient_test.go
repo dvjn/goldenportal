@@ -30,25 +30,6 @@ func TestAPIClientWithin(t *testing.T) {
 	}
 }
 
-func TestCurrent(t *testing.T) {
-	cutoff := timeOf(map[string]any{"at": "2026-01-10T00:00:00Z"}, "at")
-	open := []string{"opened", "locked"}
-	for _, test := range []struct {
-		object map[string]any
-		want   bool
-	}{
-		{map[string]any{"state": "opened", "created_at": "2020-01-01T00:00:00Z"}, true},
-		{map[string]any{"state": "merged", "merged_at": "2026-01-11T00:00:00Z", "closed_at": "2020-01-01T00:00:00Z"}, true},
-		{map[string]any{"state": "closed", "closed_at": "2026-01-09T00:00:00Z"}, false},
-		{map[string]any{"state": "closed", "merged_at": nil, "closed_at": "2026-01-10T00:00:00Z"}, true},
-		{map[string]any{"state": "closed"}, false},
-	} {
-		if got := current(test.object, cutoff, open, "merged_at", "closed_at"); got != test.want {
-			t.Errorf("current(%v) = %v, want %v", test.object, got, test.want)
-		}
-	}
-}
-
 func TestForEachStopsAtTheFirstFailure(t *testing.T) {
 	errBoom := errors.New("boom")
 	var ran int

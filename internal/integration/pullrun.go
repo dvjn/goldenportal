@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"sync"
 	"time"
@@ -14,8 +15,8 @@ import (
 	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
-// What reading a code host whole on each sync takes, whichever it is:
-// what was asked for, what failed, and what piles up within its history.
+// What reading a code host on each sync takes, whichever it is: what was
+// asked for, and what failed.
 
 // parentKey is the key items carry what they belong to under, such as their
 // repository, since the objects a system gives don't all say. Underscored,
@@ -27,15 +28,18 @@ const parentKey = "_gp"
 // emitted, and what failed. Reads of different parts may run at once.
 type pullRun struct {
 	want map[string]bool
-	// cutoff is when what piles up must be newer than to be read.
-	cutoff   time.Time
-	mu       sync.Mutex
-	emit     func(resource string, items []Item) error
+	mu   sync.Mutex
+	emit func(resource string, items []Item) error
+	// failures are each resource's failures as a whole, and scoped those in
+	// one scope.
 	failures map[string][]error
+	scoped   []ScopeFailure
+	// unlisted are the listings of scopes that failed.
+	unlisted []error
 }
 
-func newPullRun(resources []string, cutoff time.Time, emit func(resource string, items []Item) error) *pullRun {
-	run := &pullRun{want: map[string]bool{}, cutoff: cutoff, emit: emit, failures: map[string][]error{}}
+func newPullRun(resources []string, emit func(resource string, items []Item) error) *pullRun {
+	run := &pullRun{want: map[string]bool{}, emit: emit, failures: map[string][]error{}}
 	for _, resource := range resources {
 		run.want[resource] = true
 	}
@@ -47,10 +51,11 @@ func (p *pullRun) wantsAny(resources []string) bool {
 	return slices.ContainsFunc(resources, func(r string) bool { return p.want[r] })
 }
 
-// fail records why part of a resource couldn't be read, so a complete sync
-// deletes none of it, unless err is a failure to write what was read, an
-// emitError, which stops the sync and is returned.
-func (p *pullRun) fail(ctx context.Context, resources []string, scope string, err error) error {
+// fail records why part of a resource couldn't be read: in scope, or, with
+// no scope, as a whole, so a complete sync deletes none of what that part
+// holds. where names the part for people. An emitError, a failure to write
+// what was read, isn't recorded but returned, as it stops the sync.
+func (p *pullRun) fail(ctx context.Context, resources []string, where, scope string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -59,7 +64,7 @@ func (p *pullRun) fail(ctx context.Context, resources []string, scope string, er
 		return err
 	}
 	if p.wantsAny(resources) {
-		attrs := []attribute.KeyValue{telemetry.Scope.String(scope), attribute.StringSlice("gp.resources", resources)}
+		attrs := []attribute.KeyValue{telemetry.Scope.String(where), attribute.StringSlice("gp.resources", resources)}
 		// The sync goes on without it, so its span notes the failure rather
 		// than failing.
 		trace.SpanFromContext(ctx).AddEvent("scope not read", trace.WithAttributes(
@@ -73,59 +78,85 @@ func (p *pullRun) fail(ctx context.Context, resources []string, scope string, er
 			continue
 		}
 		failure := fmt.Errorf("%s: %w", resource, err)
-		if scope != "" {
-			failure = fmt.Errorf("%s of %s: %w", resource, scope, err)
+		if where != "" {
+			failure = fmt.Errorf("%s of %s: %w", resource, where, err)
 		}
-		p.failures[resource] = append(p.failures[resource], failure)
+		if scope == "" {
+			p.failures[resource] = append(p.failures[resource], failure)
+			continue
+		}
+		p.scoped = append(p.scoped, ScopeFailure{
+			Resource: resource, Scope: scope, Err: failure, Refused: apiStatus(err) == http.StatusForbidden,
+		})
 	}
+
+	return nil
+}
+
+// unlist records why a listing of scopes, what, such as a group's
+// projects, failed, so no scope it would have listed counts as gone.
+func (p *pullRun) unlist(ctx context.Context, what string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var emitErr emitError
+	if errors.As(err, &emitErr) {
+		return err
+	}
+	telemetry.Warn(ctx, "scopes not listed", err, attribute.String("gp.listing", what))
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.unlisted = append(p.unlisted, fmt.Errorf("%s: %w", what, err))
 
 	return nil
 }
 
 // failAll fails every resource asked for, as when the connector can't sign
 // in at all.
-func (p *pullRun) failAll(err error) map[string]error {
+func (p *pullRun) failAll(err error) Report {
 	failed := map[string]error{}
 	for resource := range p.want {
 		failed[resource] = err
 	}
 
-	return failed
+	return Report{Failed: failed}
 }
 
-// result is what Pull returns once reading ended with err: what failed, or
-// the failure to write what was read, which stops the sync.
-func (p *pullRun) result(err error) (map[string]error, error) {
+// result is what Pull returns once reading the scopes listed ended with
+// err: what was read in full, or the failure to write what was read, which
+// stops the sync.
+func (p *pullRun) result(scopes []string, err error) (Report, error) {
 	var emitErr emitError
 	if errors.As(err, &emitErr) {
-		return nil, emitErr.err
+		return Report{}, emitErr.err
 	}
 	if err != nil {
-		return nil, err
+		return Report{}, err
 	}
-
-	return p.failed(), nil
-}
-
-// failed is each failed resource's first failure, and how many more.
-func (p *pullRun) failed() map[string]error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	out := map[string]error{}
+	failed := map[string]error{}
 	for resource, errs := range p.failures {
-		out[resource] = errs[0]
+		failed[resource] = errs[0]
 		if len(errs) > 1 {
-			out[resource] = fmt.Errorf("%w, and %d more failed", errs[0], len(errs)-1)
+			failed[resource] = fmt.Errorf("%w, and %d more failed", errs[0], len(errs)-1)
 		}
 	}
 
-	return out
+	return Report{Failed: failed, ScopeFailures: p.scoped, Scopes: scopes, Unlisted: p.unlisted}, nil
+}
+
+// source is where objects were read from: the scope they're in, if any,
+// and when the system answered with them.
+type source struct {
+	scope string
+	at    time.Time
 }
 
 // emitObjects hands objects of a resource that was asked for to emit, with
-// what they belong to, one batch at a time, since the sync writes them as
-// they come.
-func (p *pullRun) emitObjects(resource string, objects []map[string]any, parent map[string]any) error {
+// what they belong to and where they were read from, one batch at a time,
+// since the sync writes them as they come.
+func (p *pullRun) emitObjects(resource string, objects []map[string]any, parent map[string]any, from source) error {
 	if !p.want[resource] || len(objects) == 0 {
 		return nil
 	}
@@ -134,7 +165,7 @@ func (p *pullRun) emitObjects(resource string, objects []map[string]any, parent 
 		if parent != nil {
 			object[parentKey] = parent
 		}
-		items[i] = Item{Resource: resource, Object: object}
+		items[i] = Item{Resource: resource, Object: object, Scope: from.scope, SourceAt: from.at}
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -145,57 +176,25 @@ func (p *pullRun) emitObjects(resource string, objects []map[string]any, parent 
 	return nil
 }
 
-// olderThan is a listing's stop for lists sorted newest first by field.
-func (p *pullRun) olderThan(field string) func(map[string]any) bool {
-	return func(object map[string]any) bool {
-		at := timeOf(object, field)
-		return !at.IsZero() && at.Before(p.cutoff)
-	}
-}
-
 // listing is a list to read.
 type listing struct {
 	// key names the list in answers that wrap it.
 	path, key string
 	// keep leaves out the objects it's false for.
 	keep func(map[string]any) bool
-	// stop is true for the first object older than wanted, in a list
-	// sorted newest first.
-	stop func(map[string]any) bool
 }
 
-// pages hands page each page's objects that the listing keeps, until one
-// it stops at.
+// pages hands page each page's objects that the listing keeps.
 func (l listing) pages(page func([]map[string]any) error) func([]map[string]any) (bool, error) {
 	return func(objects []map[string]any) (bool, error) {
 		var out []map[string]any
 		for _, object := range objects {
-			if l.stop != nil && l.stop(object) {
-				return false, page(out)
-			}
 			if l.keep == nil || l.keep(object) {
 				out = append(out, object)
 			}
 		}
 		return true, page(out)
 	}
-}
-
-// current reports whether an object a sync reads within its history is
-// one it reads: in one of the open states, or ended, as the first of fields
-// that's set says, since cutoff. Each field is a time that doesn't change
-// once set, so an object never drifts in and out.
-func current(object map[string]any, cutoff time.Time, open []string, fields ...string) bool {
-	if state, _ := object["state"].(string); slices.Contains(open, state) {
-		return true
-	}
-	for _, field := range fields {
-		if at := timeOf(object, field); !at.IsZero() {
-			return !at.Before(cutoff)
-		}
-	}
-
-	return false
 }
 
 // forEach runs fn on each item, limit at a time, so a sync of many reads

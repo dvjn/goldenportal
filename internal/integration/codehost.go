@@ -15,26 +15,34 @@ import (
 )
 
 // What connectors for code hosts, such as GitLab, share besides calling
-// their API and reading them whole: their config, their webhooks, and
-// reading the objects they give.
+// their API and reading them: their config, their webhooks, and reading
+// the objects they give.
 
 // hookTimeout bounds setting up webhooks after a sync's reads, which has a
 // moment of its own even when reading ran out of time.
 const hookTimeout = 2 * time.Minute
 
-// defaultHistoryDays keeps a month of what piles up, which a sync of a busy
-// repository reads in a few pages, plus a request or so for each run.
-const defaultHistoryDays = 30
-
-func readHistoryDays(r *configdoc.Reader, fields map[string]*yaml.Node, path string) int {
-	days := defaultHistoryDays
-	if n := fields["historyDays"]; n != nil {
-		if err := n.Decode(&days); err != nil || days < 1 {
-			r.Errorf(n, path+".historyDays", "historyDays must be a whole number of days, at least 1")
+// withoutHistory refuses historyDays and history, how far back syncs once
+// read, pointing at blueprint retention, which says how long rows are kept,
+// and returns the config without them, so an integration published with
+// one still syncs until it's published again.
+func withoutHistory(r *configdoc.Reader, node *yaml.Node, path string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return node
+	}
+	rest := *node
+	rest.Content = nil
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Value != "historyDays" && key.Value != "history" {
+			rest.Content = append(rest.Content, key, node.Content[i+1])
+			continue
 		}
+		r.Errorf(key, path+"."+key.Value, "%s is gone: syncs read what changed since the last one, and each blueprint's retention says "+
+			"how long its rows are kept, such as retention: {by: startedAt, keep: 30d}; drop %s", key.Value, key.Value)
 	}
 
-	return days
+	return &rest
 }
 
 // readNames reads a list of names, such as groups, each one valid says,

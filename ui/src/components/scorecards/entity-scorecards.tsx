@@ -85,7 +85,7 @@ function StandingCard({
               to="/scorecards/$identifier"
               params={{ identifier: result.scorecard }}
               className="w-fit text-xs font-medium hover:underline"
-              title={`Evaluated ${formatAbsolute(result.evaluatedAt)}`}
+              title={`At this tier since ${formatAbsolute(result.changedAt)}, evaluated ${formatAbsolute(result.evaluatedAt)}`}
             >
               {spec.title}
             </Link>

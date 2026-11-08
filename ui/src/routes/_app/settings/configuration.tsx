@@ -249,6 +249,7 @@ function PlatformCard({
           <Detail label="HTTP Port">{server.httpPort}</Detail>
           <Detail label="Metrics Port">{server.metricsPort}</Detail>
           <Detail label="Log Level">{server.logLevel}</Detail>
+          <Detail label="Retention Schedule">{server.retentionSchedule}</Detail>
         </DetailList>
       </CardContent>
     </Card>

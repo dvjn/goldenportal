@@ -53,6 +53,7 @@ const configuration: ServerConfiguration = {
     httpPort: "8000",
     metricsPort: "2121",
     logLevel: "INFO",
+    retentionSchedule: "17 4 * * *",
   },
 };
 

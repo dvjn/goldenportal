@@ -8,6 +8,9 @@ export type Mapping = {
   resource: string;
   blueprint: string;
   filter?: string;
+  // mode upsert only writes what changed, deleting only what items say was
+  // deleted; reconcile also deletes what a complete sync no longer reads.
+  mode: "reconcile" | "upsert";
   entity: { identifier: string; title?: string; properties: Field[] };
 };
 
@@ -96,6 +99,9 @@ export type Run = {
   error?: string;
   // warning is what went wrong without failing anything the run read.
   warning?: string;
+  // readSince is, for each resource a sync read only what changed of, the
+  // earliest time it read from; it read the others in full.
+  readSince?: Record<string, string>;
 };
 
 // IntegrationStatus is how a published integration is doing: its latest run

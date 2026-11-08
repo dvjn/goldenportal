@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/jq"
@@ -16,6 +17,9 @@ type Entry struct {
 	Entity    blueprint.Entity
 	Deleted   bool
 	Problems  []string
+	// Resource, Scope and SourceAt are the item's it was made from.
+	Resource, Scope string
+	SourceAt        time.Time
 }
 
 // mapper runs an integration's mappings, compiled once for a run.
@@ -86,17 +90,19 @@ func (m Mapping) compile() (compiled, error) {
 // item only needs its identifier.
 func (c compiled) apply(ctx context.Context, item Item) (Entry, bool) {
 	input := item.Object
+	entry := Entry{Blueprint: c.blueprint, Resource: item.Resource, Scope: item.Scope, SourceAt: item.SourceAt}
 	if c.filter != nil && !item.Deleted {
 		keep, err := first(ctx, c.filter, input)
 		if err != nil {
-			return Entry{Blueprint: c.blueprint, Problems: []string{"filter: " + err.Error()}}, true
+			entry.Problems = []string{"filter: " + err.Error()}
+			return entry, true
 		}
 		if keep != true {
 			return Entry{}, false
 		}
 	}
 
-	entry := Entry{Blueprint: c.blueprint, Deleted: item.Deleted, Entity: blueprint.Entity{Properties: map[string]any{}}}
+	entry.Deleted, entry.Entity = item.Deleted, blueprint.Entity{Properties: map[string]any{}}
 	identifier, err := first(ctx, c.identifier, input)
 	if err != nil {
 		entry.Problems = append(entry.Problems, "identifier: "+err.Error())

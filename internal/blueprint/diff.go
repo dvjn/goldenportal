@@ -76,6 +76,10 @@ func Diff(previous, next Spec) []Change {
 			return true, "removes it and the values entities have for it"
 		})...)
 
+	if !SameRetention(previous, next) {
+		changes = append(changes, diffRetention(previous, next))
+	}
+
 	return changes
 }
 

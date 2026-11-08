@@ -115,7 +115,7 @@ func TestAuthentikPull(t *testing.T) {
 			items[resource] = append(items[resource], page...)
 			return nil
 		})
-	if err != nil || len(failed) != 0 {
+	if err != nil || len(failed.Failed) != 0 {
 		t.Fatalf("failed = %v, err = %v", failed, err)
 	}
 	if len(items[authentikUsers]) != 2 || len(items[authentikGroups]) != 4 {

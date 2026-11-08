@@ -53,6 +53,9 @@ export type EntityResult = Result & {
   blueprint: string;
   identifier: string;
   title: string;
+  // changedAt is when the entity reached its tier; evaluatedAt, when the
+  // scorecard last ran.
+  changedAt: string;
   evaluatedAt: string;
 };
 

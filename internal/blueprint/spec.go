@@ -29,6 +29,8 @@ type Spec struct {
 	// entities' pages as tabs of widgets, beside the tabs every page has.
 	Catalog *Page `json:"catalog,omitempty"`
 	Entity  *Page `json:"entity,omitempty"`
+	// Retention is how long rows are kept, or nil for ever.
+	Retention *Retention `json:"retention,omitempty"`
 }
 
 // Page is the tabs a blueprint adds to one of its pages, and the queries
@@ -144,7 +146,7 @@ var (
 // The keys each mapping of a blueprint takes, exported so the documents'
 // JSON Schema can be checked against them.
 var (
-	SpecFields     = []string{"properties", "catalog", "entity"}
+	SpecFields     = []string{"properties", "catalog", "entity", "retention"}
 	PropertyFields = []string{
 		"title", "description", "type", "format", "enum", "required", "pattern", "minLength", "maxLength",
 		"minimum", "maximum", "items", "relation", "many", "lookup", "compute", "scorecard", "display",
@@ -185,6 +187,7 @@ func Parse(source string) (Spec, []Issue) {
 			spec.Catalog.Columns = p.columns(fields["catalog"], spec)
 		}
 		spec.Entity = p.entityPage(fields["entity"], "spec.entity", spec)
+		spec.Retention = p.retention(fields["retention"], spec)
 	}
 	if spec.Entity != nil {
 		for _, tab := range spec.Entity.Tabs {

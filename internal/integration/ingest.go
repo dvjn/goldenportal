@@ -3,10 +3,12 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gofr.dev/pkg/gofr"
@@ -211,12 +213,14 @@ func receive(ctx *gofr.Context) (*Run, error) {
 	}
 
 	run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: mode, Errors: []RunError{}}
-	unsafe, err := write(ctx, ctx.SQL, w.id, m.Map(ctx, items), run)
-	if err != nil {
-		return nil, err
+	entries := m.Map(ctx, items)
+	for start := 0; start < len(entries); start += writeBatch {
+		if err := writeBatched(ctx, ctx.SQL, w.id, entries[start:min(start+writeBatch, len(entries))], run); err != nil {
+			return nil, err
+		}
 	}
 	if mode == ModeComplete {
-		if run.Deleted, err = reconcile(ctx, ctx.SQL, w.id, w.spec, resources, unsafe, started); err != nil {
+		if run.Deleted, err = reconcile(ctx, ctx.SQL, w.id, w.spec, resources, Report{}, sightingsOf(entries), started); err != nil {
 			return nil, err
 		}
 	}
@@ -263,8 +267,8 @@ func deleteEntity(ctx *gofr.Context) (any, error) {
 	return nil, NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run)
 }
 
-// dbNow is the database's clock, which seen_at is set by, so a complete run
-// compares like with like.
+// dbNow is the database's clock, which marks of what a run missed are made
+// by, so a complete run compares like with like.
 func dbNow(ctx context.Context, db configdoc.DB) (time.Time, error) {
 	var now time.Time
 	err := db.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&now)
@@ -272,19 +276,77 @@ func dbNow(ctx context.Context, db configdoc.DB) (time.Time, error) {
 	return now.UTC(), err
 }
 
+// writeBatched writes entries in a transaction, and the run's counts so far
+// with it, so a running sync shows how far it got. A deadlock, which a
+// concurrent writer can cause however rows are ordered, rolls the batch
+// back and tries it again, up to writeRetries times, after which it fails
+// with a deadlockError.
+func writeBatched(ctx context.Context, db TxDB, integrationID string, entries []Entry, run *Run) error {
+	for attempt := 0; ; attempt++ {
+		before := *run
+		before.Errors = slices.Clone(run.Errors)
+		err := writeInTx(ctx, db, integrationID, entries, run)
+		if !isDeadlock(err) {
+			return err
+		}
+		*run = before
+		run.retried += len(entries)
+		telemetry.Warn(ctx, "batch deadlocked; trying again", err, telemetry.Items.Int(len(entries)))
+		if attempt == writeRetries {
+			return deadlockError{err}
+		}
+	}
+}
+
+// writeRetries is how many times a batch that deadlocked is tried again.
+const writeRetries = 3
+
+// deadlockError is a batch that deadlocked every time it was tried.
+type deadlockError struct{ err error }
+
+func (e deadlockError) Error() string {
+	return fmt.Sprintf("it couldn't be written: the database deadlocked with another writer %d times", writeRetries+1)
+}
+
+func (e deadlockError) Unwrap() error { return e.err }
+
+func isDeadlock(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "40P01"
+}
+
+func writeInTx(ctx context.Context, db TxDB, integrationID string, entries []Entry, run *Run) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := write(ctx, tx, integrationID, entries, run); err != nil {
+		return err
+	}
+	if run.ID != 0 {
+		if err := NewStore(tx).progress(ctx, run); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 // write validates entries against their blueprints and writes or deletes
 // them as the integration, counting outcomes in run. Entries that fail are
-// reported without stopping the rest. It returns the blueprints a complete
-// run mustn't reconcile, because an entry of theirs had no identifier and
-// could have been any of their entities.
-func write(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) (_ map[string]bool, err error) {
+// reported without stopping the rest. Of entries about one entity, the last
+// counts, and the rest are unchanged. Only what's new or changed is
+// written.
+func write(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) (err error) {
 	ctx, span := telemetry.Start(ctx, "write batch", telemetry.Items.Int(len(entries)))
 	before := *run
 	defer func() {
 		counts := []attribute.KeyValue{
 			telemetry.Created.Int(run.Created - before.Created), telemetry.Updated.Int(run.Updated - before.Updated),
 			telemetry.Unchanged.Int(run.Unchanged - before.Unchanged), telemetry.Deleted.Int(run.Deleted - before.Deleted),
-			telemetry.Failed.Int(run.Failed - before.Failed),
+			telemetry.Failed.Int(run.Failed - before.Failed), telemetry.Older.Int(run.older - before.older),
+			telemetry.Expired.Int(run.expired - before.expired),
 		}
 		span.SetAttributes(counts...)
 		telemetry.Debug(ctx, "batch written", append(counts, telemetry.Items.Int(len(entries)))...)
@@ -294,170 +356,145 @@ func write(ctx context.Context, db configdoc.DB, integrationID string, entries [
 	return writeEntries(telemetry.QuietSQL(ctx), db, integrationID, entries, run)
 }
 
-func writeEntries(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) (map[string]bool, error) {
+func writeEntries(ctx context.Context, db configdoc.DB, integrationID string, entries []Entry, run *Run) error {
 	blueprints, err := blueprint.Published(ctx, db)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	now := time.Now()
 	blueprintIDs := map[string]string{}
-	unsafe := map[string]bool{}
 	entities := entity.NewStore(db)
 
+	// op is an entry that reached the store: its index in the run, and the
+	// write or delete it makes.
+	type op struct {
+		index int
+		entry Entry
+		key   entity.Key
+		write entity.Write
+	}
+	var (
+		ops     []op
+		sighted []entity.Key
+	)
+	fail := func(index int, e Entry, problems ...string) {
+		telemetry.Debug(ctx, "item not written", telemetry.Blueprint.String(e.Blueprint),
+			attribute.String("gp.entity", e.Entity.Identifier), attribute.StringSlice("gp.problems", problems))
+		run.Failed++
+		if len(run.Errors) < MaxRunErrors {
+			run.Errors = append(run.Errors, RunError{
+				Index: index, Blueprint: e.Blueprint,
+				Identifier: e.Entity.Identifier, Problems: problems,
+			})
+		}
+	}
 	for _, e := range entries {
 		index := run.Received
 		run.Received++
-		if e.Entity.Identifier == "" {
-			unsafe[e.Blueprint] = true
+		switch {
+		case e.Entity.Identifier != "":
+		case e.Deleted:
+			e.Problems = append(e.Problems, "it has no identifier, so it deleted nothing")
+		default:
 			e.Problems = append(e.Problems, "it has no identifier, so this run deleted no "+e.Blueprint+" entities")
-		}
-		fail := func(problems ...string) {
-			telemetry.Debug(ctx, "item not written", telemetry.Blueprint.String(e.Blueprint),
-				attribute.String("gp.entity", e.Entity.Identifier), attribute.StringSlice("gp.problems", problems))
-			run.Failed++
-			if len(run.Errors) < MaxRunErrors {
-				run.Errors = append(run.Errors, RunError{
-					Index: index, Blueprint: e.Blueprint,
-					Identifier: e.Entity.Identifier, Problems: problems,
-				})
-			}
 		}
 		spec, ok := blueprints[e.Blueprint]
 		if !ok {
-			fail(append(e.Problems, "no blueprint "+e.Blueprint+" is published")...)
+			fail(index, e, append(e.Problems, "no blueprint "+e.Blueprint+" is published")...)
 			continue
 		}
 		if _, ok := blueprintIDs[e.Blueprint]; !ok {
 			if blueprintIDs[e.Blueprint], err = configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, e.Blueprint); err != nil {
-				return nil, err
+				return err
 			}
 		}
-		// An item that can't be written still counts as seen, so a bad value
+		key := entity.Key{BlueprintID: blueprintIDs[e.Blueprint], Identifier: e.Entity.Identifier}
+		// An item that can't be written is still a sighting, so a bad value
 		// never deletes the entity it would have updated.
-		failSeen := func(problems ...string) error {
-			fail(problems...)
-			if e.Deleted || e.Entity.Identifier == "" {
-				return nil
+		failSeen := func(problems ...string) {
+			fail(index, e, problems...)
+			if !e.Deleted && e.Entity.Identifier != "" {
+				sighted = append(sighted, key)
 			}
-			return entities.Seen(ctx, blueprintIDs[e.Blueprint], integrationID, e.Entity.Identifier)
 		}
 		if len(e.Problems) > 0 {
-			if err := failSeen(e.Problems...); err != nil {
-				return nil, err
-			}
+			failSeen(e.Problems...)
 			continue
 		}
-
-		var owned entity.OwnedError
 		if e.Deleted {
-			err := entities.Delete(ctx, blueprintIDs[e.Blueprint], integrationID, e.Entity.Identifier)
+			ops = append(ops, op{index: index, entry: e, key: key})
+			continue
+		}
+		clean, problems := spec.ValidateEntity(e.Entity)
+		if len(problems) > 0 {
+			failSeen(problems...)
+			continue
+		}
+		computed, _ := spec.Compute(ctx, clean)
+		occurredAt := spec.RetainedAt(clean)
+		// A row older than its blueprint keeps rows is what the next
+		// retention run deletes, as a first sync or an event may bring.
+		if !occurredAt.IsZero() && occurredAt.Before(now.Add(-spec.KeepFor(clean, computed))) {
+			run.Unchanged++
+			run.expired++
+			sighted = append(sighted, key)
+			continue
+		}
+		ops = append(ops, op{index: index, entry: e, key: key, write: entity.Write{
+			BlueprintID: key.BlueprintID, Entity: clean, Computed: computed, Scope: e.Scope, SourceAt: e.SourceAt,
+			OccurredAt: occurredAt,
+		}})
+	}
+
+	last := map[entity.Key]int{}
+	for i, o := range ops {
+		last[o.key] = i
+	}
+	var (
+		writes  []entity.Write
+		writeOf []op
+	)
+	for i, o := range ops {
+		var owned entity.OwnedError
+		switch {
+		case last[o.key] != i:
+			run.Unchanged++
+		case o.entry.Deleted:
+			err := entities.Delete(ctx, o.key.BlueprintID, integrationID, o.key.Identifier)
 			switch {
 			case errors.Is(err, entity.ErrNotFound):
 				run.Unchanged++
 			case errors.As(err, &owned):
-				fail(owned.Error())
+				fail(o.index, o.entry, owned.Error())
 			case err != nil:
-				return nil, err
+				return err
 			default:
 				run.Deleted++
 			}
-			continue
+		default:
+			writes, writeOf = append(writes, o.write), append(writeOf, o)
 		}
+	}
 
-		clean, problems := spec.ValidateEntity(e.Entity)
-		if len(problems) > 0 {
-			if err := failSeen(problems...); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		computed, _ := spec.Compute(ctx, clean)
-		outcome, err := entities.Upsert(ctx, blueprintIDs[e.Blueprint], integrationID, clean, computed)
+	written, err := entities.WriteAll(ctx, integrationID, writes)
+	if err != nil {
+		return err
+	}
+	for i, w := range written {
 		switch {
-		case errors.As(err, &owned):
-			fail(owned.Error())
-			continue
-		case err != nil:
-			return nil, err
-		}
-		switch outcome {
-		case entity.Created:
+		case w.Owner != "":
+			fail(writeOf[i].index, writeOf[i].entry, entity.OwnedError{Integration: w.Owner}.Error())
+		case w.Outcome == entity.Created:
 			run.Created++
-		case entity.Updated:
+		case w.Outcome == entity.Updated:
 			run.Updated++
+		case w.Outcome == entity.Older:
+			run.Unchanged++
+			run.older++
 		default:
 			run.Unchanged++
 		}
 	}
 
-	return unsafe, nil
-}
-
-// reconcile deletes, after a complete run over resources, the integration's
-// entities that neither it nor the complete run before it saw, and
-// marks those it missed for the first time. It only reconciles a blueprint
-// when the run covered every resource its mappings name, and none of its
-// entries lacked an identifier.
-func reconcile(ctx context.Context, db configdoc.DB, integrationID string, spec Spec, covered []string,
-	unsafe map[string]bool, started time.Time,
-) (deleted int, err error) {
-	ctx, span := telemetry.Start(ctx, "reconcile")
-	defer func() {
-		span.SetAttributes(telemetry.Deleted.Int(deleted))
-		telemetry.End(span, err)
-	}()
-	var ids []string
-	for _, bp := range spec.reconcilable(covered, unsafe) {
-		id, err := configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, bp)
-		switch {
-		case errors.Is(err, configdoc.ErrNotFound):
-			continue
-		case err != nil:
-			return 0, err
-		}
-		ids = append(ids, id)
-	}
-
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	published, err := publishedAt(ctx, db, integrationID)
-	if err != nil {
-		return 0, err
-	}
-
-	return entity.NewStore(db).Reconcile(ctx, integrationID, ids, started, published)
-}
-
-// publishedAt is when the integration's current version was published.
-func publishedAt(ctx context.Context, db configdoc.DB, integrationID string) (time.Time, error) {
-	var at time.Time
-	err := db.QueryRowContext(ctx, `
-		SELECT v.published_at FROM config_versions v JOIN config_documents d
-			ON d.id = v.document_id AND v.version = d.published_version WHERE d.id = $1`, integrationID).Scan(&at)
-
-	return at, err
-}
-
-// reconcilable lists, in order, the blueprints a complete run over covered
-// can reconcile: those whose mappings' resources it all covered, and whose
-// entries all had identifiers.
-func (s Spec) reconcilable(covered []string, unsafe map[string]bool) []string {
-	whole := map[string]bool{}
-	for _, m := range s.Mappings {
-		if _, seen := whole[m.Blueprint]; !seen {
-			whole[m.Blueprint] = true
-		}
-		if !slices.Contains(covered, m.Resource) {
-			whole[m.Blueprint] = false
-		}
-	}
-	var out []string
-	for bp, ok := range whole {
-		if ok && !unsafe[bp] {
-			out = append(out, bp)
-		}
-	}
-	slices.Sort(out)
-
-	return out
+	return entities.Sighted(ctx, integrationID, sighted)
 }

@@ -85,7 +85,13 @@ export type BlueprintSpec = {
   // catalog.columns are its table's columns until someone picks their own.
   catalog?: { columns?: string[]; tabs: Tab[] };
   entity?: { header?: EntityHeader; sections?: PropertySection[]; tabs: Tab[] };
+  // retention deletes rows once their by property is older than keep, or
+  // than the longest keep of the rules they match. Without it, rows are kept
+  // for ever.
+  retention?: Retention;
 };
+
+export type Retention = { by: string; keep: string; rules?: { keep: string }[] };
 
 export type Blueprint = ConfigDoc<BlueprintSpec>;
 export type BlueprintSummary = DocSummary;

@@ -181,8 +181,8 @@ func TestResultsFilterBySeveralTiers(t *testing.T) {
 	// "none" is the empty tier of entities that reached none.
 	mock.ExpectQuery(regexp.QuoteMeta(`r.tier = ANY($2)`)).
 		WithArgs("sc", pq.Array([]string{"silver", ""}), "", pq.Array([]string{"", "bronze", "silver"}), 10, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "at", "tier", "score", "p", "f", "s", "x", "c", "total"}).
-			AddRow("service", "ledger", "Ledger", time.Time{}, "silver", 80, 4, 1, 0, 0, []byte(`{}`), 1))
+		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "x", "c", "total"}).
+			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, 0, []byte(`{}`), 1))
 
 	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Tiers: []string{"silver", "none"}, Page: 1, PageSize: 10})
 	if err != nil {

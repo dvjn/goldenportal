@@ -198,6 +198,9 @@ func (c *compiler) within(fld field, f Filter) (string, error) {
 
 // dateOf is a date field's value as a timestamp.
 func dateOf(fld field) string {
+	if fld.timestamp != "" {
+		return fld.timestamp
+	}
 	if fld.column {
 		return fld.value
 	}
@@ -341,6 +344,9 @@ func (c *compiler) orderBy(sort string, ladders map[string]blueprint.Ladder) (st
 		return "", fmt.Errorf("%s holds a list or an object, which can't be sorted", sort)
 	}
 	value := fld.value
+	if fld.timestamp != "" {
+		value = fld.timestamp
+	}
 	if ladder, ok := ladders[fld.scorecard]; ok && fld.kind == kindTier {
 		value = "array_position(" + c.arg(pq.Array(ladder.Names())) + "::text[], coalesce(" + value + ", ''))"
 	}

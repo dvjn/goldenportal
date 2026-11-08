@@ -25,5 +25,8 @@ func All() map[int64]migration.Migrate {
 		20261106120000: addRunningIngestionRuns(),
 		20261107120000: oneFormPerSetting(),
 		20261108130000: indexPushRuns(),
+		20261109120000: writeOnlyChanges(),
+		20261109130000: reconcileByScope(),
+		20261109150000: retentionAndCursors(),
 	}
 }

@@ -35,6 +35,7 @@ import {
   type BlueprintSpec,
   type Property,
   propertySource,
+  type Retention,
   type Usage,
   usageQueryOptions,
 } from "@/features/blueprints";
@@ -231,6 +232,7 @@ function AboutCard({
               {usage?.entities ?? <EmptyValue title="Not counted" />}
             </span>
           </Detail>
+          {spec.retention && <RetentionDetail retention={spec.retention} />}
           {published && (
             <>
               <Detail label="Version">
@@ -247,6 +249,23 @@ function AboutCard({
         </DetailList>
       </CardContent>
     </Card>
+  );
+}
+
+// RetentionDetail says how long rows are kept, such as 30d by startedAt,
+// longer for 1 rule.
+function RetentionDetail({ retention }: Readonly<{ retention: Retention }>) {
+  const rules = retention.rules?.length ?? 0;
+  return (
+    <Detail
+      label="Retention"
+      help={`Rows are deleted once ${retention.by} is older than this; rows without ${retention.by} are kept.`}
+    >
+      <span className="font-medium tabular-nums">
+        {retention.keep} by {retention.by}
+        {rules > 0 && `, longer for ${rules} ${rules === 1 ? "rule" : "rules"}`}
+      </span>
+    </Detail>
   );
 }
 

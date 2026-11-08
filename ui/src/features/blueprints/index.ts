@@ -10,6 +10,7 @@ export {
   type PropertyType,
   propertySource,
   type Reference,
+  type Retention,
   type Usage,
   type Writer,
 } from "./api";

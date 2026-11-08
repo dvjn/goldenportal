@@ -80,25 +80,33 @@ func gitlabProjectShape(project map[string]any) map[string]any {
 // gitlabPull is one sync's reading of GitLab.
 type gitlabPull struct {
 	*pullRun
-	config *GitLabConfig
-	client *gitlabClient
-	warn   func(string)
-	viewer *gitlabViewer
+	config  *GitLabConfig
+	request PullRequest
+	client  *gitlabClient
+	warn    func(string)
+	viewer  *gitlabViewer
 	// projects are those read, whose webhooks the sync sets up.
 	projects []map[string]any
+	// listedAt is when GitLab listed each project, by ID.
+	listedAt map[string]time.Time
 	groups   *gitlabMergeGroups
 }
 
-// Pull reads each resource asked for, whole, whatever the sync's mode, since
-// webhook events keep the catalog current between syncs. Groups come first,
-// then the projects, a few at a time. Something that fails, such as one
-// project's pipelines, fails its resource, so a complete sync deletes none
-// of it, without stopping the rest. Then it points each project's webhook
-// at the integration, where it can, warning of what it couldn't.
+// Pull reads each resource asked for. Groups come first, then the
+// projects, a few at a time. Merge requests, issues, pipelines with their
+// jobs, and deployments are read from where the request says in each
+// project, as what changed since; the rest is read whole, as GitLab can't
+// say what of it changed. Something that fails, such as one project's
+// pipelines, fails its resource, so a complete sync deletes none of it,
+// without stopping the rest. Then it points each project's webhook at the
+// integration, where it can, warning of what it couldn't.
 func (c *GitLabConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 	emit func(resource string, items []Item) error,
-) (map[string]error, error) {
-	pull := &gitlabPull{pullRun: newPullRun(p.Resources, c.cutoff(), emit), config: c, warn: p.Warn, groups: newGitLabMergeGroups()}
+) (Report, error) {
+	pull := &gitlabPull{
+		pullRun: newPullRun(p.Resources, emit), config: c, request: p, warn: p.Warn, groups: newGitLabMergeGroups(),
+		listedAt: map[string]time.Time{},
+	}
 	client, err := newGitLabClient(c)
 	if err != nil {
 		return pull.failAll(err), nil
@@ -109,8 +117,12 @@ func (c *GitLabConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 	hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), hookTimeout)
 	defer cancel()
 	ensureGitLabWebhooks(hookCtx, client, pull.projects, p.IngestURL, p.WebhookSecret, p.Resources, pull.warn)
+	scopes := make([]string, len(pull.projects))
+	for i, project := range pull.projects {
+		scopes[i] = idOf(project["id"])
+	}
 
-	return pull.result(err)
+	return pull.result(scopes, err)
 }
 
 func (p *gitlabPull) run(ctx context.Context) error {
@@ -163,7 +175,7 @@ func (p *gitlabPull) find(ctx context.Context, kind, path string) (map[string]an
 	var missing gitlabMissing
 	switch {
 	case errors.As(err, &missing):
-		p.warn(sentence(missing.Error()) + " Every resource it feeds fails on each sync, so none of their entities are deleted anywhere, " +
+		p.warn(sentence(missing.Error()) + " Nothing read from it is deleted, and no project a sync no longer finds counts as gone, " +
 			"until it's taken out of " + kind + "s, if it's gone, or the token gets access to it again.")
 		return nil, err
 	case err != nil:
@@ -189,9 +201,15 @@ func (p *gitlabPull) find(ctx context.Context, kind, path string) (map[string]an
 func (p *gitlabPull) pullGroups(ctx context.Context) ([]map[string]any, error) {
 	var groups []map[string]any
 	for _, path := range p.config.Groups {
-		group, err := p.find(ctx, "group", path)
+		groupCtx, clock := withSourceClock(ctx)
+		group, err := p.find(groupCtx, "group", path)
 		if err != nil {
-			if err := p.fail(ctx, gitlabResources, path, err); err != nil {
+			// The group's projects aren't listed either, which holds back
+			// deleting what's in any project gone since.
+			if err := p.fail(ctx, gitlabGroupResources, path, "", err); err != nil {
+				return nil, err
+			}
+			if err := p.unlist(ctx, "the group "+path, err); err != nil {
 				return nil, err
 			}
 			continue
@@ -201,19 +219,19 @@ func (p *gitlabPull) pullGroups(ctx context.Context) ([]map[string]any, error) {
 			continue
 		}
 		all := []map[string]any{gitlabShape(group, gitlabGroupFields)}
-		err = p.read(ctx, listing{path: "groups/" + idOf(group["id"]) + "/descendant_groups"}, func(objects []map[string]any) error {
+		err = p.read(groupCtx, listing{path: "groups/" + idOf(group["id"]) + "/descendant_groups"}, func(objects []map[string]any, _ time.Time) error {
 			for _, g := range objects {
 				all = append(all, gitlabShape(g, gitlabGroupFields))
 			}
 			return nil
 		})
 		if err := skipGone(err); err != nil {
-			if err := p.fail(ctx, gitlabGroupResources, path, err); err != nil {
+			if err := p.fail(ctx, gitlabGroupResources, path, "", err); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		if err := p.fail(ctx, []string{gitlabGroups}, path, p.emitObjects(gitlabGroups, all, nil)); err != nil {
+		if err := p.fail(ctx, []string{gitlabGroups}, path, "", p.emitObjects(gitlabGroups, all, nil, source{at: clock.take()})); err != nil {
 			return nil, err
 		}
 		if !p.want[gitlabMembers] {
@@ -221,10 +239,10 @@ func (p *gitlabPull) pullGroups(ctx context.Context) ([]map[string]any, error) {
 		}
 		for _, g := range all {
 			fullPath, _ := g["full_path"].(string)
-			err := p.read(ctx, listing{path: "groups/" + idOf(g["id"]) + "/members"}, func(members []map[string]any) error {
-				return p.emitObjects(gitlabMembers, members, map[string]any{"group": fullPath})
+			err := p.read(ctx, listing{path: "groups/" + idOf(g["id"]) + "/members"}, func(members []map[string]any, at time.Time) error {
+				return p.emitObjects(gitlabMembers, members, map[string]any{"group": fullPath}, source{at: at})
 			})
-			if err := p.fail(ctx, []string{gitlabMembers}, fullPath, skipGone(err)); err != nil {
+			if err := p.fail(ctx, []string{gitlabMembers}, fullPath, "", skipGone(err)); err != nil {
 				return nil, err
 			}
 		}
@@ -320,10 +338,11 @@ func gitlabWholeView(ctx context.Context, client *gitlabClient, viewer *gitlabVi
 // moved is read where it is now, saying so.
 func (p *gitlabPull) readProjects(ctx context.Context, groups []map[string]any) error {
 	seen := map[string]bool{}
-	add := func(project map[string]any) {
+	add := func(project map[string]any, at time.Time) {
 		if id := idOf(project["id"]); id != "" && !seen[id] {
 			seen[id] = true
 			p.projects = append(p.projects, gitlabProjectShape(project))
+			p.listedAt[id] = at
 		}
 	}
 
@@ -333,27 +352,28 @@ func (p *gitlabPull) readProjects(ctx context.Context, groups []map[string]any) 
 		if p.config.ExcludeArchived {
 			query.Set("archived", "false")
 		}
-		err := p.read(ctx, listing{path: "groups/" + idOf(group["id"]) + "/projects?" + query.Encode()}, func(objects []map[string]any) error {
+		err := p.read(ctx, listing{path: "groups/" + idOf(group["id"]) + "/projects?" + query.Encode()}, func(objects []map[string]any, at time.Time) error {
 			for _, project := range objects {
-				add(project)
+				add(project, at)
 			}
 			return nil
 		})
-		if err := p.fail(ctx, gitlabProjectResources, fullPath, skipGone(err)); err != nil {
+		if err := p.unlist(ctx, "the projects of "+fullPath, skipGone(err)); err != nil {
 			return err
 		}
 	}
 	for _, path := range p.config.Projects {
-		project, err := p.find(ctx, "project", path)
+		projectCtx, clock := withSourceClock(ctx)
+		project, err := p.find(projectCtx, "project", path)
 		switch {
 		case err != nil:
-			if err := p.fail(ctx, gitlabProjectResources, path, err); err != nil {
+			if err := p.unlist(ctx, "the project "+path, err); err != nil {
 				return err
 			}
 		case p.config.ExcludeArchived && project["archived"] == true:
 			p.warn("The project " + path + " is archived, so it's left out, as excludeArchived says; take it out of projects, or let archived projects in.")
 		default:
-			add(project)
+			add(project, clock.take())
 		}
 	}
 
@@ -686,13 +706,17 @@ func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) (e
 	fullPath, _ := project["path_with_namespace"].(string)
 	ctx, span := telemetry.Start(ctx, "pull project", telemetry.Scope.String(fullPath))
 	defer func() { telemetry.End(span, err) }()
-	base := "projects/" + idOf(project["id"]) + "/"
+	scope := idOf(project["id"])
+	base := "projects/" + scope + "/"
 	parent := map[string]any{"project": fullPath}
+	page := func(resource string, parent map[string]any) func([]map[string]any, time.Time) error {
+		return func(objects []map[string]any, at time.Time) error {
+			return p.emitObjects(resource, objects, parent, source{scope: scope, at: at})
+		}
+	}
 	simple := func(resource, path string) func(context.Context) error {
 		return func(ctx context.Context) error {
-			return p.read(ctx, listing{path: base + path}, func(objects []map[string]any) error {
-				return p.emitObjects(resource, objects, parent)
-			})
+			return p.read(ctx, listing{path: base + path}, page(resource, parent))
 		}
 	}
 	steps := []struct {
@@ -700,30 +724,34 @@ func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) (e
 		run       func(ctx context.Context) error
 	}{
 		{[]string{gitlabProjects}, func(ctx context.Context) error {
+			ctx, clock := withSourceClock(ctx)
 			if err := gitlabWithDefaultBranch(ctx, p.client, p.groups, project); err != nil {
 				return err
 			}
-			return p.emitObjects(gitlabProjects, []map[string]any{project}, nil)
+			from := source{scope: scope, at: earliest(p.listedAt[scope], clock.take())}
+			return p.emitObjects(gitlabProjects, []map[string]any{project}, nil, from)
 		}},
 		{[]string{gitlabTags}, simple(gitlabTags, "repository/tags")},
 		{[]string{gitlabMergeRequests}, func(ctx context.Context) error {
-			return p.readOpenAndRecent(ctx, gitlabMergeRequests, base+"merge_requests", parent)
+			return p.readChanged(ctx, base+"merge_requests", gitlabMergeRequests, scope, page(gitlabMergeRequests, parent))
 		}},
-		{[]string{gitlabIssues}, func(ctx context.Context) error { return p.readOpenAndRecent(ctx, gitlabIssues, base+"issues", parent) }},
+		{[]string{gitlabIssues}, func(ctx context.Context) error {
+			return p.readChanged(ctx, base+"issues", gitlabIssues, scope, page(gitlabIssues, parent))
+		}},
 		{[]string{gitlabReleases}, simple(gitlabReleases, "releases")},
-		{[]string{gitlabPipelines, gitlabJobs}, func(ctx context.Context) error { return p.pullPipelines(ctx, base, fullPath) }},
+		{[]string{gitlabPipelines, gitlabJobs}, func(ctx context.Context) error { return p.pullPipelines(ctx, base, fullPath, scope) }},
 		{[]string{gitlabDeployments}, func(ctx context.Context) error {
-			l := listing{path: base + "deployments?order_by=id&sort=desc", stop: p.olderThan("created_at")}
-			return p.read(ctx, l, func(objects []map[string]any) error { return p.emitObjects(gitlabDeployments, objects, parent) })
+			since, _ := p.request.From(gitlabDeployments, scope)
+			return p.read(ctx, listing{path: base + "deployments?" + changedSince(since).Encode()}, page(gitlabDeployments, parent))
 		}},
 		{[]string{gitlabEnvironments}, func(ctx context.Context) error {
-			return p.read(ctx, listing{path: base + "environments"}, func(environments []map[string]any) error {
+			return p.read(ctx, listing{path: base + "environments"}, func(environments []map[string]any, at time.Time) error {
 				for _, environment := range environments {
 					if err := gitlabWithLastDeployment(ctx, p.client, base, fullPath, environment); err != nil {
 						return err
 					}
 				}
-				return p.emitObjects(gitlabEnvironments, environments, nil)
+				return page(gitlabEnvironments, nil)(environments, at)
 			})
 		}},
 	}
@@ -731,7 +759,7 @@ func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) (e
 		if !p.wantsAny(s.resources) || !gitlabEnabled(project, s.resources[0]) {
 			continue
 		}
-		if err := p.step(ctx, s.resources, fullPath, base, s.run); err != nil {
+		if err := p.step(ctx, s.resources, fullPath, scope, base, s.run); err != nil {
 			return err
 		}
 	}
@@ -740,7 +768,7 @@ func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) (e
 }
 
 // step reads resources of a project, as a span of its own.
-func (p *gitlabPull) step(ctx context.Context, resources []string, fullPath, base string, run func(context.Context) error) error {
+func (p *gitlabPull) step(ctx context.Context, resources []string, fullPath, scope, base string, run func(context.Context) error) error {
 	ctx, span := telemetry.Start(ctx, "read "+resources[0], telemetry.Resource.String(resources[0]))
 	err := run(ctx)
 	if apiGone(err) {
@@ -748,7 +776,7 @@ func (p *gitlabPull) step(ctx context.Context, resources []string, fullPath, bas
 	}
 	telemetry.End(span, err)
 
-	return p.fail(ctx, resources, fullPath, err)
+	return p.fail(ctx, resources, fullPath, scope, err)
 }
 
 // unlessGone is err, a 404 on part of a project, unless the project is gone
@@ -762,46 +790,72 @@ func (p *gitlabPull) unlessGone(ctx context.Context, base string, err error) err
 	return err
 }
 
-// readOpenAndRecent reads the open merge requests or issues of a project,
-// and those closed or merged since the cutoff. Closing one updates it, so
-// those updated since the cutoff hold them all.
-func (p *gitlabPull) readOpenAndRecent(ctx context.Context, resource, path string, parent map[string]any) error {
-	page := func(objects []map[string]any) error { return p.emitObjects(resource, objects, parent) }
-	if err := p.read(ctx, listing{path: path + "?state=opened"}, page); err != nil {
-		return err
-	}
-	query := url.Values{"updated_after": {p.cutoff.UTC().Format(time.RFC3339)}, "order_by": {"updated_at"}, "sort": {"desc"}}
-	if resource == gitlabIssues {
-		query.Set("state", "closed")
-	}
-	recent := listing{
-		path: path + "?" + query.Encode(),
-		keep: func(object map[string]any) bool {
-			return object["state"] != "opened" && gitlabCurrent(resource, object, p.cutoff)
-		},
+// changedSince asks a list for what changed since a time, the latest
+// change first, or for everything, newest first, for the zero time. Lists
+// of deployments take updated_after only ordered by updated_at.
+func changedSince(since time.Time) url.Values {
+	if since.IsZero() {
+		return url.Values{"order_by": {"id"}, "sort": {"desc"}}
 	}
 
-	return p.read(ctx, recent, page)
+	return url.Values{"updated_after": {since.UTC().Format(time.RFC3339)}, "order_by": {"updated_at"}, "sort": {"desc"}}
 }
 
-// pullPipelines reads the pipelines made since the cutoff, as GitLab lists
-// them, and their jobs' latest attempts, at a request a pipeline. Jobs that
-// fail fail only jobs, so the pipelines' stale entities still go, and a
-// pipeline deleted since it was listed has none.
-func (p *gitlabPull) pullPipelines(ctx context.Context, base, fullPath string) error {
+// readChanged reads the merge requests or issues of a project that changed
+// since the last sync read them there, or all of them when the sync reads
+// them in full. Closing or merging one changes it. A first sync that reads
+// back only as far as the blueprints keep rows reads the open ones too,
+// however long since they changed, since retention keeps what's open.
+func (p *gitlabPull) readChanged(ctx context.Context, path, resource, scope string, page func([]map[string]any, time.Time) error) error {
+	since, first := p.request.From(resource, scope)
+	if first && !since.IsZero() {
+		if err := p.read(ctx, listing{path: path + "?state=opened"}, page); err != nil {
+			return err
+		}
+	}
+	changed := listing{path: path + "?" + changedSince(since).Encode()}
+	if first && !since.IsZero() {
+		changed.keep = func(object map[string]any) bool { return object["state"] != "opened" }
+	}
+
+	return p.read(ctx, changed, page)
+}
+
+// pullPipelines reads the pipelines that changed since the last sync read
+// them in the project, child pipelines among them, and their jobs' latest
+// attempts, at a request a pipeline. Retrying a job changes its pipeline,
+// so a retried job is read again with it. Jobs that fail fail only jobs,
+// so the pipelines' stale entities still go, and a pipeline deleted since
+// it was listed has none.
+func (p *gitlabPull) pullPipelines(ctx context.Context, base, fullPath, scope string) error {
 	parent := map[string]any{"project": fullPath}
+	var pipelinesSince, jobsSince time.Time
+	if p.want[gitlabPipelines] {
+		pipelinesSince, _ = p.request.From(gitlabPipelines, scope)
+	}
+	if p.want[gitlabJobs] {
+		jobsSince, _ = p.request.From(gitlabJobs, scope)
+	}
+	since := pipelinesSince
+	if !p.want[gitlabPipelines] || (p.want[gitlabJobs] && jobsSince.Before(since)) {
+		since = jobsSince
+	}
 	// GitLab lists child pipelines, which a parent's trigger jobs make, only
 	// when asked for them alone, but sends their events like any other's.
 	var ids []string
-	for _, query := range []string{"order_by=id&sort=desc", "source=parent_pipeline&order_by=id&sort=desc"} {
-		err := p.read(ctx, listing{path: base + "pipelines?" + query, stop: p.olderThan("created_at")}, func(objects []map[string]any) error {
+	for _, children := range []bool{false, true} {
+		query := changedSince(since)
+		if children {
+			query.Set("source", "parent_pipeline")
+		}
+		err := p.read(ctx, listing{path: base + "pipelines?" + query.Encode()}, func(objects []map[string]any, at time.Time) error {
 			for i, pipeline := range objects {
-				if id := idOf(pipeline["id"]); id != "" {
+				if id := idOf(pipeline["id"]); id != "" && !timeOf(pipeline, "updated_at").Before(jobsSince) {
 					ids = append(ids, id)
 				}
 				objects[i] = gitlabShape(pipeline, gitlabPipelineFields)
 			}
-			return p.emitObjects(gitlabPipelines, objects, parent)
+			return p.emitObjects(gitlabPipelines, objects, parent, source{scope: scope, at: at})
 		})
 		if err != nil {
 			return err
@@ -811,11 +865,11 @@ func (p *gitlabPull) pullPipelines(ctx context.Context, base, fullPath string) e
 		return nil
 	}
 	for _, id := range ids {
-		err := p.read(ctx, listing{path: base + "pipelines/" + id + "/jobs"}, func(jobs []map[string]any) error {
-			return p.emitObjects(gitlabJobs, jobs, parent)
+		err := p.read(ctx, listing{path: base + "pipelines/" + id + "/jobs"}, func(jobs []map[string]any, at time.Time) error {
+			return p.emitObjects(gitlabJobs, jobs, parent, source{scope: scope, at: at})
 		})
 		if err := skipGone(err); err != nil {
-			return p.fail(ctx, []string{gitlabJobs}, fullPath, err)
+			return p.fail(ctx, []string{gitlabJobs}, fullPath, scope, err)
 		}
 	}
 
@@ -858,6 +912,13 @@ func gitlabCIConfig(ctx context.Context, client *gitlabClient, base string) (map
 	}, nil
 }
 
-func (p *gitlabPull) read(ctx context.Context, l listing, page func([]map[string]any) error) error {
-	return p.client.list(ctx, l.path, l.pages(page))
+// read reads a listing, handing page each page's objects with when GitLab
+// answered with them.
+func (p *gitlabPull) read(ctx context.Context, l listing, page func([]map[string]any, time.Time) error) error {
+	ctx, clock := withSourceClock(ctx)
+	return p.client.list(ctx, l.path, l.pages(func(objects []map[string]any) error {
+		// Reads made while handing a page on aren't the page's.
+		defer clock.take()
+		return page(objects, clock.take())
+	}))
 }

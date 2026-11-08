@@ -59,7 +59,8 @@ func (c *GitLabConfig) Receive(ctx context.Context, req Request, authenticated b
 	// What an event says of its project is read again too, so one that
 	// names another project than its ID, by mistake or forged, writes
 	// nothing.
-	project, err := gitlabFetch("projects/"+idOf(named["id"]))(ctx, client)
+	projectCtx, clock := withSourceClock(ctx)
+	project, err := gitlabFetch("projects/"+idOf(named["id"]))(projectCtx, client)
 	now, _ := project["path_with_namespace"].(string)
 	switch {
 	case apiGone(err):
@@ -71,11 +72,14 @@ func (c *GitLabConfig) Receive(ctx context.Context, req Request, authenticated b
 		return nil, nil
 	}
 	refs := slices.DeleteFunc(gitlabEventRefs(payload, gitlabProjectShape(project)), wanted)
-	cutoff := c.cutoff()
+	readAt := clock.take()
+	for i := range refs {
+		if refs[i].resource == gitlabProjects {
+			refs[i].readAt = readAt
+		}
+	}
 
-	return resolveRefs(ctx, client, "GitLab", event, refs, func(resource string, object map[string]any) bool {
-		return gitlabCurrent(resource, object, cutoff)
-	})
+	return resolveRefs(ctx, client, "GitLab", event, refs)
 }
 
 func gitlabFetch(path string) func(context.Context, *gitlabClient) (map[string]any, error) {
@@ -112,8 +116,9 @@ func gitlabEventRefs(payload, project map[string]any) []gitlabRef {
 	base := "projects/" + idOf(project["id"]) + "/"
 	parent := map[string]any{"project": fullPath}
 	attributes := objectOf(payload, "object_attributes")
+	scope := idOf(project["id"])
 	ref := func(resource string, fetch func(context.Context, *gitlabClient) (map[string]any, error), gone map[string]any) gitlabRef {
-		return gitlabRef{resource: resource, parent: parent, fetch: fetch, gone: gone}
+		return gitlabRef{resource: resource, scope: scope, parent: parent, fetch: fetch, gone: gone}
 	}
 
 	switch payload["object_kind"] {
@@ -179,7 +184,7 @@ func gitlabEventRefs(payload, project map[string]any) []gitlabRef {
 		// A deployment that finished may be what's deployed to its
 		// environment, which the environment's item carries.
 		if environment, _ := payload["environment"].(string); environment != "" {
-			refs = append(refs, gitlabRef{resource: gitlabEnvironments, fetch: func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
+			refs = append(refs, gitlabRef{resource: gitlabEnvironments, scope: scope, fetch: func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
 				e, err := gitlabFetchListed(base+"environments", url.Values{"name": {environment}}.Encode())(ctx, client)
 				if err != nil {
 					return nil, err
@@ -206,8 +211,7 @@ func gitlabEventRefs(payload, project map[string]any) []gitlabRef {
 }
 
 // gitlabLatestAttempt is a job as a sync reads it: from its pipeline's jobs,
-// which hold only each job's latest attempt, of a pipeline made since the
-// cutoff. Its retried attempts, and jobs of older pipelines, are nil.
+// which hold only each job's latest attempt. Its retried attempts are nil.
 func gitlabLatestAttempt(ctx context.Context, client *gitlabClient, base, pipeline, id string) (map[string]any, error) {
 	var job map[string]any
 	err := client.list(ctx, base+"pipelines/"+pipeline+"/jobs", func(jobs []map[string]any) (bool, error) {
@@ -219,26 +223,13 @@ func gitlabLatestAttempt(ctx context.Context, client *gitlabClient, base, pipeli
 		}
 		return true, nil
 	})
-	if err != nil || job == nil {
-		return nil, err
-	}
-	created := objectOf(job, "pipeline")
-	if timeOf(created, "created_at").IsZero() {
-		if _, err := client.get(ctx, base+"pipelines/"+pipeline, &created); err != nil {
-			return nil, err
-		}
-	}
-	if !gitlabCurrent(gitlabPipelines, created, client.config.cutoff()) {
-		return nil, nil
-	}
-
-	return job, nil
+	return job, err
 }
 
 // gitlabProjectRef is the project an event is in, read again with what its
 // default branch has.
 func gitlabProjectRef(project map[string]any) gitlabRef {
-	return gitlabRef{resource: gitlabProjects, fetch: func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
+	return gitlabRef{resource: gitlabProjects, scope: idOf(project["id"]), fetch: func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
 		p := maps.Clone(project)
 		return p, gitlabWithDefaultBranch(ctx, client, newGitLabMergeGroups(), p)
 	}}

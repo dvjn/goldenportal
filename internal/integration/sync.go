@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	gofrSQL "gofr.dev/pkg/gofr/datasource/sql"
 
 	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/telemetry"
@@ -62,12 +62,13 @@ type TxDB interface {
 //
 // A complete sync then deletes the entities the integration wrote before
 // that neither it nor the complete run before it saw, of the blueprints
-// whose resources it all fetched, so one that misses an entity by chance,
-// as a list shifting under it, doesn't delete it. Items that fail validation still count as seen, so a bad value
-// never deletes an entity, and an item without an identifier could be any
-// of its blueprint's, so that blueprint deletes nothing. An incremental
-// sync fetches what changed since the last sync that fetched everything,
-// where the connector can, and deletes only what items say was deleted.
+// its reconcile mappings write whose resources it all fetched, so one that
+// misses an entity by chance, as a list shifting under it, doesn't delete
+// it. Items that fail validation still count as seen, so a bad value never
+// deletes an entity, and an item without an identifier could be any of its
+// blueprint's, so that blueprint deletes nothing. What else a sync reads,
+// it reads from where the last one left off, as syncCursors says, where
+// the connector can, and deletes only what items say was deleted.
 func Sync(ctx context.Context, db TxDB, identifier, trigger, mode string) (*Run, error) {
 	return syncAs(ctx, db, identifier, Run{Trigger: trigger, Mode: mode}, nil)
 }
@@ -172,10 +173,6 @@ func startSync(ctx context.Context, db TxDB, identifier string, asked Run, only 
 	if mode == "" {
 		mode = spec.usualMode(history, time.Now())
 	}
-	since := time.Unix(0, 0).UTC()
-	if mode == ModeIncremental && !history.lastSucceeded.IsZero() {
-		since = history.lastSucceeded.Add(-time.Minute)
-	}
 	started, err := dbNow(ctx, db)
 	if err != nil {
 		return nil, err
@@ -196,12 +193,26 @@ func startSync(ctx context.Context, db TxDB, identifier string, asked Run, only 
 	if err != nil {
 		return nil, err
 	}
+	stored, err := NewStore(db).cursors(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	blueprints, err := blueprint.Published(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	longer, err := NewStore(db).keptLonger(ctx, spec.writes())
+	if err != nil {
+		return nil, err
+	}
 
 	run := &Run{StartedAt: started, Trigger: asked.Trigger, Mode: mode, ActionRun: asked.ActionRun, Errors: []RunError{}}
 	if err := NewStore(db).startRun(ctx, id, run); err != nil {
 		return nil, err
 	}
-	request := PullRequest{Resources: resources, Since: since}
+	request := PullRequest{
+		Resources: resources, Cursors: spec.syncCursors(mode, resources, stored, blueprints, longer, history.changes, started), read: newReadLog(),
+	}
 	if len(only) == 0 {
 		request.IngestURL, request.WebhookSecret = IngestURL(identifier), WebhookSecret(identifier)
 	}
@@ -220,6 +231,8 @@ func runAttributes(run *Run) []attribute.KeyValue {
 		telemetry.RunID.Int64(run.ID), telemetry.Trigger.String(run.Trigger), telemetry.Mode.String(run.Mode),
 		telemetry.Received.Int(run.Received), telemetry.Created.Int(run.Created), telemetry.Updated.Int(run.Updated),
 		telemetry.Unchanged.Int(run.Unchanged), telemetry.Deleted.Int(run.Deleted), telemetry.Failed.Int(run.Failed),
+		telemetry.Written.Int(run.Created + run.Updated), telemetry.Older.Int(run.older), telemetry.Expired.Int(run.expired),
+		telemetry.Retried.Int(run.retried),
 	}
 }
 
@@ -260,13 +273,24 @@ func (s *syncing) finish(ctx context.Context) (_ *Run, err error) {
 
 func (s *syncing) pull(ctx context.Context) error {
 	run := s.run
-	unsafe := map[string]bool{}
+	saw := newSightings()
+	// stuck are batches that kept deadlocking, which fail the scopes they
+	// came from rather than the sync.
+	var stuck []ScopeFailure
 	emit := func(_ string, items []Item) error {
 		entries := s.mapping.Map(ctx, items)
+		saw.add(entries)
 		for start := 0; start < len(entries); start += writeBatch {
-			if err := writeBatched(ctx, s.db, s.id, entries[start:min(start+writeBatch, len(entries))], run, unsafe); err != nil {
-				return err
+			batch := entries[start:min(start+writeBatch, len(entries))]
+			err := writeBatched(ctx, s.db, s.id, batch, run)
+			var deadlock deadlockError
+			if !errors.As(err, &deadlock) {
+				if err != nil {
+					return err
+				}
+				continue
 			}
+			stuck = append(stuck, s.failBatch(batch, deadlock)...)
 		}
 		return nil
 	}
@@ -277,57 +301,84 @@ func (s *syncing) pull(ctx context.Context) error {
 	var warnings []string
 	request := s.request
 	request.Warn = func(warning string) { warnings = append(warnings, warning) }
-	failed, err := s.puller.Pull(pullCtx, s.db, request, emit)
+	report, err := s.puller.Pull(pullCtx, s.db, request, emit)
 	cancel()
+	run.ReadSince = request.read.readSince()
 	if err != nil {
 		return err
 	}
-	run.Warning = strings.Join(warnings, " ")
-	if len(failed) > 0 {
-		names := slices.Sorted(maps.Keys(failed))
-		reasons := make([]string, len(names))
-		for i, name := range names {
-			reasons[i] = failed[name].Error()
+	for _, f := range stuck {
+		if f.Scope != "" {
+			report.ScopeFailures = append(report.ScopeFailures, f)
+		} else if report.Failed[f.Resource] == nil {
+			if report.Failed == nil {
+				report.Failed = map[string]error{}
+			}
+			report.Failed[f.Resource] = f.Err
 		}
-		run.Error = strings.Join(reasons, "; ")
 	}
-	if len(failed) == len(request.Resources) {
+	earlier, err := NewStore(s.db).earlierFailedScopes(ctx, s.id, run.ID, lastingRuns-1)
+	if err != nil {
+		return err
+	}
+	markLasting(&report, earlier)
+	run.failedScopes = failedScopes(report)
+	var lasting string
+	run.Error, lasting = failureText(report)
+	run.Warning = strings.Join(slices.DeleteFunc(append(warnings, lasting), func(w string) bool { return w == "" }), " ")
+	if len(report.Failed) == len(request.Resources) {
 		return fmt.Errorf("pull %s: %s", s.identifier, run.Error)
 	}
 
 	if run.Mode == ModeComplete {
 		var covered []string
 		for _, r := range request.Resources {
-			if failed[r] == nil {
+			if report.Failed[r] == nil {
 				covered = append(covered, r)
 			}
 		}
-		if run.Deleted, err = reconcile(ctx, s.db, s.id, s.spec, covered, unsafe, run.StartedAt); err != nil {
+		if run.Deleted, err = reconcile(ctx, s.db, s.id, s.spec, covered, report, saw, run.StartedAt); err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return NewStore(s.db).advanceCursors(ctx, s.id, request.read.readWithout(report), run.StartedAt)
 }
 
-// writeBatched writes a batch, and the run's counts so far with it, so a
-// running sync shows how far it got.
-func writeBatched(ctx context.Context, db TxDB, integrationID string, entries []Entry, run *Run, unsafe map[string]bool) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
+// failBatch counts a batch that couldn't be written as failed, and gives
+// the scopes it came from, which deleted nothing.
+func (s *syncing) failBatch(batch []Entry, deadlock deadlockError) []ScopeFailure {
+	type part struct{ resource, scope string }
+	parts := map[part]bool{}
+	for _, e := range batch {
+		index := s.run.Received
+		s.run.Received++
+		s.run.Failed++
+		if len(s.run.Errors) < MaxRunErrors {
+			s.run.Errors = append(s.run.Errors, RunError{
+				Index: index, Blueprint: e.Blueprint, Identifier: e.Entity.Identifier, Problems: []string{deadlock.Error()},
+			})
+		}
+		parts[part{e.Resource, e.Scope}] = true
 	}
-	defer func() { _ = tx.Rollback() }()
-	batchUnsafe, err := write(ctx, tx, integrationID, entries, run)
-	if err != nil {
-		return err
-	}
-	maps.Copy(unsafe, batchUnsafe)
-	if err := NewStore(tx).progress(ctx, run); err != nil {
-		return err
+	var failures []ScopeFailure
+	for p := range parts {
+		failures = append(failures, ScopeFailure{Resource: p.resource, Scope: p.scope, Err: fmt.Errorf("%s: %w", p.resource, deadlock)})
 	}
 
-	return tx.Commit()
+	return failures
+}
+
+// writes are the blueprints the mappings write, each once.
+func (s Spec) writes() []string {
+	var out []string
+	for _, m := range s.Mappings {
+		if !slices.Contains(out, m.Blueprint) {
+			out = append(out, m.Blueprint)
+		}
+	}
+
+	return out
 }
 
 // mappedResources are the resources the mappings read, each once, in the
@@ -359,10 +410,11 @@ func (s Spec) SyncableResource(name string) string {
 }
 
 // usualMode is how a sync runs unless asked otherwise: complete without a
-// complete interval, on the first sync, the first after a publish, and once
-// the interval has passed; incremental between.
+// complete interval, on the first sync, the first after a publish that reads
+// differently what a reconcile mapping reads, and once the interval has
+// passed; incremental between.
 func (s Spec) usualMode(h syncHistory, now time.Time) string {
-	if s.Sync == nil || s.Sync.CompleteEvery == 0 || h.lastComplete.IsZero() || h.lastComplete.Before(h.published) ||
+	if s.Sync == nil || s.Sync.CompleteEvery == 0 || h.lastComplete.IsZero() || h.lastComplete.Before(h.changes.complete) ||
 		now.Sub(h.lastComplete) >= s.Sync.CompleteEvery-syncSlack {
 		return ModeComplete
 	}

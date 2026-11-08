@@ -18,7 +18,8 @@ import (
 // gitlabFixture is a GitLab API with a group, its subgroup and a project
 // elsewhere. It takes one access token, pages every list two at a time
 // with Link headers, filters as GitLab does by state, updated_after and
-// the like, answers about single objects, and keeps each project's
+// the like, refusing updated_after on deployments unless they're ordered
+// by updated_at, answers about single objects, and keeps each project's
 // webhooks.
 type gitlabFixture struct {
 	t      *testing.T
@@ -56,8 +57,7 @@ type gitlabFixture struct {
 
 const gitlabFixtureToken = "glpat-fixture"
 
-// The times the fixture's objects were made or updated, oldest first. Only
-// gitlabT0 is older than a sync reads by default.
+// The times the fixture's objects were made or updated, oldest first.
 var (
 	gitlabT0 = gitlabDaysAgo(60)
 	gitlabT2 = gitlabDaysAgo(3)
@@ -96,6 +96,13 @@ func (f *gitlabFixture) deny(suffix string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.denied = append(f.denied, suffix)
+}
+
+// allow takes back every refusal deny made.
+func (f *gitlabFixture) allow() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.denied = nil
 }
 
 func (f *gitlabFixture) asked() []string {
@@ -344,9 +351,9 @@ func (f *gitlabFixture) serveProject(w http.ResponseWriter, r *http.Request, id,
 		"repository/branches": branches,
 		"repository/tags":     {{"name": "v3"}, {"name": "v2"}, {"name": "v1"}},
 		"releases":            {{"tag_name": "v2", "released_at": gitlabT2}, {"tag_name": "v1", "released_at": gitlabT0}},
-		"pipelines": slices.DeleteFunc(slices.Clone(pipelines), func(p map[string]any) bool {
+		"pipelines": gitlabStateFiltered(slices.DeleteFunc(slices.Clone(pipelines), func(p map[string]any) bool {
 			return (p["source"] == "parent_pipeline") != (q.Get("source") == "parent_pipeline") || q.Has("ref") && p["ref"] != q.Get("ref")
-		}),
+		}), q),
 		"environments": {{"id": float64(1), "name": "production"}, {"id": float64(2), "name": "staging"}},
 	}
 	switch {
@@ -360,12 +367,14 @@ func (f *gitlabFixture) serveProject(w http.ResponseWriter, r *http.Request, id,
 		f.page(w, r, gitlabStateFiltered(all, q))
 	case rest == "environments" && q.Get("name") != "":
 		f.page(w, r, slices.DeleteFunc(slices.Clone(lists[rest]), func(e map[string]any) bool { return e["name"] != q.Get("name") }))
+	case rest == "deployments" && q.Has("updated_after") && q.Get("order_by") != "updated_at":
+		f.reply(w, http.StatusBadRequest, map[string]any{"message": "400 Bad request - updated_after requires order_by=updated_at"})
 	case rest == "deployments":
 		if env := q.Get("environment"); env != "" {
 			f.page(w, r, slices.DeleteFunc(slices.Clone(deployments), func(d map[string]any) bool { return valueAt(d, "environment", "name") != env }))
 			return
 		}
-		f.page(w, r, deployments)
+		f.page(w, r, gitlabStateFiltered(deployments, q))
 	// acme/api's scanners found four dependencies, one under either of two
 	// licenses, one with no license known and one GitLab flags as malware,
 	// and an image's OS package.

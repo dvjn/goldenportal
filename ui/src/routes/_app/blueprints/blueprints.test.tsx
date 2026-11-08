@@ -168,6 +168,34 @@ describe("blueprints", () => {
       "/integrations/registry",
     );
     expect(screen.getByText("updatedAt")).toBeInTheDocument();
+    // Without retention, rows are kept for ever, which goes without saying.
+    expect(about.queryByText("Retention")).toBeNull();
+  });
+
+  it("says how long rows are kept", async () => {
+    const retained = {
+      ...spec,
+      retention: {
+        by: "startedAt",
+        keep: "30d",
+        rules: [{ filter: { property: "tier", op: "eq", value: "gold" }, keep: "365d" }],
+      },
+    };
+    stubApi({
+      ...serviceRoutes,
+      "GET blueprints/service": ok({
+        ...service,
+        published: service.published && { ...service.published, spec: retained },
+      }),
+    });
+    renderRoute("/blueprints/service");
+
+    const about = within(
+      (await screen.findByText("About")).closest("[data-slot=card]") as HTMLElement,
+    );
+    expect(about.getByText("Retention").nextElementSibling).toHaveTextContent(
+      "30d by startedAt, longer for 1 rule",
+    );
   });
 
   it("leads the header with its trail, and shows the bar once it's scrolled past", async () => {

@@ -122,6 +122,16 @@ type Run struct {
 	// Warning is what went wrong without failing anything it read, such as
 	// a webhook a sync couldn't set up.
 	Warning string `json:"warning,omitempty"`
+	// ReadSince is, for each resource a sync read only what changed of,
+	// the earliest time it read from.
+	ReadSince map[string]time.Time `json:"readSince,omitempty"`
+
+	// older are the unchanged items a newer read was already stored over,
+	// expired those older than their blueprint keeps rows, and retried
+	// those written again after a deadlock, which spans and logs say.
+	older, expired, retried int
+	// failedScopes are what a sync couldn't read, by resource and scope.
+	failedScopes []failedScope
 }
 
 // RunError is why an item wasn't written.
@@ -170,14 +180,53 @@ func (s Store) progress(ctx context.Context, run *Run) error {
 // finishRun records how a running sync ended.
 func (s Store) finishRun(ctx context.Context, run *Run) error {
 	errorsJSON, _ := json.Marshal(run.Errors)
+	scopes := run.failedScopes
+	if scopes == nil {
+		scopes = []failedScope{}
+	}
+	scopesJSON, _ := json.Marshal(scopes)
+	readSince := run.ReadSince
+	if readSince == nil {
+		readSince = map[string]time.Time{}
+	}
+	readJSON, _ := json.Marshal(readSince)
 
 	return s.db.QueryRowContext(ctx, `
 		UPDATE ingestion_runs SET received = $2, created = $3, updated = $4, unchanged = $5, deleted = $6, failed = $7,
-			errors = $8, error = $9, warning = $10, finished_at = now()
+			errors = $8, error = $9, warning = $10, failed_scopes = $11, read_since = $12, finished_at = now()
 		WHERE id = $1
 		RETURNING finished_at`,
 		run.ID, run.Received, run.Created, run.Updated, run.Unchanged, run.Deleted, run.Failed,
-		errorsJSON, run.Error, run.Warning).Scan(&run.FinishedAt)
+		errorsJSON, run.Error, run.Warning, scopesJSON, readJSON).Scan(&run.FinishedAt)
+}
+
+// earlierFailedScopes gives what each of the n syncs of an integration
+// that finished before the run failed to read, newest first.
+func (s Store) earlierFailedScopes(ctx context.Context, integrationID string, runID int64, n int) ([][]failedScope, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT failed_scopes FROM ingestion_runs
+		WHERE integration_id = $1 AND id < $2 AND trigger IN ('schedule', 'manual') AND finished_at IS NOT NULL
+		ORDER BY id DESC LIMIT $3`, integrationID, runID, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][]failedScope
+	for rows.Next() {
+		var (
+			raw    []byte
+			scopes []failedScope
+		)
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &scopes); err != nil {
+			return nil, err
+		}
+		out = append(out, scopes)
+	}
+
+	return out, rows.Err()
 }
 
 // ErrInterrupted is why a sync the portal stopped during never finished.
@@ -247,7 +296,8 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.id, r.started_at, r.finished_at, r.trigger, r.mode, coalesce(t.name, ''), coalesce(r.action_run_id::text, ''),
-			coalesce(a.title, ''), r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error, r.warning`+runFilter+`
+			coalesce(a.title, ''), r.received, r.created, r.updated, r.unchanged, r.deleted, r.failed, r.errors, r.error, r.warning,
+			r.read_since`+runFilter+`
 		ORDER BY r.id DESC LIMIT $5 OFFSET $6`, append(args, q.PageSize, (q.Page-1)*q.PageSize)...)
 	if err != nil {
 		return RunPage{}, err
@@ -256,14 +306,17 @@ func (s Store) Runs(ctx context.Context, integrationID string, q RunQuery) (RunP
 
 	for rows.Next() {
 		var (
-			r      Run
-			errors []byte
+			r                Run
+			errors, readJSON []byte
 		)
 		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger, &r.Mode, &r.Token, &r.ActionRun, &r.Action, &r.Received,
-			&r.Created, &r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error, &r.Warning); err != nil {
+			&r.Created, &r.Updated, &r.Unchanged, &r.Deleted, &r.Failed, &errors, &r.Error, &r.Warning, &readJSON); err != nil {
 			return RunPage{}, err
 		}
 		if err := json.Unmarshal(errors, &r.Errors); err != nil {
+			return RunPage{}, err
+		}
+		if err := json.Unmarshal(readJSON, &r.ReadSince); err != nil {
 			return RunPage{}, err
 		}
 		page.Items = append(page.Items, r)
@@ -292,32 +345,30 @@ func (s Store) LastSync(ctx context.Context, identifier string) (time.Time, erro
 	return last.Time, err
 }
 
-// syncHistory is what a sync needs to choose its mode and what to fetch.
+// syncHistory is what a sync needs to choose its mode.
 type syncHistory struct {
-	// lastComplete started the last complete sync, and lastSucceeded the
-	// last sync that fetched every resource. Either is zero if there's none.
-	lastComplete, lastSucceeded time.Time
-	// published is when the integration's version was published.
-	published time.Time
+	// lastComplete started the last complete sync, or is zero if there's
+	// none.
+	lastComplete time.Time
+	changes      readChanges
 }
 
 const syncHistorySQL = `
-		SELECT
-			(SELECT max(started_at) FROM ingestion_runs
-				WHERE integration_id = $1 AND trigger IN ('schedule', 'manual') AND mode = 'complete' AND error = ''
-					AND finished_at IS NOT NULL),
-			(SELECT max(started_at) FROM ingestion_runs
-				WHERE integration_id = $1 AND trigger IN ('schedule', 'manual') AND error = '' AND finished_at IS NOT NULL),
-			(SELECT v.published_at FROM config_versions v JOIN config_documents d
-				ON d.id = v.document_id AND v.version = d.published_version WHERE d.id = $1)`
+		SELECT max(started_at) FROM ingestion_runs
+		WHERE integration_id = $1 AND trigger IN ('schedule', 'manual') AND mode = 'complete' AND error = ''
+			AND finished_at IS NOT NULL`
 
 func (s Store) syncHistory(ctx context.Context, integrationID string) (syncHistory, error) {
 	var (
-		h                         syncHistory
-		lastComplete, lastSucceed sql.NullTime
+		h            syncHistory
+		lastComplete sql.NullTime
 	)
-	err := s.db.QueryRowContext(ctx, syncHistorySQL, integrationID).Scan(&lastComplete, &lastSucceed, &h.published)
-	h.lastComplete, h.lastSucceeded = lastComplete.Time, lastSucceed.Time
+	if err := s.db.QueryRowContext(ctx, syncHistorySQL, integrationID).Scan(&lastComplete); err != nil {
+		return h, err
+	}
+	h.lastComplete = lastComplete.Time
+	var err error
+	h.changes, err = s.readChanges(ctx, integrationID)
 
 	return h, err
 }

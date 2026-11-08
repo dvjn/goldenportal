@@ -161,6 +161,8 @@ function MappingView({ mapping }: Readonly<{ mapping: Mapping }>) {
   const properties = (target?.published?.spec ?? target?.draft?.spec)?.properties ?? [];
   const rows: [string, string | undefined][] = [
     ["Filter", mapping.filter],
+    // Reconcile is the default, so only upsert is worth a row.
+    ["Mode", mapping.mode === "upsert" ? mapping.mode : undefined],
     ["Identifier", mapping.entity.identifier],
     ["Title", mapping.entity.title],
     ...mapping.entity.properties.map((field): [string, string] => [

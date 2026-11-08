@@ -270,6 +270,10 @@ func (c *HTTPConfig) Receives() []string {
 	return out
 }
 
+// readsWith is the resource's own part of the config; how pushes are
+// signed reads nothing.
+func (c *HTTPConfig) readsWith(resource string) any { return c.Resource[resource] }
+
 // UsesSince reports whether any URL fetches only what changed.
 func (c *HTTPConfig) UsesSince() bool {
 	for _, resource := range c.Resource {
@@ -284,17 +288,24 @@ func (c *HTTPConfig) UsesSince() bool {
 // Pull fetches each resource asked for, page by page.
 func (c *HTTPConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 	emit func(resource string, items []Item) error,
-) (map[string]error, error) {
+) (Report, error) {
 	failed := map[string]error{}
-	since := url.QueryEscape(p.Since.UTC().Format(time.RFC3339))
 	for _, name := range p.Resources {
 		resource, ok := c.Resource[name]
 		if !ok || resource.URL == "" {
 			failed[name] = fmt.Errorf("no resource %q is fetched", name)
 			continue
 		}
+		address := resource.URL
+		if sincePattern.MatchString(address) {
+			from, _ := p.From(name, "")
+			if from.IsZero() {
+				from = time.Unix(0, 0)
+			}
+			address = sincePattern.ReplaceAllLiteralString(address, url.QueryEscape(from.UTC().Format(time.RFC3339)))
+		}
 		readCtx, span := telemetry.Start(ctx, "read "+name, telemetry.Resource.String(name))
-		err := fetchPages(readCtx, name, resource, sincePattern.ReplaceAllLiteralString(resource.URL, since),
+		err := fetchPages(readCtx, name, resource, address,
 			func(page any) error {
 				items, err := resource.split(readCtx, name, page)
 				if err != nil {
@@ -312,13 +323,13 @@ func (c *HTTPConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 		var emitErr emitError
 		switch {
 		case errors.As(err, &emitErr):
-			return failed, emitErr.err
+			return Report{Failed: failed}, emitErr.err
 		case err != nil:
 			failed[name] = err
 		}
 	}
 
-	return failed, nil
+	return Report{Failed: failed}, nil
 }
 
 // emitError is a failure to write what was fetched, which stops the sync

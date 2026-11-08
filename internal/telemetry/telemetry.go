@@ -46,6 +46,14 @@ const (
 	Unchanged = attribute.Key("gp.items.unchanged")
 	Deleted   = attribute.Key("gp.items.deleted")
 	Failed    = attribute.Key("gp.items.failed")
+	// Written is how many were created or updated; Older, how many of the
+	// unchanged the store already held from a newer read; Expired, how many
+	// weren't written for being older than their blueprint keeps rows;
+	// Retried, how many were written again after a deadlock.
+	Written = attribute.Key("gp.items.written")
+	Older   = attribute.Key("gp.items.older")
+	Expired = attribute.Key("gp.items.expired")
+	Retried = attribute.Key("gp.items.retried")
 	// Wait is how long a step held back, as for a rate limit, in
 	// milliseconds.
 	Wait = attribute.Key("gp.wait_ms")

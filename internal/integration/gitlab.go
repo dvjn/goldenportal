@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 
 	"go.yaml.in/yaml/v3"
@@ -18,9 +17,8 @@ type GitLabConfig struct {
 	URL   string
 	Token HeaderValue
 	// Groups are read whole, with their subgroups.
-	Groups      []string
-	Projects    []string
-	HistoryDays int
+	Groups   []string
+	Projects []string
 	// ExcludeArchived leaves archived projects out, with all that's in them.
 	ExcludeArchived bool
 }
@@ -110,13 +108,14 @@ const gitlabDefaultURL = "https://gitlab.com"
 
 // GitLabConfigFields are the keys the gitlab connector's config takes,
 // exported so the documents' JSON Schema can be checked against them.
-var GitLabConfigFields = []string{"url", "token", "groups", "projects", "historyDays", "excludeArchived"}
+var GitLabConfigFields = []string{"url", "token", "groups", "projects", "excludeArchived"}
 
 func parseGitLabConfig(r *configdoc.Reader, node *yaml.Node, path string) Config {
 	if node == nil {
 		return nil
 	}
 	config := &GitLabConfig{URL: gitlabDefaultURL}
+	node = withoutHistory(r, node, path)
 	fields, ok := r.Fields(node, path, GitLabConfigFields...)
 	if !ok {
 		return config
@@ -158,7 +157,6 @@ func parseGitLabConfig(r *configdoc.Reader, node *yaml.Node, path string) Config
 	if fields["groups"] == nil && fields["projects"] == nil && !configdoc.HasUnknownField(node, GitLabConfigFields...) {
 		r.Errorf(node, path+".groups", "add the groups or projects to read")
 	}
-	config.HistoryDays = readHistoryDays(r, fields, path)
 	config.ExcludeArchived = r.Bool(fields["excludeArchived"], path+".excludeArchived")
 
 	return config
@@ -188,25 +186,10 @@ func (c *GitLabConfig) Receives() []string {
 // ReceivesEvents marks webhook events as what it receives.
 func (c *GitLabConfig) ReceivesEvents() {}
 
-// cutoff is when what piles up must be newer than for a sync to read it.
-func (c *GitLabConfig) cutoff() time.Time { return time.Now().AddDate(0, 0, -c.HistoryDays) }
-
-// gitlabCurrent reports whether an object is one a sync reads, being open,
-// or ended or made since cutoff, so a webhook event about one a sync would
-// leave out writes nothing either. Jobs go with their pipeline, which
-// their events check for themselves.
-func gitlabCurrent(resource string, object map[string]any, cutoff time.Time) bool {
-	switch resource {
-	case gitlabMergeRequests:
-		return current(object, cutoff, []string{"opened", "locked"}, "merged_at", "closed_at")
-	case gitlabIssues:
-		return current(object, cutoff, []string{"opened"}, "closed_at")
-	case gitlabPipelines, gitlabDeployments:
-		return current(object, cutoff, nil, "created_at")
-	}
-
-	return true
-}
+// UsesSince marks the connector as reading only what changed: merge
+// requests, issues, pipelines with their jobs, and deployments, from where
+// the last sync left off in each project.
+func (c *GitLabConfig) UsesSince() bool { return true }
 
 // groupOf is the listed group that p, a project's or another group's full
 // path, is in, or "".

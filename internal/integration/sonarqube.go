@@ -163,8 +163,8 @@ func (c *SonarQubeConfig) Check(ctx context.Context, _ configdoc.DB, req CheckRe
 // the repository it's bound to, under _gp.
 func (c *SonarQubeConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 	emit func(resource string, items []Item) error,
-) (map[string]error, error) {
-	failed := func(err error) (map[string]error, error) { return map[string]error{sonarProjects: err}, nil }
+) (Report, error) {
+	failed := func(err error) (Report, error) { return Report{Failed: map[string]error{sonarProjects: err}}, nil }
 	client, err := newSonarQubeClient(c)
 	if err != nil {
 		return failed(err)
@@ -192,7 +192,7 @@ func (c *SonarQubeConfig) Pull(ctx context.Context, _ configdoc.DB, p PullReques
 		items = append(items, Item{Resource: sonarProjects, Object: project})
 	}
 
-	return nil, emit(sonarProjects, items)
+	return Report{}, emit(sonarProjects, items)
 }
 
 // pullSonarProject reads what's kept under a project's _gp besides its

@@ -425,7 +425,7 @@
     },
     "gitlabConfig": {
       "type": "object",
-      "description": "The gitlab connector's config. Every sync is complete. Once the server has GP_BASE_URL and GP_WEBHOOK_KEY, syncs set up a webhook on each project they read, and never remove one. Groups and members change only on a sync.",
+      "description": "The gitlab connector's config. Groups, members, projects, tags, releases and environments are read whole on every sync; merge requests, issues, pipelines with their jobs, and deployments are read from where the last sync left off in each project, and in full when a reconcile mapping needs them on a complete sync. Once the server has GP_BASE_URL and GP_WEBHOOK_KEY, syncs set up a webhook on each project they read, and never remove one. Groups and members change only on a sync.",
       "properties": {
         "url": {
           "type": "string",
@@ -453,11 +453,6 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9_.][A-Za-z0-9_.-]*(/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+$"
           }
-        },
-        "historyDays": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Days back a sync reads closed and merged merge requests, closed issues, pipelines with their jobs, and deployments. Older ones leave the catalog. Defaults to 30."
         },
         "excludeArchived": {
           "type": "boolean",
@@ -544,7 +539,7 @@
         "url": {
           "type": "string",
           "pattern": "^https?://[^/]",
-          "description": "The http or https URL of the first page. {{ $since }} in it becomes when the last sync that fetched everything started, less a minute, on incremental syncs, and 1970-01-01T00:00:00Z on complete ones. Left out, the resource is only pushed."
+          "description": "The http or https URL of the first page. {{ $since }} in it becomes when the last sync that read the resource started, less a minute, and 1970-01-01T00:00:00Z when the sync reads it in full: on a complete sync, when a reconcile mapping reads it, on the first, and on the first after a publish that adds or changes a mapping that reads it or changes its config. With only upsert mappings into blueprints with retention, a first sync reads back as far as they keep rows. Left out, the resource is only pushed."
         },
         "next": {
           "$ref": "#/$defs/jq",
@@ -609,7 +604,7 @@
         "complete": {
           "type": "string",
           "pattern": "^[1-9][0-9]{0,5}[smhdw]$",
-          "description": "How often a sync is complete: a duration of at least the interval, such as 24h. A complete run deletes the entities that neither it nor the complete run before it saw, so one missed by chance stays. Left out, every sync is complete. The first sync, and the first after a publish, are complete too. Only http integrations whose urls use {{ $since }} fetch less on the others; portal and github ones read everything on every sync, and ignore complete."
+          "description": "How often a sync is complete: a duration of at least the interval, such as 24h. A complete run deletes the entities that neither it nor the complete run before it saw, so one missed by chance stays. Left out, every sync is complete. The first sync is complete too, and so is the first after a publish that adds or changes a reconcile mapping or changes the connector config. A sync reads each resource from where the last one left off in each scope, such as a GitLab project, where its connector can, and in full otherwise: on a complete sync, a resource a reconcile mapping reads is read in full. A publish that adds or changes a mapping reads its resource afresh, and one that changes the connector config reads every resource afresh, but for an http integration, only the resources whose config changed; one that changes only the schedule, title or description, or removes a mapping, reads on from where the last sync left off. Http integrations do so when their urls use {{ $since }}; portal, sonarqube and authentik ones read everything on every sync, and ignore complete."
         }
       },
       "required": ["interval"],
@@ -630,6 +625,10 @@
         "filter": {
           "$ref": "#/$defs/jq",
           "description": "jq over each item; keeps the items it's true for. Deleted items skip it."
+        },
+        "mode": {
+          "enum": ["reconcile", "upsert"],
+          "description": "reconcile, the default, makes the blueprint hold what the resource holds: a complete sync reads it in full and deletes the entities it no longer has. upsert writes what's new or changed since the last sync and deletes only what an item says was deleted, so rows go only by the blueprint's retention; a blueprint with retention takes only upsert mappings."
         },
         "entity": { "$ref": "#/$defs/entityMapping" }
       },

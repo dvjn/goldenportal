@@ -12,6 +12,7 @@ import (
 	"maps"
 	mrand "math/rand/v2"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -632,30 +633,41 @@ func (g *gitlab) branchObject(w http.ResponseWriter, r *http.Request, p *gitlabP
 // updated_after, iids and order.
 func (g *gitlab) mergeRequests(w http.ResponseWriter, r *http.Request, p *gitlabProject) {
 	q := r.URL.Query()
-	after, _ := time.Parse(time.RFC3339, q.Get("updated_after"))
-	out := slices.DeleteFunc(newestFirst(p.mergeReqs), func(mr map[string]any) bool {
-		updated, _ := time.Parse(time.RFC3339, mr["updated_at"].(string))
+	out := slices.DeleteFunc(changedSince(newestFirst(p.mergeReqs), q), func(mr map[string]any) bool {
 		state := q.Get("state")
-		return state != "" && state != "all" && mr["state"] != state || updated.Before(after) ||
+		return state != "" && state != "all" && mr["state"] != state ||
 			q.Has("iids[]") && !slices.Contains(q["iids[]"], fmt.Sprint(mr["iid"]))
+	})
+	g.page(w, r, out)
+}
+
+// changedSince filters objects, newest first, by updated_after, and orders
+// them by updated_at when asked, as GitLab's lists do.
+func changedSince(objects []map[string]any, q url.Values) []map[string]any {
+	after, _ := time.Parse(time.RFC3339, q.Get("updated_after"))
+	out := slices.DeleteFunc(objects, func(o map[string]any) bool {
+		updated, _ := time.Parse(time.RFC3339, o["updated_at"].(string))
+		return updated.Before(after)
 	})
 	if q.Get("order_by") == "updated_at" {
 		slices.SortStableFunc(out, func(a, b map[string]any) int {
 			return strings.Compare(b["updated_at"].(string), a["updated_at"].(string))
 		})
 	}
-	g.page(w, r, out)
+	return out
 }
 
-// pipelineList lists pipelines as GitLab does, which has no child pipelines
-// here, asked for alone.
+// pipelineList lists pipelines as GitLab does, by ref and updated_after,
+// which has no child pipelines here, asked for alone.
 func (g *gitlab) pipelineList(w http.ResponseWriter, r *http.Request, p *gitlabProject) {
-	if r.URL.Query().Get("source") == "parent_pipeline" {
+	q := r.URL.Query()
+	if q.Get("source") == "parent_pipeline" {
 		g.page(w, r, nil)
 		return
 	}
-	ref := r.URL.Query().Get("ref")
-	g.page(w, r, mapped(slices.DeleteFunc(newestFirst(p.pipelines), func(pl map[string]any) bool { return ref != "" && pl["ref"] != ref }), gitlabListed))
+	ref := q.Get("ref")
+	out := slices.DeleteFunc(changedSince(newestFirst(p.pipelines), q), func(pl map[string]any) bool { return ref != "" && pl["ref"] != ref })
+	g.page(w, r, mapped(out, gitlabListed))
 }
 
 func (g *gitlab) pipeline(w http.ResponseWriter, r *http.Request, p *gitlabProject) {
@@ -677,9 +689,15 @@ func (g *gitlab) one(w http.ResponseWriter, r *http.Request, objects []map[strin
 	gitlabNotFound(w, what)
 }
 
+// deploymentList lists deployments as GitLab does, by environment, status
+// and updated_after, which it takes only ordered by updated_at.
 func (g *gitlab) deploymentList(w http.ResponseWriter, r *http.Request, p *gitlabProject) {
 	q := r.URL.Query()
-	out := slices.DeleteFunc(newestFirst(p.deployments), func(d map[string]any) bool {
+	if q.Has("updated_after") && q.Get("order_by") != "updated_at" {
+		reply(w, http.StatusBadRequest, map[string]any{"message": "400 Bad request - updated_after requires order_by=updated_at"})
+		return
+	}
+	out := slices.DeleteFunc(changedSince(newestFirst(p.deployments), q), func(d map[string]any) bool {
 		return q.Has("environment") && d["environment"].(map[string]any)["name"] != q.Get("environment") ||
 			q.Has("status") && d["status"] != q.Get("status")
 	})

@@ -213,18 +213,18 @@ func TestMapResources(t *testing.T) {
 func TestUsualMode(t *testing.T) {
 	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	daily := mustParse(t, strings.Replace(httpYAML("https://tracker.example.com?since={{ $since }}"), "sync: {interval: 5m}", "sync: {interval: 5m, complete: 24h}", 1))
-	published := now.Add(-48 * time.Hour)
+	changes := readChanges{complete: now.Add(-48 * time.Hour)}
 	tests := []struct {
 		name    string
 		spec    Spec
 		history syncHistory
 		want    string
 	}{
-		{"always complete without a complete interval", mustParse(t, portalYAML), syncHistory{lastComplete: now.Add(-time.Minute), published: published}, ModeComplete},
-		{"complete first", daily, syncHistory{published: published}, ModeComplete},
-		{"incremental between", daily, syncHistory{lastComplete: now.Add(-time.Hour), published: published}, ModeIncremental},
-		{"complete once the interval passes", daily, syncHistory{lastComplete: now.Add(-24 * time.Hour), published: published}, ModeComplete},
-		{"complete after a publish", daily, syncHistory{lastComplete: now.Add(-time.Hour), published: now.Add(-time.Minute)}, ModeComplete},
+		{"always complete without a complete interval", mustParse(t, portalYAML), syncHistory{lastComplete: now.Add(-time.Minute), changes: changes}, ModeComplete},
+		{"complete first", daily, syncHistory{changes: changes}, ModeComplete},
+		{"incremental between", daily, syncHistory{lastComplete: now.Add(-time.Hour), changes: changes}, ModeIncremental},
+		{"complete once the interval passes", daily, syncHistory{lastComplete: now.Add(-24 * time.Hour), changes: changes}, ModeComplete},
+		{"complete after a publish that reads a reconcile mapping differently", daily, syncHistory{lastComplete: now.Add(-time.Hour), changes: readChanges{complete: now.Add(-time.Minute)}}, ModeComplete},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

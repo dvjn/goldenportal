@@ -606,6 +606,14 @@ spec:
     owner:
       title: Owner
       lookup: service.owner.title
+  # The mocks have a fortnight of history, so a week shows older rows
+  # leaving the catalog, but for production's, kept a month.
+  retention:
+    by: startedAt
+    keep: 7d
+    rules:
+      - filter: {property: environment, op: eq, value: production}
+        keep: 30d
   catalog:
     queries:
       deployments:
@@ -733,10 +741,19 @@ spec:
       title: Opened
       type: string
       format: date-time
+    closedAt:
+      title: Closed
+      description: When it was merged or closed, empty while it's open.
+      type: string
+      format: date-time
     lastActivityAt:
       title: Last Activity
       type: string
       format: date-time
+  # Open merge requests have no closedAt, so they're kept however old.
+  retention:
+    by: closedAt
+    keep: 7d
   catalog:
     columns: [repo, state, author, lastActivityAt]
 $yaml$),
@@ -811,6 +828,9 @@ spec:
       title: URL
       type: string
       format: uri
+  retention:
+    by: triggeredAt
+    keep: 7d
   catalog:
     columns: [repo, ref, status, triggeredAt]
 $yaml$)
@@ -1027,6 +1047,7 @@ spec:
   mappings:
     - resource: deployments
       blueprint: deployment
+      mode: upsert
       entity:
         identifier: .id
         title: .service + " " + .version
@@ -1051,11 +1072,9 @@ spec:
       token: {env: GP_SECRET_GITLAB_TOKEN}
       groups: [acme]
       excludeArchived: true
-      # The mock has a fortnight of history, so a week shows older merge
-      # requests and pipelines leaving the catalog.
-      historyDays: 7
   sync:
     interval: 30m
+    complete: 24h
   mappings:
     - resource: groups
       blueprint: namespace
@@ -1087,8 +1106,12 @@ spec:
           defaultBranchProtected: ._gp.defaultBranch.protected
           url: .web_url
           lastActivityAt: .last_activity_at
+    # Merge requests, pipelines and deployments pile up, so syncs read what
+    # changed since the last one, and their blueprints' retention deletes
+    # the old ones.
     - resource: merge_requests
       blueprint: merge-request
+      mode: upsert
       entity:
         identifier: ._gp.project + "!" + (.iid | tostring)
         title: .title
@@ -1099,9 +1122,11 @@ spec:
           branch: .source_branch
           url: .web_url
           openedAt: .created_at
+          closedAt: .merged_at // .closed_at
           lastActivityAt: .updated_at
     - resource: pipelines
       blueprint: pipeline
+      mode: upsert
       entity:
         identifier: .id
         title: '(._gp.project | split("/") | last) + " " + .ref + " #" + (.iid // .id | tostring)'
@@ -1116,6 +1141,7 @@ spec:
     - resource: deployments
       blueprint: deployment
       filter: .environment.name == "production" or .environment.name == "staging"
+      mode: upsert
       entity:
         identifier: '"gitlab-" + (.id | tostring)'
         title: (._gp.project | split("/") | last) + " " + .sha[0:8]

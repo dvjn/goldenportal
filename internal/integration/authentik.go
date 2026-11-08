@@ -128,13 +128,13 @@ func (c *AuthentikConfig) Check(ctx context.Context, _ configdoc.DB, req CheckRe
 // ways, and its ancestors. The objects' own lists are by primary key.
 func (c *AuthentikConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 	emit func(resource string, items []Item) error,
-) (map[string]error, error) {
-	failed := func(err error) (map[string]error, error) {
+) (Report, error) {
+	failed := func(err error) (Report, error) {
 		out := map[string]error{}
 		for _, r := range p.Resources {
 			out[r] = err
 		}
-		return out, nil
+		return Report{Failed: out}, nil
 	}
 	client, err := newAuthentikClient(c)
 	if err != nil {
@@ -196,11 +196,11 @@ func (c *AuthentikConfig) Pull(ctx context.Context, _ configdoc.DB, p PullReques
 			objects = groups
 		}
 		if err := emit(resource, authentikItems(resource, objects)); err != nil {
-			return nil, err
+			return Report{}, err
 		}
 	}
 
-	return nil, nil
+	return Report{}, nil
 }
 
 // authentikAncestors are the keys of a group's parents, theirs, and so on.

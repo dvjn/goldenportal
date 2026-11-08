@@ -110,7 +110,7 @@ func TestSonarQubePull(t *testing.T) {
 	var items []Item
 	failed, err := config.Pull(t.Context(), nil, PullRequest{Resources: []string{sonarProjects}, Warn: func(string) {}},
 		func(_ string, page []Item) error { items = append(items, page...); return nil })
-	if err != nil || len(failed) != 0 {
+	if err != nil || len(failed.Failed) != 0 {
 		t.Fatalf("failed = %v, err = %v", failed, err)
 	}
 	got, _ := json.Marshal(items)

@@ -35,70 +35,6 @@ type Store struct{ db DB }
 
 func NewStore(db DB) Store { return Store{db: db} }
 
-// Outcomes of an upsert.
-const (
-	Created   = "created"
-	Updated   = "updated"
-	Unchanged = "unchanged"
-)
-
-// Upsert writes an entity on behalf of an integration, and marks it seen
-// now, even when it's unchanged, so a complete run keeps it.
-func (s Store) Upsert(ctx context.Context, blueprintID, integrationID string, e blueprint.Entity, computed map[string]any) (string, error) {
-	properties, _ := json.Marshal(e.Properties)
-	relations, _ := json.Marshal(e.Relations)
-	computedJSON, _ := json.Marshal(computed)
-
-	var created bool
-	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO entities (blueprint_id, identifier, title, properties, relations, computed, integration_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (blueprint_id, identifier) DO UPDATE
-			SET title = excluded.title, properties = excluded.properties, relations = excluded.relations,
-				computed = excluded.computed, updated_at = now(), seen_at = now()
-			WHERE entities.integration_id = excluded.integration_id
-				AND (entities.title, entities.properties, entities.relations, entities.computed)
-					IS DISTINCT FROM (excluded.title, excluded.properties, excluded.relations, excluded.computed)
-		RETURNING xmax = 0`,
-		blueprintID, e.Identifier, e.Title, properties, relations, computedJSON, integrationID).Scan(&created)
-	switch {
-	case err == nil && created:
-		return Created, nil
-	case err == nil:
-		return Updated, nil
-	case !errors.Is(err, sql.ErrNoRows):
-		return "", err
-	}
-
-	// Nothing was written: the entity is either unchanged, so it's only
-	// seen, or someone else's.
-	var ownerID, owner string
-	err = s.db.QueryRowContext(ctx, `
-		UPDATE entities e SET seen_at = CASE WHEN e.integration_id = $3 THEN now() ELSE e.seen_at END
-		FROM config_documents i
-		WHERE i.id = e.integration_id AND e.blueprint_id = $1 AND e.identifier = $2
-		RETURNING e.integration_id, i.identifier`, blueprintID, e.Identifier, integrationID).Scan(&ownerID, &owner)
-	if err != nil {
-		return "", err
-	}
-	if ownerID != integrationID {
-		return "", OwnedError{Integration: owner}
-	}
-
-	return Unchanged, nil
-}
-
-// Seen marks an entity an integration wrote as seen without changing it, for
-// an item that couldn't be written: a complete run keeps what it saw, even
-// when what it saw was wrong.
-func (s Store) Seen(ctx context.Context, blueprintID, integrationID, identifier string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE entities SET seen_at = now() WHERE blueprint_id = $1 AND identifier = $2 AND integration_id = $3`,
-		blueprintID, identifier, integrationID)
-
-	return err
-}
-
 // Delete removes an entity an integration wrote.
 func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifier string) error {
 	var ownerID, owner string
@@ -121,43 +57,6 @@ func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifie
 		blueprintID, identifier, integrationID)
 
 	return err
-}
-
-// Reconcile deletes, after a complete run that started at before, the
-// entities of blueprints an integration wrote that neither that run nor the
-// one before it that covered them saw. One missed for the first time is
-// marked missed instead. A run that misses an entity may have missed it
-// only because a list shifted under it, or a resource was briefly hidden;
-// one that missed it after the run before it did, with nothing seeing it
-// between, didn't.
-// A mark is when it was made, as the run that made it finished, and counts
-// only for a run that started after it: runs that overlap count once, while
-// two that don't, such as a complete push sent again after the first
-// finished, count as two. Nothing that missed an entity was seen after the
-// run that marked it started, so one seen since was seen after the mark.
-// Only runs under the integration's latest version, published at since,
-// count, as others read with other mappings: marks made before since count
-// for nothing, and a run that started before since, so read with the old
-// mappings however late it finishes, neither deletes nor marks.
-func (s Store) Reconcile(ctx context.Context, integrationID string, blueprintIDs []string, before, since time.Time) (int, error) {
-	if len(blueprintIDs) == 0 || before.Before(since) {
-		return 0, nil
-	}
-	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM entities WHERE integration_id = $1 AND blueprint_id = ANY($2) AND seen_at < $3
-			AND missed_at < $3 AND missed_at >= $4 AND seen_at < missed_at`,
-		integrationID, pq.Array(blueprintIDs), before, since)
-	if err != nil {
-		return 0, err
-	}
-	deleted, _ := result.RowsAffected()
-	if _, err := s.db.ExecContext(ctx, `
-		UPDATE entities SET missed_at = clock_timestamp() WHERE integration_id = $1 AND blueprint_id = ANY($2) AND seen_at < $3`,
-		integrationID, pq.Array(blueprintIDs), before); err != nil {
-		return 0, err
-	}
-
-	return int(deleted), nil
 }
 
 // Entity is a stored entity as the API shows it.

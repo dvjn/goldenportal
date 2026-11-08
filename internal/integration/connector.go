@@ -40,6 +40,16 @@ type Item struct {
 	Resource string
 	Object   any
 	Deleted  bool
+	// Scope is the part of the system the object was read from, such as a
+	// project, which the core doesn't interpret, or empty for none. A
+	// complete sync deletes a scope's entities only when it read that scope
+	// in full.
+	Scope string
+	// SourceAt is when the system answered with what the object says, the
+	// earliest answer when several fed it, or zero when the connector
+	// doesn't know. An entity written from a later answer is never
+	// overwritten from an earlier one.
+	SourceAt time.Time
 }
 
 // Config is an integration's parsed connector config. What it can do beyond
@@ -55,17 +65,43 @@ type Puller interface {
 	// Pulls lists the resources it fetches.
 	Pulls() []string
 	// Pull fetches each resource asked for and hands its items to emit, a
-	// page at a time. A resource that fails doesn't stop the others; its
-	// error is returned by name.
-	Pull(ctx context.Context, db configdoc.DB, p PullRequest, emit func(resource string, items []Item) error) (map[string]error, error)
+	// page at a time. A resource that fails doesn't stop the others; the
+	// report says what it read in full.
+	Pull(ctx context.Context, db configdoc.DB, p PullRequest, emit func(resource string, items []Item) error) (Report, error)
+}
+
+// Report is what a pull read in full, which is all a complete sync goes by
+// to delete what it didn't see.
+type Report struct {
+	// Failed is why each resource that failed as a whole failed.
+	Failed map[string]error
+	// ScopeFailures are resources that failed in one scope only.
+	ScopeFailures []ScopeFailure
+	// Scopes are the scopes the pull listed, of a connector whose items
+	// carry them. A stored scope it didn't list is gone.
+	Scopes []string
+	// Unlisted is why some scopes may be missing from Scopes, such as a
+	// listing that failed, so none counts as gone.
+	Unlisted []error
+}
+
+// ScopeFailure is a resource a pull couldn't read in one scope.
+type ScopeFailure struct {
+	Resource, Scope string
+	Err             error
+	// Refused is whether the system refused access, which, unlike most
+	// failures, tends to last.
+	Refused bool
+	// lasting is a refusal the syncs before met too, run after run.
+	lasting bool
 }
 
 // PullRequest is what one sync asks a Puller for.
 type PullRequest struct {
 	Resources []string
-	// Since is when the last successful sync started, less a minute, for an
-	// incremental sync; the zero time for a complete one.
-	Since time.Time
+	// Cursors are where to read each resource from, which From answers. A
+	// resource without one is read in full.
+	Cursors map[string]Cursor
 	// IngestURL is where the system can send the integration events, on a
 	// sync of every resource once the portal knows its public URL, for
 	// connectors that set up their own webhooks.
@@ -76,6 +112,40 @@ type PullRequest struct {
 	// Warn reports what went wrong without failing anything read, such as
 	// a webhook it couldn't set up, which the run records. It's never nil.
 	Warn func(string)
+	// read notes what From answered, so the sync knows where it left off.
+	read *readLog
+}
+
+// Cursor is where a sync reads a resource from in each scope, such as a
+// project, or "" for a resource read from none in particular.
+type Cursor struct {
+	// Scopes are when the last sync that read each scope without failing
+	// it started, less a minute, so nothing that changed as it read is
+	// missed.
+	Scopes map[string]time.Time
+	// Floor is as far back as any sync reads, as the blueprints written
+	// keep rows no longer, and where one reads a scope Scopes doesn't name.
+	// Zero reads such a scope in full.
+	Floor time.Time
+}
+
+// From is when to read a resource in a scope from: what changed since, or
+// everything for the zero time. first is whether no sync read it there
+// before, when since only says how far back the blueprints keep rows, and
+// what's still open is read too, however long ago it last changed. A
+// connector that reads only what changed asks before each read; one that
+// doesn't ask reads everything.
+func (p PullRequest) From(resource, scope string) (since time.Time, first bool) {
+	cursor := p.Cursors[resource]
+	since, ok := cursor.Scopes[scope]
+	if !ok {
+		since = cursor.Floor
+	} else if since.Before(cursor.Floor) {
+		since = cursor.Floor
+	}
+	p.read.note(resource, scope, since)
+
+	return since, !ok
 }
 
 // Incremental is a Puller that can fetch only what changed since a time.

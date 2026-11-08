@@ -111,14 +111,14 @@ func (c portalConfig) Pulls() []string { return c.Resources() }
 // portal's own database, so one failure fails every resource.
 func (portalConfig) Pull(ctx context.Context, db configdoc.DB, p PullRequest,
 	emit func(resource string, items []Item) error,
-) (map[string]error, error) {
+) (Report, error) {
 	snapshot, err := portalSnapshot(ctx, db, p.Resources)
 	if err != nil {
 		failed := map[string]error{}
 		for _, resource := range p.Resources {
 			failed[resource] = err
 		}
-		return failed, nil
+		return Report{Failed: failed}, nil
 	}
 	for _, resource := range p.Resources {
 		objects, _ := snapshot[resource].([]any)
@@ -127,11 +127,11 @@ func (portalConfig) Pull(ctx context.Context, db configdoc.DB, p PullRequest,
 			items[i] = Item{Resource: resource, Object: object}
 		}
 		if err := emit(resource, items); err != nil {
-			return nil, err
+			return Report{}, err
 		}
 	}
 
-	return nil, nil
+	return Report{}, nil
 }
 
 // Check reaches the portal's database.

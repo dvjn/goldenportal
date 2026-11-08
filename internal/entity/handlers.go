@@ -20,13 +20,15 @@ import (
 )
 
 // Register serves the catalog. The handlers read the request and call the
-// services below, which MCP calls too.
-func Register(app httpx.Routes) {
+// services below, which MCP calls too. Retention runs on retentionSchedule,
+// a cron expression.
+func Register(app httpx.Routes, retentionSchedule string) {
 	app.GET("catalog", catalog)
 	app.GET("catalog/{blueprint}", list)
 	app.GET("catalog/{blueprint}/facets", facets)
 	// Identifiers come from other systems and may contain slashes.
 	app.GET("catalog/{blueprint}/entities/{identifier:.+}", get)
+	app.AddCronJob(retentionSchedule, "expire-entities", expireJob)
 }
 
 // CatalogEntry is a published blueprint and how many entities it has.

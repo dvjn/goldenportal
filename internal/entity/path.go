@@ -32,6 +32,10 @@ type field struct {
 	// jsonb and key say which of the entity's jsonb columns holds the
 	// value, under which key, for conditions its GIN index can answer.
 	jsonb, key string
+	// timestamp is a column holding a date's value as a timestamp, which an
+	// index ranges over and sorts by: occurred_at, for the property its
+	// blueprint's retention keeps rows by.
+	timestamp string
 }
 
 // Kinds beside a property's type.
@@ -84,7 +88,7 @@ func (r reader) read(spec blueprint.Spec, alias, path string, hops int) (field, 
 		}
 		return scorecardField(alias, prop, rest)
 	case !nested:
-		return propertyField(alias, prop), nil
+		return propertyField(alias, prop, spec.RetainedBy() == prop.ID), nil
 	case !prop.IsRelation():
 		return field{}, fmt.Errorf("%s follows %s, which isn't a relation or a scorecard", path, name)
 	case prop.Many:
@@ -152,7 +156,7 @@ func builtInField(spec blueprint.Spec, alias, name string) field {
 	return fld
 }
 
-func propertyField(alias string, prop blueprint.Property) field {
+func propertyField(alias string, prop blueprint.Property, retainedBy bool) field {
 	key := quoteLiteral(prop.ID)
 	fld := field{prop: &prop, kind: prop.Type, title: prop.Title}
 	switch {
@@ -166,6 +170,9 @@ func propertyField(alias string, prop blueprint.Property) field {
 	fld.value, fld.key = fld.jsonb+" -> "+key, prop.ID
 	if prop.Format == "date" || prop.Format == "date-time" {
 		fld.kind = kindDate
+	}
+	if retainedBy {
+		fld.timestamp = alias + ".occurred_at"
 	}
 
 	return fld

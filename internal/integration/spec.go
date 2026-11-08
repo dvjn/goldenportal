@@ -65,10 +65,25 @@ type Mapping struct {
 	Blueprint string `json:"blueprint"`
 	// Filter keeps the items it's true for. Deleted items skip it, since
 	// what a system sends for a deletion may be no more than an ID.
-	Filter string        `json:"filter,omitempty"`
+	Filter string `json:"filter,omitempty"`
+	// Mode is MappingReconcile or MappingUpsert.
+	Mode   string        `json:"mode"`
 	Entity EntityMapping `json:"entity"`
 	line   int
 }
+
+// How a mapping keeps its blueprint. A reconcile mapping makes it hold what
+// its resource holds: a complete sync reads the resource in full and
+// deletes the entities it no longer has. An upsert mapping writes what's
+// new or changed since the last sync, and deletes only what an item says
+// was deleted, so its rows go by the blueprint's retention.
+const (
+	MappingReconcile = "reconcile"
+	MappingUpsert    = "upsert"
+)
+
+// Upsert reports whether the mapping only writes.
+func (m Mapping) Upsert() bool { return m.Mode == MappingUpsert }
 
 // EntityMapping makes an entity from an item.
 type EntityMapping struct {
@@ -97,7 +112,7 @@ var (
 	SpecFields         = []string{"connector", "sync", "mappings"}
 	ConnectorFields    = []string{"type", "config"}
 	SyncFields         = []string{"interval", "complete"}
-	MappingFields      = []string{"resource", "blueprint", "filter", "entity"}
+	MappingFields      = []string{"resource", "blueprint", "filter", "mode", "entity"}
 	EntityFields       = []string{"identifier", "title", "properties"}
 	HTTPConfigFields   = []string{"push", "resources"}
 	HTTPPushFields     = []string{"signature"}
@@ -158,6 +173,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 		r.Errorf(configdoc.OrNode(fields["mappings"], doc.Spec), "spec.mappings",
 			"add a mapping for each blueprint the integration writes")
 	}
+	checkModes(r, spec.Mappings)
 
 	return spec, r.Issues
 }
@@ -263,10 +279,16 @@ func syncInterval(r *configdoc.Reader, node, parent *yaml.Node, name string) (ti
 }
 
 func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, config Config) Mapping {
-	m := Mapping{line: node.Line, Entity: EntityMapping{Properties: []Field{}}}
+	m := Mapping{line: node.Line, Mode: MappingReconcile, Entity: EntityMapping{Properties: []Field{}}}
 	fields, ok := r.Fields(node, path, MappingFields...)
 	if !ok {
 		return m
+	}
+	if n := fields["mode"]; n != nil {
+		m.Mode = r.Text(n, path+".mode")
+		if m.Mode != MappingReconcile && m.Mode != MappingUpsert {
+			r.Errorf(n, path+".mode", "mode must be reconcile or upsert")
+		}
 	}
 
 	m.Resource = r.Text(fields["resource"], path+".resource")
@@ -318,6 +340,24 @@ func parseMapping(r *configdoc.Reader, path string, node *yaml.Node, config Conf
 	return m
 }
 
+// checkModes refuses mappings into one blueprint that keep it differently,
+// since a complete sync could then delete what an upsert mapping wrote.
+func checkModes(r *configdoc.Reader, mappings []Mapping) {
+	first := map[string]Mapping{}
+	for i, m := range mappings {
+		was, ok := first[m.Blueprint]
+		switch {
+		case !ok:
+			first[m.Blueprint] = m
+		case was.Mode != m.Mode:
+			r.Issues = append(r.Issues, configdoc.Issue{
+				Severity: configdoc.SeverityError, Path: fmt.Sprintf("spec.mappings[%d].mode", i), Line: m.line,
+				Message: fmt.Sprintf("another mapping into %s uses mode: %s, and an integration's mappings into one blueprint share a mode", m.Blueprint, was.Mode),
+			})
+		}
+	}
+}
+
 // resourceProblemer is a config that can say why a resource it has can't
 // be read with how it's set up.
 type resourceProblemer interface {
@@ -356,7 +396,8 @@ func jqText(r *configdoc.Reader, node *yaml.Node, path string) string {
 }
 
 // Check checks mappings against the published blueprints: unpublished
-// blueprints are warnings, properties they can't write are errors.
+// blueprints are warnings; properties they can't write, and reconcile
+// mappings into blueprints with retention, are errors.
 func Check(spec Spec, published map[string]blueprint.Spec) []configdoc.Issue {
 	var issues []configdoc.Issue
 	for i, m := range spec.Mappings {
@@ -370,6 +411,12 @@ func Check(spec Spec, published map[string]blueprint.Spec) []configdoc.Issue {
 				})
 			}
 			continue
+		}
+		if bp.Retention != nil && !m.Upsert() {
+			issues = append(issues, configdoc.Issue{
+				Severity: configdoc.SeverityError, Path: path + ".mode", Line: m.line,
+				Message: fmt.Sprintf("%s has retention, so its mappings must use mode: upsert", m.Blueprint),
+			})
 		}
 		for _, f := range m.Entity.Properties {
 			if !bp.HasProperty(f.ID) {

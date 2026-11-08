@@ -104,7 +104,7 @@ func TestParseHTTPConfig(t *testing.T) {
 func pull(t *testing.T, config *HTTPConfig, p PullRequest) (map[string][]Item, map[string]error) {
 	t.Helper()
 	pulled := map[string][]Item{}
-	failed, err := config.Pull(context.Background(), nil, p, func(resource string, items []Item) error {
+	report, err := config.Pull(context.Background(), nil, p, func(resource string, items []Item) error {
 		pulled[resource] = append(pulled[resource], items...)
 		return nil
 	})
@@ -112,7 +112,7 @@ func pull(t *testing.T, config *HTTPConfig, p PullRequest) (map[string][]Item, m
 		t.Fatal(err)
 	}
 
-	return pulled, failed
+	return pulled, report.Failed
 }
 
 func TestHTTPPull(t *testing.T) {
@@ -138,7 +138,9 @@ func TestHTTPPull(t *testing.T) {
 
 	spec := mustParse(t, httpYAML(server.URL+"/deployments?since={{ $since }}"))
 	from := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
-	pulled, failed := pull(t, httpConfig(t, spec), PullRequest{Resources: []string{"deployments"}, Since: from})
+	pulled, failed := pull(t, httpConfig(t, spec), PullRequest{
+		Resources: []string{"deployments"}, Cursors: map[string]Cursor{"deployments": {Scopes: map[string]time.Time{"": from}}},
+	})
 	if len(failed) != 0 {
 		t.Fatalf("failed = %v", failed)
 	}

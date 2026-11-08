@@ -448,6 +448,7 @@ func (c *apiClient) sendOnce(ctx context.Context, method, address string, cred c
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return body, resp.Header, resp.StatusCode, &apiError{System: c.system, Path: c.relative(address), Status: resp.StatusCode, Message: c.message(body)}
 	}
+	answered(ctx, resp.Header)
 
 	return body, resp.Header, resp.StatusCode, nil
 }

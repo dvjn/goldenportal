@@ -37,6 +37,42 @@ jobs:
       - name: ✅ Run Tests
         run: mise run test
 
+  e2e:
+    name: 🐘 Run End-to-End Tests
+    runs-on: ubuntu-latest
+    # The tests make their own databases on this server.
+    services:
+      postgres:
+        image: docker.io/library/postgres:18.4-bookworm
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      GP_TEST_DATABASE_URL: postgres://test:test@localhost:5432/postgres?sslmode=disable
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 🧰 Install Tools
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - name: 📦 Cache Go
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: e2e-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            e2e-${{ runner.os }}-
+      - name: ✅ Run End-to-End Tests
+        run: mise run test:e2e
+
   image:
     # Builds the same multi-arch image as the release and pushes it only for
     # commits on main. A fork pull request has a read-only token and no secrets.

@@ -93,6 +93,29 @@ const modeLabels: Record<RunMode, string> = {
   incremental: "Incremental",
 };
 
+// ModeCell says how a run deleted, and for a sync that read some resources
+// only from a time on, the earliest, with each resource's on hover.
+function ModeCell({ run }: Readonly<{ run: Run }>) {
+  const since = Object.entries(run.readSince ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const earliest = since.map(([, at]) => at).sort()[0];
+  return (
+    <span
+      className="text-muted-foreground"
+      title={
+        since.map(([resource, at]) => `${resource} from ${formatAbsolute(at)}`).join("\n") ||
+        undefined
+      }
+    >
+      {modeLabels[run.mode]}
+      {earliest && (
+        <span className="block text-xs whitespace-nowrap">
+          Read from {formatAbsolute(earliest)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 const column = dataTableColumns<Run>();
 
 const columns = [
@@ -130,7 +153,7 @@ const columns = [
   column.accessor("mode", {
     header: "Mode",
     enableSorting: false,
-    cell: ({ getValue }) => <span className="text-muted-foreground">{modeLabels[getValue()]}</span>,
+    cell: ({ row }) => <ModeCell run={row.original} />,
   }),
   column.display({
     id: "took",

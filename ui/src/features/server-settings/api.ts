@@ -38,6 +38,7 @@ export type ServerConfiguration = {
     httpPort: string;
     metricsPort: string;
     logLevel: string;
+    retentionSchedule: string;
   };
 };
 

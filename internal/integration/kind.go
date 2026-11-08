@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
@@ -152,6 +154,8 @@ func sameMapping(a, b Mapping) bool {
 		for i, f := range fields {
 			out[i] = Field{ID: f.ID, Expression: f.Expression}
 		}
+		// Properties are a YAML mapping, whose order means nothing.
+		slices.SortFunc(out, func(x, y Field) int { return strings.Compare(x.ID, y.ID) })
 		return out
 	}
 	a.Entity.Properties, b.Entity.Properties = strip(a.Entity.Properties), strip(b.Entity.Properties)

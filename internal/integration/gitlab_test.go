@@ -131,7 +131,7 @@ func pullGitLabAs(t *testing.T, config *GitLabConfig, request PullRequest) (map[
 		request.Warn = func(string) {}
 	}
 	pulled := map[string][]map[string]any{}
-	failed, err := config.Pull(t.Context(), nil, request, func(resource string, items []Item) error {
+	report, err := config.Pull(t.Context(), nil, request, func(resource string, items []Item) error {
 		for _, item := range items {
 			if item.Resource != resource || item.Deleted {
 				t.Errorf("emitted %+v as %s", item, resource)
@@ -144,7 +144,36 @@ func pullGitLabAs(t *testing.T, config *GitLabConfig, request PullRequest) (map[
 		t.Fatal(err)
 	}
 
-	return pulled, failed
+	return pulled, failedByResource(report, request.Resources)
+}
+
+// failedByResource is each resource's failures, whole or in a scope, as a
+// run reports them, with a failed listing of scopes failing every resource
+// read from scopes.
+func failedByResource(report Report, resources []string) map[string]error {
+	errs := map[string][]error{}
+	for resource, err := range report.Failed {
+		errs[resource] = append(errs[resource], err)
+	}
+	for _, f := range report.ScopeFailures {
+		errs[f.Resource] = append(errs[f.Resource], f.Err)
+	}
+	for _, err := range report.Unlisted {
+		for _, resource := range resources {
+			if slices.Contains(gitlabProjectResources, resource) {
+				errs[resource] = append(errs[resource], err)
+			}
+		}
+	}
+	failed := map[string]error{}
+	for resource, list := range errs {
+		failed[resource] = list[0]
+		if len(list) > 1 {
+			failed[resource] = fmt.Errorf("%w, and %d more failed", list[0], len(list)-1)
+		}
+	}
+
+	return failed
 }
 
 func gitlabSorted(list string) string {
@@ -196,7 +225,7 @@ func shortenGitLabWaits(t *testing.T) {
 
 func TestParseGitLabConfig(t *testing.T) {
 	spec, config := gitlabSpec(t, gitlabYAML, "https://gitlab.example.com")
-	if !spec.Pulls || !spec.Receives || !spec.Events || !spec.Checks || config.HistoryDays != defaultHistoryDays || config.ExcludeArchived ||
+	if !spec.Pulls || !spec.Receives || !spec.Events || !spec.Checks || config.ExcludeArchived ||
 		config.apiURL() != "https://gitlab.example.com/api/v4" {
 		t.Fatalf("spec = %+v, config = %+v", spec, config)
 	}
@@ -231,8 +260,8 @@ func TestParseGitLabConfig(t *testing.T) {
 		{"nested groups", token + "      groups: [acme, acme/platform]\n" + mapping, "acme/platform is already read with the acme group, which includes its subgroups"},
 		{"archived in words", token + "      groups: [acme]\n      excludeArchived: yes please\n" + mapping, "excludeArchived must be true or false"},
 		{"members without a group", token + "      projects: [acme/api]\n" + strings.Replace(mapping, "projects", "members", 1), "members are read from groups, so list one in groups"},
-		{"no history", token + "      groups: [acme]\n      historyDays: 0\n" + mapping, "historyDays must be a whole number of days, at least 1"},
-		{"incremental syncs", token + "      groups: [acme]\n  sync: {interval: 1h, complete: 24h}\n" + mapping, "the gitlab connector reads everything on every sync, so every sync is complete and complete is ignored"},
+		{"historyDays", token + "      groups: [acme]\n      historyDays: 30\n" + mapping, "historyDays is gone: syncs read what changed since the last one, and each blueprint's retention says how long its rows are kept"},
+		{"history", token + "      groups: [acme]\n      history: 30d\n" + mapping, "history is gone"},
 		{"unknown field", token + "      groups: [acme]\n      group: acme\n" + mapping, `unknown field "group"`},
 		{"unknown resource", token + "      groups: [acme]\n" + strings.Replace(mapping, "projects", "repositories", 1), "resource must be one of groups, projects"},
 	}
@@ -285,16 +314,14 @@ func TestGitLabPull(t *testing.T) {
 		{gitlabProjects, []string{parentKey, "latestPipeline", "id"}, "13,13,13"},
 		{gitlabMembers, []string{parentKey, "group"}, "acme,acme,acme/platform"},
 		{gitlabMembers, []string{"username"}, "ada,grace,linus"},
-		// Opened ones, then those merged or closed within the month.
-		{gitlabMergeRequests, []string{"iid"}, "4,3,2,4,3,2,4,3,2"},
+		// Without cursors, everything, however long ago it changed.
+		{gitlabMergeRequests, []string{"iid"}, "4,3,2,1,4,3,2,1,4,3,2,1"},
 		// acme/platform/web has issues turned off.
-		{gitlabIssues, []string{"iid"}, "9,6,8,9,6,8"},
+		{gitlabIssues, []string{"iid"}, "9,8,7,6,9,8,7,6"},
 		// Child pipelines too, which GitLab lists only when asked for them.
-		{gitlabPipelines, []string{"id"}, "14,13,12,14,13,12,14,13,12"},
-		{gitlabJobs, []string{"id"}, "140,130,120,140,130,120,140,130,120"},
-		// Only those made within the month; what's deployed to an
-		// environment however long ago, its last deployment says.
-		{gitlabDeployments, []string{"id"}, "22,22,22"},
+		{gitlabPipelines, []string{"id"}, "14,13,12,11,14,13,12,11,14,13,12,11"},
+		{gitlabJobs, []string{"id"}, "140,130,120,110,140,130,120,110,140,130,120,110"},
+		{gitlabDeployments, []string{"id"}, "22,21,22,21,22,21"},
 		{gitlabEnvironments, []string{parentKey, "lastDeployment", "id"}, "22,21,22,21,22,21"},
 		{gitlabReleases, []string{parentKey, "project"}, "acme/api,acme/api,acme/platform/web,acme/platform/web,octo/tools,octo/tools"},
 		{gitlabProjects, []string{parentKey, "defaultBranch", "commit", "id"}, "ma1n,ma1n,ma1n"},
@@ -401,30 +428,114 @@ func TestGitLabPull(t *testing.T) {
 	}
 }
 
-// TestGitLabPullHistoryDays checks a sync reads what piles up only back to
-// historyDays, and reads all of it whatever the sync's mode.
-func TestGitLabPullHistoryDays(t *testing.T) {
-	f := newGitLabFixture(t)
-	_, config := gitlabSpec(t, strings.Replace(gitlabProjectYAML("acme/api"), "      projects:", "      historyDays: 2\n      projects:", 1), f.url())
-	since, _ := time.Parse(time.RFC3339, gitlabT3)
-	pulled, failed := pullGitLabAs(t, config, PullRequest{Resources: []string{gitlabMergeRequests, gitlabIssues, gitlabPipelines, gitlabJobs, gitlabDeployments}, Since: since})
-	if len(failed) != 0 {
-		t.Fatalf("failed = %v", failed)
+// TestGitLabPullFromCursors checks a sync reads what piles up from where
+// the request says in each project: what changed since the last sync; on a
+// first sync that reads only as far back as rows are kept, the open merge
+// requests and issues too; and jobs only of pipelines changed since jobs
+// were read.
+func TestGitLabPullFromCursors(t *testing.T) {
+	resources := []string{gitlabMergeRequests, gitlabIssues, gitlabPipelines, gitlabJobs, gitlabDeployments}
+	minute := func(at string) time.Time {
+		t, _ := time.Parse(time.RFC3339, at)
+		return t.Add(-time.Minute)
 	}
-	for resource, want := range map[string]string{
-		gitlabMergeRequests: "4,3", gitlabIssues: "9,6", gitlabPipelines: "14,13", gitlabJobs: "140,130", gitlabDeployments: "22",
-	} {
-		if got := gitlabField(pulled[resource], "id"); got != gitlabSorted(want) {
-			t.Errorf("%s = %s, want %s", resource, got, want)
+	every := func(c Cursor) map[string]Cursor {
+		out := map[string]Cursor{}
+		for _, resource := range resources {
+			out[resource] = c
+		}
+		return out
+	}
+	tests := []struct {
+		name    string
+		cursors map[string]Cursor
+		want    map[string]string
+	}{
+		{"since the last sync", every(Cursor{Scopes: map[string]time.Time{"1": minute(gitlabT3)}}), map[string]string{
+			gitlabMergeRequests: "3", gitlabIssues: "9", gitlabPipelines: "14,13", gitlabJobs: "140,130", gitlabDeployments: "22",
+		}},
+		{"first, as far back as rows are kept", every(Cursor{Floor: minute(gitlabT2)}), map[string]string{
+			gitlabMergeRequests: "4,3,2", gitlabIssues: "9,6,8", gitlabPipelines: "14,13,12", gitlabJobs: "140,130,120", gitlabDeployments: "22",
+		}},
+		{"jobs since the last sync, pipelines in full", map[string]Cursor{gitlabJobs: {Scopes: map[string]time.Time{"1": minute(gitlabT3)}}}, map[string]string{
+			gitlabPipelines: "14,13,12,11", gitlabJobs: "140,130",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newGitLabFixture(t)
+			_, config := gitlabSpec(t, gitlabProjectYAML("acme/api"), f.url())
+			request := PullRequest{Resources: resources, Cursors: test.cursors, read: newReadLog()}
+			pulled, failed := pullGitLabAs(t, config, request)
+			if len(failed) != 0 {
+				t.Fatalf("failed = %v", failed)
+			}
+			for resource, want := range test.want {
+				if got := gitlabField(pulled[resource], "id"); got != gitlabSorted(want) {
+					t.Errorf("%s = %s, want %s", resource, got, want)
+				}
+			}
+			if q := f.sent(http.MethodGet, "/projects/1/deployments"); test.cursors[gitlabDeployments].Scopes != nil &&
+				(len(q) != 1 || !strings.Contains(q[0], "order_by=updated_at") || !strings.Contains(q[0], "updated_after=")) {
+				t.Errorf("deployments were asked for with %v, want what changed since, by updated_at", q)
+			}
+		})
+	}
+}
+
+// TestGitLabPullScopesItems checks what's read from a project carries the
+// project's ID as its scope, and what's read from groups none, each with
+// when GitLab answered, and that the report lists the projects read and
+// fails a project's resource in that project alone.
+func TestGitLabPullScopesItems(t *testing.T) {
+	f := newGitLabFixture(t)
+	_, config := gitlabSpec(t, gitlabYAML, f.url())
+	f.deny("/projects/2/deployments")
+	ids := map[string]string{}
+	var items []Item
+	before := time.Now().Add(-time.Minute)
+	report, err := config.Pull(t.Context(), nil, PullRequest{Resources: gitlabResources, Warn: func(string) {}}, func(_ string, page []Item) error {
+		items = append(items, page...)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		object := item.Object.(map[string]any)
+		if item.Resource == gitlabProjects {
+			path, _ := object["path_with_namespace"].(string)
+			ids[path] = idOf(object["id"])
 		}
 	}
-	if q := f.sent(http.MethodGet, "/projects/1/pipelines"); len(q) != 2 {
-		t.Errorf("pipelines were read in %d pages, want the first of each list only, which reaches past the cutoff", len(q))
+	for _, item := range items {
+		object := item.Object.(map[string]any)
+		want := ""
+		switch {
+		case item.Resource == gitlabProjects:
+			want = idOf(object["id"])
+		case !slices.Contains(gitlabGroupResources, item.Resource):
+			path, _ := valueAt(object, parentKey, "project").(string)
+			want = ids[path]
+		}
+		if item.Scope != want || want == "" && !slices.Contains(gitlabGroupResources, item.Resource) {
+			t.Errorf("%s %v has scope %q, want %q", item.Resource, object["id"], item.Scope, want)
+		}
+		if item.SourceAt.Before(before) || item.SourceAt.After(time.Now()) {
+			t.Errorf("%s %v was answered at %v", item.Resource, object["id"], item.SourceAt)
+		}
+	}
+	slices.Sort(report.Scopes)
+	// Environments read their last deployment, so they fail with them.
+	refused := slices.ContainsFunc(report.ScopeFailures, func(f ScopeFailure) bool { return f.Scope != "2" || !f.Refused })
+	if strings.Join(report.Scopes, ",") != "1,2,3" || len(report.Failed) != 0 || len(report.ScopeFailures) != 2 || refused {
+		t.Errorf("report = %+v", report)
 	}
 }
 
 // TestGitLabPullFailsAPartialView checks a group the token sees only part
-// of fails everything it holds, so a complete sync deletes none of it.
+// of fails what it holds, and lists none of its projects, so a complete
+// sync deletes none of it.
 func TestGitLabPullFailsAPartialView(t *testing.T) {
 	project := gitlabProjectYAML("octo/tools")
 	tests := []struct {
@@ -504,7 +615,7 @@ func TestGitLabPullReadsWhatGitLabHas(t *testing.T) {
 	_, config := gitlabSpec(t, gitlabProjectYAML("acme/api"), f.url())
 	f.answer("/projects/1/pipelines/13/jobs", gitlabNotFound)
 	pulled, failed := pullGitLab(t, config, gitlabPipelines, gitlabJobs, gitlabTags)
-	if len(failed) != 0 || gitlabField(pulled[gitlabPipelines], "id") != "12,13,14" || gitlabField(pulled[gitlabJobs], "id") != "120,140" ||
+	if len(failed) != 0 || gitlabField(pulled[gitlabPipelines], "id") != "11,12,13,14" || gitlabField(pulled[gitlabJobs], "id") != "110,120,140" ||
 		len(pulled[gitlabTags]) != 3 {
 		t.Errorf("pulled = %v, failed = %v, want what was deleted since it was listed skipped", pulled, failed)
 	}
@@ -614,7 +725,7 @@ func TestGitLabPullRateLimits(t *testing.T) {
 		f.answer("/groups/10/projects", gitlabTooMany, gitlabServerError)
 		f.answer("/projects/1/merge_requests", gitlabTooMany)
 		pulled, failed := pullGitLab(t, config, only...)
-		if len(failed) != 0 || len(pulled[gitlabMergeRequests]) != 9 {
+		if len(failed) != 0 || len(pulled[gitlabMergeRequests]) != 12 {
 			t.Fatalf("pulled = %v, failed = %v", pulled, failed)
 		}
 	})
@@ -649,7 +760,7 @@ func TestGitLabPullKeepsGoingPastAFailedResource(t *testing.T) {
 
 	f.deny("/jobs")
 	pulled, failed = pullGitLab(t, config, gitlabPipelines, gitlabJobs)
-	if failed[gitlabJobs] == nil || failed[gitlabPipelines] != nil || len(pulled[gitlabPipelines]) != 9 {
+	if failed[gitlabJobs] == nil || failed[gitlabPipelines] != nil || len(pulled[gitlabPipelines]) != 12 {
 		t.Fatalf("pulled = %v, failed = %v, want only jobs failed", pulled, failed)
 	}
 
@@ -704,14 +815,13 @@ func TestGitLabReceive(t *testing.T) {
 		{"Tag Push Hook", `{"object_kind": "tag_push", "ref": "refs/tags/v9", "after": ` + zeros + `, ` + project + `}`, "tag acme/api@v9 deleted"},
 		{"Tag Push Hook", `{"object_kind": "tag_push", "ref": "refs/tags/v1", "after": "abc", ` + project + `}`, "tag acme/api@v1"},
 		{"Merge Request Hook", `{"object_kind": "merge_request", "object_attributes": {"iid": 2, "action": "merge"}, ` + project + `}`, "merge-request acme/api!2"},
-		// Closed before the cutoff, so syncs leave it out.
-		{"Merge Request Hook", `{"object_kind": "merge_request", "object_attributes": {"iid": 1, "action": "update"}, ` + project + `}`, ""},
+		{"Merge Request Hook", `{"object_kind": "merge_request", "object_attributes": {"iid": 1, "action": "update"}, ` + project + `}`, "merge-request acme/api!1"},
 		{"Issue Hook", `{"object_kind": "issue", "object_attributes": {"iid": 9, "action": "update"}, ` + project + `}`, "issue acme/api#9"},
 		{"Issue Hook", `{"object_kind": "work_item", "object_attributes": {"iid": 6, "type": "Task"}, ` + project + `}`, "issue acme/api#6"},
 		{"Issue Hook", `{"object_kind": "issue", "object_attributes": {"iid": 5, "action": "close"}, ` + project + `}`, ""},
 		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 13, "ref": "main", "tag": false}, ` + project + `}`, "pipeline 13, project acme/api"},
 		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 12, "ref": "dev", "tag": false}, ` + project + `}`, "pipeline 12"},
-		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 11, "ref": "dev"}, ` + project + `}`, ""},
+		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 11, "ref": "dev"}, ` + project + `}`, "pipeline 11"},
 		{"Job Hook", `{"object_kind": "build", "build_id": 130, "pipeline_id": 13, "project_id": 1, ` + project + `}`, "job 130"},
 		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 14, "ref": "main", "tag": false}, ` + project + `}`, "pipeline 14, project acme/api"},
 		{"Job Hook", `{"object_kind": "build", "build_id": 140, "pipeline_id": 14, "project_id": 1, ` + project + `}`, "job 140"},
@@ -719,12 +829,11 @@ func TestGitLabReceive(t *testing.T) {
 		{"Push Hook", `{"object_kind": "push", "ref": "refs/heads/main", "after": "ma1n", "project": {"id": 3, "path_with_namespace": "acme/api", "default_branch": "main"}}`, ""},
 		// An attempt since retried isn't the job's latest, which syncs read.
 		{"Job Hook", `{"object_kind": "build", "build_id": 131, "pipeline_id": 13, "project_id": 1, ` + project + `}`, ""},
-		// A job of an old pipeline, retried, goes with its pipeline.
-		{"Job Hook", `{"object_kind": "build", "build_id": 110, "pipeline_id": 11, "project_id": 1, ` + project + `}`, ""},
+		// However old its pipeline, a job is written, as syncs read it.
+		{"Job Hook", `{"object_kind": "build", "build_id": 110, "pipeline_id": 11, "project_id": 1, ` + project + `}`, "job 110"},
 		{"Deployment Hook", `{"object_kind": "deployment", "deployment_id": 22, "status": "success", ` + project + `}`, "deployment 22"},
-		// An old deployment is left out, as syncs leave it, but its
-		// environment says what's deployed there.
-		{"Deployment Hook", `{"object_kind": "deployment", "deployment_id": 21, "environment": "staging", ` + project + `}`, "environment acme/api/staging"},
+		// A deployment that finished may be what's deployed to its environment.
+		{"Deployment Hook", `{"object_kind": "deployment", "deployment_id": 21, "environment": "staging", ` + project + `}`, "deployment 21, environment acme/api/staging"},
 		{"Release Hook", `{"object_kind": "release", "action": "delete", "tag": "v9", ` + project + `}`, "release acme/api@v9 deleted"},
 		{"Release Hook", `{"object_kind": "release", "action": "delete", "tag": "v1", ` + project + `}`, "release acme/api@v1"},
 		{"Release Hook", `{"object_kind": "release", "action": "update", "tag": "v2", ` + project + `}`, "release acme/api@v2"},
@@ -1106,7 +1215,7 @@ func TestGitLabPullSetsUpWebhooksAfterRunningOutOfTime(t *testing.T) {
 	})
 	failed, err := config.Pull(ctx, nil, PullRequest{Resources: []string{gitlabMergeRequests}, IngestURL: gitlabIngestURL, WebhookSecret: "s"},
 		func(string, []Item) error { return nil })
-	if err != nil || failed[gitlabMergeRequests] == nil || len(f.hooks["/projects/1/hooks"]) != 1 {
+	if err != nil || failedByResource(failed, []string{gitlabMergeRequests})[gitlabMergeRequests] == nil || len(f.hooks["/projects/1/hooks"]) != 1 {
 		t.Fatalf("failed = %v, err = %v, hooks = %v", failed, err, f.hooks)
 	}
 }
@@ -1152,8 +1261,7 @@ func TestGitLabReceivesRealPayloads(t *testing.T) {
 	}
 	// The payloads are about GitLab's example projects, years ago.
 	lists := "      projects: [mike/diaspora, jsmith/example, gitlabhq/gitlab-test, flightjs/flight-management, gitlab-org/gitlab-test, " +
-		"root/test-deployment-webhooks, gitlab-org/release-webhook-example]\n      historyDays: 36500"
-	seeded = regexp.MustCompile(`(?m)^      historyDays: \d+\n`).ReplaceAllString(seeded, "")
+		"root/test-deployment-webhooks, gitlab-org/release-webhook-example]"
 	seeded = regexp.MustCompile(`(?m)^      groups: \[acme\]$`).ReplaceAllString(seeded, "      groups: [acme]\n"+lists)
 	seeded = regexp.MustCompile(`(?m)^      url: .*$`).ReplaceAllString(seeded, "      url: https://gitlab.example.com")
 	all := strings.Replace(strings.Replace(gitlabYAML, "      groups: [acme]\n", "", 1), "      projects: [octo/tools]", lists, 1)

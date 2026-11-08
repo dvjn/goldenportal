@@ -18,7 +18,7 @@ var Kind = configdoc.Kind[Spec]{
 	Diff:     Diff,
 	// Results follow straight away, rather than at the next scheduled run.
 	Published: func(ctx context.Context, tx configdoc.DB, _ *Spec, next Spec) error {
-		_, err := evaluateIn(ctx, tx, next)
+		_, _, err := evaluateIn(ctx, tx, next)
 		return err
 	},
 }

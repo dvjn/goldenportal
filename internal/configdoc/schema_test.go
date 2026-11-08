@@ -353,6 +353,8 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Blueprint", "/$defs/entity", blueprint.EntityFields, nil},
 		{"Blueprint", "/$defs/header", blueprint.HeaderFields, nil},
 		{"Blueprint", "/$defs/section", blueprint.SectionFields, nil},
+		{"Blueprint", "/$defs/retention", blueprint.RetentionFields, nil},
+		{"Blueprint", "/$defs/retentionRule", blueprint.RuleFields, nil},
 		{"Blueprint", "/$defs/tab", widget.TabFields, nil},
 		{"Blueprint", "/$defs/query", widget.QueryFields, nil},
 		{"Blueprint", "/$defs/value", widget.ValueFields, nil},

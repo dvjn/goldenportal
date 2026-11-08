@@ -36,6 +36,7 @@ const inventory: Integration = {
           resource: "services",
           blueprint: "service",
           filter: ".active",
+          mode: "reconcile",
           entity: {
             identifier: ".id",
             properties: [{ identifier: "owner", expression: ".team" }],
@@ -272,6 +273,29 @@ describe("integrations", () => {
       "href",
       "/runs/run-1",
     );
+  });
+
+  it("says from when a sync read what changed", async () => {
+    stubApi({
+      ...routes,
+      "GET integrations/inventory/runs": ok({
+        total: 1,
+        items: [
+          {
+            ...syncRun,
+            readSince: {
+              pipelines: "2026-10-24T09:00:00Z",
+              merge_requests: "2026-10-24T08:00:00Z",
+            },
+          },
+        ],
+      }),
+    });
+    renderRoute("/integrations/inventory?tab=runs");
+
+    const mode = (await screen.findByText(/^Read from/)).parentElement as HTMLElement;
+    expect(mode).toHaveTextContent("Incremental");
+    expect(mode.title).toMatch(/^merge_requests from .*\npipelines from /);
   });
 
   it("lists integrations with how their last run went", async () => {
