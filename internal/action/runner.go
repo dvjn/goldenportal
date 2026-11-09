@@ -11,8 +11,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/entity"
-	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
@@ -32,12 +32,12 @@ const SweepSchedule = "* * * * *"
 // Runner carries runs out. Every instance has one; they share the work
 // through the database.
 type Runner struct {
-	db integration.TxDB
+	db connection.TxDB
 	// baseURL is the portal's public URL, for links to runs and entities.
 	baseURL string
 }
 
-func NewRunner(db integration.TxDB, baseURL string) Runner {
+func NewRunner(db connection.TxDB, baseURL string) Runner {
 	return Runner{db: db, baseURL: strings.TrimSuffix(baseURL, "/")}
 }
 

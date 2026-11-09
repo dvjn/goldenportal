@@ -16,7 +16,7 @@ import (
 // span ID.
 func TestLogLine(t *testing.T) {
 	recordSpans(t)
-	ctx, span := Start(t.Context(), "sync", Integration.String("gitlab"))
+	ctx, span := Start(t.Context(), "sync", Connection.String("gitlab"))
 	defer span.End()
 
 	out := testutil.StdoutOutputForFunc(func() {
@@ -44,7 +44,7 @@ func TestLogLine(t *testing.T) {
 	}
 	sc := span.SpanContext()
 	want := map[string]any{
-		"msg": "scope not read", "gp.integration": "gitlab", "gp.scope": "platform/payments",
+		"msg": "scope not read", "gp.connection": "gitlab", "gp.scope": "platform/payments",
 		"error":   "GET https://gitlab.example.com/api/v4/projects?private_token=REDACTED answered 403",
 		"span_id": sc.SpanID().String(),
 	}
@@ -56,7 +56,7 @@ func TestLogLine(t *testing.T) {
 			t.Errorf("%s = %v, want %v", key, line.Message[key], value)
 		}
 	}
-	if !strings.HasPrefix(lines[0][strings.Index(lines[0], `"message":`):], `"message":{"msg":"scope not read","gp.integration"`) {
+	if !strings.HasPrefix(lines[0][strings.Index(lines[0], `"message":`):], `"message":{"msg":"scope not read","gp.connection"`) {
 		t.Errorf("line = %s, want msg first, then the span's fields", lines[0])
 	}
 }

@@ -15,9 +15,9 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
-	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/jq"
 	"github.com/dvjn/goldenportal/internal/telemetry"
 )
@@ -277,9 +277,9 @@ func (rn Runner) entityStep(ctx context.Context, runID string, e *EntityStep, sc
 		return nil, failed(nil, "the identifier came out empty")
 	}
 	link := rn.baseURL + "/catalog/" + e.Blueprint + "/" + identifier
-	var entityErr integration.EntityError
+	var entityErr connection.EntityError
 	if e.Operation == OpDelete {
-		err := integration.RemoveEntity(ctx, rn.db, runID, e.Integration, e.Blueprint, identifier)
+		err := connection.RemoveEntity(ctx, rn.db, runID, e.Connection, e.Blueprint, identifier)
 		if errors.As(err, &entityErr) {
 			return nil, failed(map[string]any{"problems": entityErr.Problems}, "%s", entityErr.Error())
 		}
@@ -288,7 +288,7 @@ func (rn Runner) entityStep(ctx context.Context, runID string, e *EntityStep, sc
 
 	properties, _ := scope.Resolve(e.Properties).(map[string]any)
 	title := scope.Text(e.Title)
-	outcome, err := integration.WriteEntity(ctx, rn.db, runID, e.Integration, e.Blueprint,
+	outcome, err := connection.WriteEntity(ctx, rn.db, runID, e.Connection, e.Blueprint,
 		blueprint.Entity{Identifier: identifier, Title: title, Properties: properties}, true)
 	if errors.As(err, &entityErr) {
 		return nil, failed(map[string]any{"problems": entityErr.Problems}, "%s", entityErr.Error())
@@ -332,7 +332,7 @@ func (rn Runner) checkStep(ctx context.Context, c *CheckStep, scope Scope) (any,
 }
 
 // syncRetry is how often a sync step tries again while another sync of the
-// integration runs, since that one may have fetched before the change.
+// connection runs, since that one may have fetched before the change.
 const syncRetry = 2 * time.Second
 
 func (rn Runner) syncStep(ctx context.Context, runID string, step Step) (any, error) {
@@ -340,9 +340,9 @@ func (rn Runner) syncStep(ctx context.Context, runID string, step Step) (any, er
 	defer cancel()
 	s := step.Sync
 	for {
-		run, err := integration.SyncForAction(ctx, rn.db, s.Integration, runID, s.Mode, s.Resources)
+		run, err := connection.SyncForAction(ctx, rn.db, s.Connection, runID, s.Mode, s.Resources)
 		switch {
-		case errors.Is(err, integration.ErrSyncing):
+		case errors.Is(err, connection.ErrSyncing):
 			select {
 			case <-ctx.Done():
 			case <-time.After(syncRetry):
@@ -357,14 +357,14 @@ func (rn Runner) syncStep(ctx context.Context, runID string, step Step) (any, er
 			return nil, failed(nil, "the sync didn't finish within %s", time.Duration(step.Timeout))
 		}
 		if errors.Is(err, configdoc.ErrNotFound) {
-			return nil, failed(nil, "there's no integration %s", s.Integration)
+			return nil, failed(nil, "there's no connection %s", s.Connection)
 		}
 
-		return nil, failed(nil, "%s: %v", s.Integration, err)
+		return nil, failed(nil, "%s: %v", s.Connection, err)
 	}
 }
 
-func syncOutput(run *integration.Run) map[string]any {
+func syncOutput(run *connection.Run) map[string]any {
 	return map[string]any{
 		"mode": run.Mode, "received": float64(run.Received), "created": float64(run.Created), "updated": float64(run.Updated),
 		"unchanged": float64(run.Unchanged), "deleted": float64(run.Deleted), "failed": float64(run.Failed),

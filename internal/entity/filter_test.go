@@ -92,7 +92,7 @@ func TestCompileFilter(t *testing.T) {
 			[]any{"604800 seconds"},
 		},
 		{"within a built-in", `{"property":"updatedAt","op":"within","value":"12h"}`, `(e.updated_at >= now() - $1::interval)`, []any{"43200 seconds"}},
-		{"integration", `{"property":"integration","op":"eq","value":"registry"}`, `(i.identifier = $1)`, []any{"registry"}},
+		{"connection", `{"property":"connection","op":"eq","value":"registry"}`, `(i.identifier = $1)`, []any{"registry"}},
 		{
 			"not exists", `{"not":{"property":"owner","op":"exists"}}`,
 			`NOT coalesce((e.relations -> 'owner' IS NOT NULL AND e.relations -> 'owner' <> 'null'::jsonb), false)`, nil,

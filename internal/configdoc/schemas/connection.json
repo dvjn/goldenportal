@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Connection",
+  "description": "A connection writes entities into the catalog: its connector turns what a system has into items, each one object of one of its resources or its deletion, and blueprints' sources turn the items into their entities with jq.",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "Connection" },
+    "metadata": {
+      "$ref": "#/$defs/metadata",
+      "description": "What identifies the connection. Its icon and color come from its connector, so it takes neither.",
+      "properties": { "icon": false, "color": false }
+    },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "required": ["kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "$defs": {
+    "spec": {
+      "type": "object",
+      "properties": {
+        "connector": { "$ref": "#/$defs/connector" },
+        "sync": { "$ref": "#/$defs/sync" }
+      },
+      "required": ["connector"],
+      "additionalProperties": false
+    },
+    "connector": {
+      "type": "object",
+      "description": "Where the data comes from.",
+      "properties": {
+        "type": {
+          "enum": ["portal", "http", "gitlab", "sonarqube", "authentik"],
+          "description": "portal: the portal's own users, groups, blueprints, connections, actions and recent runs, synced one way. http: JSON fetched from URLs on a schedule, following pages, JSON other systems send to the ingest API, or both for the same resource. gitlab: GitLab's groups and projects and what's in them, read with an access token from GitLab.com or a self-managed instance, on a schedule and as webhook events. sonarqube: SonarQube's projects with their quality gate and measures, read with a user token on a schedule. authentik: authentik's users and groups with their attributes, read with an API token on a schedule."
+        },
+        "config": {
+          "type": "object",
+          "description": "The connector's config. The http, gitlab, sonarqube and authentik connectors take one; portal takes none."
+        }
+      },
+      "required": ["type"],
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "http" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/httpConfig" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "gitlab" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/gitlabConfig" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "sonarqube" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/sonarqubeConfig" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "authentik" } } },
+          "then": {
+            "required": ["config"],
+            "properties": { "config": { "$ref": "#/$defs/authentikConfig" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "portal" } } },
+          "then": { "properties": { "config": false } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "secret": {
+      "type": "object",
+      "properties": {
+        "env": {
+          "type": "string",
+          "pattern": "^GP_SECRET_",
+          "description": "An environment variable of the server, starting with GP_SECRET_."
+        }
+      },
+      "required": ["env"],
+      "additionalProperties": false,
+      "description": "A secret, read from the server's environment, never written in the document."
+    },
+    "authentikConfig": {
+      "type": "object",
+      "description": "The authentik connector's config. Every sync is complete, reading every user and group the token's user can view. Each user is authentik's object as its user list gives it, with username, name, email, is_active, last_login, type and attributes, and under _gp: _gp.groups, the names of the groups it's in, counting those it's in through a child group as authentik does, and _gp.directGroups, those it was added to. Each group is authentik's object, with name and attributes, and under _gp: _gp.members and _gp.directMembers, its members' usernames the same two ways, and _gp.ancestors, the names of its parents, theirs, and so on. Attributes are whatever the instance's admins set, such as a mark that a group is a team.",
+      "properties": {
+        "url": { "type": "string", "pattern": "^https?://[^/]", "description": "The authentik instance's address, such as https://auth.example.com." },
+        "token": { "$ref": "#/$defs/secret", "description": "An API token, read from the server's environment, whose user can view users and groups, such as a service account with a role that grants both." }
+      },
+      "required": ["url", "token"],
+      "additionalProperties": false
+    },
+    "sonarqubeConfig": {
+      "type": "object",
+      "description": "The sonarqube connector's config. Every sync is complete, reading each project with its quality gate, its measures and the repository it's bound to, under _gp. Each project is SonarQube's object as its project search gives it, with key, name and analysisDate, and under _gp: _gp.measures, its measures by metric key, numbers but for alert_status; _gp.qualityGate, its gate's status and conditions, or null if never analysed; and _gp.repository, the repository it's bound to, with alm and url, or null.",
+      "properties": {
+        "url": { "type": "string", "pattern": "^https?://[^/]", "description": "The SonarQube instance's address, such as https://sonarqube.example.com." },
+        "token": { "$ref": "#/$defs/secret", "description": "A user token, read from the server's environment, whose user can browse the projects. Seeing which repository a project is bound to also takes administering it; without that, projects come without one." },
+        "projects": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "The project keys to read, each a key or a pattern with *, such as acme_*. Left out, every project the token can browse.",
+          "items": { "type": "string", "pattern": "^\\S+$" }
+        }
+      },
+      "required": ["url", "token"],
+      "additionalProperties": false
+    },
+    "gitlabConfig": {
+      "type": "object",
+      "description": "The gitlab connector's config. Groups, members, projects, tags, releases and environments are read whole on every sync; merge requests, issues, pipelines with their jobs and job attempts, and deployments are read from where the last sync left off in each project, and in full when a reconcile source needs them on a complete sync. Once the server has GP_BASE_URL and GP_WEBHOOK_KEY, syncs set up a webhook on each project they read, and never remove one. Groups and members change only on a sync. What each resource's items hold, for sources to map. Each item is GitLab's REST object as its lists give it, with what it belongs to under _gp: _gp.project, the project's full path, on everything in a project; _gp.group on members; and _gp.lastDeployment, the last successful deployment or null, on environments. Jobs and job attempts are GitLab's job objects: job_attempts every attempt of every job, retried ones included, oldest first, and jobs each job's latest attempt, a job being its name in its pipeline; each carries _gp.attempt, which try it is from 1, _gp.retried, whether a later one replaced it, _gp.attempts, how many its job had, _gp.failedAttempts, how many failed, and _gp.flaky, whether its job failed and then passed when retried. Each also carries what it waited for before it queued for a runner, each null until it starts: _gp.queuedAt, when it queued; _gp.waitSeconds, from its created_at until then, for earlier stages or needed jobs, a manual play, a delay or a resource group, but not the runner queue, its queued_duration; _gp.manual, whether it's a manual job, null where GitLab's GraphQL API doesn't say; _gp.playWaitSeconds, for a manual job, from when the jobs it waited for had finished until it was played, and 0 otherwise; _gp.stageWaitSeconds, the rest of the wait; and _gp.playedBy, the user who played a manual job, with id, username and name. A deployment carries what GitLab says of its approvals, each null where it says nothing of them, as on its free tier: _gp.approvalRequired, whether its environment's rules ask for approval; _gp.approvals, each with user, status, created_at and comment; _gp.approvedAt, when the last approval it needed was given, null while it waits or if one was a rejection; and _gp.approvalSeconds, from its created_at until then; and _gp.waitSeconds, from its created_at until its job started. Pipelines carry GitLab's duration and queued_duration in seconds, downstream pipelines included, started_at and finished_at to the second, and the user who started them. An attempt carries the runner it ran on, and runner_manager, with the runner's version, platform and architecture. Runners are each runner the job attempts read ran on, read on their own once a sync, without their IP address or token: GitLab's runner object with description, tag_list, run_untagged, locked, paused, access_level, maximum_timeout, maintenance_note, created_by, created_at, contacted_at, job_execution_status, version, revision, platform and architecture; or, where GitLab refuses or has no such runner, the attempt's runner with its runner_manager's version, revision, platform and architecture. Each carries _gp.title, its description, else its name, else its type and ID; _gp.groups and _gp.projects, the full paths of the groups and projects it belongs to; _gp.url, its page in its group or first project, or null for an instance's; and _gp.lastJobAt, when the newest attempt on it started, or was created. A project carries what its default branch has, each null when it has none: _gp.defaultBranch, the branch, with protected and its commit; _gp.ciConfig, its CI lint, with valid, errors, warnings, includes and jobs without their scripts; and _gp.latestPipeline, its latest pipeline other than a child pipeline, as GitLab lists pipelines, without their times. A deleted tag or release carries only its name, or tag_name, and _gp, so identifiers must use only those. excludeArchived leaves archived projects out whole; a filter drops only the entities of its own source.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https?://[^/]",
+          "description": "The GitLab instance's address, including any path, such as https://example.com/gitlab. Defaults to https://gitlab.com."
+        },
+        "token": {
+          "$ref": "#/$defs/secret",
+          "description": "A personal, group or project access token, read from the server's environment, with the read_api scope, or api to set up webhooks too. Its user needs at least the Reporter role in each group and project read, and Maintainer to set up their webhooks."
+        },
+        "groups": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Groups read whole, by full path, with their subgroups and their projects. List a group or one above it, not both.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.][A-Za-z0-9_.-]*(/[A-Za-z0-9_.][A-Za-z0-9_.-]*)*$"
+          }
+        },
+        "projects": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Projects read on their own, by full path, such as acme/api.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.][A-Za-z0-9_.-]*(/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+$"
+          }
+        },
+        "excludeArchived": {
+          "type": "boolean",
+          "description": "Leave archived projects out, with everything in them. Defaults to false."
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "groups"
+          ]
+        },
+        {
+          "required": [
+            "projects"
+          ]
+        }
+      ],
+      "additionalProperties": false,
+      "examples": [
+        {
+          "url": "https://gitlab.example.com",
+          "token": {
+            "env": "GP_SECRET_GITLAB_TOKEN"
+          },
+          "groups": [
+            "acme"
+          ],
+          "excludeArchived": true
+        }
+      ]
+    },
+    "httpConfig": {
+      "type": "object",
+      "description": "The http connector's config.",
+      "properties": {
+        "push": { "$ref": "#/$defs/httpPush" },
+        "resources": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "The resources, keyed by the name blueprints' sources use. Each is fetched from a url, sent to the ingest API, or both.",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,62}$" },
+          "additionalProperties": { "$ref": "#/$defs/httpResource" }
+        }
+      },
+      "required": ["resources"],
+      "additionalProperties": false
+    },
+    "httpPush": {
+      "type": "object",
+      "description": "How requests to the ingest API are checked. Without a signature, pushes need an ingestion token.",
+      "properties": { "signature": { "$ref": "#/$defs/signature" } },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "description": "Lets a system push without an ingestion token by signing each request: an HMAC of the body, in hex, in a header. A signed push is always incremental.",
+      "properties": {
+        "header": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+$",
+          "description": "The header the signature is in, such as X-Hub-Signature-256."
+        },
+        "algorithm": { "enum": ["sha1", "sha256", "sha512"], "description": "The HMAC's hash." },
+        "prefix": {
+          "type": "string",
+          "description": "What comes before the hex, such as sha256=."
+        },
+        "secret": {
+          "$ref": "#/$defs/secret",
+          "description": "The secret the system signs with, read from the server's environment."
+        }
+      },
+      "required": ["header", "algorithm", "secret"],
+      "additionalProperties": false
+    },
+    "httpResource": {
+      "type": "object",
+      "description": "A resource. Its pull and push sides must give the same objects, since the same sources run over both.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https?://[^/]",
+          "description": "The http or https URL of the first page. {{ $since }} in it becomes when the last sync that read the resource started, less a minute, and 1970-01-01T00:00:00Z when the sync reads it in full: on a complete sync, when a reconcile source reads it, on the first, and on the first after a publish that adds or changes a source that reads it or changes its config. With only upsert sources on blueprints with retention, a first sync reads back as far as they keep rows. Left out, the resource is only pushed."
+        },
+        "next": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over a page, with the answer's headers as $headers by lowercase name, giving the next page's URL, absolute or relative to the page, or null on the last page. Left out, there's one page."
+        },
+        "items": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over a page giving its items, such as .deployments[]. Left out, the page is one item."
+        },
+        "deleted": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over each fetched item that's true when it's a deletion, for sources that list what was deleted."
+        },
+        "maxPages": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many pages a sync fetches before failing, so pages that never end can't run on. Defaults to 100."
+        },
+        "headers": {
+          "type": "object",
+          "description": "Request headers, keyed by name. Write secrets as {env: GP_SECRET_...}, read from the server's environment, never inline.",
+          "propertyNames": { "pattern": "^[A-Za-z0-9-]+$" },
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "$ref": "#/$defs/secret"
+              }
+            ]
+          }
+        },
+        "push": { "$ref": "#/$defs/httpReceive" }
+      },
+      "additionalProperties": false,
+      "anyOf": [{ "required": ["url"] }, { "required": ["push"] }]
+    },
+    "httpReceive": {
+      "type": "object",
+      "description": "The resource's push side: what a request to the ingest API carries of it. Its jq runs over the request as {body, headers, query}, with header names in lowercase.",
+      "properties": {
+        "items": {
+          "$ref": "#/$defs/jq",
+          "description": "jq giving the request's objects of this resource, such as .body.services[], or none."
+        },
+        "deleted": {
+          "$ref": "#/$defs/jq",
+          "description": "jq that's true when the request's objects are deletions, such as .body.action == \"deleted\"."
+        }
+      },
+      "required": ["items"],
+      "additionalProperties": false
+    },
+    "sync": {
+      "type": "object",
+      "description": "Connections that pull: how often to sync.",
+      "properties": {
+        "interval": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}[smhdw]$",
+          "description": "A duration of at least 1m, such as 5m or 1h. Defaults to 15m. With complete, syncs at this interval are incremental."
+        },
+        "complete": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}[smhdw]$",
+          "description": "How often a sync is complete: a duration of at least the interval, such as 24h. A complete run deletes the entities that neither it nor the complete run before it saw, so one missed by chance stays. Left out, every sync is complete. The first sync is complete too, and so is the first after a publish that adds or changes a reconcile source or changes the connector config. A sync reads each resource from where the last one left off in each scope, such as a GitLab project, where its connector can, and in full otherwise: on a complete sync, a resource a reconcile source reads is read in full. A blueprint publish that adds or changes a source reads its resource afresh, and one that changes the connector config reads every resource afresh, but for an http connection, only the resources whose config changed; one that changes only the schedule, title or description, or removes a source, reads on from where the last sync left off. Http connections do so when their urls use {{ $since }}; portal, sonarqube and authentik ones read everything on every sync, and ignore complete."
+        }
+      },
+      "required": ["interval"],
+      "additionalProperties": false
+    }
+  }
+}

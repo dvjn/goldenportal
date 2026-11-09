@@ -18,9 +18,9 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/filter"
-	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/jq"
 )
 
@@ -137,24 +137,24 @@ type Retry struct {
 
 // HTTPStep calls a URL. Without Output it gives its status and body.
 type HTTPStep struct {
-	Method  string                             `json:"method"`
-	URL     string                             `json:"url"`
-	Headers map[string]integration.HeaderValue `json:"-"`
-	Body    any                                `json:"body,omitempty"`
+	Method  string                            `json:"method"`
+	URL     string                            `json:"url"`
+	Headers map[string]connection.HeaderValue `json:"-"`
+	Body    any                               `json:"body,omitempty"`
 	// Success are the statuses that count as working; any 2xx when empty.
 	Success []int `json:"success,omitempty"`
 	// Output is jq over {status, headers, body}, by name.
 	Output []Output `json:"output,omitempty"`
 }
 
-// EntityStep writes or deletes an entity as an integration that doesn't pull.
+// EntityStep writes or deletes an entity as a connection that doesn't pull.
 type EntityStep struct {
-	Operation   string         `json:"operation"`
-	Integration string         `json:"integration"`
-	Blueprint   string         `json:"blueprint"`
-	Identifier  string         `json:"identifier"`
-	Title       string         `json:"title,omitempty"`
-	Properties  map[string]any `json:"properties,omitempty"`
+	Operation  string         `json:"operation"`
+	Connection string         `json:"connection"`
+	Blueprint  string         `json:"blueprint"`
+	Identifier string         `json:"identifier"`
+	Title      string         `json:"title,omitempty"`
+	Properties map[string]any `json:"properties,omitempty"`
 }
 
 // CheckStep counts the entities matching a query and fails with Message
@@ -168,13 +168,13 @@ type CheckStep struct {
 	Message   string         `json:"message"`
 }
 
-// SyncStep syncs an integration that pulls, so what an earlier step changed
+// SyncStep syncs a connection that pulls, so what an earlier step changed
 // at the source shows in the portal before the run ends. It gives the
 // sync's counts.
 type SyncStep struct {
-	Integration string   `json:"integration"`
-	Resources   []string `json:"resources,omitempty"`
-	Mode        string   `json:"mode"`
+	Connection string   `json:"connection"`
+	Resources  []string `json:"resources,omitempty"`
+	Mode       string   `json:"mode"`
 }
 
 // OutputStep sets what the run shows when it's done.
@@ -224,10 +224,10 @@ var (
 	ReviewFields   = []string{"title", "markdown", "json"}
 	RetryFields    = []string{"attempts", "backoff"}
 	HTTPFields     = []string{"method", "url", "headers", "body", "success", "output"}
-	EntityFields   = []string{"operation", "integration", "blueprint", "identifier", "title", "properties"}
+	EntityFields   = []string{"operation", "connection", "blueprint", "identifier", "title", "properties"}
 	CheckFields    = []string{"blueprint", "filter", "expect", "message"}
 	ExpectFields   = []string{"count", "min", "max"}
-	SyncFields     = []string{"integration", "resources", "mode"}
+	SyncFields     = []string{"connection", "resources", "mode"}
 	OutputFields   = []string{"summary", "links"}
 	// WorkflowFields are what a workflow document's spec takes.
 	WorkflowFields   = []string{"group", "run", "inputs", "steps", "outputs"}
@@ -590,7 +590,7 @@ func (p *parser) step(path string, node *yaml.Node) Step {
 	case StepSync:
 		step.Sync = p.syncStep(body, typePath)
 		if step.Title == "" && step.Sync != nil {
-			step.Title = "Sync " + step.Sync.Integration
+			step.Title = "Sync " + step.Sync.Connection
 		}
 	case StepOutput:
 		step.Output = p.output(body, typePath)
@@ -648,7 +648,7 @@ func (p *parser) retry(node *yaml.Node, path string) *Retry {
 }
 
 func (p *parser) http(node *yaml.Node, path string) *HTTPStep {
-	h := &HTTPStep{Headers: map[string]integration.HeaderValue{}}
+	h := &HTTPStep{Headers: map[string]connection.HeaderValue{}}
 	fields, ok := p.Fields(node, path, HTTPFields...)
 	if !ok {
 		return h
@@ -661,7 +661,7 @@ func (p *parser) http(node *yaml.Node, path string) *HTTPStep {
 	if !strings.HasPrefix(h.URL, "http://") && !strings.HasPrefix(h.URL, "https://") {
 		p.Errorf(configdoc.OrNode(fields["url"], node), path+".url", "url must start with http:// or https://")
 	}
-	h.Headers = integration.ReadHeaders(&p.Reader, fields["headers"], path+".headers")
+	h.Headers = connection.ReadHeaders(&p.Reader, fields["headers"], path+".headers")
 	for name, header := range h.Headers {
 		refs, errs := refsIn(header.Value)
 		for _, err := range errs {
@@ -707,9 +707,9 @@ func (p *parser) entityStep(node *yaml.Node, path string) *EntityStep {
 		p.Errorf(configdoc.OrNode(fields["operation"], node), path+".operation",
 			"operation must be upsert, which creates the entity or updates the properties given, or delete")
 	}
-	e.Integration = p.Text(fields["integration"], path+".integration")
-	if !configdoc.ValidIdentifier(e.Integration) {
-		p.Errorf(configdoc.OrNode(fields["integration"], node), path+".integration", "integration must name the integration the entity is written as")
+	e.Connection = p.Text(fields["connection"], path+".connection")
+	if !configdoc.ValidIdentifier(e.Connection) {
+		p.Errorf(configdoc.OrNode(fields["connection"], node), path+".connection", "connection must name the connection the entity is written as")
 	}
 	e.Blueprint = p.Text(fields["blueprint"], path+".blueprint")
 	if !configdoc.ValidIdentifier(e.Blueprint) {
@@ -745,9 +745,9 @@ func (p *parser) syncStep(node *yaml.Node, path string) *SyncStep {
 	if !ok {
 		return sync
 	}
-	sync.Integration = p.Text(fields["integration"], path+".integration")
-	if !configdoc.ValidIdentifier(sync.Integration) {
-		p.Errorf(configdoc.OrNode(fields["integration"], node), path+".integration", "integration must name the integration to sync")
+	sync.Connection = p.Text(fields["connection"], path+".connection")
+	if !configdoc.ValidIdentifier(sync.Connection) {
+		p.Errorf(configdoc.OrNode(fields["connection"], node), path+".connection", "connection must name the connection to sync")
 	}
 	if n := fields["resources"]; n != nil {
 		if err := n.Decode(&sync.Resources); err != nil || len(sync.Resources) == 0 {
@@ -755,7 +755,7 @@ func (p *parser) syncStep(node *yaml.Node, path string) *SyncStep {
 		}
 	}
 	sync.Mode = p.Text(fields["mode"], path+".mode")
-	if sync.Mode != integration.ModeIncremental && sync.Mode != integration.ModeComplete {
+	if sync.Mode != connection.ModeIncremental && sync.Mode != connection.ModeComplete {
 		p.Errorf(configdoc.OrNode(fields["mode"], node), path+".mode",
 			"mode must be incremental, which fetches what changed, or complete, which also deletes what neither it nor the complete run before it saw")
 	}

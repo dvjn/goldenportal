@@ -165,8 +165,8 @@ func (s Store) lookup(ctx context.Context, specs map[string]blueprint.Spec, spec
 			value = node.Title
 		case "blueprint":
 			value = node.Blueprint
-		case "integration":
-			value = node.Integration
+		case "connection":
+			value = node.Connection
 		case "createdAt":
 			value = node.CreatedAt
 		case "updatedAt":

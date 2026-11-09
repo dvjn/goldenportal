@@ -5,15 +5,15 @@ import (
 	"time"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
-	"github.com/dvjn/goldenportal/internal/integration"
+	"github.com/dvjn/goldenportal/internal/connection"
 )
 
 // The Portal connector reads actions and their recent runs, so the catalog
 // and dashboards can count them. Whatever it reads, every member can see,
 // so runs leave out their inputs, outputs and errors.
 func init() {
-	integration.AddPortalResource("actions", portalActions)
-	integration.AddPortalResource("runs", portalRuns)
+	connection.AddPortalResource("actions", portalActions)
+	connection.AddPortalResource("runs", portalRuns)
 }
 
 const (

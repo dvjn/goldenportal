@@ -1,0 +1,505 @@
+package connection
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/lib/pq"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"gofr.dev/pkg/gofr"
+
+	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/telemetry"
+)
+
+// Run modes.
+const (
+	ModeComplete    = "complete"
+	ModeIncremental = "incremental"
+)
+
+var (
+	// ErrUnverified is a push that came with neither an ingestion token nor
+	// a signature the connector can check.
+	ErrUnverified = errors.New(`send the ingestion token as "Authorization: Bearer <token>"`)
+	ErrNotJSON    = errors.New("the request body is not valid JSON")
+)
+
+// ReceiveError is a request a connector couldn't read.
+type ReceiveError struct{ Reason string }
+
+func (e ReceiveError) Error() string { return e.Reason }
+
+// FetchError is a request a connector couldn't complete because its system
+// didn't answer what it asked. Nothing the request carried was written, so
+// the sender may try it again, except an event, which the next sync
+// catches up on.
+type FetchError struct{ Err error }
+
+func (e FetchError) Error() string { return e.Err.Error() }
+
+func (e FetchError) Unwrap() error { return e.Err }
+
+// receiveTimeout keeps a connector that reads its system while receiving
+// within the ten seconds webhook senders commonly wait for an answer.
+const receiveTimeout = 8 * time.Second
+
+// writer is the connection a push writes as.
+type writer struct {
+	id      string
+	tokenID string
+	spec    Spec
+}
+
+// authenticate finds the connection in the path, and checks the ingestion
+// token is for it, if one was sent. Without one, it only says the request
+// is unverified, so unsigned requests can't learn which connections exist.
+func authenticate(ctx *gofr.Context, secret string) (writer, error) {
+	identifier := ctx.PathParam("connection")
+	var tokenID string
+	if secret != "" {
+		var (
+			connection string
+			err        error
+		)
+		tokenID, connection, err = NewStore(ctx.SQL).TokenConnection(ctx, auth.HashSecret(secret))
+		if errors.Is(err, ErrTokenNotFound) {
+			return writer{}, httpx.Unauthorized("the ingestion token is invalid or revoked")
+		}
+		if err != nil {
+			return writer{}, err
+		}
+		if connection != identifier {
+			return writer{}, httpx.Forbidden("this ingestion token is for the " + connection + " connection")
+		}
+	}
+
+	store := configdoc.NewStore(ctx.SQL, Name)
+	record, err := store.Get(ctx, identifier)
+	switch {
+	case secret == "" && (errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published())):
+		return writer{}, httpx.Unauthorized(ErrUnverified.Error())
+	case err != nil:
+		return writer{}, err
+	case !record.Published():
+		return writer{}, httpx.Conflict("publish the connection before ingesting")
+	}
+	spec, _ := Parse(record.PublishedSource)
+	published, err := blueprint.Published(ctx, ctx.SQL)
+	if err != nil {
+		return writer{}, err
+	}
+	spec.AddSources(published)
+	id, err := store.PublishedID(ctx, identifier)
+
+	return writer{id: id, tokenID: tokenID, spec: spec}, err
+}
+
+// ingest hands a request to the connection's connector and writes the
+// items it gives. Items that fail are reported without stopping the rest.
+// ?mode=complete, with an ingestion token, also deletes what neither it nor the complete run before it saw
+// of the resources it covers: ?resources=, or every resource the
+// connection receives.
+func ingest(ctx *gofr.Context) (_ any, err error) {
+	var span trace.Span
+	ctx.Context, span = telemetry.Start(ctx.Context, "receive push",
+		telemetry.Connection.String(ctx.PathParam("connection")), telemetry.Trigger.String(TriggerPush))
+	started := time.Now()
+	run, err := receive(ctx)
+	if run != nil {
+		attrs := runAttributes(run)
+		span.SetAttributes(attrs...)
+		if run.Error != "" {
+			telemetry.Warn(ctx, "push failed", errors.New(run.Error), append(attrs, telemetry.Duration.Int64(time.Since(started).Milliseconds()))...)
+		} else {
+			telemetry.Info(ctx, "push received", append(attrs, telemetry.Duration.Int64(time.Since(started).Milliseconds()))...)
+		}
+	}
+	telemetry.End(span, err)
+	if err != nil {
+		return nil, err
+	}
+
+	return run, nil
+}
+
+func receive(ctx *gofr.Context) (*Run, error) {
+	in := auth.IngestRequest(ctx)
+	w, err := authenticate(ctx, in.Secret)
+	if err != nil {
+		return nil, err
+	}
+	receiver, ok := w.spec.config.(Receiver)
+	if !ok || !w.spec.Receives {
+		if in.Secret == "" {
+			return nil, httpx.Unauthorized(ErrUnverified.Error())
+		}
+		return nil, httpx.Conflict("the " + w.spec.Identifier + " connection takes no pushes; give one of its resources a push side")
+	}
+
+	mode := ModeIncremental
+	switch m := in.Query.Get("mode"); m {
+	case "", ModeIncremental:
+	case ModeComplete:
+		if in.Secret == "" {
+			return nil, httpx.Forbidden("a complete push needs an ingestion token")
+		}
+		if w.spec.Events {
+			return nil, httpx.Conflict("the " + w.spec.Identifier + " connection takes events, each about one object, so a push can't be complete; its syncs are")
+		}
+		mode = ModeComplete
+	default:
+		return nil, httpx.BadRequest("mode must be complete or incremental")
+	}
+	resources := receiver.Receives()
+	if r := in.Query.Get("resources"); r != "" {
+		resources = strings.Split(r, ",")
+		for _, name := range resources {
+			if !slices.Contains(receiver.Receives(), name) {
+				return nil, httpx.BadRequest("resources must name resources the connection receives: " + strings.Join(receiver.Receives(), ", "))
+			}
+		}
+	}
+
+	started, err := dbNow(ctx, ctx.SQL)
+	if err != nil {
+		return nil, err
+	}
+	// The connector reads only what a source reads, since it may ask its
+	// system for each.
+	mapped := slices.DeleteFunc(slices.Clone(resources), func(r string) bool { return !slices.Contains(w.spec.mappedResources(), r) })
+	receiveCtx, cancel := context.WithTimeout(ctx, receiveTimeout)
+	request := Request{Resources: mapped, Header: in.Header, Query: in.Query, Body: in.Body, WebhookSecret: WebhookSecret(w.spec.Identifier)}
+	items, err := receiver.Receive(receiveCtx, request, in.Secret != "")
+	cancel()
+	var (
+		signatureErr SignatureError
+		receiveErr   ReceiveError
+		fetchErr     FetchError
+	)
+	switch {
+	case errors.Is(err, ErrUnverified):
+		return nil, httpx.Unauthorized(err.Error())
+	case errors.As(err, &signatureErr):
+		return nil, httpx.Unauthorized(err.Error())
+	case errors.Is(err, ErrNotJSON):
+		return nil, httpx.BadRequest(err.Error())
+	case errors.As(err, &receiveErr):
+		return nil, httpx.Unprocessable(err.Error())
+	case errors.As(err, &fetchErr):
+		// Recorded, so it shows with the connection's runs, and answered as
+		// a failure, so the sender's own log shows it to try again. An event
+		// is answered as taken: the next sync reads what it was about anyway,
+		// and a system that turns off a webhook whose deliveries keep
+		// failing, as GitLab does, would otherwise stop sending them all.
+		run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: mode, Error: err.Error(), Errors: []RunError{}}
+		if err := NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run); err != nil {
+			return nil, err
+		}
+		if w.spec.Events {
+			return run, nil
+		}
+		return nil, httpx.BadGateway(err.Error())
+	case err != nil:
+		return nil, err
+	}
+	m, err := w.spec.mapper()
+	if err != nil {
+		return nil, err
+	}
+
+	run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: mode, Errors: []RunError{}}
+	entries := m.Map(ctx, items)
+	for start := 0; start < len(entries); start += writeBatch {
+		if err := writeBatched(ctx, ctx.SQL, w.id, entries[start:min(start+writeBatch, len(entries))], run); err != nil {
+			return nil, err
+		}
+	}
+	if mode == ModeComplete {
+		if run.Deleted, err = reconcile(ctx, ctx.SQL, w.id, w.spec, resources, Report{}, sightingsOf(entries), started); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run); err != nil {
+		return nil, err
+	}
+
+	return run, nil
+}
+
+// deleteEntity removes an entity the connection wrote.
+func deleteEntity(ctx *gofr.Context) (any, error) {
+	started := time.Now().UTC()
+	in := auth.IngestRequest(ctx)
+	if in.Secret == "" {
+		return nil, httpx.Unauthorized(ErrUnverified.Error())
+	}
+	w, err := authenticate(ctx, in.Secret)
+	if err != nil {
+		return nil, err
+	}
+	blueprintID, err := configdoc.NewStore(ctx.SQL, blueprint.Name).PublishedID(ctx, ctx.PathParam("blueprint"))
+	if errors.Is(err, configdoc.ErrNotFound) {
+		return nil, httpx.NotFound("no such blueprint")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	err = entity.NewStore(ctx.SQL).Delete(ctx, blueprintID, w.id, ctx.PathParam("identifier"))
+	var owned entity.OwnedError
+	switch {
+	case errors.Is(err, entity.ErrNotFound):
+		return nil, httpx.NotFound("no such entity")
+	case errors.As(err, &owned):
+		return nil, httpx.Forbidden(owned.Error())
+	case err != nil:
+		return nil, err
+	}
+
+	run := &Run{StartedAt: started, Trigger: TriggerPush, Mode: ModeIncremental, Received: 1, Deleted: 1, Errors: []RunError{}}
+
+	return nil, NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run)
+}
+
+// dbNow is the database's clock, which marks of what a run missed are made
+// by, so a complete run compares like with like.
+func dbNow(ctx context.Context, db configdoc.DB) (time.Time, error) {
+	var now time.Time
+	err := db.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&now)
+
+	return now.UTC(), err
+}
+
+// writeBatched writes entries in a transaction, and the run's counts so far
+// with it, so a running sync shows how far it got. A deadlock, which a
+// concurrent writer can cause however rows are ordered, rolls the batch
+// back and tries it again, up to writeRetries times, after which it fails
+// with a deadlockError.
+func writeBatched(ctx context.Context, db TxDB, connectionID string, entries []Entry, run *Run) error {
+	for attempt := 0; ; attempt++ {
+		before := *run
+		before.Errors = slices.Clone(run.Errors)
+		err := writeInTx(ctx, db, connectionID, entries, run)
+		if !isDeadlock(err) {
+			return err
+		}
+		*run = before
+		run.retried += len(entries)
+		telemetry.Warn(ctx, "batch deadlocked; trying again", err, telemetry.Items.Int(len(entries)))
+		if attempt == writeRetries {
+			return deadlockError{err}
+		}
+	}
+}
+
+// writeRetries is how many times a batch that deadlocked is tried again.
+const writeRetries = 3
+
+// deadlockError is a batch that deadlocked every time it was tried.
+type deadlockError struct{ err error }
+
+func (e deadlockError) Error() string {
+	return fmt.Sprintf("it couldn't be written: the database deadlocked with another writer %d times", writeRetries+1)
+}
+
+func (e deadlockError) Unwrap() error { return e.err }
+
+func isDeadlock(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "40P01"
+}
+
+func writeInTx(ctx context.Context, db TxDB, connectionID string, entries []Entry, run *Run) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := write(ctx, tx, connectionID, entries, run); err != nil {
+		return err
+	}
+	if run.ID != 0 {
+		if err := NewStore(tx).progress(ctx, run); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// write validates entries against their blueprints and writes or deletes
+// them as the connection, counting outcomes in run. Entries that fail are
+// reported without stopping the rest. Of entries about one entity, the last
+// counts, and the rest are unchanged. Only what's new or changed is
+// written.
+func write(ctx context.Context, db configdoc.DB, connectionID string, entries []Entry, run *Run) (err error) {
+	ctx, span := telemetry.Start(ctx, "write batch", telemetry.Items.Int(len(entries)))
+	before := *run
+	defer func() {
+		counts := []attribute.KeyValue{
+			telemetry.Created.Int(run.Created - before.Created), telemetry.Updated.Int(run.Updated - before.Updated),
+			telemetry.Unchanged.Int(run.Unchanged - before.Unchanged), telemetry.Deleted.Int(run.Deleted - before.Deleted),
+			telemetry.Failed.Int(run.Failed - before.Failed), telemetry.Older.Int(run.older - before.older),
+			telemetry.Expired.Int(run.expired - before.expired),
+		}
+		span.SetAttributes(counts...)
+		telemetry.Debug(ctx, "batch written", append(counts, telemetry.Items.Int(len(entries)))...)
+		telemetry.End(span, err)
+	}()
+
+	return writeEntries(telemetry.QuietSQL(ctx), db, connectionID, entries, run)
+}
+
+func writeEntries(ctx context.Context, db configdoc.DB, connectionID string, entries []Entry, run *Run) error {
+	blueprints, err := blueprint.Published(ctx, db)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	blueprintIDs := map[string]string{}
+	entities := entity.NewStore(db)
+
+	// op is an entry that reached the store: its index in the run, and the
+	// write or delete it makes.
+	type op struct {
+		index int
+		entry Entry
+		key   entity.Key
+		write entity.Write
+	}
+	var (
+		ops     []op
+		sighted []entity.Key
+	)
+	fail := func(index int, e Entry, problems ...string) {
+		telemetry.Debug(ctx, "item not written", telemetry.Blueprint.String(e.Blueprint),
+			attribute.String("gp.entity", e.Entity.Identifier), attribute.StringSlice("gp.problems", problems))
+		run.Failed++
+		if len(run.Errors) < MaxRunErrors {
+			run.Errors = append(run.Errors, RunError{
+				Index: index, Blueprint: e.Blueprint,
+				Identifier: e.Entity.Identifier, Problems: problems,
+			})
+		}
+	}
+	for _, e := range entries {
+		index := run.Received
+		run.Received++
+		switch {
+		case e.Entity.Identifier != "":
+		case e.Deleted:
+			e.Problems = append(e.Problems, "it has no identifier, so it deleted nothing")
+		default:
+			e.Problems = append(e.Problems, "it has no identifier, so this run deleted no "+e.Blueprint+" entities")
+		}
+		spec, ok := blueprints[e.Blueprint]
+		if !ok {
+			fail(index, e, append(e.Problems, "no blueprint "+e.Blueprint+" is published")...)
+			continue
+		}
+		if _, ok := blueprintIDs[e.Blueprint]; !ok {
+			if blueprintIDs[e.Blueprint], err = configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, e.Blueprint); err != nil {
+				return err
+			}
+		}
+		key := entity.Key{BlueprintID: blueprintIDs[e.Blueprint], Identifier: e.Entity.Identifier}
+		// An item that can't be written is still a sighting, so a bad value
+		// never deletes the entity it would have updated.
+		failSeen := func(problems ...string) {
+			fail(index, e, problems...)
+			if !e.Deleted && e.Entity.Identifier != "" {
+				sighted = append(sighted, key)
+			}
+		}
+		if len(e.Problems) > 0 {
+			failSeen(e.Problems...)
+			continue
+		}
+		if e.Deleted {
+			ops = append(ops, op{index: index, entry: e, key: key})
+			continue
+		}
+		clean, problems := spec.ValidateEntity(e.Entity)
+		if len(problems) > 0 {
+			failSeen(problems...)
+			continue
+		}
+		computed, _ := spec.Compute(ctx, clean)
+		occurredAt := spec.RetainedAt(clean)
+		// A row older than its blueprint keeps rows is what the next
+		// retention run deletes, as a first sync or an event may bring.
+		if !occurredAt.IsZero() && occurredAt.Before(now.Add(-spec.KeepFor(clean, computed))) {
+			run.Unchanged++
+			run.expired++
+			sighted = append(sighted, key)
+			continue
+		}
+		ops = append(ops, op{index: index, entry: e, key: key, write: entity.Write{
+			BlueprintID: key.BlueprintID, Entity: clean, Computed: computed, Scope: e.Scope, SourceAt: e.SourceAt,
+			OccurredAt: occurredAt,
+		}})
+	}
+
+	last := map[entity.Key]int{}
+	for i, o := range ops {
+		last[o.key] = i
+	}
+	var (
+		writes  []entity.Write
+		writeOf []op
+	)
+	for i, o := range ops {
+		var owned entity.OwnedError
+		switch {
+		case last[o.key] != i:
+			run.Unchanged++
+		case o.entry.Deleted:
+			err := entities.Delete(ctx, o.key.BlueprintID, connectionID, o.key.Identifier)
+			switch {
+			case errors.Is(err, entity.ErrNotFound):
+				run.Unchanged++
+			case errors.As(err, &owned):
+				fail(o.index, o.entry, owned.Error())
+			case err != nil:
+				return err
+			default:
+				run.Deleted++
+			}
+		default:
+			writes, writeOf = append(writes, o.write), append(writeOf, o)
+		}
+	}
+
+	written, err := entities.WriteAll(ctx, connectionID, writes)
+	if err != nil {
+		return err
+	}
+	for i, w := range written {
+		switch {
+		case w.Owner != "":
+			fail(writeOf[i].index, writeOf[i].entry, entity.OwnedError{Connection: w.Owner}.Error())
+		case w.Outcome == entity.Created:
+			run.Created++
+		case w.Outcome == entity.Updated:
+			run.Updated++
+		case w.Outcome == entity.Older:
+			run.Unchanged++
+			run.older++
+		default:
+			run.Unchanged++
+		}
+	}
+
+	return entities.Sighted(ctx, connectionID, sighted)
+}

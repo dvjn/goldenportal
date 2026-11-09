@@ -51,7 +51,7 @@ const ledger: EntityDetail = {
   title: "Ledger",
   properties: { tier: "critical", owner: "payments", ownerSlack: "#payments" },
   related: { owner: [{ identifier: "payments", title: "Payments" }] },
-  integration: "registry",
+  connection: "registry",
   createdAt: "2026-10-24T10:00:00Z",
   updatedAt: "2026-10-24T10:00:00Z",
   incoming: [
@@ -554,7 +554,7 @@ describe("catalog", () => {
     expect(screen.queryByRole("link", { name: "View Blueprint" })).not.toBeInTheDocument();
   });
 
-  it("links builders to the entity's integration", async () => {
+  it("links builders to the entity's connection", async () => {
     stubApi({
       "GET config": acmeConfig,
       "GET me": ok({ ...ada, role: "builder" }),
@@ -566,7 +566,7 @@ describe("catalog", () => {
 
     expect(await screen.findByRole("link", { name: "registry" })).toHaveAttribute(
       "href",
-      "/integrations/registry",
+      "/connections/registry",
     );
   });
 
@@ -724,7 +724,7 @@ describe("catalog", () => {
 
     expect(await screen.findByRole("heading", { name: "Ledger" })).toBeInTheDocument();
     await vi.waitFor(() => expect(document.title).toBe("Ledger | Acme"));
-    // Members can't open integration pages, so they see its name unlinked.
+    // Members can't open connection pages, so they see its name unlinked.
     expect(screen.getByText("registry")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "registry" })).not.toBeInTheDocument();
     expect(screen.getByText("#payments")).toBeInTheDocument();

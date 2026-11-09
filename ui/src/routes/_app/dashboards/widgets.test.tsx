@@ -71,7 +71,7 @@ const ledger: EntityDetail = {
   title: "Ledger",
   properties: { tier: "critical", owner: "payments", coverage: 72, critical: true },
   related: { owner: [{ identifier: "payments", title: "Payments" }] },
-  integration: "registry",
+  connection: "registry",
   createdAt: "2026-10-24T10:00:00Z",
   updatedAt: "2026-10-24T10:00:00Z",
   incoming: [],
@@ -374,7 +374,7 @@ describe("dashboards and page tabs", () => {
                 { path: "tier" },
                 { title: "Since Deploy", jq: ".x", unit: "h" },
               ],
-              rowLink: { path: "/integrations/{{ .identifier }}" },
+              rowLink: { path: "/connections/{{ .identifier }}" },
               link: { query: services },
             },
           ],
@@ -394,7 +394,7 @@ describe("dashboards and page tabs", () => {
               identifier: "ledger",
               title: "Ledger",
               values: [2, "critical", 5],
-              link: { href: "/integrations/ledger" },
+              link: { href: "/connections/ledger" },
             },
             {
               identifier: "search",
@@ -416,7 +416,7 @@ describe("dashboards and page tabs", () => {
     expect(within(ledgerRow).getByText("Critical")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ledger" })).toHaveAttribute(
       "href",
-      "/integrations/ledger",
+      "/connections/ledger",
     );
     // A long title is cut, whole on hover, so the columns stay in view.
     expect(within(ledgerRow).getByText("Ledger")).toHaveClass("truncate");

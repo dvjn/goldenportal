@@ -1,4 +1,4 @@
-// Package entity stores catalog entities: the data integrations ingest,
+// Package entity stores catalog entities: the data connections ingest,
 // shaped by published blueprints.
 package entity
 
@@ -18,11 +18,11 @@ import (
 
 var ErrNotFound = errors.New("entity not found")
 
-// OwnedError means another integration wrote the entity, and only it may change it.
-type OwnedError struct{ Integration string }
+// OwnedError means another connection wrote the entity, and only it may change it.
+type OwnedError struct{ Connection string }
 
 func (e OwnedError) Error() string {
-	return "the entity belongs to the " + e.Integration + " integration"
+	return "the entity belongs to the " + e.Connection + " connection"
 }
 
 type DB interface {
@@ -35,12 +35,12 @@ type Store struct{ db DB }
 
 func NewStore(db DB) Store { return Store{db: db} }
 
-// Delete removes an entity an integration wrote.
-func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifier string) error {
+// Delete removes an entity a connection wrote.
+func (s Store) Delete(ctx context.Context, blueprintID, connectionID, identifier string) error {
 	var ownerID, owner string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT e.integration_id, i.identifier FROM entities e
-		JOIN config_documents i ON i.id = e.integration_id
+		SELECT e.connection_id, i.identifier FROM entities e
+		JOIN config_documents i ON i.id = e.connection_id
 		WHERE e.blueprint_id = $1 AND e.identifier = $2`, blueprintID, identifier).Scan(&ownerID, &owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
@@ -48,13 +48,13 @@ func (s Store) Delete(ctx context.Context, blueprintID, integrationID, identifie
 	if err != nil {
 		return err
 	}
-	if ownerID != integrationID {
-		return OwnedError{Integration: owner}
+	if ownerID != connectionID {
+		return OwnedError{Connection: owner}
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		DELETE FROM entities WHERE blueprint_id = $1 AND identifier = $2 AND integration_id = $3`,
-		blueprintID, identifier, integrationID)
+		DELETE FROM entities WHERE blueprint_id = $1 AND identifier = $2 AND connection_id = $3`,
+		blueprintID, identifier, connectionID)
 
 	return err
 }
@@ -70,10 +70,10 @@ type Entity struct {
 	// and scorecard results.
 	Properties map[string]any `json:"properties"`
 	// Related names the entities each relation points at, with their titles.
-	Related     map[string][]Link `json:"related"`
-	Integration string            `json:"integration"`
-	CreatedAt   time.Time         `json:"createdAt"`
-	UpdatedAt   time.Time         `json:"updatedAt"`
+	Related    map[string][]Link `json:"related"`
+	Connection string            `json:"connection"`
+	CreatedAt  time.Time         `json:"createdAt"`
+	UpdatedAt  time.Time         `json:"updatedAt"`
 
 	stored, relations, computed map[string]any
 }
@@ -90,7 +90,7 @@ const (
 	entityFrom = `
 	FROM entities e
 	JOIN config_documents b ON b.id = e.blueprint_id
-	JOIN config_documents i ON i.id = e.integration_id`
+	JOIN config_documents i ON i.id = e.connection_id`
 )
 
 func scanEntity(scan func(...any) error, extra ...any) (*Entity, error) {
@@ -100,7 +100,7 @@ func scanEntity(scan func(...any) error, extra ...any) (*Entity, error) {
 	)
 	err := scan(append([]any{
 		&e.ID, &e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
-		&e.Integration, &e.CreatedAt, &e.UpdatedAt,
+		&e.Connection, &e.CreatedAt, &e.UpdatedAt,
 	}, extra...)...)
 	if err != nil {
 		return nil, err
@@ -283,7 +283,7 @@ func Document(e *Entity) map[string]any {
 	encoded, _ := json.Marshal(e.Properties)
 	doc := map[string]any{}
 	_ = json.Unmarshal(encoded, &doc)
-	doc["identifier"], doc["title"], doc["blueprint"], doc["integration"] = e.Identifier, e.Title, e.Blueprint, e.Integration
+	doc["identifier"], doc["title"], doc["blueprint"], doc["connection"] = e.Identifier, e.Title, e.Blueprint, e.Connection
 	doc["createdAt"] = e.CreatedAt.UTC().Format(time.RFC3339)
 	doc["updatedAt"] = e.UpdatedAt.UTC().Format(time.RFC3339)
 

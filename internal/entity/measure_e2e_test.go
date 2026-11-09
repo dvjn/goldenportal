@@ -59,7 +59,7 @@ func jobFor(n int, today time.Time) job {
 func (f *storeFixture) insertJobs(first, last, back int, today time.Time) {
 	f.t.Helper()
 	if _, err := f.db.ExecContext(f.t.Context(), `
-		INSERT INTO entities (blueprint_id, identifier, title, integration_id, properties, occurred_at)
+		INSERT INTO entities (blueprint_id, identifier, title, connection_id, properties, occurred_at)
 		SELECT $1, 'j' || n, 'Job ' || n, $2, jsonb_build_object(
 				'stage', (ARRAY['build', 'test', 'deploy'])[n % 3 + 1],
 				'status', CASE n % 10 WHEN 0 THEN 'failed' WHEN 1 THEN 'skipped' ELSE 'success' END,

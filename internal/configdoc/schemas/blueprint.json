@@ -16,22 +16,327 @@
       "properties": {
         "properties": {
           "type": "object",
-          "description": "The entities' properties, keyed by name, in the order the catalog shows them. Every entity also has the built-in fields identifier, title, blueprint, integration, createdAt and updatedAt.",
+          "description": "The entities' properties, keyed by name, in the order the catalog shows them. Every entity also has the built-in fields identifier, title, blueprint, connection, createdAt and updatedAt.",
           "propertyNames": {
             "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,62}$",
-            "not": { "enum": ["identifier", "title", "blueprint", "integration", "createdAt", "updatedAt"] }
+            "not": { "enum": ["identifier", "title", "blueprint", "connection", "createdAt", "updatedAt"] }
           },
           "additionalProperties": { "$ref": "#/$defs/property" }
         },
         "catalog": { "$ref": "#/$defs/catalog" },
         "entity": { "$ref": "#/$defs/entity" },
-        "retention": { "$ref": "#/$defs/retention" }
+        "retention": { "$ref": "#/$defs/retention" },
+        "sources": {
+          "type": "array",
+          "description": "Where the blueprint's entities come from: each source turns the items of one resource of a connection into its entities. Every expression is jq over an item.",
+          "items": { "$ref": "#/$defs/source" }
+        }
       },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "description": "Turns the items of one resource of a connection into entities of this blueprint. Every expression is jq over an item.",
+      "properties": {
+        "connection": {
+          "$ref": "#/$defs/identifier",
+          "description": "The connection whose items it reads."
+        },
+        "resource": {
+          "type": "string",
+          "description": "The resource whose items it maps: one of the connection's connector's resources, or for http, a key of config.resources."
+        },
+        "filter": {
+          "$ref": "#/$defs/jq",
+          "description": "jq over each item; keeps the items it's true for. Deleted items skip it."
+        },
+        "mode": {
+          "enum": ["reconcile", "upsert"],
+          "description": "reconcile, the default, makes the blueprint hold what the resource holds: a complete sync reads it in full and deletes the entities it no longer has. upsert writes what's new or changed since the last sync and deletes only what an item says was deleted, so rows go only by the blueprint's retention; a blueprint with retention takes only upsert sources. A blueprint's sources from one connection share a mode."
+        },
+        "entity": { "$ref": "#/$defs/sourceEntity" }
+      },
+      "required": ["connection", "resource", "entity"],
+      "examples": [
+        {
+          "connection": "gitlab",
+          "resource": "groups",
+          "entity": {
+            "identifier": ".full_path",
+            "title": ".name",
+            "properties": {
+              "description": ".description",
+              "parent": ".full_path | split(\"/\") | .[:-1] | join(\"/\") | select(. != \"\")",
+              "url": ".web_url"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "projects",
+          "filter": ".marked_for_deletion_on == null and .empty_repo != true",
+          "entity": {
+            "identifier": ".path_with_namespace",
+            "title": ".name",
+            "properties": {
+              "service": ".path",
+              "description": ".description",
+              "visibility": ".visibility",
+              "defaultBranch": ".default_branch",
+              "archived": ".archived",
+              "stars": ".star_count",
+              "topics": ".topics",
+              "url": ".web_url",
+              "lastActivityAt": ".last_activity_at",
+              "ci": "._gp.latestPipeline.status",
+              "ciValid": "._gp.ciConfig.valid",
+              "ciStages": "[._gp.ciConfig.jobs[]?.stage] | unique",
+              "defaultBranchProtected": "._gp.defaultBranch.protected"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "tags",
+          "entity": {
+            "identifier": "._gp.project + \"@\" + .name",
+            "title": ".name",
+            "properties": {
+              "repo": "._gp.project",
+              "commit": ".commit.short_id"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "merge_requests",
+          "entity": {
+            "identifier": "._gp.project + \"!\" + (.iid | tostring)",
+            "title": ".title",
+            "properties": {
+              "repo": "._gp.project",
+              "state": "if .state == \"opened\" and .draft then \"draft\" else .state end",
+              "author": ".author.username",
+              "branch": ".source_branch",
+              "url": ".web_url",
+              "openedAt": ".created_at",
+              "lastActivityAt": ".updated_at"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "issues",
+          "entity": {
+            "identifier": "._gp.project + \"#\" + (.iid | tostring)",
+            "title": ".title",
+            "properties": {
+              "repo": "._gp.project",
+              "state": ".state",
+              "author": ".author.username",
+              "labels": ".labels",
+              "url": ".web_url"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "releases",
+          "entity": {
+            "identifier": "._gp.project + \"@\" + .tag_name",
+            "title": ".name // .tag_name",
+            "properties": {
+              "repo": "._gp.project",
+              "tag": ".tag_name",
+              "upcoming": ".upcoming_release",
+              "releasedAt": ".released_at",
+              "url": "._links.self"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "pipelines",
+          "entity": {
+            "identifier": ".id",
+            "title": "._gp.project + \" \" + .ref",
+            "properties": {
+              "repo": "._gp.project",
+              "ref": ".ref",
+              "source": ".source",
+              "status": ".status",
+              "url": ".web_url",
+              "triggeredAt": ".created_at"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "jobs",
+          "mode": "upsert",
+          "entity": {
+            "identifier": "(.pipeline.id | tostring) + \":\" + .name",
+            "title": ".name",
+            "properties": {
+              "pipeline": ".pipeline.id | tostring",
+              "repo": "._gp.project",
+              "name": ".name",
+              "stage": ".stage",
+              "status": ".status",
+              "attempts": "._gp.attempts",
+              "failedAttempts": "._gp.failedAttempts",
+              "flaky": "._gp.flaky",
+              "seconds": ".duration",
+              "waitSeconds": "._gp.waitSeconds",
+              "url": ".web_url"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "job_attempts",
+          "mode": "upsert",
+          "entity": {
+            "identifier": ".id",
+            "title": ".name + \" #\" + (._gp.attempt | tostring)",
+            "properties": {
+              "pipeline": ".pipeline.id | tostring",
+              "repo": "._gp.project",
+              "runner": ".runner.id | values | tostring",
+              "status": ".status",
+              "failureReason": ".failure_reason",
+              "attempt": "._gp.attempt",
+              "retried": "._gp.retried",
+              "seconds": ".duration",
+              "queuedSeconds": ".queued_duration",
+              "waitSeconds": "._gp.waitSeconds",
+              "playWaitSeconds": "._gp.playWaitSeconds",
+              "manual": "._gp.manual",
+              "playedBy": "._gp.playedBy.username",
+              "startedAt": ".started_at",
+              "url": ".web_url"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "runners",
+          "mode": "upsert",
+          "entity": {
+            "identifier": ".id",
+            "title": "._gp.title",
+            "properties": {
+              "type": ".runner_type | rtrimstr(\"_type\")",
+              "status": ".status",
+              "tags": ".tag_list",
+              "version": ".version",
+              "groups": "._gp.groups",
+              "repositories": "._gp.projects",
+              "lastJobAt": "._gp.lastJobAt",
+              "url": "._gp.url"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "deployments",
+          "entity": {
+            "identifier": ".id",
+            "title": "._gp.project + \" \" + .environment.name",
+            "properties": {
+              "repo": "._gp.project",
+              "environment": ".environment.name",
+              "version": ".sha[0:8]",
+              "status": ".status",
+              "startedAt": ".created_at",
+              "finishedAt": ".finished_at",
+              "approvalSeconds": "._gp.approvalSeconds"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "environments",
+          "entity": {
+            "identifier": "._gp.project + \"/\" + .name",
+            "title": ".name",
+            "properties": {
+              "repo": "._gp.project",
+              "tier": ".tier",
+              "state": ".state",
+              "url": ".external_url",
+              "version": "._gp.lastDeployment.sha[0:8]",
+              "deployedAt": "._gp.lastDeployment.finished_at"
+            }
+          }
+        },
+        {
+          "connection": "gitlab",
+          "resource": "members",
+          "filter": ".state == \"active\"",
+          "entity": {
+            "identifier": "._gp.group + \"/\" + .username",
+            "title": ".name",
+            "properties": {
+              "group": "._gp.group",
+              "username": ".username",
+              "accessLevel": ".access_level"
+            }
+          }
+        },
+        {
+          "connection": "sonarqube",
+          "resource": "projects",
+          "entity": {
+            "identifier": ".key",
+            "title": ".name",
+            "properties": {
+              "repo": "._gp.repository.url | select(. != null) | sub(\"^https?://[^/]+/\"; \"\")",
+              "gate": "._gp.qualityGate.status",
+              "coverage": "._gp.measures.coverage",
+              "analysedAt": ".analysisDate"
+            }
+          }
+        },
+        {
+          "connection": "authentik",
+          "resource": "groups",
+          "filter": ".attributes.goldenportal.team == true",
+          "entity": {
+            "identifier": ".name | ascii_downcase | gsub(\"[^a-z0-9]+\"; \"-\")",
+            "title": ".name",
+            "properties": {
+              "members": "._gp.members"
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "sourceEntity": {
+      "type": "object",
+      "description": "Makes an entity from an item, with jq over the item. A deleted item only needs its identifier.",
+      "properties": {
+        "identifier": {
+          "$ref": "#/$defs/jq",
+          "description": "jq giving the entity's identifier, such as .id."
+        },
+        "title": {
+          "$ref": "#/$defs/jq",
+          "description": "jq giving the entity's title. Defaults to its identifier."
+        },
+        "properties": {
+          "type": "object",
+          "description": "jq giving each property's value, keyed by the blueprint's stored property or relation. A relation takes the identifier, or a list of them, of the related entities.",
+          "additionalProperties": { "$ref": "#/$defs/jq" }
+        }
+      },
+      "required": ["identifier"],
       "additionalProperties": false
     },
     "retention": {
       "type": "object",
-      "description": "Deletes rows once the date-time property by is older than keep, such as pipelines a month after they started. A scheduled job deletes them, daily unless the instance says otherwise. Rows whose by is empty, such as merge requests still open, are kept. Without retention, rows are kept for ever. Once published to keep rows longer, the next sync of each integration writing the blueprint reads back as far as the new keep. Every integration mapping that writes the blueprint must use mode: upsert.",
+      "description": "Deletes rows once the date-time property by is older than keep, such as pipelines a month after they started. A scheduled job deletes them, daily unless the instance says otherwise. Rows whose by is empty, such as merge requests still open, are kept. Without retention, rows are kept for ever. Once published to keep rows longer, the next sync of each connection writing the blueprint reads back as far as the new keep. Every source must use mode: upsert.",
       "properties": {
         "by": {
           "type": "string",
@@ -69,7 +374,7 @@
       "additionalProperties": false
     },
     "property": {
-      "description": "A value entities have. Integrations write stored properties and relations; the portal works out lookups, computed properties and scorecard results. Which it is follows from its keys: relation, scorecard, lookup or compute, or otherwise stored.",
+      "description": "A value entities have. Connections write stored properties and relations; the portal works out lookups, computed properties and scorecard results. Which it is follows from its keys: relation, scorecard, lookup or compute, or otherwise stored.",
       "oneOf": [
         { "$ref": "#/$defs/storedProperty" },
         { "$ref": "#/$defs/relationProperty" },
@@ -103,14 +408,14 @@
     },
     "storedProperty": {
       "type": "object",
-      "description": "A value integrations write, checked against its type and constraints.",
+      "description": "A value connections write, checked against its type and constraints.",
       "properties": {
         "title": { "$ref": "#/$defs/propertyTitle" },
         "description": { "$ref": "#/$defs/propertyDescription" },
         "type": { "$ref": "#/$defs/valueType" },
         "format": { "$ref": "#/$defs/format" },
         "enum": { "$ref": "#/$defs/enum" },
-        "required": { "type": "boolean", "description": "Integrations must write a value." },
+        "required": { "type": "boolean", "description": "Connections must write a value." },
         "pattern": { "type": "string", "description": "String properties only: a regular expression (Go RE2 syntax) values must match." },
         "minLength": { "type": "integer", "minimum": 0, "description": "String properties only: the fewest characters." },
         "maxLength": { "type": "integer", "minimum": 0, "description": "String properties only: the most characters." },
@@ -141,13 +446,13 @@
     },
     "relationProperty": {
       "type": "object",
-      "description": "Identifiers of entities of another blueprint, which integrations write. Paths follow it to the related entity's fields, such as owner.title.",
+      "description": "Identifiers of entities of another blueprint, which connections write. Paths follow it to the related entity's fields, such as owner.title.",
       "properties": {
         "title": { "$ref": "#/$defs/propertyTitle" },
         "description": { "$ref": "#/$defs/propertyDescription" },
         "relation": { "$ref": "#/$defs/identifier", "description": "The blueprint whose entities it points at." },
         "many": { "type": "boolean", "description": "Holds a list of identifiers rather than one." },
-        "required": { "type": "boolean", "description": "Integrations must write a value." },
+        "required": { "type": "boolean", "description": "Connections must write a value." },
         "display": {
           "$ref": "#/$defs/display",
           "properties": { "as": { "const": "link" }, "unit": false }
@@ -337,7 +642,7 @@
         "columns": {
           "type": "array",
           "uniqueItems": true,
-          "description": "The catalog table's default columns after the title column: property names, integration, createdAt or updatedAt.",
+          "description": "The catalog table's default columns after the title column: property names, connection, createdAt or updatedAt.",
           "items": {
             "type": "string",
             "not": { "enum": ["identifier", "title", "blueprint"] }

@@ -10,10 +10,10 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
-	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 )
 
@@ -42,7 +42,7 @@ func notFound() error { return httpx.NotFound("not found") }
 
 func (f fakeServices) Documents(kind string) (configdoc.Documents, bool) {
 	if kind != "blueprints" && kind != "scorecards" {
-		return nil, kind == "integrations" || kind == "dashboards"
+		return nil, kind == "connections" || kind == "dashboards"
 	}
 	return fakeDocuments{f: f, kind: kind}, true
 }
@@ -80,9 +80,9 @@ func (f fakeServices) Apply(ctx *gofr.Context, source string, dryRun bool) (conf
 	return configdoc.Applied{DryRun: dryRun}, nil
 }
 
-func (f fakeServices) CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (integration.CreatedToken, error) {
+func (f fakeServices) CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (connection.CreatedToken, error) {
 	f.record(ctx, "CreateIngestionToken", name, tokenName)
-	return integration.CreatedToken{Secret: "gpi_secret"}, nil
+	return connection.CreatedToken{Secret: "gpi_secret"}, nil
 }
 
 func (f fakeServices) DashboardData(ctx *gofr.Context, name string, inputs map[string][]string) (dashboard.PageData, error) {
@@ -90,11 +90,11 @@ func (f fakeServices) DashboardData(ctx *gofr.Context, name string, inputs map[s
 	return dashboard.PageData{}, nil
 }
 
-func (f fakeServices) CheckIntegration(*gofr.Context, string) (integration.CheckResult, error) {
-	return integration.CheckResult{Version: "published", Passed: true}, nil
+func (f fakeServices) CheckConnection(*gofr.Context, string) (connection.CheckResult, error) {
+	return connection.CheckResult{Version: "published", Passed: true}, nil
 }
 
-func (f fakeServices) Sync(*gofr.Context, string, string) (*integration.Run, error) {
+func (f fakeServices) Sync(*gofr.Context, string, string) (*connection.Run, error) {
 	return nil, errors.New("connection refused to the database at 10.0.0.5")
 }
 

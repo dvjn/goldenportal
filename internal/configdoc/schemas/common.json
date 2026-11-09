@@ -25,7 +25,7 @@
     "path": {
       "type": "string",
       "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*(\\.[a-zA-Z][a-zA-Z0-9_-]*)*$",
-      "description": "A field's path: a property or built-in field (identifier, title, blueprint, integration, createdAt, updatedAt), followed through relations and scorecard properties with dots, such as owner.title or readiness.tier. No $."
+      "description": "A field's path: a property or built-in field (identifier, title, blueprint, connection, createdAt, updatedAt), followed through relations and scorecard properties with dots, such as owner.title or readiness.tier. No $."
     },
     "metadata": {
       "type": "object",

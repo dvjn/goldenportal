@@ -19,9 +19,9 @@ import type { ConfigDocs } from "@/features/config-docs";
 
 const sectionLabels: Record<string, string> = {
   blueprint: "Blueprint",
-  integration: "Integration",
+  connection: "Connection",
   properties: "Property",
-  mappings: "Mapping",
+  sources: "Source",
 };
 
 const changeVariants = {

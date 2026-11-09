@@ -3,7 +3,7 @@ import { BlueprintPreview } from "@/components/blueprints/blueprint-preview";
 import { NewDocPage } from "@/components/config-docs/new-doc-page";
 import { blueprints } from "@/features/blueprints";
 
-// Every entity has identifier, title, blueprint, integration, createdAt
+// Every entity has identifier, title, blueprint, connection, createdAt
 // and updatedAt, so properties can't take those names. A relation names a
 // blueprint, a lookup a plain path through relations, such as owner.title,
 // compute jq over the flat entity, such as .url != null, and a scorecard

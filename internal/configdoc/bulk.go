@@ -26,7 +26,7 @@ type bulkKind interface {
 }
 
 // kinds are the registered kinds, in the order they're registered, which
-// is the order they depend on each other: blueprints before integrations.
+// is the order they depend on each other: connections before blueprints.
 var kinds []bulkKind
 
 func kindFor(document string) (bulkKind, bool) {
@@ -112,7 +112,7 @@ type Applied struct {
 
 // Apply checks a multi-document file as a set and, unless dryRun, saves a
 // draft of every document that changed, all or nothing. Documents can
-// refer to each other, so a blueprint and the integration that writes it
+// refer to each other, so a blueprint and the connection that writes it
 // can arrive together.
 func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
@@ -143,7 +143,7 @@ func Apply(ctx *gofr.Context, source string, dryRun bool) (Applied, error) {
 				Kind: document, Identifier: name, Changes: []Change{},
 				Issues: shift([]Issue{{
 					Severity: SeverityError, Path: "kind", Line: 1,
-					Message: fmt.Sprintf("unknown kind %q; use %s", document, strings.Join(documentKinds(), " or ")),
+					Message: unknownKind(document),
 				}}, chunk.Line),
 			})
 			continue
@@ -278,7 +278,7 @@ func publishMany(ctx *gofr.Context) (any, error) {
 }
 
 // PublishMany publishes several drafts in one transaction, blueprints before
-// the integrations that write them. Their drafts see each other when checked.
+// the connections that write them. Their drafts see each other when checked.
 func PublishMany(ctx *gofr.Context, documents []DocumentRef, acknowledgeBreaking bool) ([]Published, error) {
 	p, err := auth.Require(ctx, auth.RoleBuilder)
 	if err != nil {
@@ -291,7 +291,7 @@ func PublishMany(ctx *gofr.Context, documents []DocumentRef, acknowledgeBreaking
 	refs := append([]DocumentRef(nil), documents...)
 	for _, ref := range refs {
 		if _, ok := kindFor(ref.Kind); !ok {
-			return nil, httpx.BadRequest(fmt.Sprintf("unknown kind %q; use %s", ref.Kind, strings.Join(documentKinds(), " or ")))
+			return nil, httpx.BadRequest(unknownKind(ref.Kind))
 		}
 	}
 	sortRefs(refs)

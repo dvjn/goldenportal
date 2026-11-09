@@ -78,9 +78,10 @@ const serviceRoutes = {
   ]),
   "GET blueprints/service/usage": ok({
     entities: 12,
+    sources: [],
     writers: [
       {
-        integration: "registry",
+        connection: "registry",
         title: "Service Registry",
         entities: 12,
         mapped: true,
@@ -165,7 +166,7 @@ describe("blueprints", () => {
     expect(about.getByText("Entities").nextElementSibling).toHaveTextContent("12");
     expect(screen.getByRole("link", { name: "Service Registry" })).toHaveAttribute(
       "href",
-      "/integrations/registry",
+      "/connections/registry",
     );
     expect(screen.getByText("updatedAt")).toBeInTheDocument();
     // Without retention, rows are kept for ever, which goes without saying.
@@ -278,6 +279,103 @@ describe("blueprints", () => {
     expect(within(header).getByRole("navigation", { name: "breadcrumb" })).toBeInTheDocument();
     expect(within(bar).queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Versions" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("lists its sources with how each connection last ran", async () => {
+    const withSources: BlueprintSpec = {
+      ...spec,
+      sources: [
+        {
+          connection: "registry",
+          resource: "services",
+          mode: "upsert",
+          filter: ".archived | not",
+          entity: { identifier: ".id", properties: [{ identifier: "tier", expression: ".tier" }] },
+        },
+      ],
+    };
+    stubApi({
+      ...serviceRoutes,
+      "GET blueprints/service": ok({
+        ...service,
+        published: service.published && { ...service.published, spec: withSources },
+        draft: undefined,
+      }),
+      "GET blueprints/service/usage": ok({
+        entities: 12,
+        sources: [
+          {
+            connection: "registry",
+            title: "Service Registry",
+            resource: "services",
+            mode: "upsert",
+            lastRunAt: "2026-10-24T10:00:00Z",
+            lastRunOutcome: "warnings",
+          },
+        ],
+        writers: [],
+        references: [],
+      }),
+    });
+    renderRoute("/blueprints/service");
+
+    const sources = within(
+      (await screen.findByText("Sources")).closest("[data-slot=card]") as HTMLElement,
+    );
+    expect(await sources.findByRole("link", { name: "Service Registry" })).toHaveAttribute(
+      "href",
+      "/connections/registry",
+    );
+    expect(sources.getByText("services")).toBeInTheDocument();
+    expect(sources.getByText("Upsert")).toBeInTheDocument();
+    expect(sources.getByText("Last Run").nextElementSibling).toHaveTextContent(
+      /registry had warnings/,
+    );
+    expect(sources.getByText("Filter").nextElementSibling).toHaveTextContent(".archived | not");
+    // Fields are titled by the properties they fill.
+    expect(sources.getByText("Tier").nextElementSibling).toHaveTextContent(".tier");
+  });
+
+  it("says when nothing writes it from a connection", async () => {
+    stubApi(serviceRoutes);
+    renderRoute("/blueprints/service");
+
+    const sources = within(
+      (await screen.findByText("Sources")).closest("[data-slot=card]") as HTMLElement,
+    );
+    expect(sources.getByText("No Sources")).toBeInTheDocument();
+    expect(
+      sources.getByText("Nothing writes service entities from a connection yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("labels source changes in the publish preview", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...serviceRoutes,
+      "GET blueprints/service/draft/impact": ok({
+        firstVersion: false,
+        changes: [
+          {
+            section: "sources",
+            identifier: "registry.services",
+            change: "changed",
+            breaking: false,
+            detail:
+              "changes how registry writes service from services; the next registry sync re-reads services",
+          },
+        ],
+        breaking: false,
+        affected: 0,
+        issues: [],
+      } satisfies Impact),
+    });
+    renderRoute("/blueprints/service?tab=definition");
+
+    await user.click(await screen.findByRole("button", { name: "Publish" }));
+    expect(await screen.findByText("Source")).toBeInTheDocument();
+    expect(screen.getByText("registry.services")).toBeInTheDocument();
+    expect(screen.getByText(/the next registry sync re-reads services/)).toBeInTheDocument();
   });
 
   it("edits the draft on the definition tab", async () => {

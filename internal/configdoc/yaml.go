@@ -65,6 +65,19 @@ var (
 	MetadataFields = []string{"identifier", "title", "description", "icon", "color"}
 )
 
+// renamedKinds maps a kind's old name to its current one, so a document
+// written before the rename is told what to write instead of a bare mismatch.
+var renamedKinds = map[string]string{"Integration": "Connection"}
+
+// unknownKind is the message for a kind no document has.
+func unknownKind(kind string) string {
+	if now, ok := renamedKinds[kind]; ok {
+		return fmt.Sprintf("kind %s is now %s; write kind: %s", kind, now, now)
+	}
+
+	return fmt.Sprintf("unknown kind %q; use %s", kind, strings.Join(documentKinds(), " or "))
+}
+
 // ReadDocument reads a document's envelope, kind / metadata / spec,
 // expecting kind. Issues go to r; the spec is nil when there's none to read.
 func ReadDocument(r *Reader, source, kind string) Document {
@@ -84,6 +97,8 @@ func ReadDocument(r *Reader, source, kind string) Document {
 	switch {
 	case fields["kind"] == nil:
 		r.Errorf(root, "kind", "add kind: %s", kind)
+	case renamedKinds[doc.Kind] != "" && renamedKinds[doc.Kind] == kind:
+		r.Errorf(fields["kind"], "kind", "kind %s is now %s; write kind: %s", doc.Kind, kind, kind)
 	case doc.Kind != kind:
 		r.Errorf(fields["kind"], "kind", "this takes kind: %s, not %s", kind, doc.Kind)
 	}

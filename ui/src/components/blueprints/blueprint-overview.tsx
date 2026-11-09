@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { PropertyType } from "@/components/blueprints/property-type";
+import { SourceView } from "@/components/blueprints/source-view";
 import { CardTitleBar } from "@/components/card-sections";
 import { IconTile } from "@/components/catalog/blueprint-icon";
 import { EmptyValue } from "@/components/catalog/property-value";
@@ -39,7 +40,7 @@ import {
   type Usage,
   usageQueryOptions,
 } from "@/features/blueprints";
-import { type IntegrationSummary, integrations } from "@/features/integrations";
+import { type ConnectionSummary, connections } from "@/features/connections";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
 const sources: Record<ReturnType<typeof propertySource>, { label: string; icon: LucideIcon }> = {
@@ -60,12 +61,15 @@ export function BlueprintOverview({
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <Card className="gap-0 pb-0">
-        <CardTitleBar title="Properties" />
-        <CardContent className="px-0">
-          <PropertiesTable properties={spec.properties} />
-        </CardContent>
-      </Card>
+      <div className="grid min-w-0 gap-4">
+        <Card className="gap-0 pb-0">
+          <CardTitleBar title="Properties" />
+          <CardContent className="px-0">
+            <PropertiesTable properties={spec.properties} />
+          </CardContent>
+        </Card>
+        <SourcesCard spec={spec} usage={usage} />
+      </div>
       <div className="grid gap-4">
         <AboutCard spec={spec} blueprint={blueprint} usage={usage} />
         <WritersCard spec={spec} usage={usage} />
@@ -145,7 +149,7 @@ const builtIns = [
   { identifier: "identifier", title: "Identifier", type: "string", rule: "Unique, required" },
   { identifier: "title", title: "Title", type: "string", rule: "Defaults to the identifier" },
   { identifier: "blueprint", title: "Blueprint", type: "string", rule: "This blueprint" },
-  { identifier: "integration", title: "Integration", type: "string", rule: "Its writer" },
+  { identifier: "connection", title: "Connection", type: "string", rule: "Its writer" },
   { identifier: "createdAt", title: "Created", type: "date-time", rule: "Set when written" },
   { identifier: "updatedAt", title: "Updated", type: "date-time", rule: "Set when changed" },
 ];
@@ -269,20 +273,92 @@ function RetentionDetail({ retention }: Readonly<{ retention: Retention }>) {
   );
 }
 
-// WritersCard lists the integrations that write the blueprint's entities.
+function ConnectionTile({ connection }: Readonly<{ connection?: ConnectionSummary }>) {
+  return <IconTile icon={connection?.icon} color={connection?.color} size="sm" />;
+}
+
+const outcomeLabels = { succeeded: "succeeded", warnings: "had warnings", failed: "failed" };
+
+// SourcesCard lists where the blueprint's entities come from: each source
+// with its mapping, and how its connection last ran. A connection syncs all
+// its resources at once, so the run is the connection's, not the source's.
+function SourcesCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Usage }>) {
+  const sources = spec.sources ?? [];
+  const { data: connectionList } = useQuery(connections.queries.list);
+
+  return (
+    <Card className="gap-0 pb-0">
+      <CardTitleBar title="Sources" />
+      <CardContent className={cn("grid", sources.length > 0 && "px-0")}>
+        {sources.length === 0 ? (
+          <div className="pb-6">
+            <EmptyState
+              compact
+              title="No Sources"
+              description={`Nothing writes ${spec.identifier} entities from a connection yet.`}
+            />
+          </div>
+        ) : (
+          sources.map((source, index) => {
+            // Usage lists the published sources in order, so a draft that
+            // reorders them shows no run until it's published.
+            const used = usage?.sources[index];
+            const run = used?.connection === source.connection ? used : undefined;
+            return (
+              <SourceView
+                // A blueprint may read one resource twice, with two filters.
+                // biome-ignore lint/suspicious/noArrayIndexKey: sources have no identity of their own.
+                key={index}
+                source={source}
+                properties={spec.properties}
+                title={run?.title}
+                icon={
+                  <ConnectionTile
+                    connection={connectionList?.find((c) => c.identifier === source.connection)}
+                  />
+                }
+                action={
+                  <Badge variant={source.mode === "upsert" ? "outline" : "secondary"}>
+                    {source.mode === "upsert" ? "Upsert" : "Reconcile"}
+                  </Badge>
+                }
+              >
+                <DetailList>
+                  <Detail label="Last Run">
+                    {run?.lastRunAt ? (
+                      <span title={formatAbsolute(run.lastRunAt)}>
+                        {source.connection}{" "}
+                        {run.lastRunOutcome ? outcomeLabels[run.lastRunOutcome] : "ran"}{" "}
+                        {formatRelative(run.lastRunAt)}
+                      </span>
+                    ) : (
+                      <EmptyValue title="Never run" />
+                    )}
+                  </Detail>
+                </DetailList>
+              </SourceView>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// WritersCard lists the connections that write the blueprint's entities.
 // Each entity has exactly one writer, so this is where its data comes from.
-// WriterIcon shows an integration's tile, its connector's icon.
-function WriterIcon({ integration }: Readonly<{ integration?: IntegrationSummary }>) {
+// WriterIcon shows a connection's tile, its connector's icon.
+function WriterIcon({ connection }: Readonly<{ connection?: ConnectionSummary }>) {
   return (
     <span className="mt-0.5">
-      <IconTile icon={integration?.icon} color={integration?.color} size="sm" />
+      <IconTile icon={connection?.icon} color={connection?.color} size="sm" />
     </span>
   );
 }
 
 function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Usage }>) {
   const writers = usage?.writers ?? [];
-  const { data: integrationList } = useQuery(integrations.queries.list);
+  const { data: connectionList } = useQuery(connections.queries.list);
 
   return (
     <Card>
@@ -292,23 +368,23 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
           <EmptyState
             compact
             title="No writers yet"
-            description={`No integration writes ${spec.identifier} entities.`}
+            description={`No connection writes ${spec.identifier} entities.`}
           >
-            <Link to="/integrations/new" className="text-foreground underline underline-offset-4">
-              New Integration
+            <Link to="/connections/new" className="text-foreground underline underline-offset-4">
+              New Connection
             </Link>
           </EmptyState>
         ) : (
           <ul className="grid gap-3">
             {writers.map((writer) => (
-              <li key={writer.integration} className="flex items-start gap-3 text-sm">
+              <li key={writer.connection} className="flex items-start gap-3 text-sm">
                 <WriterIcon
-                  integration={integrationList?.find((i) => i.identifier === writer.integration)}
+                  connection={connectionList?.find((i) => i.identifier === writer.connection)}
                 />
                 <div className="grid min-w-0 flex-1">
                   <Link
-                    to="/integrations/$identifier"
-                    params={{ identifier: writer.integration }}
+                    to="/connections/$identifier"
+                    params={{ identifier: writer.connection }}
                     className="truncate font-medium hover:underline"
                   >
                     {writer.title}
@@ -331,7 +407,7 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
                   {writer.entities}
                 </span>
                 {!writer.mapped && (
-                  <Badge variant="outline" title="Its mappings no longer write this blueprint">
+                  <Badge variant="outline" title="No source of this blueprint reads it any more">
                     Unmapped
                   </Badge>
                 )}

@@ -109,7 +109,7 @@ func (s Spec) RelatesTo(identifier string) bool {
 	return slices.ContainsFunc(s.Properties, func(prop Property) bool { return prop.Relation == identifier })
 }
 
-// HasProperty reports whether id is a stored property or relation, which integrations write.
+// HasProperty reports whether id is a stored property or relation, which connections write.
 func (s Spec) HasProperty(id string) bool {
 	prop, ok := s.property(id)
 	return ok && !prop.Derived()

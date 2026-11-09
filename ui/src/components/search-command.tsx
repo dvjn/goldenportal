@@ -74,9 +74,9 @@ const kinds: Record<SearchKind, { label: string; open: (r: SearchResult) => Navi
     label: "Scorecard",
     open: (r) => ({ to: "/scorecards/$identifier", params: { identifier: r.identifier } }),
   },
-  integration: {
-    label: "Integration",
-    open: (r) => ({ to: "/integrations/$identifier", params: { identifier: r.identifier } }),
+  connection: {
+    label: "Connection",
+    open: (r) => ({ to: "/connections/$identifier", params: { identifier: r.identifier } }),
   },
   action: {
     label: "Action",

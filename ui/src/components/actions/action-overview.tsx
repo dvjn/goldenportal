@@ -212,7 +212,7 @@ function stepDetails(step: Step): [string, ReactNode][] {
     add("Identifier", code(entity.identifier));
     add("Title", code(entity.title));
     if (entity.properties) add("Properties", <Yaml value={entity.properties} />);
-    add("As", code(entity.integration));
+    add("As", code(entity.connection));
   }
   if (check) {
     add("Blueprint", <BlueprintLabel blueprint={check.blueprint} />);
@@ -222,13 +222,13 @@ function stepDetails(step: Step): [string, ReactNode][] {
   }
   if (sync) {
     add(
-      "Integration",
+      "Connection",
       <Link
-        to="/integrations/$identifier"
-        params={{ identifier: sync.integration }}
+        to="/connections/$identifier"
+        params={{ identifier: sync.connection }}
         className="font-mono text-xs hover:underline"
       >
-        {sync.integration}
+        {sync.connection}
       </Link>,
     );
     add("Resources", code(sync.resources?.join(", ")));

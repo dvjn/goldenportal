@@ -30,7 +30,7 @@ export const docTabs = ["overview", "definition", "versions"] as const;
 export type DocTab = string;
 
 // DocExtraTab is a tab a kind adds after the overview, such as an
-// integration's runs.
+// connection's runs.
 export type DocExtraTab = { value: string; title: string; content: ReactNode };
 
 // validateDocSearch reads the open tab from the URL, so tabs can be linked
@@ -61,7 +61,7 @@ type DocPageProps<S> = {
   extraTabs?: DocExtraTab[];
   // actions go before Export in the header.
   actions?: ReactNode;
-  // badges follow the title, such as how an integration last ran.
+  // badges follow the title, such as how a connection last ran.
   badges?: ReactNode;
   // editable is false for people who can read the document but not change
   // it: they see only the overview.

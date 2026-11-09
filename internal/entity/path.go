@@ -123,11 +123,11 @@ func blueprintID(identifier string) string {
 }
 
 // builtInField reads a field every entity has. At the top of a query the
-// blueprint and integration are joined in; further along they're looked up.
+// blueprint and connection are joined in; further along they're looked up.
 // builtInTitles head built-in fields' columns.
 var builtInTitles = map[string]string{
 	"identifier": "Identifier", "title": "Title", "blueprint": "Blueprint",
-	"integration": "Integration", "createdAt": "Created", "updatedAt": "Updated",
+	"connection": "Connection", "createdAt": "Created", "updatedAt": "Updated",
 }
 
 func builtInField(spec blueprint.Spec, alias, name string) field {
@@ -142,8 +142,8 @@ func builtInField(spec blueprint.Spec, alias, name string) field {
 		if alias == "e" {
 			fld.value = "b.identifier"
 		}
-	case "integration":
-		fld.value = "(SELECT identifier FROM config_documents WHERE id = " + alias + ".integration_id)"
+	case "connection":
+		fld.value = "(SELECT identifier FROM config_documents WHERE id = " + alias + ".connection_id)"
 		if alias == "e" {
 			fld.value = "i.identifier"
 		}

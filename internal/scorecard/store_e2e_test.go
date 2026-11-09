@@ -15,14 +15,14 @@ func TestSaveResultsWritesOnlyChanges(t *testing.T) {
 	db := pgtest.New(t)
 	ctx := t.Context()
 	blueprintID := pgtest.Publish(t, db, "blueprint", "service", "kind: Blueprint")
-	integrationID := pgtest.Publish(t, db, "integration", "source", "kind: Integration")
+	connectionID := pgtest.Publish(t, db, "connection", "source", "kind: Connection")
 	scorecardID := pgtest.Publish(t, db, Name, "health", "kind: Scorecard")
 	var entities []string
 	for _, identifier := range []string{"api", "web"} {
 		var id string
 		if err := db.QueryRowContext(ctx, `
-			INSERT INTO entities (blueprint_id, identifier, title, integration_id) VALUES ($1, $2, $2, $3) RETURNING id`,
-			blueprintID, identifier, integrationID).Scan(&id); err != nil {
+			INSERT INTO entities (blueprint_id, identifier, title, connection_id) VALUES ($1, $2, $2, $3) RETURNING id`,
+			blueprintID, identifier, connectionID).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
 		entities = append(entities, id)

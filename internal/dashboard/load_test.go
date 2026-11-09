@@ -219,7 +219,7 @@ spec:
 	defer db.Close()
 	mock.ExpectQuery(`AND e\.identifier = ANY\(\$2\)`).
 		WithArgs("team", sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "blueprint", "identifier", "title", "properties", "relations", "computed", "integration", "created", "updated"}).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "blueprint", "identifier", "title", "properties", "relations", "computed", "connection", "created", "updated"}).
 			AddRow("1", "team", "payments", "Payments", []byte(`{}`), []byte(`{}`), []byte(`{}`), "registry", time.Time{}, time.Time{}))
 
 	got, err := inputLinks(t.Context(), entity.NewStore(db), spec, widget.Values{

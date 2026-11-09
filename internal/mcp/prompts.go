@@ -85,21 +85,22 @@ var prompts = []prompt{
 				"First see what exists with search and list_catalog, so it relates to existing blueprints instead of repeating them. "+
 				"Propose its properties and relations and agree them with me before writing it.", a["what"])
 		}),
-	authoring("connect_integration", "Connect an integration", "Bring entities into the catalog from a source", "integrations",
+	authoring("add_connection", "Add a connection", "Bring entities into the catalog from a source", "connections",
 		[]*mcp.PromptArgument{
 			argument("connector", "The connector to bring entities in with", true),
 			argument("what", "What to bring in, such as repositories or deploys", false),
 		},
 		func(a args) string {
-			task := "Connect an integration with the " + a["connector"] + " connector"
+			task := "Add a connection with the " + a["connector"] + " connector"
 			if a["what"] != "" {
 				task += " that brings in " + a["what"]
 			}
 			return task + ".\n\n" +
-				"Read list_connectors for what it can do and its resources, and map into existing blueprints, proposing any that are missing first. " +
+				"Read list_connectors for what it can do and its resources. " +
 				"Ask whether the source is fetched, sends its changes, or both, and whether a sync should be complete every time or incremental between complete ones. " +
 				"Secrets go in GP_SECRET_* environment variables, never in the document. " +
-				"Once it's published, an integration that takes pushes needs an ingestion token or a signature: offer to create a token, and check_integration once it's published."
+				"Once it's published, offer to add sources to existing blueprints that map its resources into their entities, proposing any blueprints that are missing; until then it reads nothing. " +
+				"A connection that takes pushes needs an ingestion token or a signature: offer to create a token, and check_connection once it's published."
 		}),
 	authoring("create_scorecard", "Create a scorecard", "Grade a blueprint's entities against standards", "scorecards",
 		[]*mcp.PromptArgument{

@@ -36,12 +36,12 @@ const (
 	BlueprintPublish      = "blueprint.publish"
 	BlueprintDelete       = "blueprint.delete"
 
-	IntegrationDraftSave    = "integration.draft_save"
-	IntegrationDraftDiscard = "integration.draft_discard"
-	IntegrationPublish      = "integration.publish"
-	IntegrationDelete       = "integration.delete"
-	IngestionTokenCreate    = "integration.token_create"
-	IngestionTokenRevoke    = "integration.token_revoke"
+	ConnectionDraftSave    = "connection.draft_save"
+	ConnectionDraftDiscard = "connection.draft_discard"
+	ConnectionPublish      = "connection.publish"
+	ConnectionDelete       = "connection.delete"
+	IngestionTokenCreate   = "connection.token_create"
+	IngestionTokenRevoke   = "connection.token_revoke"
 
 	ScorecardDraftSave    = "scorecard.draft_save"
 	ScorecardDraftDiscard = "scorecard.draft_discard"
@@ -73,7 +73,7 @@ var Actions = []string{
 	AppAuthorize, AppRevoke,
 	SCIMUserProvision, SCIMUserDeactivate, SCIMUserReactivate, SCIMGroupProvision, SCIMGroupDelete,
 	BlueprintDraftSave, BlueprintDraftDiscard, BlueprintPublish, BlueprintDelete,
-	IntegrationDraftSave, IntegrationDraftDiscard, IntegrationPublish, IntegrationDelete,
+	ConnectionDraftSave, ConnectionDraftDiscard, ConnectionPublish, ConnectionDelete,
 	IngestionTokenCreate, IngestionTokenRevoke,
 	ScorecardDraftSave, ScorecardDraftDiscard, ScorecardPublish, ScorecardDelete,
 	ActionDraftSave, ActionDraftDiscard, ActionPublish, ActionDelete,

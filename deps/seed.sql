@@ -1,6 +1,6 @@
 -- Development seed data: the people in deps/mock/mock.yaml with their groups,
 -- so the portal has users, groups and roles before anyone signs in, plus example
--- blueprints and the integrations the mock in deps.dev.yaml feeds.
+-- blueprints and the connections the mock in deps.dev.yaml feeds.
 -- Every insert skips rows that already exist, so this is safe to run again.
 -- psql sets :issuer to GP_OIDC_ISSUER, the mock sign-in uses the email as the
 -- subject, and :team_token is the mock's token for pushing to the team directory.
@@ -67,6 +67,16 @@ spec:
       title: Basics
       type: scorecard
       scorecard: team-basics
+  sources:
+    - connection: team-directory
+      resource: teams
+      entity:
+        identifier: .slug
+        title: .name
+        properties:
+          slackChannel: .links.slack
+          oncall: .links.oncall
+          members: .members
   catalog:
     columns: [slackChannel, members, basics, updatedAt]
   entity:
@@ -170,6 +180,21 @@ spec:
       title: Readiness
       type: scorecard
       scorecard: service-readiness
+  sources:
+    - connection: service-registry
+      resource: services
+      filter: .lifecycle != "retired"
+      entity:
+        identifier: .name
+        title: .displayName
+        properties:
+          language: .language
+          tier: .tier
+          repository: .repo
+          tags: .tags
+          lastDeployedAt: .lastDeploy
+          owner: .owner
+          dependsOn: .dependencies
   catalog:
     columns: [language, tier, lastDeployedAt, owner, readiness]
     queries:
@@ -356,6 +381,17 @@ spec:
       title: Groups
       relation: group
       many: true
+  sources:
+    - connection: portal
+      resource: users
+      entity:
+        identifier: .email
+        title: .displayName
+        properties:
+          email: .email
+          active: .active
+          lastSignedIn: .lastSignedInAt
+          groups: .groups
 $yaml$),
   ('group', $yaml$kind: Blueprint
 metadata:
@@ -370,6 +406,14 @@ spec:
       title: Members
       relation: user
       many: true
+  sources:
+    - connection: portal
+      resource: groups
+      entity:
+        identifier: .name
+        title: .name
+        properties:
+          members: .members
 $yaml$),
   ('blueprint', $yaml$kind: Blueprint
 metadata:
@@ -393,11 +437,22 @@ spec:
       title: Relates To
       relation: blueprint
       many: true
+  sources:
+    - connection: portal
+      resource: blueprints
+      entity:
+        identifier: .identifier
+        title: .title
+        properties:
+          description: .description
+          version: .version
+          entities: .entities
+          relatesTo: .relations
 $yaml$),
-  ('integration', $yaml$kind: Blueprint
+  ('connection', $yaml$kind: Blueprint
 metadata:
-  identifier: integration
-  title: Integration
+  identifier: connection
+  title: Connection
   description: Where entities come from.
   icon: plug
   color: emerald
@@ -427,6 +482,19 @@ spec:
       title: Writes
       relation: blueprint
       many: true
+  sources:
+    - connection: portal
+      resource: connections
+      entity:
+        identifier: .identifier
+        title: .title
+        properties:
+          connector: .connector
+          version: .version
+          entities: .entities
+          lastRunAt: .lastRunAt
+          lastRunOutcome: .lastRunOutcome
+          writes: .blueprints
 $yaml$),
   ('incident', $yaml$kind: Blueprint
 metadata:
@@ -471,6 +539,17 @@ spec:
       title: Resolved
       type: string
       format: date-time
+  sources:
+    - connection: incidents
+      resource: incidents
+      entity:
+        identifier: .id
+        title: .summary
+        properties:
+          severity: .severity
+          status: .status
+          service: .service
+          channel: .channel
   catalog:
     columns: [severity, status, service, openedBy, openedAt]
 $yaml$),
@@ -478,7 +557,7 @@ $yaml$),
 metadata:
   identifier: action
   title: Action
-  description: Something people run on an entity from its page, such as a restart. The Portal integration keeps these up to date.
+  description: Something people run on an entity from its page, such as a restart. The Portal connection keeps these up to date.
   icon: zap
   color: amber
 spec:
@@ -513,6 +592,21 @@ spec:
       display:
         as: badge
         colors: {queued: gray, running: blue, waiting: indigo, succeeded: emerald, failed: red, rejected: rose, cancelled: gray, interrupted: amber}
+  sources:
+    - connection: portal
+      resource: actions
+      entity:
+        identifier: .identifier
+        title: .title
+        properties:
+          description: .description
+          runsOn: .blueprint
+          version: .version
+          steps: .steps
+          approvals: .approvals
+          runs: .runs
+          lastRunAt: .lastRunAt
+          lastRunStatus: .lastRunStatus
   catalog:
     columns: [runsOn, steps, approvals, runs, lastRunStatus, lastRunAt]
 $yaml$),
@@ -520,7 +614,7 @@ $yaml$),
 metadata:
   identifier: run
   title: Run
-  description: One run of an action in the last 30 days, without its inputs or outputs. The Portal integration keeps these up to date.
+  description: One run of an action in the last 30 days, without its inputs or outputs. The Portal connection keeps these up to date.
   icon: play
   color: sky
 spec:
@@ -565,6 +659,22 @@ spec:
       type: number
       display:
         unit: s
+  sources:
+    - connection: portal
+      resource: runs
+      entity:
+        identifier: .id
+        title: .title + " on " + .entityTitle
+        properties:
+          action: .action
+          entityBlueprint: .blueprint
+          entity: .entityTitle
+          requester: .requester
+          via: .via
+          status: .status
+          startedAt: .createdAt
+          finishedAt: .finishedAt
+          seconds: .seconds
   catalog:
     columns: [action, entity, requester, status, startedAt, seconds]
 $yaml$),
@@ -639,6 +749,40 @@ spec:
     owner:
       title: Owner
       lookup: service.owner.title
+  sources:
+    - connection: deploy-tracker
+      resource: deployments
+      mode: upsert
+      entity:
+        identifier: .id
+        title: .service + " " + .version
+        properties:
+          service: .service
+          environment: .environment
+          version: .version
+          status: .status
+          startedAt: .startedAt
+          finishedAt: .finishedAt
+    # GitLab's deployments of the services, beside the deploy tracker's.
+    - connection: gitlab
+      resource: deployments
+      filter: .environment.name == "production" or .environment.name == "staging"
+      mode: upsert
+      entity:
+        identifier: '"gitlab-" + (.id | tostring)'
+        title: (._gp.project | split("/") | last) + " " + .sha[0:8]
+        properties:
+          service: ._gp.project | split("/") | last
+          environment: .environment.name
+          version: .sha[0:8]
+          status: '{"success": "succeeded", "failed": "failed", "canceled": "failed"}[.status] // "running"'
+          startedAt: .created_at
+          finishedAt: if .status | IN("success", "failed", "canceled") then .finished_at // .updated_at else null end
+          approvalRequired: ._gp.approvalRequired
+          approvedBy: ._gp.approvals | values | map(select(.status == "approved") | .user.username)
+          approvedAt: ._gp.approvedAt
+          approvalSeconds: ._gp.approvalSeconds
+          waitSeconds: ._gp.waitSeconds
   # The mocks have a fortnight of history, so a week shows older rows
   # leaving the catalog, but for production's, kept a month.
   retention:
@@ -737,6 +881,27 @@ spec:
       title: Last Activity
       type: string
       format: date-time
+  sources:
+    # A project marked for deletion is on its way out already, and one
+    # without a repository has nothing to build.
+    - connection: gitlab
+      resource: projects
+      filter: .marked_for_deletion_on == null and .empty_repo != true
+      entity:
+        identifier: .path_with_namespace
+        title: .name
+        properties:
+          service: .path
+          description: .description
+          visibility: .visibility
+          defaultBranch: .default_branch
+          archived: .archived
+          ci: ._gp.latestPipeline.status
+          ciValid: ._gp.ciConfig.valid
+          ciStages: '[._gp.ciConfig.jobs[]?.stage] | unique'
+          defaultBranchProtected: ._gp.defaultBranch.protected
+          url: .web_url
+          lastActivityAt: .last_activity_at
   catalog:
     columns: [service, visibility, ci, defaultBranchProtected, lastActivityAt]
 $yaml$),
@@ -783,6 +948,25 @@ spec:
       title: Last Activity
       type: string
       format: date-time
+  sources:
+    # Merge requests, pipelines and deployments pile up, so syncs read what
+    # changed since the last one, and their blueprints' retention deletes
+    # the old ones.
+    - connection: gitlab
+      resource: merge_requests
+      mode: upsert
+      entity:
+        identifier: ._gp.project + "!" + (.iid | tostring)
+        title: .title
+        properties:
+          repo: ._gp.project
+          state: if .state == "opened" and .draft then "draft" else .state end
+          author: .author.username
+          branch: .source_branch
+          url: .web_url
+          openedAt: .created_at
+          closedAt: .merged_at // .closed_at
+          lastActivityAt: .updated_at
   # Open merge requests have no closedAt, so they're kept however old.
   retention:
     by: closedAt
@@ -813,6 +997,17 @@ spec:
       title: URL
       type: string
       format: uri
+  sources:
+    - connection: gitlab
+      resource: groups
+      entity:
+        identifier: .full_path
+        title: .name
+        properties:
+          parent: .full_path | split("/") | .[:-1] | join("/") | select(. != "")
+          description: .description
+          visibility: .visibility
+          url: .web_url
   catalog:
     columns: [parent, visibility]
 $yaml$),
@@ -861,6 +1056,20 @@ spec:
       title: URL
       type: string
       format: uri
+  sources:
+    - connection: gitlab
+      resource: pipelines
+      mode: upsert
+      entity:
+        identifier: .id
+        title: '(._gp.project | split("/") | last) + " " + .ref + " #" + (.iid // .id | tostring)'
+        properties:
+          repo: ._gp.project
+          ref: .ref
+          source: .source
+          status: .status
+          triggeredAt: .created_at
+          url: .web_url
   retention:
     by: triggeredAt
     keep: 7d
@@ -988,6 +1197,42 @@ spec:
       title: URL
       type: string
       format: uri
+  sources:
+    # Every attempt of every job, numbered under _gp, and each job as its
+    # latest attempt left it.
+    - connection: gitlab
+      resource: job_attempts
+      mode: upsert
+      entity:
+        identifier: .id
+        title: '.name + " #" + (._gp.attempt | tostring)'
+        properties:
+          pipeline: .pipeline.id | tostring
+          repo: ._gp.project
+          runner: .runner.id | values | tostring
+          name: .name
+          stage: .stage
+          status: .status
+          failureReason: .failure_reason
+          allowFailure: .allow_failure
+          attempt: ._gp.attempt
+          retried: ._gp.retried
+          seconds: .duration
+          queuedSeconds: .queued_duration
+          addedAt: .created_at
+          queuedAt: ._gp.queuedAt
+          waitSeconds: ._gp.waitSeconds
+          stageWaitSeconds: ._gp.stageWaitSeconds
+          playWaitSeconds: ._gp.playWaitSeconds
+          manual: ._gp.manual
+          playedBy: ._gp.playedBy.username
+          tags: .tag_list
+          ref: .ref
+          commit: .commit.id
+          startedAt: .started_at
+          finishedAt: .finished_at
+          triggeredAt: .pipeline.created_at
+          url: .web_url
   retention:
     by: triggeredAt
     keep: 7d
@@ -1099,6 +1344,36 @@ spec:
       title: URL
       type: string
       format: uri
+  sources:
+    - connection: gitlab
+      resource: jobs
+      mode: upsert
+      entity:
+        identifier: (.pipeline.id | tostring) + ":" + .name
+        title: .name
+        properties:
+          pipeline: .pipeline.id | tostring
+          repo: ._gp.project
+          runner: .runner.id | values | tostring
+          name: .name
+          stage: .stage
+          status: .status
+          failureReason: .failure_reason
+          attempts: ._gp.attempts
+          failedAttempts: ._gp.failedAttempts
+          flaky: ._gp.flaky
+          seconds: .duration
+          queuedSeconds: .queued_duration
+          addedAt: .created_at
+          queuedAt: ._gp.queuedAt
+          waitSeconds: ._gp.waitSeconds
+          stageWaitSeconds: ._gp.stageWaitSeconds
+          playWaitSeconds: ._gp.playWaitSeconds
+          manual: ._gp.manual
+          playedBy: ._gp.playedBy.username
+          finishedAt: .finished_at
+          triggeredAt: .pipeline.created_at
+          url: .web_url
   retention:
     by: triggeredAt
     keep: 7d
@@ -1199,6 +1474,38 @@ spec:
       title: URL
       type: string
       format: uri
+  sources:
+    # Each runner the attempts ran on, read on its own, or as its newest
+    # attempt found it when GitLab won't say more.
+    - connection: gitlab
+      resource: runners
+      mode: upsert
+      entity:
+        identifier: .id
+        title: ._gp.title
+        properties:
+          type: .runner_type | rtrimstr("_type")
+          status: .status
+          paused: .paused
+          jobExecution: .job_execution_status
+          shared: .is_shared
+          tags: .tag_list
+          runUntagged: .run_untagged
+          locked: .locked
+          accessLevel: .access_level
+          maximumTimeout: .maximum_timeout
+          maintenanceNote: .maintenance_note
+          groups: ._gp.groups
+          repositories: ._gp.projects
+          version: .version
+          revision: .revision
+          platform: .platform
+          architecture: .architecture
+          registeredBy: .created_by.username
+          registeredAt: .created_at
+          contactedAt: .contacted_at
+          lastJobAt: ._gp.lastJobAt
+          url: ._gp.url
   # A runner is read only when jobs ran on it, so one that ran none for a
   # while leaves.
   retention:
@@ -1331,7 +1638,7 @@ $yaml$)
 INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
--- Example integrations: the Team Directory, which the mock pushes to with a
+-- Example connections: the Team Directory, which the mock pushes to with a
 -- token, all of it as a complete push and single teams between; the Service
 -- Registry, pulled every half hour and kept current between by events the
 -- registry signs; Incidents and Workflows, which the example actions write;
@@ -1341,7 +1648,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 -- kept current between syncs by the webhook its syncs set up on each
 -- project.
 WITH example (identifier, source) AS (VALUES
-  ('team-directory', $yaml$kind: Integration
+  ('team-directory', $yaml$kind: Connection
 metadata:
   identifier: team-directory
   title: Team Directory
@@ -1354,18 +1661,8 @@ spec:
         teams:
           push:
             items: .body.teams[]
-  mappings:
-    - resource: teams
-      blueprint: team
-      entity:
-        identifier: .slug
-        title: .name
-        properties:
-          slackChannel: .links.slack
-          oncall: .links.oncall
-          members: .members
 $yaml$),
-  ('service-registry', $yaml$kind: Integration
+  ('service-registry', $yaml$kind: Connection
 metadata:
   identifier: service-registry
   title: Service Registry
@@ -1389,23 +1686,8 @@ spec:
             deleted: .body.action == "deleted"
   sync:
     interval: 30m
-  mappings:
-    - resource: services
-      blueprint: service
-      filter: .lifecycle != "retired"
-      entity:
-        identifier: .name
-        title: .displayName
-        properties:
-          language: .language
-          tier: .tier
-          repository: .repo
-          tags: .tags
-          lastDeployedAt: .lastDeploy
-          owner: .owner
-          dependsOn: .dependencies
 $yaml$),
-  ('incidents', $yaml$kind: Integration
+  ('incidents', $yaml$kind: Connection
 metadata:
   identifier: incidents
   title: Incidents
@@ -1418,99 +1700,19 @@ spec:
         incidents:
           push:
             items: .body.incidents[]
-  mappings:
-    - resource: incidents
-      blueprint: incident
-      entity:
-        identifier: .id
-        title: .summary
-        properties:
-          severity: .severity
-          status: .status
-          service: .service
-          channel: .channel
 $yaml$),
-  ('portal', $yaml$kind: Integration
+  ('portal', $yaml$kind: Connection
 metadata:
   identifier: portal
   title: Portal
-  description: The portal's own users, groups, blueprints, integrations, actions and recent runs.
+  description: The portal's own users, groups, blueprints, connections, actions and recent runs.
 spec:
   connector:
     type: portal
   sync:
     interval: 5m
-  mappings:
-    - resource: users
-      blueprint: user
-      entity:
-        identifier: .email
-        title: .displayName
-        properties:
-          email: .email
-          active: .active
-          lastSignedIn: .lastSignedInAt
-          groups: .groups
-    - resource: groups
-      blueprint: group
-      entity:
-        identifier: .name
-        title: .name
-        properties:
-          members: .members
-    - resource: blueprints
-      blueprint: blueprint
-      entity:
-        identifier: .identifier
-        title: .title
-        properties:
-          description: .description
-          version: .version
-          entities: .entities
-          relatesTo: .relations
-    - resource: integrations
-      blueprint: integration
-      entity:
-        identifier: .identifier
-        title: .title
-        properties:
-          connector: .connector
-          version: .version
-          entities: .entities
-          lastRunAt: .lastRunAt
-          lastRunOutcome: .lastRunOutcome
-          writes: .blueprints
-    - resource: actions
-      blueprint: action
-      entity:
-        identifier: .identifier
-        title: .title
-        properties:
-          description: .description
-          runsOn: .blueprint
-          version: .version
-          steps: .steps
-          approvals: .approvals
-          runs: .runs
-          lastRunAt: .lastRunAt
-          lastRunStatus: .lastRunStatus
-    - resource: runs
-      blueprint: run
-      entity:
-        identifier: .id
-        title: .title + " on " + .entityTitle
-        properties:
-          action: .action
-          entityBlueprint: .blueprint
-          entity: .entityTitle
-          requester: .requester
-          via: .via
-          status: .status
-          startedAt: .createdAt
-          finishedAt: .finishedAt
-          seconds: .seconds
 $yaml$),
-  ('deploy-tracker', $yaml$kind: Integration
+  ('deploy-tracker', $yaml$kind: Connection
 metadata:
   identifier: deploy-tracker
   title: Deploy Tracker
@@ -1532,22 +1734,8 @@ spec:
   sync:
     interval: 5m
     complete: 1h
-  mappings:
-    - resource: deployments
-      blueprint: deployment
-      mode: upsert
-      entity:
-        identifier: .id
-        title: .service + " " + .version
-        properties:
-          service: .service
-          environment: .environment
-          version: .version
-          status: .status
-          startedAt: .startedAt
-          finishedAt: .finishedAt
 $yaml$),
-  ('gitlab', $yaml$kind: Integration
+  ('gitlab', $yaml$kind: Connection
 metadata:
   identifier: gitlab
   title: GitLab
@@ -1563,199 +1751,22 @@ spec:
   sync:
     interval: 30m
     complete: 24h
-  mappings:
-    - resource: groups
-      blueprint: namespace
-      entity:
-        identifier: .full_path
-        title: .name
-        properties:
-          parent: .full_path | split("/") | .[:-1] | join("/") | select(. != "")
-          description: .description
-          visibility: .visibility
-          url: .web_url
-    # A project marked for deletion is on its way out already, and one
-    # without a repository has nothing to build.
-    - resource: projects
-      blueprint: repository
-      filter: .marked_for_deletion_on == null and .empty_repo != true
-      entity:
-        identifier: .path_with_namespace
-        title: .name
-        properties:
-          service: .path
-          description: .description
-          visibility: .visibility
-          defaultBranch: .default_branch
-          archived: .archived
-          ci: ._gp.latestPipeline.status
-          ciValid: ._gp.ciConfig.valid
-          ciStages: '[._gp.ciConfig.jobs[]?.stage] | unique'
-          defaultBranchProtected: ._gp.defaultBranch.protected
-          url: .web_url
-          lastActivityAt: .last_activity_at
-    # Merge requests, pipelines and deployments pile up, so syncs read what
-    # changed since the last one, and their blueprints' retention deletes
-    # the old ones.
-    - resource: merge_requests
-      blueprint: merge-request
-      mode: upsert
-      entity:
-        identifier: ._gp.project + "!" + (.iid | tostring)
-        title: .title
-        properties:
-          repo: ._gp.project
-          state: if .state == "opened" and .draft then "draft" else .state end
-          author: .author.username
-          branch: .source_branch
-          url: .web_url
-          openedAt: .created_at
-          closedAt: .merged_at // .closed_at
-          lastActivityAt: .updated_at
-    - resource: pipelines
-      blueprint: pipeline
-      mode: upsert
-      entity:
-        identifier: .id
-        title: '(._gp.project | split("/") | last) + " " + .ref + " #" + (.iid // .id | tostring)'
-        properties:
-          repo: ._gp.project
-          ref: .ref
-          source: .source
-          status: .status
-          triggeredAt: .created_at
-          url: .web_url
-    # GitLab's deployments of the services, beside the deploy tracker's.
-    - resource: deployments
-      blueprint: deployment
-      filter: .environment.name == "production" or .environment.name == "staging"
-      mode: upsert
-      entity:
-        identifier: '"gitlab-" + (.id | tostring)'
-        title: (._gp.project | split("/") | last) + " " + .sha[0:8]
-        properties:
-          service: ._gp.project | split("/") | last
-          environment: .environment.name
-          version: .sha[0:8]
-          status: '{"success": "succeeded", "failed": "failed", "canceled": "failed"}[.status] // "running"'
-          startedAt: .created_at
-          finishedAt: if .status | IN("success", "failed", "canceled") then .finished_at // .updated_at else null end
-          approvalRequired: ._gp.approvalRequired
-          approvedBy: ._gp.approvals | values | map(select(.status == "approved") | .user.username)
-          approvedAt: ._gp.approvedAt
-          approvalSeconds: ._gp.approvalSeconds
-          waitSeconds: ._gp.waitSeconds
-    # Every attempt of every job, numbered under _gp, and each job as its
-    # latest attempt left it.
-    - resource: job_attempts
-      blueprint: job-attempt
-      mode: upsert
-      entity:
-        identifier: .id
-        title: '.name + " #" + (._gp.attempt | tostring)'
-        properties:
-          pipeline: .pipeline.id | tostring
-          repo: ._gp.project
-          runner: .runner.id | values | tostring
-          name: .name
-          stage: .stage
-          status: .status
-          failureReason: .failure_reason
-          allowFailure: .allow_failure
-          attempt: ._gp.attempt
-          retried: ._gp.retried
-          seconds: .duration
-          queuedSeconds: .queued_duration
-          addedAt: .created_at
-          queuedAt: ._gp.queuedAt
-          waitSeconds: ._gp.waitSeconds
-          stageWaitSeconds: ._gp.stageWaitSeconds
-          playWaitSeconds: ._gp.playWaitSeconds
-          manual: ._gp.manual
-          playedBy: ._gp.playedBy.username
-          tags: .tag_list
-          ref: .ref
-          commit: .commit.id
-          startedAt: .started_at
-          finishedAt: .finished_at
-          triggeredAt: .pipeline.created_at
-          url: .web_url
-    - resource: jobs
-      blueprint: job
-      mode: upsert
-      entity:
-        identifier: (.pipeline.id | tostring) + ":" + .name
-        title: .name
-        properties:
-          pipeline: .pipeline.id | tostring
-          repo: ._gp.project
-          runner: .runner.id | values | tostring
-          name: .name
-          stage: .stage
-          status: .status
-          failureReason: .failure_reason
-          attempts: ._gp.attempts
-          failedAttempts: ._gp.failedAttempts
-          flaky: ._gp.flaky
-          seconds: .duration
-          queuedSeconds: .queued_duration
-          addedAt: .created_at
-          queuedAt: ._gp.queuedAt
-          waitSeconds: ._gp.waitSeconds
-          stageWaitSeconds: ._gp.stageWaitSeconds
-          playWaitSeconds: ._gp.playWaitSeconds
-          manual: ._gp.manual
-          playedBy: ._gp.playedBy.username
-          finishedAt: .finished_at
-          triggeredAt: .pipeline.created_at
-          url: .web_url
-    # Each runner the attempts ran on, read on its own, or as its newest
-    # attempt found it when GitLab won't say more.
-    - resource: runners
-      blueprint: runner
-      mode: upsert
-      entity:
-        identifier: .id
-        title: ._gp.title
-        properties:
-          type: .runner_type | rtrimstr("_type")
-          status: .status
-          paused: .paused
-          jobExecution: .job_execution_status
-          shared: .is_shared
-          tags: .tag_list
-          runUntagged: .run_untagged
-          locked: .locked
-          accessLevel: .access_level
-          maximumTimeout: .maximum_timeout
-          maintenanceNote: .maintenance_note
-          groups: ._gp.groups
-          repositories: ._gp.projects
-          version: .version
-          revision: .revision
-          platform: .platform
-          architecture: .architecture
-          registeredBy: .created_by.username
-          registeredAt: .created_at
-          contactedAt: .contacted_at
-          lastJobAt: ._gp.lastJobAt
-          url: ._gp.url
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
-  SELECT 'integration', identifier, 1 FROM example
+  SELECT 'connection', identifier, 1 FROM example
   ON CONFLICT (kind, identifier) DO NOTHING
   RETURNING id, identifier
 )
 INSERT INTO config_versions (document_id, version, source)
 SELECT created.id, 1, example.source FROM created JOIN example USING (identifier);
 
-INSERT INTO ingestion_tokens (integration_id, name, prefix, secret_hash)
+INSERT INTO ingestion_tokens (connection_id, name, prefix, secret_hash)
 SELECT d.id, 'Mock Pusher', left(t.token, 12), sha256(convert_to(t.token, 'UTF8'))
 FROM (VALUES
   ('team-directory', :'team_token')
 ) AS t (identifier, token)
-JOIN config_documents d ON d.kind = 'integration' AND d.identifier = t.identifier
+JOIN config_documents d ON d.kind = 'connection' AND d.identifier = t.identifier
 ON CONFLICT (secret_hash) DO NOTHING;
 
 -- Example scorecards. Checks are jq over each entity, flat as paths read
@@ -2150,10 +2161,10 @@ spec:
       filter: {property: active, op: eq, value: true}
     blueprints:
       blueprint: blueprint
-    integrations:
-      blueprint: integration
+    connections:
+      blueprint: connection
     failing:
-      blueprint: integration
+      blueprint: connection
       filter: {property: lastRunOutcome, op: eq, value: failed}
   widgets:
     users:
@@ -2170,28 +2181,28 @@ spec:
       color: blue
       value: {query: blueprints}
       link: {path: /blueprints}
-    integrations:
+    connections:
       type: stat
-      title: Integrations
+      title: Connections
       icon: plug
       color: teal
-      value: {query: integrations}
-      link: {path: /integrations}
+      value: {query: connections}
+      link: {path: /connections}
     failing:
       type: stat
-      title: Failing Integrations
+      title: Failing Connections
       icon: circle-x
       color: red
       value: {query: failing}
       link: {query: failing}
     list:
       type: table
-      title: Integrations
-      query: integrations
+      title: Connections
+      query: connections
       columns: [{path: connector}, {path: lastRunOutcome}, {path: entities}, {path: lastRunAt}]
       sort: -entities
-      rowLink: {path: '/integrations/{{ .identifier }}'}
-      link: {query: integrations}
+      rowLink: {path: '/connections/{{ .identifier }}'}
+      link: {query: connections}
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -2206,7 +2217,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 -- for builders and the service's owners; the others are for everyone. Scale
 -- waits for a platform engineer or another of the service's owners to
 -- approve the change. Open incident
--- and Resolve write incidents to the catalog as the Incidents integration.
+-- and Resolve write incidents to the catalog as the Incidents connection.
 WITH example (identifier, source) AS (VALUES
   ('restart', $yaml$kind: Action
 metadata:
@@ -2372,7 +2383,7 @@ spec:
       title: Add it to the catalog
       entity:
         operation: upsert
-        integration: incidents
+        connection: incidents
         blueprint: incident
         identifier: $step.create.id
         title: $input.summary
@@ -2417,7 +2428,7 @@ spec:
     - title: Mark it resolved
       entity:
         operation: upsert
-        integration: incidents
+        connection: incidents
         blueprint: incident
         identifier: $entity
         properties:
@@ -2440,7 +2451,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 -- the Restart action on each service picked, which checks the requester
 -- may restart each one. Register a
 -- service waits for a platform engineer, creates its repository and adds it
--- to the catalog as the Workflows integration.
+-- to the catalog as the Workflows connection.
 WITH example (identifier, source) AS (VALUES
   ('restart-services', $yaml$kind: Workflow
 metadata:
@@ -2580,7 +2591,7 @@ spec:
           owner: $input.owner
     - title: Bring it into the catalog
       sync:
-        integration: service-registry
+        connection: service-registry
         resources: [services]
         mode: incremental
     - output:
@@ -2601,7 +2612,7 @@ SELECT created.id, 1, example.source FROM created JOIN example USING (identifier
 
 -- Example incidents, as if the Open incident action had opened them over the
 -- last two weeks, so the Operations dashboard has something to show.
-INSERT INTO entities (blueprint_id, integration_id, identifier, title, properties, relations)
+INSERT INTO entities (blueprint_id, connection_id, identifier, title, properties, relations)
 SELECT b.id, i.id, e.identifier, e.title,
   jsonb_strip_nulls(jsonb_build_object(
     'severity', e.severity, 'status', e.status,
@@ -2618,7 +2629,7 @@ FROM (VALUES
   ('inc-106', 'Payments API errors spike after the deploy', 'sev1', 'open', 'payments-api', 'ada@example.com', interval '35 minutes', NULL)
 ) AS e (identifier, title, severity, status, service, opened_by, opened, resolved)
 JOIN config_documents b ON b.kind = 'blueprint' AND b.identifier = 'incident'
-JOIN config_documents i ON i.kind = 'integration' AND i.identifier = 'incidents'
+JOIN config_documents i ON i.kind = 'connection' AND i.identifier = 'incidents'
 ON CONFLICT (blueprint_id, identifier) DO NOTHING;
 
 -- Example runs of the Restart and Scale actions over the last week, so the

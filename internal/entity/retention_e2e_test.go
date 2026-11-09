@@ -121,7 +121,7 @@ func TestExpireInBatches(t *testing.T) {
 	f := newStoreFixture(t)
 	f.publishBlueprint(timedServiceYAML + "  retention: {by: startedAt, keep: 30d}\n")
 	if _, err := f.db.ExecContext(t.Context(), `
-		INSERT INTO entities (blueprint_id, identifier, title, integration_id, occurred_at)
+		INSERT INTO entities (blueprint_id, identifier, title, connection_id, occurred_at)
 		SELECT $1, 'e' || n, 'e', $2, now() - interval '40 days' FROM generate_series(1, $3) n`,
 		f.blueprint, f.mine, expireBatch+10); err != nil {
 		t.Fatal(err)

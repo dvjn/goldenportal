@@ -39,7 +39,7 @@ const entity = (identifier: string, title: string): Entity => ({
   title,
   properties: {},
   related: {},
-  integration: "registry",
+  connection: "registry",
   createdAt: "2026-10-24T10:00:00Z",
   updatedAt: "2026-10-24T10:00:00Z",
 });

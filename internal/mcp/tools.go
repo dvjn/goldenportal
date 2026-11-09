@@ -47,7 +47,7 @@ func define[Args any](name, description string, role auth.Role, scope string, re
 				Name: t.name, Title: title(t.name), Description: t.description,
 				Annotations: &mcp.ToolAnnotations{
 					ReadOnlyHint: t.readOnly, DestructiveHint: &t.destructive,
-					OpenWorldHint: boolPointer(t.name == "sync_integration" || t.name == "check_integration"),
+					OpenWorldHint: boolPointer(t.name == "sync_connection" || t.name == "check_connection"),
 				},
 			}, func(ctx context.Context, _ *mcp.CallToolRequest, a Args) (*mcp.CallToolResult, Output, error) {
 				result, out, err := b.call(ctx, func(g *gofr.Context) (any, error) { return run(b, g, a) })
@@ -113,10 +113,10 @@ func newServer(b bridge, c caller, version string) *mcp.Server {
 type (
 	empty    struct{}
 	kindArgs struct {
-		Kind string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards, dashboards, actions or workflows"`
+		Kind string `json:"kind" jsonschema:"Document collection: blueprints, connections, scorecards, dashboards, actions or workflows"`
 	}
 	documentArgs struct {
-		Kind       string `json:"kind" jsonschema:"Document collection: blueprints, integrations, scorecards, dashboards, actions or workflows"`
+		Kind       string `json:"kind" jsonschema:"Document collection: blueprints, connections, scorecards, dashboards, actions or workflows"`
 		Identifier string `json:"identifier"`
 	}
 	sourceArgs struct {
@@ -148,12 +148,12 @@ type (
 		DryRun *bool  `json:"dryRun,omitempty" jsonschema:"Defaults to true; set false explicitly to save drafts"`
 	}
 	documentRef struct {
-		Kind       string `json:"kind" jsonschema:"Blueprint, Integration, Scorecard, Dashboard, Action or Workflow"`
+		Kind       string `json:"kind" jsonschema:"Blueprint, Connection, Scorecard, Dashboard, Action or Workflow"`
 		Identifier string `json:"identifier"`
 	}
 	syncArgs struct {
 		Identifier string `json:"identifier"`
-		Mode       string `json:"mode,omitempty" jsonschema:"complete deletes what neither it nor the complete run before it saw; incremental fetches what changed and deletes only what the source says was deleted. Left out, the integration's schedule decides"`
+		Mode       string `json:"mode,omitempty" jsonschema:"complete deletes what neither it nor the complete run before it saw; incremental fetches what changed and deletes only what the source says was deleted. Left out, the connection's schedule decides"`
 	}
 	publishManyArgs struct {
 		Documents           []documentRef `json:"documents"`
@@ -175,7 +175,7 @@ type (
 		Identifier string `json:"identifier"`
 	}
 	searchArgs struct {
-		Text string `json:"text" jsonschema:"Words in a title or identifier; empty lists blueprints, dashboards, scorecards and integrations"`
+		Text string `json:"text" jsonschema:"Words in a title or identifier; empty lists blueprints, dashboards, scorecards and connections"`
 	}
 	resultsArgs struct {
 		Identifier string `json:"identifier"`
@@ -188,7 +188,7 @@ type (
 		Inputs     map[string][]string `json:"inputs,omitempty" jsonschema:"Values to set the dashboard's inputs to, by input identifier; an empty list clears one"`
 	}
 	tokenArgs struct {
-		Identifier string `json:"identifier" jsonschema:"The integration's identifier"`
+		Identifier string `json:"identifier" jsonschema:"The connection's identifier"`
 		Label      string `json:"name" jsonschema:"What the token is for, such as the system that pushes with it"`
 	}
 	runActionArgs struct {
@@ -218,13 +218,13 @@ type (
 		Size      int    `json:"size,omitempty"`
 	}
 	revokeTokenArgs struct {
-		Identifier string `json:"identifier" jsonschema:"The integration's identifier"`
+		Identifier string `json:"identifier" jsonschema:"The connection's identifier"`
 		ID         string `json:"id" jsonschema:"The token's id, from list_ingestion_tokens"`
 	}
 )
 
 var tools = []tool{
-	read("search", "Find blueprints, entities, dashboards, scorecards and integrations by title or identifier, closest first.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a searchArgs) (any, error) {
+	read("search", "Find blueprints, entities, dashboards, scorecards and connections by title or identifier, closest first.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a searchArgs) (any, error) {
 		return b.services.Search(ctx, a.Text)
 	}),
 	read("list_documents", "List configuration documents of a kind visible to the caller.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a kindArgs) (any, error) {
@@ -307,7 +307,7 @@ var tools = []tool{
 		}
 		return b.services.ScorecardResults(ctx, a.Identifier, req)
 	}),
-	read("get_blueprint_usage", "Read what uses a blueprint: integrations writing it, scorecards, dashboards and relations, with its entity count.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+	read("get_blueprint_usage", "Read what uses a blueprint: its sources with each connection's last run, connections writing it, scorecards, dashboards and relations, with its entity count.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
 		return b.services.BlueprintUsage(ctx, a.Identifier)
 	}),
 	read("preview_impact", "Preview the impact of publishing a saved draft, including affected entities and breaking changes.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a documentArgs) (any, error) {
@@ -324,10 +324,10 @@ var tools = []tool{
 	) (any, error) {
 		return b.services.ViewDashboard(ctx, a.Identifier, a.Draft)
 	}),
-	read("list_sync_runs", "Read recent integration runs and item errors.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+	read("list_sync_runs", "Read recent connection runs and item errors.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
 		return b.services.SyncRuns(ctx, a.Identifier)
 	}),
-	read("list_ingestion_tokens", "List an integration's ingestion tokens, by name and prefix; secrets are never shown again.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+	read("list_ingestion_tokens", "List a connection's ingestion tokens, by name and prefix; secrets are never shown again.", auth.RoleBuilder, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
 		return b.services.IngestionTokens(ctx, a.Identifier)
 	}),
 
@@ -410,19 +410,19 @@ var tools = []tool{
 		}
 		return b.services.PublishMany(ctx, refs, a.AcknowledgeBreaking)
 	}),
-	author("sync_integration", "Start syncing a published integration that pulls now, completely or incrementally, using its declared mappings. It returns the run as soon as it starts, with finishedAt null; read its outcome later with list_sync_runs, which lists the newest runs first: the run with the same id has finished once finishedAt is set.", true, func(b bridge, ctx *gofr.Context, a syncArgs) (any, error) {
+	author("sync_connection", "Start syncing a published connection that pulls now, completely or incrementally, reading what blueprints' sources map. It returns the run as soon as it starts, with finishedAt null; read its outcome later with list_sync_runs, which lists the newest runs first: the run with the same id has finished once finishedAt is set.", true, func(b bridge, ctx *gofr.Context, a syncArgs) (any, error) {
 		return b.services.Sync(ctx, a.Identifier, a.Mode)
 	}),
-	author("check_integration", "Check a published integration's connector can reach its system with the current config and secrets, or the draft's when it isn't published.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
-		return b.services.CheckIntegration(ctx, a.Identifier)
+	author("check_connection", "Check a published connection's connector can reach its system with the current config and secrets, or the draft's when it isn't published.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+		return b.services.CheckConnection(ctx, a.Identifier)
 	}),
 	author("evaluate_scorecard", "Evaluate a published scorecard now and store its current results.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
 		return b.services.EvaluateScorecard(ctx, a.Identifier)
 	}),
-	author("create_ingestion_token", "Create an ingestion token for an integration that takes pushes. Its secret is in this response only; hand it to the pushing system now.", false, func(b bridge, ctx *gofr.Context, a tokenArgs) (any, error) {
+	author("create_ingestion_token", "Create an ingestion token for a connection that takes pushes. Its secret is in this response only; hand it to the pushing system now.", false, func(b bridge, ctx *gofr.Context, a tokenArgs) (any, error) {
 		return b.services.CreateIngestionToken(ctx, a.Identifier, a.Label)
 	}),
-	author("revoke_ingestion_token", "Revoke an integration's ingestion token; systems pushing with it stop being accepted.", true, func(b bridge, ctx *gofr.Context, a revokeTokenArgs) (any, error) {
+	author("revoke_ingestion_token", "Revoke a connection's ingestion token; systems pushing with it stop being accepted.", true, func(b bridge, ctx *gofr.Context, a revokeTokenArgs) (any, error) {
 		return nil, b.services.RevokeIngestionToken(ctx, a.Identifier, a.ID)
 	}),
 }
@@ -441,12 +441,12 @@ func (a entityArgs) resourceLink() *mcp.ResourceLink {
 	return link(entityURI(a.Blueprint, a.Identifier), a.Blueprint+"/"+a.Identifier, "application/json")
 }
 
-const authoringHelp = `Documents are YAML with kind (Blueprint, Integration, Scorecard, Dashboard, Action or Workflow), metadata and spec. Every field, its allowed values and what it means are in each kind's JSON Schema: read portal://schemas/<kind> or get_document_schema before writing one. Some definitions carry examples to start from, such as a mapping of each resource a connector reads. A document's metadata.identifier is immutable and is its URL identifier. Blueprints come first: integrations fill them with entities, scorecards grade those entities, dashboards summarize them and actions run steps on one entity at a time. Look at existing documents of the same kind for conventions.
+const authoringHelp = `Documents are YAML with kind (Blueprint, Connection, Scorecard, Dashboard, Action or Workflow), metadata and spec. Every field, its allowed values and what it means are in each kind's JSON Schema: read portal://schemas/<kind> or get_document_schema before writing one. Some definitions carry examples to start from, such as a blueprint source of each resource a connector reads. A document's metadata.identifier is immutable and is its URL identifier. Connections come first, then blueprints, whose sources fill them with entities from connections; scorecards grade those entities, dashboards summarize them and actions run steps on one entity at a time. Look at existing documents of the same kind for conventions.
 
 Workflow: search or list/read existing documents; validate proposed YAML; save_draft or apply_documents(dryRun=true) then apply_documents(dryRun=false); preview_impact; publish_document or publish_documents in one atomic batch; inspect catalog/entities and sync runs. Validation returns issues with severity/path/line. An error blocks saving/publishing; warnings may refer to dependencies not published yet. Export includes only published configuration unless reading a draft explicitly through get_document.
 
-Integrations map a connector's items, each one object of one of its resources or its deletion, into entities with JQ expressions; list_connectors says what each connector can do and reads. An http resource can be fetched from a url, pushed to the ingest API, or both, through the same mappings. A sync is complete, deleting what neither it nor the complete run before it saw, or incremental, fetching what changed since {{ $since }} and deleting only what's marked deleted; sync.complete sets how often a sync is complete, for connectors that can fetch only what changed. Secrets use {env: GP_SECRET_*}; never put secret values in configuration. Pushes need an ingestion token, which create_ingestion_token shows once, or a signature the integration checks; only a push with a token can be complete (?mode=complete).
+A connection's connector gives items, each one object of one of its resources or its deletion; each blueprint's sources map a connection's resource into its entities with JQ expressions; list_connectors says what each connector can do and which resources it reads. An http resource can be fetched from a url, pushed to the ingest API, or both, through the same sources. A sync is complete, deleting what neither it nor the complete run before it saw, or incremental, fetching what changed since {{ $since }} and deleting only what's marked deleted; sync.complete sets how often a sync is complete, for connectors that can fetch only what changed. Secrets use {env: GP_SECRET_*}; never put secret values in configuration. Pushes need an ingestion token, which create_ingestion_token shows once, or a signature the connection checks; only a push with a token can be complete (?mode=complete).
 
-An action's steps call URLs, write entities as an integration that doesn't pull, check the catalog, sync an integration that pulls after changing its source, and set what the run shows, reading $input, $entity, $me, $run and $step references. Say who can run it with run, and put an approval step before anything that removes or disrupts things. A Workflow takes the same steps but no blueprint, and its action steps run an action on many entities, each checked against whoever asked. Both show under their group in the Self-Service catalog.
+An action's steps call URLs, write entities as a connection that doesn't pull, check the catalog, sync a connection that pulls after changing its source, and set what the run shows, reading $input, $entity, $me, $run and $step references. Say who can run it with run, and put an approval step before anything that removes or disrupts things. A Workflow takes the same steps but no blueprint, and its action steps run an action on many entities, each checked against whoever asked. Both show under their group in the Self-Service catalog.
 
 Tools follow the caller's role and the access they granted this client: members browse and run actions, builders also author. Permissions are checked again on every call.`

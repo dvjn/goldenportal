@@ -11,9 +11,9 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
-	"github.com/dvjn/goldenportal/internal/integration"
 )
 
 // Kind serves actions as configuration documents.
@@ -48,7 +48,7 @@ func toFilter(raw any) (*entity.Filter, error) {
 	return entity.ParseFilter(string(encoded))
 }
 
-// Check checks the action against the blueprints and integrations it
+// Check checks the action against the blueprints and connections it
 // names. One not published yet is a warning: the action can't run until
 // it is.
 func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, error) {
@@ -91,22 +91,22 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 		}
 	}
 
-	integrations := configdoc.NewStore(db, integration.Name)
+	connections := configdoc.NewStore(db, connection.Name)
 	for i, step := range spec.Steps {
 		path := fmt.Sprintf("spec.steps[%d]", i)
 		switch {
 		case step.Entity != nil:
 			e := step.Entity
-			record, err := integrations.Get(ctx, e.Integration)
+			record, err := connections.Get(ctx, e.Connection)
 			switch {
 			case errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published()):
-				add(configdoc.SeverityWarning, path+".entity.integration", step.line, "no integration %q is published yet, so this step fails until it is", e.Integration)
+				add(configdoc.SeverityWarning, path+".entity.connection", step.line, "no connection %q is published yet, so this step fails until it is", e.Connection)
 			case err != nil:
 				return nil, err
 			default:
-				target, _ := integration.Parse(record.PublishedSource)
-				if problem := integration.Writable(target); problem != "" {
-					add(configdoc.SeverityError, path+".entity.integration", step.line, "%s", problem)
+				target, _ := connection.Parse(record.PublishedSource)
+				if problem := connection.Writable(target); problem != "" {
+					add(configdoc.SeverityError, path+".entity.connection", step.line, "%s", problem)
 				}
 			}
 			target, ok := published[e.Blueprint]
@@ -124,17 +124,18 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 				}
 			}
 		case step.Sync != nil:
-			record, err := integrations.Get(ctx, step.Sync.Integration)
+			record, err := connections.Get(ctx, step.Sync.Connection)
 			switch {
 			case errors.Is(err, configdoc.ErrNotFound) || (err == nil && !record.Published()):
-				add(configdoc.SeverityWarning, path+".sync.integration", step.line, "no integration %q is published yet, so this step fails until it is", step.Sync.Integration)
+				add(configdoc.SeverityWarning, path+".sync.connection", step.line, "no connection %q is published yet, so this step fails until it is", step.Sync.Connection)
 			case err != nil:
 				return nil, err
 			default:
-				target, _ := integration.Parse(record.PublishedSource)
+				target, _ := connection.Parse(record.PublishedSource)
+				target.AddSources(published)
 				if !target.Pulls {
-					add(configdoc.SeverityError, path+".sync.integration", step.line,
-						"the %s integration doesn't pull, so there's nothing to sync; what's pushed to it shows as it arrives", target.Identifier)
+					add(configdoc.SeverityError, path+".sync.connection", step.line,
+						"the %s connection doesn't pull, so there's nothing to sync; what's pushed to it shows as it arrives", target.Identifier)
 					continue
 				}
 				for _, name := range step.Sync.Resources {

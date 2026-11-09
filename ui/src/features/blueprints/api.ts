@@ -73,6 +73,21 @@ export type EntityHeader = {
 // PropertySection groups properties under a title on the entity page.
 export type PropertySection = { title: string; properties: string[] };
 
+// Source turns the items of one resource of a connection into the
+// blueprint's entities. Every expression is jq over an item.
+export type Source = {
+  connection: string;
+  // resource names the items the source reads, such as users.
+  resource: string;
+  filter?: string;
+  // mode upsert only writes what changed, deleting only what items say was
+  // deleted; reconcile also deletes what a complete sync no longer reads.
+  mode: "reconcile" | "upsert";
+  entity: { identifier: string; title?: string; properties: SourceProperty[] };
+};
+
+export type SourceProperty = { identifier: string; expression: string };
+
 export type BlueprintSpec = {
   identifier: string;
   title: string;
@@ -89,6 +104,7 @@ export type BlueprintSpec = {
   // than the longest keep of the rules they match. Without it, rows are kept
   // for ever.
   retention?: Retention;
+  sources?: Source[];
 };
 
 export type Retention = { by: string; keep: string; rules?: { keep: string }[] };
@@ -96,14 +112,26 @@ export type Retention = { by: string; keep: string; rules?: { keep: string }[] }
 export type Blueprint = ConfigDoc<BlueprintSpec>;
 export type BlueprintSummary = DocSummary;
 
-// Writer is an integration that writes a blueprint's entities.
+// Writer is a connection that writes a blueprint's entities.
 export type Writer = {
-  integration: string;
+  connection: string;
   title: string;
   entities: number;
-  // mapped is false when it wrote entities before its mappings dropped the blueprint.
+  // mapped is false when it wrote entities before the blueprint's sources stopped reading it.
   mapped: boolean;
   lastRunAt: string | null;
+};
+
+// UsedSource is one of a blueprint's published sources, in the order it
+// declares them, with how its connection last ran. That run read all the
+// connection's resources, not only this one.
+export type UsedSource = {
+  connection: string;
+  title: string;
+  resource: string;
+  mode: Source["mode"];
+  lastRunAt: string | null;
+  lastRunOutcome?: "succeeded" | "warnings" | "failed";
 };
 
 // Reference is a relation on another blueprint that points at this one.
@@ -117,9 +145,14 @@ export type Reference = {
 
 export const blueprints = configDocs<BlueprintSpec>("blueprints");
 
-// Usage is how a blueprint is used: its entities, who writes them, and
-// which blueprints relate to it.
-export type Usage = { entities: number; writers: Writer[]; references: Reference[] };
+// Usage is how a blueprint is used: its entities, its sources, who writes
+// them, and which blueprints relate to it.
+export type Usage = {
+  entities: number;
+  sources: UsedSource[];
+  writers: Writer[];
+  references: Reference[];
+};
 
 export const usageKey = (identifier: string) =>
   [...blueprints.keys.detail(identifier), "usage"] as const;

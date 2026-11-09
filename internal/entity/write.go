@@ -27,7 +27,7 @@ const (
 // only a run that read every scope can judge.
 const Shared = "*"
 
-// Write is an entity an integration writes.
+// Write is an entity a connection writes.
 type Write struct {
 	BlueprintID string
 	Entity      blueprint.Entity
@@ -43,7 +43,7 @@ type Write struct {
 	OccurredAt time.Time
 }
 
-// Written is what became of a Write. Owner names the integration the
+// Written is what became of a Write. Owner names the connection the
 // entity belongs to when it's another's, and nothing was written.
 type Written struct {
 	Outcome string
@@ -53,12 +53,12 @@ type Written struct {
 // Key names an entity within the store.
 type Key struct{ BlueprintID, Identifier string }
 
-// WriteAll writes entities as an integration, writing only those that are
+// WriteAll writes entities as a connection, writing only those that are
 // new or changed. Of writes to one entity, the last counts and the rest are
 // unchanged. Rows are written in key order, so concurrent writers take
 // their locks in the same order. Every entity it was given is seen: one
 // marked missed is unmarked, changed or not.
-func (s Store) WriteAll(ctx context.Context, integrationID string, writes []Write) ([]Written, error) {
+func (s Store) WriteAll(ctx context.Context, connectionID string, writes []Write) ([]Written, error) {
 	out := make([]Written, len(writes))
 	last := map[Key]int{}
 	mixed := map[Key]bool{}
@@ -89,7 +89,7 @@ func (s Store) WriteAll(ctx context.Context, integrationID string, writes []Writ
 	var sighted []Key
 	classify := func(r writeRow, st stored) bool {
 		switch {
-		case st.ownerID != integrationID:
+		case st.ownerID != connectionID:
 			out[r.index] = Written{Owner: st.owner}
 		case st.same && promote(st.scope, r.scope) == st.scope:
 			out[r.index] = Written{Outcome: Unchanged}
@@ -98,7 +98,7 @@ func (s Store) WriteAll(ctx context.Context, integrationID string, writes []Writ
 		default:
 			return false
 		}
-		if st.missed && st.ownerID == integrationID {
+		if st.missed && st.ownerID == connectionID {
 			sighted = append(sighted, r.key)
 		}
 		return true
@@ -114,7 +114,7 @@ func (s Store) WriteAll(ctx context.Context, integrationID string, writes []Writ
 			changed = append(changed, r)
 		}
 	}
-	created, err := s.upsert(ctx, integrationID, changed)
+	created, err := s.upsert(ctx, connectionID, changed)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (s Store) WriteAll(ctx context.Context, integrationID string, writes []Writ
 		}
 	}
 
-	return out, s.Sighted(ctx, integrationID, sighted)
+	return out, s.Sighted(ctx, connectionID, sighted)
 }
 
 // writeRow is a write as the statements take it.
@@ -225,7 +225,7 @@ func (s Store) compare(ctx context.Context, rows []writeRow) (map[int]stored, er
 		return found, nil
 	}
 	result, err := s.db.QueryContext(ctx, `
-		SELECT i.n - 1, e.integration_id, o.identifier,
+		SELECT i.n - 1, e.connection_id, o.identifier,
 			e.title = i.title AND e.properties = i.properties::jsonb AND e.relations = i.relations::jsonb
 				AND e.computed = i.computed::jsonb
 				AND e.occurred_at IS NOT DISTINCT FROM nullif(i.occurred_at, '')::timestamptz,
@@ -233,7 +233,7 @@ func (s Store) compare(ctx context.Context, rows []writeRow) (map[int]stored, er
 		FROM `+unnestRows+` WITH ORDINALITY AS i (blueprint_id, identifier, title, properties, relations, computed, scope, source_at,
 			occurred_at, n)
 		JOIN entities e ON e.blueprint_id = i.blueprint_id AND e.identifier = i.identifier
-		JOIN config_documents o ON o.id = e.integration_id`, rowArrays(rows)...)
+		JOIN config_documents o ON o.id = e.connection_id`, rowArrays(rows)...)
 	if err != nil {
 		return nil, err
 	}
@@ -254,16 +254,16 @@ func (s Store) compare(ctx context.Context, rows []writeRow) (map[int]stored, er
 	return found, result.Err()
 }
 
-// upsert writes rows as the integration, unless one is another's, holds the
+// upsert writes rows as the connection, unless one is another's, holds the
 // same, or holds a newer read, and says which it wrote, and whether each
 // was new.
-func (s Store) upsert(ctx context.Context, integrationID string, rows []writeRow) (map[Key]bool, error) {
+func (s Store) upsert(ctx context.Context, connectionID string, rows []writeRow) (map[Key]bool, error) {
 	written := map[Key]bool{}
 	if len(rows) == 0 {
 		return written, nil
 	}
 	result, err := s.db.QueryContext(ctx, `
-		INSERT INTO entities AS e (blueprint_id, identifier, title, properties, relations, computed, integration_id, scope, source_at,
+		INSERT INTO entities AS e (blueprint_id, identifier, title, properties, relations, computed, connection_id, scope, source_at,
 			occurred_at)
 		SELECT i.blueprint_id, i.identifier, i.title, i.properties::jsonb, i.relations::jsonb, i.computed::jsonb, $10,
 			nullif(i.scope, ''), nullif(i.source_at, '')::timestamptz, nullif(i.occurred_at, '')::timestamptz
@@ -272,12 +272,12 @@ func (s Store) upsert(ctx context.Context, integrationID string, rows []writeRow
 			SET title = excluded.title, properties = excluded.properties, relations = excluded.relations,
 				computed = excluded.computed, scope = `+promoteSQL+`, source_at = excluded.source_at,
 				occurred_at = excluded.occurred_at, updated_at = now(), missed_at = NULL
-			WHERE e.integration_id = excluded.integration_id
+			WHERE e.connection_id = excluded.connection_id
 				AND ((e.title, e.properties, e.relations, e.computed, e.occurred_at)
 						IS DISTINCT FROM (excluded.title, excluded.properties, excluded.relations, excluded.computed, excluded.occurred_at)
 					OR e.scope IS DISTINCT FROM `+promoteSQL+`)
 				AND (e.source_at IS NULL OR excluded.source_at IS NULL OR excluded.source_at >= e.source_at)
-		RETURNING e.blueprint_id, e.identifier, xmax = 0`, append(rowArrays(rows), integrationID)...)
+		RETURNING e.blueprint_id, e.identifier, xmax = 0`, append(rowArrays(rows), connectionID)...)
 	if err != nil {
 		return nil, err
 	}
@@ -296,23 +296,23 @@ func (s Store) upsert(ctx context.Context, integrationID string, rows []writeRow
 	return written, result.Err()
 }
 
-// Upsert writes one entity as an integration, as WriteAll does.
-func (s Store) Upsert(ctx context.Context, integrationID string, w Write) (string, error) {
-	written, err := s.WriteAll(ctx, integrationID, []Write{w})
+// Upsert writes one entity as a connection, as WriteAll does.
+func (s Store) Upsert(ctx context.Context, connectionID string, w Write) (string, error) {
+	written, err := s.WriteAll(ctx, connectionID, []Write{w})
 	if err != nil {
 		return "", err
 	}
 	if written[0].Owner != "" {
-		return "", OwnedError{Integration: written[0].Owner}
+		return "", OwnedError{Connection: written[0].Owner}
 	}
 
 	return written[0].Outcome, nil
 }
 
-// Sighted unmarks entities an integration wrote that were marked missed,
+// Sighted unmarks entities a connection wrote that were marked missed,
 // for any sighting of them, even an item that couldn't be written: a
 // complete run keeps what was seen, even when what was seen was wrong.
-func (s Store) Sighted(ctx context.Context, integrationID string, keys []Key) error {
+func (s Store) Sighted(ctx context.Context, connectionID string, keys []Key) error {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -323,8 +323,8 @@ func (s Store) Sighted(ctx context.Context, integrationID string, keys []Key) er
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE entities e SET missed_at = NULL
 		FROM unnest($2::uuid[], $3::text[]) AS i (blueprint_id, identifier)
-		WHERE e.blueprint_id = i.blueprint_id AND e.identifier = i.identifier AND e.integration_id = $1
-			AND e.missed_at IS NOT NULL`, integrationID, pq.Array(blueprints), pq.Array(identifiers))
+		WHERE e.blueprint_id = i.blueprint_id AND e.identifier = i.identifier AND e.connection_id = $1
+			AND e.missed_at IS NOT NULL`, connectionID, pq.Array(blueprints), pq.Array(identifiers))
 
 	return err
 }
@@ -344,12 +344,12 @@ type Unit struct {
 	Listed []string
 }
 
-const unitRows = `integration_id = $1 AND blueprint_id = $2 AND NOT (identifier = ANY($3))
+const unitRows = `connection_id = $1 AND blueprint_id = $2 AND NOT (identifier = ANY($3))
 	AND (scope = ANY($4) OR ($5 AND (scope IS NULL OR scope = '` + Shared + `'))
 		OR ($6 AND scope <> '` + Shared + `' AND NOT (scope = ANY($7))))`
 
 // Reconcile deletes, after a complete run that started at before, the
-// entities in units an integration wrote that neither that run nor the one
+// entities in units a connection wrote that neither that run nor the one
 // before it that covered them saw. One missed for the first time is
 // marked missed instead. A run that misses an entity may have missed it
 // only because a list shifted under it, or a resource was briefly hidden;
@@ -360,12 +360,12 @@ const unitRows = `integration_id = $1 AND blueprint_id = $2 AND NOT (identifier 
 // two that don't, such as a complete push sent again after the first
 // finished, count as two. Any sighting since unmarks it, and one made
 // since the run started, which the run can't have seen, isn't marked.
-// Only runs since the integration was last published to read what it
+// Only runs since the connection was last published to read what it
 // reconciles differently, at since, count, as others read with other
-// mappings: marks made before since count for nothing, and a run that
-// started before since, so read with the old mappings however late it
+// sources: marks made before since count for nothing, and a run that
+// started before since, so read with the old sources however late it
 // finishes, neither deletes nor marks.
-func (s Store) Reconcile(ctx context.Context, integrationID string, units []Unit, before, since time.Time) (int, error) {
+func (s Store) Reconcile(ctx context.Context, connectionID string, units []Unit, before, since time.Time) (int, error) {
 	if before.Before(since) {
 		return 0, nil
 	}
@@ -374,7 +374,7 @@ func (s Store) Reconcile(ctx context.Context, integrationID string, units []Unit
 	list := func(l []string) any { return pq.Array(append([]string{}, l...)) }
 	deleted := 0
 	for _, u := range units {
-		args := []any{integrationID, u.BlueprintID, list(u.Seen), list(u.Scopes), u.Unscoped, u.Gone, list(u.Listed), before}
+		args := []any{connectionID, u.BlueprintID, list(u.Seen), list(u.Scopes), u.Unscoped, u.Gone, list(u.Listed), before}
 		result, err := s.db.ExecContext(ctx, `DELETE FROM entities WHERE `+unitRows+`
 			AND missed_at < $8 AND missed_at >= $9`, append(args, since)...)
 		if err != nil {

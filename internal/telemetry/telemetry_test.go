@@ -37,7 +37,7 @@ func attributesOf(span tracetest.SpanStub) map[attribute.Key]attribute.Value {
 
 func TestStartLogsItsFieldsUnder(t *testing.T) {
 	recordSpans(t)
-	ctx, outer := Start(t.Context(), "sync", Integration.String("gitlab"), Resource.String("projects"))
+	ctx, outer := Start(t.Context(), "sync", Connection.String("gitlab"), Resource.String("projects"))
 	ctx, inner := Start(ctx, "read pipelines", Resource.String("pipelines"))
 	inner.End()
 	outer.End()
@@ -46,7 +46,7 @@ func TestStartLogsItsFieldsUnder(t *testing.T) {
 	for _, f := range fieldsOf(ctx) {
 		got[f.Key] = f.Value.AsString()
 	}
-	if len(got) != 2 || got[Integration] != "gitlab" || got[Resource] != "pipelines" {
-		t.Errorf("fields = %v, want the integration and the inner resource", got)
+	if len(got) != 2 || got[Connection] != "gitlab" || got[Resource] != "pipelines" {
+		t.Errorf("fields = %v, want the connection and the inner resource", got)
 	}
 }

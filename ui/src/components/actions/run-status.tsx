@@ -12,7 +12,7 @@ import { type StatusLook as Look, RunStatusMark } from "@/components/run-status-
 import { Badge } from "@/components/ui/badge";
 import type { RunStatus as Status, StepStatus as StepState, StepType } from "@/features/actions";
 
-// Runs and their steps share marks, as integration runs do: a check for
+// Runs and their steps share marks, as connection runs do: a check for
 // what worked, a cross for what failed. Not started yet is dashed, and a
 // question mark is a step whose outcome someone has to find out. An
 // hourglass waits on others, approvers or the runs a step started, and the

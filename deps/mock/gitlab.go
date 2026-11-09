@@ -41,10 +41,10 @@ type gitlabSubgroupConfig struct {
 	Projects []string `yaml:"projects"`
 }
 
-// gitlab is a GitLab group the gitlab integration reads, with a subgroup
+// gitlab is a GitLab group the gitlab connection reads, with a subgroup
 // for each team. Things keep happening in its projects: pushes, merge
 // requests, pipelines and deployments, each sent to the project's
-// webhooks, which the integration sets up through the API.
+// webhooks, which the connection sets up through the API.
 type gitlab struct {
 	cfg      gitlabConfig
 	mu       sync.Mutex
@@ -55,7 +55,7 @@ type gitlab struct {
 	used    int
 	resetAt time.Time
 	// hooks are each project's webhooks. The mock holds no state, so they're
-	// gone when it restarts, until the integration's next sync.
+	// gone when it restarts, until the connection's next sync.
 	hooks map[int][]*gitlabHook
 }
 
@@ -140,7 +140,7 @@ func gitlabSHA() string {
 func (g *gitlab) web(path string) string { return g.cfg.URL + "/" + strings.TrimPrefix(path, "/") }
 
 // The objects below are shaped as GitLab's REST API gives them, with the
-// fields mappings are likely to read.
+// fields sources are likely to read.
 
 func (g *gitlab) user(username string) map[string]any {
 	return map[string]any{
@@ -539,7 +539,7 @@ func (g *gitlab) send(p *gitlabProject, event string, payload map[string]any) {
 		return
 	}
 	if len(hooks) == 0 {
-		log.Printf("gitlab %s on %s: no webhook takes it yet; the gitlab integration's next sync sets one up", event, p.full())
+		log.Printf("gitlab %s on %s: no webhook takes it yet; the gitlab connection's next sync sets one up", event, p.full())
 	}
 	for _, h := range hooks {
 		target, _ := h.obj["url"].(string)
@@ -596,7 +596,7 @@ func (g *gitlab) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+strings.TrimSuffix(gitlabPrefix, "/v4")+"/graphql", g.api(g.graphql))
 }
 
-// graphql answers what the gitlab integration asks GitLab's GraphQL API of
+// graphql answers what the gitlab connection asks GitLab's GraphQL API of
 // pipelines: their times, a page at a time, by updatedAfter, and, when
 // asked, their manual jobs, also by pipeline ID. It has no other query, as
 // an instance whose tier lacks them.
@@ -810,7 +810,7 @@ func (g *gitlab) groupProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 // runner is a runner as GitLab gives one on its own, with its IP address
-// and when its token expires, which the integration leaves out, and the
+// and when its token expires, which the connection leaves out, and the
 // group it's registered in, if any.
 func (g *gitlab) runner(w http.ResponseWriter, r *http.Request) {
 	for _, runner := range gitlabRunners {
@@ -988,7 +988,7 @@ func (g *gitlab) lint(w http.ResponseWriter, _ *http.Request, _ *gitlabProject) 
 	})
 }
 
-// tree answers the files a mapping looks for: a README and CODEOWNERS
+// tree answers the files a source looks for: a README and CODEOWNERS
 // everywhere, and renovate.json in .gitlab.
 func (g *gitlab) tree(w http.ResponseWriter, r *http.Request, _ *gitlabProject) {
 	if r.URL.Query().Get("path") == ".gitlab" {

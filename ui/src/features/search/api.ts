@@ -7,7 +7,7 @@ export type SearchKind =
   | "entity"
   | "dashboard"
   | "scorecard"
-  | "integration"
+  | "connection"
   | "action"
   | "workflow";
 

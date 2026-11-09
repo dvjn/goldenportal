@@ -28,5 +28,7 @@ func All() map[int64]migration.Migrate {
 		20261109120000: writeOnlyChanges(),
 		20261109130000: reconcileByScope(),
 		20261109150000: retentionAndCursors(),
+		20261110120000: renameToConnections(),
+		20261110140000: sourcesOnBlueprints(),
 	}
 }

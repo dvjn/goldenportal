@@ -1,5 +1,5 @@
 // Package configdoc stores the portal's YAML configuration documents, such as
-// blueprints and integrations. Each document has a draft that builders edit
+// blueprints and connections. Each document has a draft that builders edit
 // and numbered versions they publish, with an impact preview in between.
 package configdoc
 

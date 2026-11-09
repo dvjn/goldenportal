@@ -163,7 +163,7 @@ function dateFilterable(property: Property) {
 // builtInColumns are the fields every entity has that can be columns,
 // besides the title column, which shows the title and identifier.
 const builtInColumns = [
-  { id: "integration", title: "Integration" },
+  { id: "connection", title: "Connection" },
   { id: "createdAt", title: "Created" },
   { id: "updatedAt", title: "Updated" },
 ];
@@ -256,7 +256,7 @@ function BlueprintCatalogPage() {
       const builtIn = builtInColumns.find((c) => c.id === id);
       if (builtIn) {
         return [
-          column.accessor((entity): unknown => entity[builtIn.id as "integration"], {
+          column.accessor((entity): unknown => entity[builtIn.id as "connection"], {
             id,
             header: ({ column }) => <DataTableColumnHeader column={column} title={builtIn.title} />,
             cell: ({ getValue }) => <BuiltInCell id={id} value={String(getValue() ?? "")} />,
@@ -486,7 +486,7 @@ function BlueprintCatalogPage() {
         <EmptyState
           icon={<LayoutGrid />}
           title={`No ${spec.title.toLowerCase()} entities yet`}
-          description="They show up here once an integration writes them."
+          description="They show up here once a connection writes them."
         />
       }
     />
@@ -604,10 +604,10 @@ function usePropertyOptions(blueprint: string, property: Property): DataTableOpt
 }
 
 // BuiltInCell shows a field every entity has: dates as how long ago, and
-// the integration that wrote it.
+// the connection that wrote it.
 function BuiltInCell({ id, value }: Readonly<{ id: string; value: string }>) {
   if (!value) return <EmptyValue />;
-  if (id === "integration") return <span className="text-muted-foreground">{value}</span>;
+  if (id === "connection") return <span className="text-muted-foreground">{value}</span>;
   return (
     <span className="whitespace-nowrap text-muted-foreground" title={formatAbsolute(value)}>
       {formatRelative(value)}

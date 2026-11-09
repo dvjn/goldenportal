@@ -317,38 +317,38 @@
     },
     "entityStep": {
       "type": "object",
-      "description": "Writes or deletes an entity as an integration that doesn't pull. It gives identifier, title, blueprint and url.",
+      "description": "Writes or deletes an entity as a connection that doesn't pull. It gives identifier, title, blueprint and url.",
       "properties": {
         "operation": {
           "enum": ["upsert", "delete"],
           "description": "upsert creates the entity or updates the properties given, keeping the rest; delete removes it."
         },
-        "integration": { "$ref": "#/$defs/identifier", "description": "The integration the entity is written as, one that doesn't pull. Only it can change the entity after." },
+        "connection": { "$ref": "#/$defs/identifier", "description": "The connection the entity is written as, one that doesn't pull. Only it can change the entity after." },
         "blueprint": { "$ref": "#/$defs/identifier" },
         "identifier": { "type": "string", "description": "The entity's identifier, such as $entity or $input.name." },
         "title": { "type": "string" },
         "properties": { "type": "object", "description": "Property values, keyed by property." }
       },
-      "required": ["operation", "integration", "blueprint", "identifier"],
+      "required": ["operation", "connection", "blueprint", "identifier"],
       "additionalProperties": false
     },
     "syncStep": {
       "type": "object",
-      "description": "Syncs an integration that pulls, so what an earlier step changed at the source shows before the run ends. It waits for a sync already running, then runs its own, and fails when a resource can't be fetched. It gives mode, received, created, updated, unchanged, deleted and failed.",
+      "description": "Syncs a connection that pulls, so what an earlier step changed at the source shows before the run ends. It waits for a sync already running, then runs its own, and fails when a resource can't be fetched. It gives mode, received, created, updated, unchanged, deleted and failed.",
       "properties": {
-        "integration": { "$ref": "#/$defs/identifier", "description": "The integration to sync. It must pull." },
+        "connection": { "$ref": "#/$defs/identifier", "description": "The connection to sync. It must pull." },
         "resources": {
           "type": "array",
           "items": { "type": "string" },
           "minItems": 1,
-          "description": "The resources to fetch, such as [services]. Every resource its mappings read when left out."
+          "description": "The resources to fetch, such as [services]. Every resource its blueprints' sources read when left out."
         },
         "mode": {
           "enum": ["incremental", "complete"],
           "description": "incremental fetches what changed; complete fetches everything and deletes what neither it nor the complete run before it saw of those resources."
         }
       },
-      "required": ["integration", "mode"],
+      "required": ["connection", "mode"],
       "additionalProperties": false
     },
     "checkStep": {

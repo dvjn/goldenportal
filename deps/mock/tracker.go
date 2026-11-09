@@ -53,7 +53,7 @@ const (
 	tombstonesKept = 24 * time.Hour
 )
 
-// tracker is a deploy tracker for the http integration to pull. It serves the
+// tracker is a deploy tracker for the http connection to pull. It serves the
 // latest deployments newest first, ten a page. Only the latest 20 are kept,
 // so older ones drop out of syncs.
 //

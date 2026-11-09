@@ -18,7 +18,7 @@ import (
 //	{"and": [{"property": "tier", "op": "in", "values": ["critical"]},
 //	         {"not": {"property": "owner.title", "op": "exists"}}]}
 //
-// Built-in fields are identifier, title, blueprint, integration, createdAt
+// Built-in fields are identifier, title, blueprint, connection, createdAt
 // and updatedAt. A $ starts a variable, never a field.
 type Filter struct {
 	And []Filter `json:"and,omitempty"`

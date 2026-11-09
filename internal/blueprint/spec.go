@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"go.yaml.in/yaml/v3"
 
@@ -31,6 +33,8 @@ type Spec struct {
 	Entity  *Page `json:"entity,omitempty"`
 	// Retention is how long rows are kept, or nil for ever.
 	Retention *Retention `json:"retention,omitempty"`
+	// Sources are where its entities come from.
+	Sources []Source `json:"sources"`
 }
 
 // Page is the tabs a blueprint adds to one of its pages, and the queries
@@ -52,7 +56,7 @@ var (
 	EntityTabs  = []string{"relations", "yaml"}
 )
 
-// Property is a value entities have. Integrations write stored properties,
+// Property is a value entities have. Connections write stored properties,
 // including relations, whose values are identifiers of entities of another
 // blueprint. The portal derives the others, from a lookup through relations or a jq
 // computation.
@@ -84,7 +88,7 @@ type Property struct {
 	line    int
 }
 
-// Derived reports whether the portal works the value out, so integrations can't write it.
+// Derived reports whether the portal works the value out, so connections can't write it.
 func (p Property) Derived() bool { return p.Lookup != "" || p.Compute != "" || p.IsScorecard() }
 
 func (p Property) IsRelation() bool { return p.Relation != "" }
@@ -125,7 +129,7 @@ func (s Spec) Stats() map[string]int {
 		}
 	}
 
-	return map[string]int{"properties": len(s.Properties) - relations, "relations": relations}
+	return map[string]int{"properties": len(s.Properties) - relations, "relations": relations, "sources": len(s.Sources)}
 }
 
 // MaxLookupHops caps how many relations a lookup may follow.
@@ -140,13 +144,13 @@ var (
 
 	// BuiltIns are the fields every entity has. Paths and jq read them
 	// beside its properties, so no property can be named after one.
-	BuiltIns = []string{"identifier", "title", "blueprint", "integration", "createdAt", "updatedAt"}
+	BuiltIns = []string{"identifier", "title", "blueprint", "connection", "createdAt", "updatedAt"}
 )
 
 // The keys each mapping of a blueprint takes, exported so the documents'
 // JSON Schema can be checked against them.
 var (
-	SpecFields     = []string{"properties", "catalog", "entity", "retention"}
+	SpecFields     = []string{"properties", "sources", "catalog", "entity", "retention"}
 	PropertyFields = []string{
 		"title", "description", "type", "format", "enum", "required", "pattern", "minLength", "maxLength",
 		"minimum", "maximum", "items", "relation", "many", "lookup", "compute", "scorecard", "display",
@@ -172,7 +176,7 @@ func Parse(source string) (Spec, []Issue) {
 	doc := configdoc.ReadDocument(&p.Reader, source, DocumentKind)
 	spec := Spec{
 		Identifier: doc.Identifier, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Properties: []Property{},
+		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Properties: []Property{}, Sources: []Source{},
 	}
 	if doc.Spec == nil {
 		return spec, p.Issues
@@ -188,6 +192,7 @@ func Parse(source string) (Spec, []Issue) {
 		}
 		spec.Entity = p.entityPage(fields["entity"], "spec.entity", spec)
 		spec.Retention = p.retention(fields["retention"], spec)
+		spec.Sources = p.sources(fields["sources"], spec)
 	}
 	if spec.Entity != nil {
 		for _, tab := range spec.Entity.Tabs {
@@ -373,7 +378,7 @@ func (p *parser) scorecard(prop Property, path string, key *yaml.Node, fields ma
 }
 
 // derived reads a looked-up or computed property. Their values aren't
-// written by integrations, so they take no constraints.
+// written by connections, so they take no constraints.
 func (p *parser) derived(prop Property, path string, key *yaml.Node, fields map[string]*yaml.Node) Property {
 	if fields["lookup"] != nil && fields["compute"] != nil {
 		p.Errorf(fields["compute"], path, "a property looks up or computes its value, not both")
@@ -381,7 +386,7 @@ func (p *parser) derived(prop Property, path string, key *yaml.Node, fields map[
 	}
 	for _, name := range []string{"enum", "required", "pattern", "minLength", "maxLength", "minimum", "maximum"} {
 		if n := fields[name]; n != nil {
-			p.Errorf(n, path+"."+name, "%s only applies to stored properties, which integrations write", name)
+			p.Errorf(n, path+"."+name, "%s only applies to stored properties, which connections write", name)
 		}
 	}
 
@@ -440,7 +445,7 @@ func (p *parser) page(node *yaml.Node, path string, scope widget.Scope, reserved
 
 // columnBuiltIns are the built-ins a catalog column can show; the title
 // column, always first, already shows the title and identifier.
-var columnBuiltIns = []string{"integration", "createdAt", "updatedAt"}
+var columnBuiltIns = []string{"connection", "createdAt", "updatedAt"}
 
 // columns reads the catalog's default columns, once the properties they
 // name are known.
@@ -468,7 +473,7 @@ func (p *parser) columns(catalog *yaml.Node, spec Spec) []string {
 			p.Errorf(item, path, "the title column already shows the %s", name)
 		default:
 			if _, ok := spec.Property(name); !ok {
-				p.Errorf(item, path, "%s has no property %q; columns are properties, integration, createdAt or updatedAt", spec.Identifier, name)
+				p.Errorf(item, path, "%s has no property %q; columns are properties, connection, createdAt or updatedAt", spec.Identifier, name)
 				return
 			}
 			columns = append(columns, name)
@@ -509,12 +514,31 @@ func (p *parser) entityPage(node *yaml.Node, path string, spec Spec) *Page {
 }
 
 // CompileExpression checks a jq expression over an entity compiles. jq
-// sees the entity flat, as paths do.
+// sees the entity flat, as paths do. Results are kept by expression, since
+// Published parses every blueprint per write batch and sources hold large jq.
 func CompileExpression(expression string) error {
+	if v, ok := compiled.Load(expression); ok {
+		err, _ := v.(error)
+		return err
+	}
 	_, err := jq.Compile(expression)
+	// Drafts and validation parse whatever builders send, so the cache starts
+	// over rather than growing without end.
+	if compiledCount.Add(1) > compiledMax {
+		compiled.Clear()
+		compiledCount.Store(1)
+	}
+	compiled.Store(expression, err)
 
 	return err
 }
+
+const compiledMax = 4096
+
+var (
+	compiled      sync.Map
+	compiledCount atomic.Int64
+)
 
 // checkNames checks every property name is valid.
 func (p *parser) checkNames(spec Spec) {

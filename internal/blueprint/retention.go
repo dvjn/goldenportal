@@ -303,7 +303,7 @@ func (p *parser) retention(node *yaml.Node, spec Spec) *Retention {
 }
 
 // byProblem says why rows can't be kept by a property, or nothing when
-// they can: it must be one integrations write, holding a date and time.
+// they can: it must be one connections write, holding a date and time.
 func (s Spec) byProblem(by string) string {
 	prop, ok := s.Property(by)
 	switch {

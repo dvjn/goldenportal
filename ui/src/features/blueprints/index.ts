@@ -11,7 +11,10 @@ export {
   propertySource,
   type Reference,
   type Retention,
+  type Source,
+  type SourceProperty,
   type Usage,
+  type UsedSource,
   type Writer,
 } from "./api";
 export { usageQueryOptions, useBlueprint, useBlueprints } from "./queries";

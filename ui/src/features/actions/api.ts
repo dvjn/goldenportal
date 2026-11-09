@@ -22,7 +22,7 @@ export type HttpStep = {
 
 export type EntityStep = {
   operation: "upsert" | "delete";
-  integration: string;
+  connection: string;
   blueprint: string;
   identifier: string;
   title?: string;
@@ -64,11 +64,11 @@ export type ActionStep = {
   maxFailures: number;
 };
 
-// SyncStep syncs an integration that pulls, so what an earlier step changed
+// SyncStep syncs a connection that pulls, so what an earlier step changed
 // at the source shows before the run ends.
 export type SyncStep = {
-  integration: string;
-  // resources narrows the sync; every resource its mappings read when absent.
+  connection: string;
+  // resources narrows the sync; every resource its blueprints' sources read when absent.
   resources?: string[];
   mode: "incremental" | "complete";
 };

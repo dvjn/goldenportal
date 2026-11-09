@@ -14,8 +14,8 @@ import (
 )
 
 type pushConfig struct {
-	API          string       `yaml:"api"`
-	Integrations []pushTarget `yaml:"integrations"`
+	API         string       `yaml:"api"`
+	Connections []pushTarget `yaml:"connections"`
 }
 
 // pushTarget is pushed the whole file as a complete push every so often, and
@@ -32,11 +32,11 @@ type pushTarget struct {
 	items []any
 }
 
-// pusher sends each file to its integration, as an external system would.
+// pusher sends each file to its connection, as an external system would.
 type pusher struct{ api string }
 
 func newPusher(cfg pushConfig, dir string) (*pusher, error) {
-	for i, target := range cfg.Integrations {
+	for i, target := range cfg.Connections {
 		if target.Token == "" {
 			return nil, fmt.Errorf("pushing to %s needs a token", target.Name)
 		}
@@ -49,9 +49,9 @@ func newPusher(cfg pushConfig, dir string) (*pusher, error) {
 			return nil, fmt.Errorf("%s must hold one list, such as {\"teams\": [...]}", target.File)
 		}
 		for key, items := range lists {
-			cfg.Integrations[i].key, cfg.Integrations[i].items = key, items
+			cfg.Connections[i].key, cfg.Connections[i].items = key, items
 		}
-		cfg.Integrations[i].body = body
+		cfg.Connections[i].body = body
 	}
 	return &pusher{api: cfg.API}, nil
 }

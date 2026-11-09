@@ -15,7 +15,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/jq"
 )
 
-// Entity is an entity's data. Integrations write relations among the
+// Entity is an entity's data. Connections write relations among the
 // properties; ValidateEntity moves them to Relations, which are stored apart
 // so lookups across entities stay cheap. Values are as decoded from JSON:
 // numbers are float64.

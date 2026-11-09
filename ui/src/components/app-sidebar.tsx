@@ -35,7 +35,7 @@ const activityItems = [
 
 const buildItems = [
   { to: "/blueprints", label: "Blueprints", icon: pageIcons.blueprints },
-  { to: "/integrations", label: "Integrations", icon: pageIcons.integrations },
+  { to: "/connections", label: "Connections", icon: pageIcons.connections },
   { to: "/dashboards", label: "Dashboards", icon: pageIcons.dashboards },
   { to: "/actions", label: "Actions", icon: pageIcons.actions },
   { to: "/workflows", label: "Workflows", icon: pageIcons.workflows },

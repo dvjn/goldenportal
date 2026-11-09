@@ -11,13 +11,13 @@ import (
 func TestSummarize(t *testing.T) {
 	for query, want := range map[string]string{
 		`SELECT id FROM entities WHERE blueprint_id = $1`:                                       "SELECT entities",
-		"\n\t\tINSERT INTO ingestion_runs (integration_id) VALUES ($1) RETURNING id":            "INSERT ingestion_runs",
+		"\n\t\tINSERT INTO ingestion_runs (connection_id) VALUES ($1) RETURNING id":             "INSERT ingestion_runs",
 		`UPDATE runs SET status = $2 WHERE id = $1`:                                             "UPDATE runs",
 		`DELETE FROM ingestion_runs WHERE id IN (SELECT id FROM ingestion_runs LIMIT $2)`:       "DELETE ingestion_runs",
 		`select (count(*))::float8 from entities e where e.properties @> $1::jsonb`:             "SELECT entities",
 		`SELECT g.value FROM (SELECT e.properties -> 'tier' AS value FROM entities e) g`:        "SELECT",
 		`WITH recent AS (SELECT id FROM runs) UPDATE "runs" SET seen = true FROM recent`:        "UPDATE runs",
-		`SELECT pg_try_advisory_xact_lock(hashtext('integration-sync:' || $1))`:                 "SELECT",
+		`SELECT pg_try_advisory_xact_lock(hashtext('connection-sync:' || $1))`:                  "SELECT",
 		`SELECT 'FROM secrets' AS label FROM config_documents d JOIN config_versions v ON true`: "SELECT config_documents",
 		`BEGIN`: "SQL",
 	} {

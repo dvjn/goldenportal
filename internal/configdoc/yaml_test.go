@@ -25,3 +25,18 @@ func TestReadDocument(t *testing.T) {
 		t.Fatalf("doc = %+v, issues = %+v", doc, r.Issues)
 	}
 }
+
+func TestRenamedKind(t *testing.T) {
+	want := "kind Integration is now Connection; write kind: Connection"
+	r := &Reader{}
+	ReadDocument(r, "kind: Integration\nmetadata: {identifier: a, title: A}\nspec: {}\n", "Connection")
+	if len(r.Issues) != 1 || r.Issues[0].Message != want {
+		t.Errorf("issues = %+v, want %q", r.Issues, want)
+	}
+	if got := unknownKind("Integration"); got != want {
+		t.Errorf("unknownKind = %q, want %q", got, want)
+	}
+	if got := unknownKind("Entity"); got == want || got == "" {
+		t.Errorf("unknownKind of a kind that never existed = %q", got)
+	}
+}

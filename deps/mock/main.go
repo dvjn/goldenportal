@@ -1,7 +1,7 @@
 // Command mock serves everything the local portal talks to that isn't the
 // portal: a sign-in provider, an operations API, a deploy tracker, a service
 // registry that also sends signed events, a GitLab group that sends webhook
-// events, and a pusher that feeds an integration over the ingest API.
+// events, and a pusher that feeds a connection over the ingest API.
 // mock.yaml sets it up.
 package main
 
@@ -66,7 +66,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, target := range cfg.Push.Integrations {
+	for _, target := range cfg.Push.Connections {
 		go pusher.run(target)
 	}
 

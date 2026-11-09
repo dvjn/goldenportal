@@ -30,6 +30,32 @@ const URLVariable = "GP_TEST_DATABASE_URL"
 // every migration, and drops it when the test ends.
 func New(t *testing.T) *gofrSQL.DB {
 	t.Helper()
+	db, raw := create(t)
+	migrate(t, raw, func(int64) bool { return true })
+
+	return db
+}
+
+// NewBefore is New with only the migrations before version applied, for a
+// test that stores data the way the portal did then and applies the rest
+// with MigrateRest.
+func NewBefore(t *testing.T, version int64) *gofrSQL.DB {
+	t.Helper()
+	db, raw := create(t)
+	migrate(t, raw, func(v int64) bool { return v < version })
+
+	return db
+}
+
+// MigrateRest applies the migrations from version on to a database
+// NewBefore made.
+func MigrateRest(t *testing.T, db *gofrSQL.DB, from int64) {
+	t.Helper()
+	migrate(t, db.DB, func(v int64) bool { return v >= from })
+}
+
+func create(t *testing.T) (*gofrSQL.DB, *sql.DB) {
+	t.Helper()
 	server := os.Getenv(URLVariable)
 	if server == "" {
 		t.Fatal(URLVariable + " isn't set, so there's no Postgres to test against; run mise run test:e2e")
@@ -61,19 +87,20 @@ func New(t *testing.T) *gofrSQL.DB {
 	}
 	db := gofrSQL.NewSQLFromDB(raw, &gofrSQL.DBConfig{Dialect: "postgres", Database: name}, logging.NewMockLogger(logging.ERROR), noMetrics{})
 	t.Cleanup(func() { _ = db.Close() })
-	migrate(t, raw)
 
-	return db
+	return db, raw
 }
 
-// migrate applies the migrations in order, each in a transaction, as gofr
-// does.
-func migrate(t *testing.T, db *sql.DB) {
+// migrate applies the migrations apply picks, in order, each in a
+// transaction, as gofr does.
+func migrate(t *testing.T, db *sql.DB, apply func(version int64) bool) {
 	t.Helper()
 	all := migrations.All()
 	versions := make([]int64, 0, len(all))
 	for version := range all {
-		versions = append(versions, version)
+		if apply(version) {
+			versions = append(versions, version)
+		}
 	}
 	slices.Sort(versions)
 	for _, version := range versions {

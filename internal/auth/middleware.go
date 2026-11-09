@@ -32,7 +32,7 @@ func sessionCookie(secure bool) string {
 	return "gp_session"
 }
 
-// IngestPrefix is where integrations push entities. Requests there sign in
+// IngestPrefix is where connections push entities. Requests there sign in
 // with an ingestion token, which the ingest handlers check themselves.
 const IngestPrefix = "/api/ingest/"
 

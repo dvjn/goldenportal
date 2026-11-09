@@ -29,19 +29,19 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/dashboard"
-	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
 var parsers = map[string]func(string) []configdoc.Issue{
-	"Blueprint":   func(s string) []configdoc.Issue { _, issues := blueprint.Parse(s); return issues },
-	"Integration": func(s string) []configdoc.Issue { _, issues := integration.Parse(s); return issues },
-	"Scorecard":   func(s string) []configdoc.Issue { _, issues := scorecard.Parse(s); return issues },
-	"Dashboard":   func(s string) []configdoc.Issue { _, issues := dashboard.Parse(s); return issues },
-	"Action":      func(s string) []configdoc.Issue { _, issues := action.Parse(s); return issues },
-	"Workflow":    func(s string) []configdoc.Issue { _, issues := action.ParseWorkflow(s); return issues },
+	"Blueprint":  func(s string) []configdoc.Issue { _, issues := blueprint.Parse(s); return issues },
+	"Connection": func(s string) []configdoc.Issue { _, issues := connection.Parse(s); return issues },
+	"Scorecard":  func(s string) []configdoc.Issue { _, issues := scorecard.Parse(s); return issues },
+	"Dashboard":  func(s string) []configdoc.Issue { _, issues := dashboard.Parse(s); return issues },
+	"Action":     func(s string) []configdoc.Issue { _, issues := action.Parse(s); return issues },
+	"Workflow":   func(s string) []configdoc.Issue { _, issues := action.ParseWorkflow(s); return issues },
 }
 
 func resolved(t *testing.T, kind string) *jsonschema.Resolved {
@@ -344,7 +344,7 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 	}
 	mappings := []mapping{
 		{"Blueprint", "/$defs/metadata", configdoc.MetadataFields, nil},
-		{"Integration", "/properties/metadata", configdoc.MetadataFields, []string{"icon", "color"}},
+		{"Connection", "/properties/metadata", configdoc.MetadataFields, []string{"icon", "color"}},
 		{"Blueprint", "/$defs/spec", blueprint.SpecFields, nil},
 		{"Blueprint", "/$defs/property", blueprint.PropertyFields, nil},
 		{"Blueprint", "/$defs/items", blueprint.ItemsFields, nil},
@@ -355,6 +355,8 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Blueprint", "/$defs/section", blueprint.SectionFields, nil},
 		{"Blueprint", "/$defs/retention", blueprint.RetentionFields, nil},
 		{"Blueprint", "/$defs/retentionRule", blueprint.RuleFields, nil},
+		{"Blueprint", "/$defs/source", blueprint.SourceFields, nil},
+		{"Blueprint", "/$defs/sourceEntity", blueprint.SourceEntityFields, nil},
 		{"Blueprint", "/$defs/tab", widget.TabFields, nil},
 		{"Blueprint", "/$defs/query", widget.QueryFields, nil},
 		{"Blueprint", "/$defs/value", widget.ValueFields, nil},
@@ -363,20 +365,18 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Blueprint", "/$defs/column", widget.ColumnFields, nil},
 		{"Blueprint", "/$defs/measure", widget.MeasureFields, nil},
 		{"Blueprint", "/$defs/matrixMeasure", widget.MatrixMeasureFields, nil},
-		{"Integration", "/$defs/spec", integration.SpecFields, nil},
-		{"Integration", "/$defs/connector", integration.ConnectorFields, nil},
-		{"Integration", "/$defs/sync", integration.SyncFields, nil},
-		{"Integration", "/$defs/mapping", integration.MappingFields, nil},
-		{"Integration", "/$defs/entityMapping", integration.EntityFields, nil},
-		{"Integration", "/$defs/httpConfig", integration.HTTPConfigFields, nil},
-		{"Integration", "/$defs/httpResource", integration.HTTPResourceFields, nil},
-		{"Integration", "/$defs/httpPush", integration.HTTPPushFields, nil},
-		{"Integration", "/$defs/signature", integration.SignatureFields, nil},
-		{"Integration", "/$defs/httpReceive", integration.HTTPReceiveFields, nil},
-		{"Integration", "/$defs/secret", integration.SecretFields, nil},
-		{"Integration", "/$defs/gitlabConfig", integration.GitLabConfigFields, nil},
-		{"Integration", "/$defs/sonarqubeConfig", integration.SonarQubeConfigFields, nil},
-		{"Integration", "/$defs/authentikConfig", integration.AuthentikConfigFields, nil},
+		{"Connection", "/$defs/spec", connection.SpecFields, nil},
+		{"Connection", "/$defs/connector", connection.ConnectorFields, nil},
+		{"Connection", "/$defs/sync", connection.SyncFields, nil},
+		{"Connection", "/$defs/httpConfig", connection.HTTPConfigFields, nil},
+		{"Connection", "/$defs/httpResource", connection.HTTPResourceFields, nil},
+		{"Connection", "/$defs/httpPush", connection.HTTPPushFields, nil},
+		{"Connection", "/$defs/signature", connection.SignatureFields, nil},
+		{"Connection", "/$defs/httpReceive", connection.HTTPReceiveFields, nil},
+		{"Connection", "/$defs/secret", connection.SecretFields, nil},
+		{"Connection", "/$defs/gitlabConfig", connection.GitLabConfigFields, nil},
+		{"Connection", "/$defs/sonarqubeConfig", connection.SonarQubeConfigFields, nil},
+		{"Connection", "/$defs/authentikConfig", connection.AuthentikConfigFields, nil},
 		{"Scorecard", "/$defs/spec", scorecard.SpecFields, nil},
 		{"Scorecard", "/$defs/tier", scorecard.TierFields, nil},
 		{"Scorecard", "/$defs/criterion", scorecard.CriterionFields, nil},
@@ -536,76 +536,70 @@ func closed(t *testing.T, root map[string]any, node any) bool {
 	return len(branches) > 0
 }
 
-// TestSchemaConnectorResources checks the resources the schema lets each
-// connector's mappings name are the connectors' own.
-func TestSchemaConnectorResources(t *testing.T) {
-	root := rawSchema(t, "Integration")
-	enum := func(node any) []string {
-		var out []string
-		for _, v := range node.([]any) {
-			out = append(out, v.(string))
-		}
-		slices.Sort(out)
-		return out
-	}
-	checked, fixed := 0, 0
-	for _, c := range integration.Connectors {
-		if len(c.Resources) > 0 {
-			fixed++
-		}
-	}
-	for _, branch := range resolvePointer(t, root, "/$defs/spec/allOf").([]any) {
-		id := resolvePointer(t, branch, "/if/properties/connector/properties/type/const").(string)
-		got := enum(resolvePointer(t, branch, "/then/properties/mappings/items/properties/resource/enum"))
-		for _, c := range integration.Connectors {
-			if c.ID == id {
-				want := slices.Sorted(slices.Values(c.Resources))
-				if !slices.Equal(got, want) {
-					t.Errorf("the schema lets %s mappings read %v; the connector has %v", id, got, want)
-				}
-				checked++
-			}
-		}
-	}
-	if checked != fixed {
-		t.Errorf("the schema lists the resources of %d connectors; %d have fixed ones", checked, fixed)
-	}
-}
-
-// TestSchemaGitLabExamples checks the gitlab mappings' examples are valid
-// mappings, one for each resource, and the config's example a valid config.
+// TestSchemaGitLabExamples checks the blueprint sources' gitlab examples are
+// valid sources of resources the gitlab connector reads, one for each, and
+// the connector config's example a valid config.
 func TestSchemaGitLabExamples(t *testing.T) {
-	root := rawSchema(t, "Integration")
-	var gitlab any
-	for _, branch := range resolvePointer(t, root, "/$defs/spec/allOf").([]any) {
-		if resolvePointer(t, branch, "/if/properties/connector/properties/type/const") == "gitlab" {
-			gitlab = branch
-		}
-	}
-	configs := resolvePointer(t, root, "/$defs/gitlabConfig/examples").([]any)
+	configs := resolvePointer(t, rawSchema(t, "Connection"), "/$defs/gitlabConfig/examples").([]any)
 	if len(configs) == 0 {
 		t.Fatal("the gitlab config has no example")
 	}
-	var covered []string
-	for _, example := range resolvePointer(t, gitlab, "/then/properties/mappings/items/examples").([]any) {
-		mapping := example.(map[string]any)
-		doc := map[string]any{
-			"kind": "Integration", "metadata": map[string]any{"identifier": "gitlab", "title": "GitLab"},
-			"spec": map[string]any{"connector": map[string]any{"type": "gitlab", "config": configs[0]}, "mappings": []any{mapping}},
+	connectionDoc, err := yaml.Marshal(map[string]any{
+		"kind": "Connection", "metadata": map[string]any{"identifier": "gitlab", "title": "GitLab"},
+		"spec": map[string]any{"connector": map[string]any{"type": "gitlab", "config": configs[0]}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, issues := connection.Parse(string(connectionDoc)); len(issues) > 0 {
+		t.Errorf("the config example: %v", issues)
+	}
+
+	var resources []string
+	for _, c := range connection.Connectors {
+		if c.ID == "gitlab" {
+			resources = c.Resources
 		}
-		source, err := yaml.Marshal(doc)
+	}
+	var covered []string
+	for _, example := range resolvePointer(t, rawSchema(t, "Blueprint"), "/$defs/source/examples").([]any) {
+		source := example.(map[string]any)
+		if source["connection"] != "gitlab" {
+			continue
+		}
+		properties := map[string]any{}
+		for key := range valueAtPath(source, "entity", "properties") {
+			properties[key] = map[string]any{"type": "string"}
+		}
+		doc, err := yaml.Marshal(map[string]any{
+			"kind": "Blueprint", "metadata": map[string]any{"identifier": "example", "title": "Example"},
+			"spec": map[string]any{"properties": properties, "sources": []any{source}},
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, issues := integration.Parse(string(source)); len(issues) > 0 {
-			t.Errorf("the %s example: %v", mapping["resource"], issues)
+		if _, issues := blueprint.Parse(string(doc)); len(issues) > 0 {
+			t.Errorf("the %s example: %v", source["resource"], issues)
 		}
-		covered = append(covered, mapping["resource"].(string))
+		resource := source["resource"].(string)
+		if !slices.Contains(resources, resource) {
+			t.Errorf("the example reads %s, which the gitlab connector doesn't offer", resource)
+		}
+		covered = append(covered, resource)
 	}
 	slices.Sort(covered)
-	for _, c := range integration.Connectors {
-		if want := slices.Sorted(slices.Values(c.Resources)); c.ID == "gitlab" && !slices.Equal(covered, want) {
-			t.Errorf("the gitlab examples map %v; the connector has %v", covered, want)
-		}
+	if want := slices.Sorted(slices.Values(resources)); !slices.Equal(covered, want) {
+		t.Errorf("the gitlab examples map %v; the connector has %v", covered, want)
 	}
+}
+
+// valueAtPath reads a nested object of a decoded document, empty where it's
+// missing.
+func valueAtPath(object map[string]any, keys ...string) map[string]any {
+	for _, key := range keys {
+		next, _ := object[key].(map[string]any)
+		object = next
+	}
+
+	return object
 }

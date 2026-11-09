@@ -79,6 +79,7 @@ func Diff(previous, next Spec) []Change {
 	if !SameRetention(previous, next) {
 		changes = append(changes, diffRetention(previous, next))
 	}
+	changes = append(changes, diffSources(next.Identifier, previous.Sources, next.Sources)...)
 
 	return changes
 }
@@ -272,4 +273,60 @@ func layout(page *Page) string {
 func encode(tab widget.Tab) string {
 	encoded, _ := json.Marshal(tab)
 	return string(encoded)
+}
+
+// diffSources pairs sources by connection, resource and occurrence, since a
+// blueprint may read one resource more than once, such as with two filters.
+func diffSources(blueprint string, previous, next []Source) []Change {
+	key := func(sources []Source) ([]string, map[string]Source) {
+		keys := make([]string, len(sources))
+		byKey := map[string]Source{}
+		seen := map[string]int{}
+		for i, s := range sources {
+			k := s.Connection + "." + s.Resource
+			if n := seen[k]; n > 0 {
+				k = fmt.Sprintf("%s[%d]", k, n)
+			}
+			seen[s.Connection+"."+s.Resource]++
+			keys[i], byKey[k] = k, s
+		}
+		return keys, byKey
+	}
+	nextSync := func(s Source) string {
+		if s.Upsert() {
+			return "; the next " + s.Connection + " sync re-reads " + s.Resource
+		}
+		return "; the next " + s.Connection + " sync is complete"
+	}
+
+	var changes []Change
+	oldKeys, old := key(previous)
+	newKeys, current := key(next)
+	for i, k := range newKeys {
+		s := next[i]
+		was, ok := old[k]
+		switch {
+		case !ok:
+			changes = append(changes, Change{
+				Section: "sources", ID: k, Change: ChangeAdded,
+				Detail: s.Connection + " starts writing " + blueprint + " from " + s.Resource + nextSync(s),
+			})
+		case !SameSource(was, s):
+			changes = append(changes, Change{
+				Section: "sources", ID: k, Change: ChangeChanged,
+				Detail: "changes how " + s.Connection + " writes " + blueprint + " from " + s.Resource + nextSync(s),
+			})
+		}
+	}
+	for i, k := range oldKeys {
+		if _, ok := current[k]; !ok {
+			s := previous[i]
+			changes = append(changes, Change{
+				Section: "sources", ID: k, Change: ChangeRemoved,
+				Detail: s.Connection + " stops writing " + blueprint + " from " + s.Resource + "; the ones it wrote stay",
+			})
+		}
+	}
+
+	return changes
 }

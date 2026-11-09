@@ -7,9 +7,9 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/action"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
-	"github.com/dvjn/goldenportal/internal/integration"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/search"
 )
@@ -28,7 +28,7 @@ type Services interface {
 	Catalog(ctx *gofr.Context) ([]entity.CatalogEntry, error)
 	Entities(ctx *gofr.Context, blueprint string, req entity.ListRequest) (entity.Page, error)
 	Entity(ctx *gofr.Context, blueprint, identifier string) (entity.Detail, error)
-	BlueprintUsage(ctx *gofr.Context, blueprint string) (integration.Usage, error)
+	BlueprintUsage(ctx *gofr.Context, blueprint string) (connection.Usage, error)
 
 	Home(ctx *gofr.Context) ([]dashboard.HomeDashboard, error)
 	ViewDashboard(ctx *gofr.Context, name string, draft bool) (dashboard.HomeDashboard, error)
@@ -39,12 +39,12 @@ type Services interface {
 	ScorecardResults(ctx *gofr.Context, name string, req scorecard.ResultsRequest) (scorecard.ResultPage, error)
 	EvaluateScorecard(ctx *gofr.Context, name string) (scorecard.Evaluated, error)
 
-	Connectors(ctx *gofr.Context) ([]integration.Connector, error)
-	SyncRuns(ctx *gofr.Context, name string) (integration.RunPage, error)
-	Sync(ctx *gofr.Context, name, mode string) (*integration.Run, error)
-	CheckIntegration(ctx *gofr.Context, name string) (integration.CheckResult, error)
-	IngestionTokens(ctx *gofr.Context, name string) ([]integration.Token, error)
-	CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (integration.CreatedToken, error)
+	Connectors(ctx *gofr.Context) ([]connection.Connector, error)
+	SyncRuns(ctx *gofr.Context, name string) (connection.RunPage, error)
+	Sync(ctx *gofr.Context, name, mode string) (*connection.Run, error)
+	CheckConnection(ctx *gofr.Context, name string) (connection.CheckResult, error)
+	IngestionTokens(ctx *gofr.Context, name string) ([]connection.Token, error)
+	CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (connection.CreatedToken, error)
 	RevokeIngestionToken(ctx *gofr.Context, name, id string) error
 
 	EntityActions(ctx *gofr.Context, blueprint, identifier string) ([]action.Available, error)
@@ -93,8 +93,8 @@ func (portal) Entity(ctx *gofr.Context, blueprint, identifier string) (entity.De
 	return entity.Get(ctx, blueprint, identifier)
 }
 
-func (portal) BlueprintUsage(ctx *gofr.Context, blueprint string) (integration.Usage, error) {
-	return integration.BlueprintUsage(ctx, blueprint)
+func (portal) BlueprintUsage(ctx *gofr.Context, blueprint string) (connection.Usage, error) {
+	return connection.BlueprintUsage(ctx, blueprint)
 }
 
 func (portal) Home(ctx *gofr.Context) ([]dashboard.HomeDashboard, error) { return dashboard.Home(ctx) }
@@ -123,32 +123,32 @@ func (portal) EvaluateScorecard(ctx *gofr.Context, name string) (scorecard.Evalu
 	return scorecard.EvaluateNow(ctx, name)
 }
 
-func (portal) Connectors(ctx *gofr.Context) ([]integration.Connector, error) {
-	return integration.ListConnectors(ctx)
+func (portal) Connectors(ctx *gofr.Context) ([]connection.Connector, error) {
+	return connection.ListConnectors(ctx)
 }
 
-func (portal) SyncRuns(ctx *gofr.Context, name string) (integration.RunPage, error) {
-	return integration.Runs(ctx, name, integration.RunsRequest{})
+func (portal) SyncRuns(ctx *gofr.Context, name string) (connection.RunPage, error) {
+	return connection.Runs(ctx, name, connection.RunsRequest{})
 }
 
-func (portal) CheckIntegration(ctx *gofr.Context, name string) (integration.CheckResult, error) {
-	return integration.CheckNow(ctx, name)
+func (portal) CheckConnection(ctx *gofr.Context, name string) (connection.CheckResult, error) {
+	return connection.CheckNow(ctx, name)
 }
 
-func (portal) Sync(ctx *gofr.Context, name, mode string) (*integration.Run, error) {
-	return integration.SyncNow(ctx, name, mode)
+func (portal) Sync(ctx *gofr.Context, name, mode string) (*connection.Run, error) {
+	return connection.SyncNow(ctx, name, mode)
 }
 
-func (portal) IngestionTokens(ctx *gofr.Context, name string) ([]integration.Token, error) {
-	return integration.ListTokens(ctx, name)
+func (portal) IngestionTokens(ctx *gofr.Context, name string) ([]connection.Token, error) {
+	return connection.ListTokens(ctx, name)
 }
 
-func (portal) CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (integration.CreatedToken, error) {
-	return integration.CreateToken(ctx, name, tokenName)
+func (portal) CreateIngestionToken(ctx *gofr.Context, name, tokenName string) (connection.CreatedToken, error) {
+	return connection.CreateToken(ctx, name, tokenName)
 }
 
 func (portal) RevokeIngestionToken(ctx *gofr.Context, name, id string) error {
-	return integration.RevokeToken(ctx, name, id)
+	return connection.RevokeToken(ctx, name, id)
 }
 
 func (portal) EntityActions(ctx *gofr.Context, blueprint, identifier string) ([]action.Available, error) {

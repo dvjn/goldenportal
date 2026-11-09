@@ -19,14 +19,14 @@ import (
 )
 
 type registryConfig struct {
-	API         string  `yaml:"api"`
-	Integration string  `yaml:"integration"`
-	Secret      string  `yaml:"secret"`
-	File        string  `yaml:"file"`
-	Events      cadence `yaml:"events"`
+	API        string  `yaml:"api"`
+	Connection string  `yaml:"connection"`
+	Secret     string  `yaml:"secret"`
+	File       string  `yaml:"file"`
+	Events     cadence `yaml:"events"`
 }
 
-// registry is a service registry for the service-registry integration to
+// registry is a service registry for the service-registry connection to
 // pull, at /registry/services. It also signs and pushes an event when a
 // service changes, as a webhook would: a service deploys, or one that isn't
 // critical leaves the registry and later comes back.
@@ -148,7 +148,7 @@ func (g *registry) send(action string, service map[string]any) {
 	body, _ := json.Marshal(map[string]any{"action": action, "service": service})
 	mac := hmac.New(sha256.New, []byte(g.cfg.Secret))
 	mac.Write(body)
-	req, err := http.NewRequest(http.MethodPost, g.cfg.API+"/api/ingest/"+g.cfg.Integration, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, g.cfg.API+"/api/ingest/"+g.cfg.Connection, bytes.NewReader(body))
 	if err != nil {
 		log.Printf("registry event: %v", err)
 		return

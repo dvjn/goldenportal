@@ -263,7 +263,7 @@ func TestParseReportsProblemsWithLines(t *testing.T) {
 		{"not yaml", "kind: [", "", "did not find expected node content", 1},
 		{"empty", "", "", "the document is empty", 0},
 		{"two documents", "kind: Blueprint\n---\nkind: Blueprint", "", "more than one document", 2},
-		{"wrong kind", "kind: Integration\nmetadata: {identifier: s, title: S}\nspec: {}", "kind", "takes kind: Blueprint", 1},
+		{"wrong kind", "kind: Connection\nmetadata: {identifier: s, title: S}\nspec: {}", "kind", "takes kind: Blueprint", 1},
 		{"no metadata", "kind: Blueprint\nspec: {}", "metadata", "add metadata", 1},
 		{"bad name", "kind: Blueprint\nmetadata: {identifier: Service, title: S}\nspec: {}", "metadata.identifier", "lowercase letter", 2},
 		{"missing title", "kind: Blueprint\nmetadata:\n  identifier: service\nspec: {}", "metadata.title", "add a title", 3},
@@ -404,7 +404,7 @@ func TestParseSymbols(t *testing.T) {
 		t.Fatalf("readiness = %+v", prop)
 	}
 	if _, problems := spec.ValidateEntity(Entity{Identifier: "a", Properties: map[string]any{"readiness": "gold"}}); len(problems) == 0 {
-		t.Fatal("an integration wrote a scorecard's result")
+		t.Fatal("a connection wrote a scorecard's result")
 	}
 }
 
@@ -443,5 +443,141 @@ func TestCatalogColumnsAreKnownFields(t *testing.T) {
 		if !slices.ContainsFunc(issues, func(issue configdoc.Issue) bool { return strings.Contains(issue.Message, want) }) {
 			t.Errorf("columns %s: issues = %+v, want %q", columns, issues, want)
 		}
+	}
+}
+
+const pipelineYAML = `
+kind: Blueprint
+metadata: {identifier: pipeline, title: Pipeline}
+spec:
+  properties:
+    status: {type: string}
+    project: {relation: project}
+    slow: {type: boolean, compute: .status == "slow"}
+  sources:
+    - connection: gitlab
+      resource: pipelines
+      entity:
+        identifier: .id | tostring
+        title: .ref
+        properties:
+          status: .status
+          project: ._gp.project
+`
+
+func TestParseSources(t *testing.T) {
+	spec := mustParse(t, pipelineYAML)
+	if len(spec.Sources) != 1 {
+		t.Fatalf("sources = %+v", spec.Sources)
+	}
+	s := spec.Sources[0]
+	if s.Connection != "gitlab" || s.Resource != "pipelines" || s.Mode != SourceReconcile || s.Upsert() ||
+		s.Entity.Identifier != ".id | tostring" || len(s.Entity.Properties) != 2 {
+		t.Fatalf("source = %+v", s)
+	}
+	if got := spec.Stats()["sources"]; got != 1 {
+		t.Fatalf("stats sources = %d", got)
+	}
+	if spec := mustParse(t, teamYAML); spec.Sources == nil || len(spec.Sources) != 0 {
+		t.Fatalf("no sources: %+v", spec.Sources)
+	}
+
+	two := strings.Replace(pipelineYAML, "  sources:\n", `  sources:
+    - connection: tracker
+      resource: runs
+      mode: upsert
+      entity: {identifier: .id}
+`, 1)
+	if spec := mustParse(t, two); len(spec.Sources) != 2 {
+		t.Fatalf("two connections with their own modes: %+v", spec.Sources)
+	}
+}
+
+func TestParseSourceProblems(t *testing.T) {
+	tests := []struct {
+		name, from, to, path, message string
+	}{
+		{"missing connection", "    - connection: gitlab\n      resource", "    - resource", "spec.sources[0].connection", "connection must name a connection"},
+		{"missing resource", "      resource: pipelines\n", "", "spec.sources[0].resource", "add the resource"},
+		{"bad mode", "      resource: pipelines\n", "      resource: pipelines\n      mode: merge\n", "spec.sources[0].mode", "mode must be reconcile or upsert"},
+		{"bad jq", "title: .ref", "title: .ref |", "spec.sources[0].entity.title", "not valid jq"},
+		{"bad property jq", "status: .status", "status: .status |", "spec.sources[0].entity.properties.status", "not valid jq"},
+		{"yaml list as jq", "title: .ref", "title: [.ref]", "spec.sources[0].entity.title", "quote this jq expression"},
+		{"no identifier", "        identifier: .id | tostring\n", "", "spec.sources[0].entity.identifier", "add a jq expression for identifier"},
+		{"unknown property", "status: .status", "state: .status", "spec.sources[0].entity.properties.state", `pipeline has no stored property "state" to write`},
+		{"derived property", "status: .status", "slow: .status", "spec.sources[0].entity.properties.slow", `pipeline has no stored property "slow" to write`},
+		{
+			"retention with reconcile", "  sources:\n", "  retention: {by: started, keep: 30d}\n  sources:\n",
+			"spec.sources[0].mode", "pipeline has retention, so its sources must use mode: upsert",
+		},
+		{
+			"mixed modes", "  sources:\n", "  sources:\n    - {connection: gitlab, resource: jobs, mode: upsert, entity: {identifier: .id}}\n",
+			"spec.sources[1].mode", "another source from gitlab uses mode: upsert, and a blueprint's sources from one connection share a mode",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := strings.Replace(pipelineYAML, test.from, test.to, 1)
+			if test.name == "retention with reconcile" {
+				source = strings.Replace(source, "status: {type: string}", "status: {type: string}\n    started: {type: string, format: date-time}", 1)
+			}
+			spec, issues := Parse(source)
+			if len(spec.Sources) == 0 {
+				t.Fatalf("sources dropped: %+v", issues)
+			}
+			for _, issue := range issues {
+				if issue.Path == test.path && strings.Contains(issue.Message, test.message) {
+					if issue.Line == 0 {
+						t.Errorf("issue has no line: %+v", issue)
+					}
+					return
+				}
+			}
+			t.Fatalf("issues = %+v, want %s: %s", issues, test.path, test.message)
+		})
+	}
+}
+
+func TestSameSource(t *testing.T) {
+	a := mustParse(t, pipelineYAML).Sources[0]
+	reordered := strings.Replace(pipelineYAML, "          status: .status\n          project: ._gp.project\n",
+		"          project: ._gp.project\n          status: .status\n", 1)
+	b := mustParse(t, "\n\n"+reordered).Sources[0]
+	if !SameSource(a, b) {
+		t.Fatalf("reordered properties on other lines differ: %+v %+v", a, b)
+	}
+	b.Filter = ".ref == \"main\""
+	if SameSource(a, b) {
+		t.Fatal("a filter makes no difference")
+	}
+}
+
+func TestDiffSources(t *testing.T) {
+	before := mustParse(t, pipelineYAML)
+	upsert := strings.Replace(pipelineYAML, "      resource: pipelines\n", "      resource: pipelines\n      mode: upsert\n", 1)
+	added := strings.Replace(pipelineYAML, "  sources:\n", "  sources:\n    - {connection: gitlab, resource: jobs, entity: {identifier: .id}}\n", 1)
+
+	tests := []struct {
+		name       string
+		from, to   Spec
+		change, id string
+		detail     string
+	}{
+		{"added reconcile", before, mustParse(t, added), ChangeAdded, "gitlab.jobs", "gitlab starts writing pipeline from jobs; the next gitlab sync is complete"},
+		{"changed upsert", before, mustParse(t, upsert), ChangeChanged, "gitlab.pipelines", "changes how gitlab writes pipeline from pipelines; the next gitlab sync re-reads pipelines"},
+		{"removed", mustParse(t, added), before, ChangeRemoved, "gitlab.jobs", "gitlab stops writing pipeline from jobs; the ones it wrote stay"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			changes := Diff(test.from, test.to)
+			if len(changes) != 1 {
+				t.Fatalf("changes = %+v, want one", changes)
+			}
+			got := changes[0]
+			if got.Section != "sources" || got.Change != test.change || got.ID != test.id || got.Detail != test.detail || got.Breaking {
+				t.Fatalf("change = %+v", got)
+			}
+		})
 	}
 }

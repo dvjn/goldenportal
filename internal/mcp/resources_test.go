@@ -93,7 +93,7 @@ func TestPromptsFollowRoleAndScope(t *testing.T) {
 		"member":         reads,
 		"builder-reader": reads,
 		"demoted":        reads,
-		"builder":        append([]string{"add_blueprint", "build_dashboard", "connect_integration", "create_scorecard"}, reads...),
+		"builder":        append([]string{"add_blueprint", "build_dashboard", "add_connection", "create_scorecard"}, reads...),
 	} {
 		result, err := connect(t, server, token).ListPrompts(context.Background(), nil)
 		if err != nil {

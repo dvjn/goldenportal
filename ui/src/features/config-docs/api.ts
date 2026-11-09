@@ -4,7 +4,7 @@ import { type ApiDataResponse, api, webApi } from "@/lib/api";
 // ConfigKind is the API path of a kind of configuration document.
 export type ConfigKind =
   | "blueprints"
-  | "integrations"
+  | "connections"
   | "scorecards"
   | "dashboards"
   | "actions"

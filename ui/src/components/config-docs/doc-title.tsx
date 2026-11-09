@@ -4,7 +4,7 @@ import { IconTile } from "@/components/catalog/blueprint-icon";
 // DocPath is the page a document of each listed kind opens on.
 export type DocPath =
   | "/blueprints/$identifier"
-  | "/integrations/$identifier"
+  | "/connections/$identifier"
   | "/dashboards/$identifier"
   | "/actions/$identifier"
   | "/workflows/$identifier";

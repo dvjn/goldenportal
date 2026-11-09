@@ -33,30 +33,30 @@ ops:
     incidents: {latency: {min: 300ms, max: 1500ms}, fails: 0.05}
   jobs: {min: 10s, max: 1m}
 
-# Pushes each file to its integration with an ingestion token, as an external
+# Pushes each file to its connection with an ingestion token, as an external
 # system would: the whole file as a complete push every so often, give or take
 # the variance, and one of its items as an incremental push between.
 push:
   api: http://localhost:${HTTP_PORT}
-  integrations:
+  connections:
     - name: team-directory
       token: "${GP_DEV_TEAM_DIRECTORY_TOKEN}"
       file: payloads/team-directory.json
       complete: {every: 30m, variance: 10m}
       changes: {every: 5m, variance: 2m}
 
-# A service registry the service-registry integration pulls, at /registry,
+# A service registry the service-registry connection pulls, at /registry,
 # which also sends it an event signed with the secret whenever a service
 # deploys, leaves or comes back. billing-export is invalid on purpose, and
-# legacy-reports is filtered out by the mapping.
+# legacy-reports is filtered out by the source.
 registry:
   api: http://localhost:${HTTP_PORT}
-  integration: service-registry
+  connection: service-registry
   secret: "${GP_SECRET_SERVICE_REGISTRY_SIGNING}"
   file: payloads/service-registry.json
   events: {every: 3m, variance: 1m}
 
-# A deploy tracker for the http integration to pull, at /deploy-tracker. Each
+# A deploy tracker for the http connection to pull, at /deploy-tracker. Each
 # service deploys every so often, give or take the variance, and fails that
 # share of the time. A new version goes to staging, and once it succeeds the
 # next deployment promotes it. It answers with what changed since a time,
@@ -75,19 +75,19 @@ tracker:
     - {name: api-gateway, fails: 0.1, every: 90m, variance: 45m}
     - {name: feature-flags, fails: 0.15, every: 30m, variance: 20m}
 
-# A GitLab instance for the gitlab integration to read, at /gitlab/api/v4,
+# A GitLab instance for the gitlab connection to read, at /gitlab/api/v4,
 # with the acme group and a subgroup for each team, whose projects are named
 # for the services and whose members make the changes. It takes the token,
 # an owner's access token with the api scope, and counts rateLimit requests a
 # minute against it, sending GitLab's RateLimit headers. Something happens in
 # a project every so often, sent as an event to the project's webhooks, which
-# the integration's syncs set up, with their secret token in X-Gitlab-Token;
+# the connection's syncs set up, with their secret token in X-Gitlab-Token;
 # pipelines and deployments finish after a while, which sends their events
 # too. A pipeline's jobs run on a few runners, each of which it describes on
 # its own too, its test job sometimes fails and passes when retried, and its
 # deploy job is a manual one someone plays a while after tests pass.
 # Deployments to production wait for an approval, and its GraphQL API
-# answers only what the integration asks of pipelines.
+# answers only what the connection asks of pipelines.
 gitlab:
   url: http://localhost:47800/gitlab
   token: "${GP_SECRET_GITLAB_TOKEN}"

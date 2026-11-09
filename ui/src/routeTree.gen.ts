@@ -15,8 +15,8 @@ import { Route as AppIndexRouteImport } from "./routes/_app/index";
 import { Route as AppActionsRouteImport } from "./routes/_app/actions";
 import { Route as AppApprovalsRouteImport } from "./routes/_app/approvals";
 import { Route as AppBlueprintsRouteImport } from "./routes/_app/blueprints";
+import { Route as AppConnectionsRouteImport } from "./routes/_app/connections";
 import { Route as AppDashboardsRouteImport } from "./routes/_app/dashboards";
-import { Route as AppIntegrationsRouteImport } from "./routes/_app/integrations";
 import { Route as AppSettingsRouteImport } from "./routes/_app/settings";
 import { Route as AppWorkflowsRouteImport } from "./routes/_app/workflows";
 import { Route as OauthAuthorizeRouteImport } from "./routes/oauth/authorize";
@@ -28,12 +28,12 @@ import { Route as AppBlueprintsIndexRouteImport } from "./routes/_app/blueprints
 import { Route as AppBlueprintsIdentifierRouteImport } from "./routes/_app/blueprints/$identifier";
 import { Route as AppBlueprintsNewRouteImport } from "./routes/_app/blueprints/new";
 import { Route as AppCatalogIndexRouteImport } from "./routes/_app/catalog/index";
+import { Route as AppConnectionsIndexRouteImport } from "./routes/_app/connections/index";
+import { Route as AppConnectionsIdentifierRouteImport } from "./routes/_app/connections/$identifier";
+import { Route as AppConnectionsNewRouteImport } from "./routes/_app/connections/new";
 import { Route as AppDashboardsIndexRouteImport } from "./routes/_app/dashboards/index";
 import { Route as AppDashboardsIdentifierRouteImport } from "./routes/_app/dashboards/$identifier";
 import { Route as AppDashboardsNewRouteImport } from "./routes/_app/dashboards/new";
-import { Route as AppIntegrationsIndexRouteImport } from "./routes/_app/integrations/index";
-import { Route as AppIntegrationsIdentifierRouteImport } from "./routes/_app/integrations/$identifier";
-import { Route as AppIntegrationsNewRouteImport } from "./routes/_app/integrations/new";
 import { Route as AppRunsIndexRouteImport } from "./routes/_app/runs/index";
 import { Route as AppRunsIdRouteImport } from "./routes/_app/runs/$id";
 import { Route as AppScorecardsIndexRouteImport } from "./routes/_app/scorecards/index";
@@ -79,14 +79,14 @@ const AppBlueprintsRoute = AppBlueprintsRouteImport.update({
   path: "/blueprints",
   getParentRoute: () => AppRoute,
 } as any);
+const AppConnectionsRoute = AppConnectionsRouteImport.update({
+  id: "/connections",
+  path: "/connections",
+  getParentRoute: () => AppRoute,
+} as any);
 const AppDashboardsRoute = AppDashboardsRouteImport.update({
   id: "/dashboards",
   path: "/dashboards",
-  getParentRoute: () => AppRoute,
-} as any);
-const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
-  id: "/integrations",
-  path: "/integrations",
   getParentRoute: () => AppRoute,
 } as any);
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -144,6 +144,22 @@ const AppCatalogIndexRoute = AppCatalogIndexRouteImport.update({
   path: "/catalog/",
   getParentRoute: () => AppRoute,
 } as any);
+const AppConnectionsIndexRoute = AppConnectionsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => AppConnectionsRoute,
+} as any);
+const AppConnectionsIdentifierRoute =
+  AppConnectionsIdentifierRouteImport.update({
+    id: "/$identifier",
+    path: "/$identifier",
+    getParentRoute: () => AppConnectionsRoute,
+  } as any);
+const AppConnectionsNewRoute = AppConnectionsNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => AppConnectionsRoute,
+} as any);
 const AppDashboardsIndexRoute = AppDashboardsIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -158,22 +174,6 @@ const AppDashboardsNewRoute = AppDashboardsNewRouteImport.update({
   id: "/new",
   path: "/new",
   getParentRoute: () => AppDashboardsRoute,
-} as any);
-const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => AppIntegrationsRoute,
-} as any);
-const AppIntegrationsIdentifierRoute =
-  AppIntegrationsIdentifierRouteImport.update({
-    id: "/$identifier",
-    path: "/$identifier",
-    getParentRoute: () => AppIntegrationsRoute,
-  } as any);
-const AppIntegrationsNewRoute = AppIntegrationsNewRouteImport.update({
-  id: "/new",
-  path: "/new",
-  getParentRoute: () => AppIntegrationsRoute,
 } as any);
 const AppRunsIndexRoute = AppRunsIndexRouteImport.update({
   id: "/runs/",
@@ -260,8 +260,8 @@ export interface FileRoutesByFullPath {
   "/actions": typeof AppActionsRouteWithChildren;
   "/approvals": typeof AppApprovalsRoute;
   "/blueprints": typeof AppBlueprintsRouteWithChildren;
+  "/connections": typeof AppConnectionsRouteWithChildren;
   "/dashboards": typeof AppDashboardsRouteWithChildren;
-  "/integrations": typeof AppIntegrationsRouteWithChildren;
   "/settings": typeof AppSettingsRouteWithChildren;
   "/workflows": typeof AppWorkflowsRouteWithChildren;
   "/oauth/authorize": typeof OauthAuthorizeRoute;
@@ -270,10 +270,10 @@ export interface FileRoutesByFullPath {
   "/actions/new": typeof AppActionsNewRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
+  "/connections/$identifier": typeof AppConnectionsIdentifierRoute;
+  "/connections/new": typeof AppConnectionsNewRoute;
   "/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
   "/dashboards/new": typeof AppDashboardsNewRoute;
-  "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
-  "/integrations/new": typeof AppIntegrationsNewRoute;
   "/runs/$id": typeof AppRunsIdRoute;
   "/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
   "/scorecards/new": typeof AppScorecardsNewRoute;
@@ -285,8 +285,8 @@ export interface FileRoutesByFullPath {
   "/actions/": typeof AppActionsIndexRoute;
   "/blueprints/": typeof AppBlueprintsIndexRoute;
   "/catalog/": typeof AppCatalogIndexRoute;
+  "/connections/": typeof AppConnectionsIndexRoute;
   "/dashboards/": typeof AppDashboardsIndexRoute;
-  "/integrations/": typeof AppIntegrationsIndexRoute;
   "/runs/": typeof AppRunsIndexRoute;
   "/scorecards/": typeof AppScorecardsIndexRoute;
   "/self-service/": typeof AppSelfServiceIndexRoute;
@@ -305,10 +305,10 @@ export interface FileRoutesByTo {
   "/actions/new": typeof AppActionsNewRoute;
   "/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/blueprints/new": typeof AppBlueprintsNewRoute;
+  "/connections/$identifier": typeof AppConnectionsIdentifierRoute;
+  "/connections/new": typeof AppConnectionsNewRoute;
   "/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
   "/dashboards/new": typeof AppDashboardsNewRoute;
-  "/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
-  "/integrations/new": typeof AppIntegrationsNewRoute;
   "/runs/$id": typeof AppRunsIdRoute;
   "/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
   "/scorecards/new": typeof AppScorecardsNewRoute;
@@ -320,8 +320,8 @@ export interface FileRoutesByTo {
   "/actions": typeof AppActionsIndexRoute;
   "/blueprints": typeof AppBlueprintsIndexRoute;
   "/catalog": typeof AppCatalogIndexRoute;
+  "/connections": typeof AppConnectionsIndexRoute;
   "/dashboards": typeof AppDashboardsIndexRoute;
-  "/integrations": typeof AppIntegrationsIndexRoute;
   "/runs": typeof AppRunsIndexRoute;
   "/scorecards": typeof AppScorecardsIndexRoute;
   "/self-service": typeof AppSelfServiceIndexRoute;
@@ -337,8 +337,8 @@ export interface FileRoutesById {
   "/_app/actions": typeof AppActionsRouteWithChildren;
   "/_app/approvals": typeof AppApprovalsRoute;
   "/_app/blueprints": typeof AppBlueprintsRouteWithChildren;
+  "/_app/connections": typeof AppConnectionsRouteWithChildren;
   "/_app/dashboards": typeof AppDashboardsRouteWithChildren;
-  "/_app/integrations": typeof AppIntegrationsRouteWithChildren;
   "/_app/settings": typeof AppSettingsRouteWithChildren;
   "/_app/workflows": typeof AppWorkflowsRouteWithChildren;
   "/oauth/authorize": typeof OauthAuthorizeRoute;
@@ -348,10 +348,10 @@ export interface FileRoutesById {
   "/_app/actions/new": typeof AppActionsNewRoute;
   "/_app/blueprints/$identifier": typeof AppBlueprintsIdentifierRoute;
   "/_app/blueprints/new": typeof AppBlueprintsNewRoute;
+  "/_app/connections/$identifier": typeof AppConnectionsIdentifierRoute;
+  "/_app/connections/new": typeof AppConnectionsNewRoute;
   "/_app/dashboards/$identifier": typeof AppDashboardsIdentifierRoute;
   "/_app/dashboards/new": typeof AppDashboardsNewRoute;
-  "/_app/integrations/$identifier": typeof AppIntegrationsIdentifierRoute;
-  "/_app/integrations/new": typeof AppIntegrationsNewRoute;
   "/_app/runs/$id": typeof AppRunsIdRoute;
   "/_app/scorecards/$identifier": typeof AppScorecardsIdentifierRoute;
   "/_app/scorecards/new": typeof AppScorecardsNewRoute;
@@ -363,8 +363,8 @@ export interface FileRoutesById {
   "/_app/actions/": typeof AppActionsIndexRoute;
   "/_app/blueprints/": typeof AppBlueprintsIndexRoute;
   "/_app/catalog/": typeof AppCatalogIndexRoute;
+  "/_app/connections/": typeof AppConnectionsIndexRoute;
   "/_app/dashboards/": typeof AppDashboardsIndexRoute;
-  "/_app/integrations/": typeof AppIntegrationsIndexRoute;
   "/_app/runs/": typeof AppRunsIndexRoute;
   "/_app/scorecards/": typeof AppScorecardsIndexRoute;
   "/_app/self-service/": typeof AppSelfServiceIndexRoute;
@@ -381,8 +381,8 @@ export interface FileRouteTypes {
     | "/actions"
     | "/approvals"
     | "/blueprints"
+    | "/connections"
     | "/dashboards"
-    | "/integrations"
     | "/settings"
     | "/workflows"
     | "/oauth/authorize"
@@ -391,10 +391,10 @@ export interface FileRouteTypes {
     | "/actions/new"
     | "/blueprints/$identifier"
     | "/blueprints/new"
+    | "/connections/$identifier"
+    | "/connections/new"
     | "/dashboards/$identifier"
     | "/dashboards/new"
-    | "/integrations/$identifier"
-    | "/integrations/new"
     | "/runs/$id"
     | "/scorecards/$identifier"
     | "/scorecards/new"
@@ -406,8 +406,8 @@ export interface FileRouteTypes {
     | "/actions/"
     | "/blueprints/"
     | "/catalog/"
+    | "/connections/"
     | "/dashboards/"
-    | "/integrations/"
     | "/runs/"
     | "/scorecards/"
     | "/self-service/"
@@ -426,10 +426,10 @@ export interface FileRouteTypes {
     | "/actions/new"
     | "/blueprints/$identifier"
     | "/blueprints/new"
+    | "/connections/$identifier"
+    | "/connections/new"
     | "/dashboards/$identifier"
     | "/dashboards/new"
-    | "/integrations/$identifier"
-    | "/integrations/new"
     | "/runs/$id"
     | "/scorecards/$identifier"
     | "/scorecards/new"
@@ -441,8 +441,8 @@ export interface FileRouteTypes {
     | "/actions"
     | "/blueprints"
     | "/catalog"
+    | "/connections"
     | "/dashboards"
-    | "/integrations"
     | "/runs"
     | "/scorecards"
     | "/self-service"
@@ -457,8 +457,8 @@ export interface FileRouteTypes {
     | "/_app/actions"
     | "/_app/approvals"
     | "/_app/blueprints"
+    | "/_app/connections"
     | "/_app/dashboards"
-    | "/_app/integrations"
     | "/_app/settings"
     | "/_app/workflows"
     | "/oauth/authorize"
@@ -468,10 +468,10 @@ export interface FileRouteTypes {
     | "/_app/actions/new"
     | "/_app/blueprints/$identifier"
     | "/_app/blueprints/new"
+    | "/_app/connections/$identifier"
+    | "/_app/connections/new"
     | "/_app/dashboards/$identifier"
     | "/_app/dashboards/new"
-    | "/_app/integrations/$identifier"
-    | "/_app/integrations/new"
     | "/_app/runs/$id"
     | "/_app/scorecards/$identifier"
     | "/_app/scorecards/new"
@@ -483,8 +483,8 @@ export interface FileRouteTypes {
     | "/_app/actions/"
     | "/_app/blueprints/"
     | "/_app/catalog/"
+    | "/_app/connections/"
     | "/_app/dashboards/"
-    | "/_app/integrations/"
     | "/_app/runs/"
     | "/_app/scorecards/"
     | "/_app/self-service/"
@@ -544,18 +544,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppBlueprintsRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/connections": {
+      id: "/_app/connections";
+      path: "/connections";
+      fullPath: "/connections";
+      preLoaderRoute: typeof AppConnectionsRouteImport;
+      parentRoute: typeof AppRoute;
+    };
     "/_app/dashboards": {
       id: "/_app/dashboards";
       path: "/dashboards";
       fullPath: "/dashboards";
       preLoaderRoute: typeof AppDashboardsRouteImport;
-      parentRoute: typeof AppRoute;
-    };
-    "/_app/integrations": {
-      id: "/_app/integrations";
-      path: "/integrations";
-      fullPath: "/integrations";
-      preLoaderRoute: typeof AppIntegrationsRouteImport;
       parentRoute: typeof AppRoute;
     };
     "/_app/settings": {
@@ -635,6 +635,27 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppCatalogIndexRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/connections/": {
+      id: "/_app/connections/";
+      path: "/";
+      fullPath: "/connections/";
+      preLoaderRoute: typeof AppConnectionsIndexRouteImport;
+      parentRoute: typeof AppConnectionsRoute;
+    };
+    "/_app/connections/$identifier": {
+      id: "/_app/connections/$identifier";
+      path: "/$identifier";
+      fullPath: "/connections/$identifier";
+      preLoaderRoute: typeof AppConnectionsIdentifierRouteImport;
+      parentRoute: typeof AppConnectionsRoute;
+    };
+    "/_app/connections/new": {
+      id: "/_app/connections/new";
+      path: "/new";
+      fullPath: "/connections/new";
+      preLoaderRoute: typeof AppConnectionsNewRouteImport;
+      parentRoute: typeof AppConnectionsRoute;
+    };
     "/_app/dashboards/": {
       id: "/_app/dashboards/";
       path: "/";
@@ -655,27 +676,6 @@ declare module "@tanstack/react-router" {
       fullPath: "/dashboards/new";
       preLoaderRoute: typeof AppDashboardsNewRouteImport;
       parentRoute: typeof AppDashboardsRoute;
-    };
-    "/_app/integrations/": {
-      id: "/_app/integrations/";
-      path: "/";
-      fullPath: "/integrations/";
-      preLoaderRoute: typeof AppIntegrationsIndexRouteImport;
-      parentRoute: typeof AppIntegrationsRoute;
-    };
-    "/_app/integrations/$identifier": {
-      id: "/_app/integrations/$identifier";
-      path: "/$identifier";
-      fullPath: "/integrations/$identifier";
-      preLoaderRoute: typeof AppIntegrationsIdentifierRouteImport;
-      parentRoute: typeof AppIntegrationsRoute;
-    };
-    "/_app/integrations/new": {
-      id: "/_app/integrations/new";
-      path: "/new";
-      fullPath: "/integrations/new";
-      preLoaderRoute: typeof AppIntegrationsNewRouteImport;
-      parentRoute: typeof AppIntegrationsRoute;
     };
     "/_app/runs/": {
       id: "/_app/runs/";
@@ -817,6 +817,22 @@ const AppBlueprintsRouteWithChildren = AppBlueprintsRoute._addFileChildren(
   AppBlueprintsRouteChildren,
 );
 
+interface AppConnectionsRouteChildren {
+  AppConnectionsIdentifierRoute: typeof AppConnectionsIdentifierRoute;
+  AppConnectionsNewRoute: typeof AppConnectionsNewRoute;
+  AppConnectionsIndexRoute: typeof AppConnectionsIndexRoute;
+}
+
+const AppConnectionsRouteChildren: AppConnectionsRouteChildren = {
+  AppConnectionsIdentifierRoute: AppConnectionsIdentifierRoute,
+  AppConnectionsNewRoute: AppConnectionsNewRoute,
+  AppConnectionsIndexRoute: AppConnectionsIndexRoute,
+};
+
+const AppConnectionsRouteWithChildren = AppConnectionsRoute._addFileChildren(
+  AppConnectionsRouteChildren,
+);
+
 interface AppDashboardsRouteChildren {
   AppDashboardsIdentifierRoute: typeof AppDashboardsIdentifierRoute;
   AppDashboardsNewRoute: typeof AppDashboardsNewRoute;
@@ -831,22 +847,6 @@ const AppDashboardsRouteChildren: AppDashboardsRouteChildren = {
 
 const AppDashboardsRouteWithChildren = AppDashboardsRoute._addFileChildren(
   AppDashboardsRouteChildren,
-);
-
-interface AppIntegrationsRouteChildren {
-  AppIntegrationsIdentifierRoute: typeof AppIntegrationsIdentifierRoute;
-  AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute;
-  AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute;
-}
-
-const AppIntegrationsRouteChildren: AppIntegrationsRouteChildren = {
-  AppIntegrationsIdentifierRoute: AppIntegrationsIdentifierRoute,
-  AppIntegrationsNewRoute: AppIntegrationsNewRoute,
-  AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
-};
-
-const AppIntegrationsRouteWithChildren = AppIntegrationsRoute._addFileChildren(
-  AppIntegrationsRouteChildren,
 );
 
 interface AppSettingsRouteChildren {
@@ -887,8 +887,8 @@ interface AppRouteChildren {
   AppActionsRoute: typeof AppActionsRouteWithChildren;
   AppApprovalsRoute: typeof AppApprovalsRoute;
   AppBlueprintsRoute: typeof AppBlueprintsRouteWithChildren;
+  AppConnectionsRoute: typeof AppConnectionsRouteWithChildren;
   AppDashboardsRoute: typeof AppDashboardsRouteWithChildren;
-  AppIntegrationsRoute: typeof AppIntegrationsRouteWithChildren;
   AppSettingsRoute: typeof AppSettingsRouteWithChildren;
   AppWorkflowsRoute: typeof AppWorkflowsRouteWithChildren;
   AppIndexRoute: typeof AppIndexRoute;
@@ -908,8 +908,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppActionsRoute: AppActionsRouteWithChildren,
   AppApprovalsRoute: AppApprovalsRoute,
   AppBlueprintsRoute: AppBlueprintsRouteWithChildren,
+  AppConnectionsRoute: AppConnectionsRouteWithChildren,
   AppDashboardsRoute: AppDashboardsRouteWithChildren,
-  AppIntegrationsRoute: AppIntegrationsRouteWithChildren,
   AppSettingsRoute: AppSettingsRouteWithChildren,
   AppWorkflowsRoute: AppWorkflowsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,

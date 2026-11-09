@@ -132,7 +132,7 @@ func TestToolsNameDocumentsByIdentifier(t *testing.T) {
 		if err := json.Unmarshal(raw, &schema); err != nil {
 			t.Fatal(err)
 		}
-		for _, banned := range []string{"integration", "workflow"} {
+		for _, banned := range []string{"connection", "workflow"} {
 			// list_runs filters by action and workflow, as GET runs does.
 			if banned == "workflow" && tool.Name == "list_runs" {
 				continue
@@ -195,7 +195,7 @@ func TestAuthoringAnnotations(t *testing.T) {
 		if listed.Annotations.ReadOnlyHint != (def.scope == oauth.ScopeRead) {
 			t.Errorf("%s: readOnlyHint = %v, scope %s", listed.Name, listed.Annotations.ReadOnlyHint, def.scope)
 		}
-		if listed.Name == "sync_integration" && !*listed.Annotations.OpenWorldHint {
+		if listed.Name == "sync_connection" && !*listed.Annotations.OpenWorldHint {
 			t.Error("sync must declare it reaches outside the portal")
 		}
 	}
@@ -289,7 +289,7 @@ func TestToolsCallServicesAsTheCaller(t *testing.T) {
 	if out := output(t, refused); !refused.IsError || out.Status != http.StatusBadRequest {
 		t.Errorf("refused delete = %+v", out)
 	}
-	failed := call(t, session, "sync_integration", map[string]any{"identifier": "source"})
+	failed := call(t, session, "sync_connection", map[string]any{"identifier": "source"})
 	if out := output(t, failed); !failed.IsError || out.Status != http.StatusInternalServerError || strings.Contains(fmt.Sprint(out.Error), "10.0.0.5") {
 		t.Errorf("failed sync = %+v", out)
 	}

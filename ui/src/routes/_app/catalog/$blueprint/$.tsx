@@ -162,17 +162,17 @@ function EntityPage() {
               <code className="font-mono">{entity.identifier}</code>
               <span className="flex items-center gap-1">
                 <Plug className="size-3.5" aria-hidden />
-                {/* Integration pages are for builders, so members see only its name. */}
+                {/* Connection pages are for builders, so members see only its name. */}
                 {builder ? (
                   <Link
-                    to="/integrations/$identifier"
-                    params={{ identifier: entity.integration }}
+                    to="/connections/$identifier"
+                    params={{ identifier: entity.connection }}
                     className="hover:underline"
                   >
-                    {entity.integration}
+                    {entity.connection}
                   </Link>
                 ) : (
-                  entity.integration
+                  entity.connection
                 )}
               </span>
               <span title={formatAbsolute(entity.updatedAt)}>
@@ -272,7 +272,7 @@ function EntityPage() {
               identifier: entity.identifier,
               title: entity.title,
               properties: entity.properties,
-              integration: entity.integration,
+              connection: entity.connection,
               createdAt: entity.createdAt,
               updatedAt: entity.updatedAt,
             })}

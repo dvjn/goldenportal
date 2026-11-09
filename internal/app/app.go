@@ -10,10 +10,10 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
-	"github.com/dvjn/goldenportal/internal/integration"
 	portalmcp "github.com/dvjn/goldenportal/internal/mcp"
 	"github.com/dvjn/goldenportal/internal/oauth"
 	"github.com/dvjn/goldenportal/internal/scim"
@@ -67,7 +67,7 @@ func New() *gofr.App {
 	app.UseMiddleware(favicon, web.SPA(web.Dist()), web.BuildHeader(web.Build(web.Dist())), httpx.WithQuery)
 	mcpLimits := portalmcp.NewLimiter()
 	relay := telemetry.NewRelay(app.Config)
-	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, integration.Search, action.Search)
+	searcher := search.New(blueprint.Search, entity.Search, dashboard.Search, scorecard.Search, connection.Search, action.Search)
 	app.UseMiddlewareWithContainer(func(c *container.Container, next http.Handler) http.Handler {
 		store := auth.NewStore(c.SQL)
 		backend := auth.Middleware(store, secureCookies)(oidc.Routes(store)(browserTraces(relay)(next)))
@@ -88,10 +88,10 @@ func New() *gofr.App {
 	auth.NewHandlers(secureCookies).Register(api)
 	oauthServer.Register(api)
 	access.Register(api)
-	blueprint.Register(api, dashboard.CheckPages, integration.CheckRetention)
+	connection.Register(api, app.Config.Get("GP_BASE_URL"), app.Config.Get(connection.WebhookKeyEnv))
+	blueprint.Register(api, dashboard.CheckPages, connection.CheckSources)
 	entity.Register(api, app.Config.GetOrDefault(entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule))
-	integration.Register(api, app.Config.Get("GP_BASE_URL"), app.Config.Get(integration.WebhookKeyEnv))
-	integration.RegisterIngest(app)
+	connection.RegisterIngest(app)
 	scorecard.Register(api)
 	dashboard.Register(api)
 	action.Register(api, app.Config.Get("GP_BASE_URL"))

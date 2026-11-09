@@ -21,7 +21,7 @@ export type Entity = {
   // scorecard results.
   properties: Record<string, unknown>;
   related: Record<string, Link[]>;
-  integration: string;
+  connection: string;
   createdAt: string;
   updatedAt: string;
 };

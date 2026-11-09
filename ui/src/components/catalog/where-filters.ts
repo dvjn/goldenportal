@@ -39,7 +39,7 @@ const builtIns = new Set([
   "identifier",
   "title",
   "blueprint",
-  "integration",
+  "connection",
   "createdAt",
   "updatedAt",
 ]);
@@ -205,7 +205,7 @@ const builtins: Record<string, string> = {
   identifier: "Identifier",
   title: "Title",
   blueprint: "Blueprint",
-  integration: "Integration",
+  connection: "Connection",
   createdAt: "Created",
   updatedAt: "Updated",
 };

@@ -23,8 +23,8 @@ const scope = "github.com/dvjn/goldenportal"
 // What spans and log lines say about the portal's own objects, under one
 // name each so a field found in a log is the attribute to search traces by.
 const (
-	Integration = attribute.Key("gp.integration")
-	Resource    = attribute.Key("gp.resource")
+	Connection = attribute.Key("gp.connection")
+	Resource   = attribute.Key("gp.resource")
 	// Scope is the part of a system a connector reads at once, such as a
 	// GitLab project.
 	Scope      = attribute.Key("gp.scope")

@@ -15,7 +15,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/pgtest"
 )
 
-// storeFixture is a database with one blueprint and two integrations.
+// storeFixture is a database with one blueprint and two connections.
 type storeFixture struct {
 	t                       *testing.T
 	db                      *gofrSQL.DB
@@ -29,17 +29,17 @@ func newStoreFixture(t *testing.T) *storeFixture {
 	return &storeFixture{
 		t: t, db: db, store: NewStore(db),
 		blueprint: pgtest.Publish(t, db, "blueprint", "service", "kind: Blueprint"),
-		mine:      pgtest.Publish(t, db, "integration", "mine", "kind: Integration"),
-		theirs:    pgtest.Publish(t, db, "integration", "theirs", "kind: Integration"),
+		mine:      pgtest.Publish(t, db, "connection", "mine", "kind: Connection"),
+		theirs:    pgtest.Publish(t, db, "connection", "theirs", "kind: Connection"),
 	}
 }
 
-func (f *storeFixture) write(integrationID string, writes ...Write) []string {
+func (f *storeFixture) write(connectionID string, writes ...Write) []string {
 	f.t.Helper()
 	for i := range writes {
 		writes[i].BlueprintID = f.blueprint
 	}
-	written, err := f.store.WriteAll(f.t.Context(), integrationID, writes)
+	written, err := f.store.WriteAll(f.t.Context(), connectionID, writes)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestReconcileJudgesWhatTheRunRead(t *testing.T) {
 	}
 
 	// A run that started before the latest publish read with the old
-	// mappings, so it does nothing.
+	// sources, so it does nothing.
 	if _, err := f.db.ExecContext(t.Context(), `UPDATE entities SET missed_at = now()`); err != nil {
 		t.Fatal(err)
 	}
