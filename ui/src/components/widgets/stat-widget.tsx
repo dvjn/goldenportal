@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import type { ReactNode } from "react";
 import { IconTile } from "@/components/catalog/blueprint-icon";
-import { EmptyValue, formatNumber } from "@/components/catalog/property-value";
+import { EmptyValue, exactTitle, formatNumber } from "@/components/catalog/property-value";
 import { interactiveCard, stretchedLink } from "@/components/link-card";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,7 +26,10 @@ export function StatWidget({ widget, context, data, error }: WidgetProps<StatDat
   const link = context.draft ? undefined : data.link;
   return (
     <StatCard widget={widget} link={link}>
-      <span className="text-2xl font-semibold tracking-tight tabular-nums">
+      <span
+        className="text-2xl font-semibold tracking-tight tabular-nums"
+        title={exactTitle(data.value, data.unit)}
+      >
         {data.value === null ? (
           <EmptyValue title="Nothing to measure" />
         ) : data.unit === "%" && data.count !== undefined && data.total ? (

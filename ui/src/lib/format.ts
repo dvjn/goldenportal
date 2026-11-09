@@ -41,6 +41,33 @@ export function formatDuration(start: string | Date, end: string | Date) {
   return seconds % 60 === 0 ? `${minutes}m` : `${minutes}m ${seconds % 60}s`;
 }
 
+// formatSeconds writes a span in seconds as its two largest units, such as
+// "3d14h" or "5m39s", rounded to the smaller one. Under a minute it keeps one
+// decimal when there is one.
+export function formatSeconds(value: number): string {
+  if (value < 0) return `-${formatSeconds(-value)}`;
+  const tenths = Math.round(value * 10) / 10;
+  if (tenths < 60) return `${tenths}s`;
+  const units = [
+    ["d", 86400],
+    ["h", 3600],
+    ["m", 60],
+    ["s", 1],
+  ] as const;
+  let first = units.findIndex(([, size]) => tenths >= size);
+  // Rounding can carry into the next unit up, such as 59m59.6s to 1h.
+  let whole = Math.round(tenths / units[first + 1][1]) * units[first + 1][1];
+  if (first > 0 && whole >= units[first - 1][1]) {
+    first -= 1;
+    whole = Math.round(tenths / units[first + 1][1]) * units[first + 1][1];
+  }
+  const [bigSuffix, bigSize] = units[first];
+  const [smallSuffix, smallSize] = units[first + 1];
+  const big = Math.floor(whole / bigSize);
+  const small = Math.round((whole - big * bigSize) / smallSize);
+  return small > 0 ? `${big}${bigSuffix}${small}${smallSuffix}` : `${big}${bigSuffix}`;
+}
+
 // percentOf rounds down, so 100 means everything: a share can't read full
 // while one is missing. It works on whole counts to dodge float error, which
 // would turn 29 of 100 into 28.

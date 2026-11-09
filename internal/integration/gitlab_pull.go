@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -37,7 +38,8 @@ func gitlabFeaturesOn(project map[string]any, features ...string) bool {
 // says of one on its own grows as it adds fields, with secrets among them,
 // such as runners' tokens, so both are cut to the fields of their lists,
 // which are what's below. So are pipelines, whose lists are what a sync
-// reads, since reading each on its own would cost a request a pipeline.
+// reads, since reading each on its own would cost a request a pipeline,
+// with their times, which GraphQL gives a page at a time.
 // Merge requests and issues are read again from
 // their lists, by iid, and a deployment read on its own has only its
 // approvals more, which are dropped.
@@ -90,22 +92,23 @@ type gitlabPull struct {
 	// listedAt is when GitLab listed each project, by ID.
 	listedAt map[string]time.Time
 	groups   *gitlabMergeGroups
+	runners  *gitlabRunnerSightings
 }
 
 // Pull reads each resource asked for. Groups come first, then the
 // projects, a few at a time. Merge requests, issues, pipelines with their
-// jobs, and deployments are read from where the request says in each
-// project, as what changed since; the rest is read whole, as GitLab can't
-// say what of it changed. Something that fails, such as one project's
-// pipelines, fails its resource, so a complete sync deletes none of it,
-// without stopping the rest. Then it points each project's webhook at the
-// integration, where it can, warning of what it couldn't.
+// jobs and job attempts, and deployments are read from where the request
+// says in each project, as what changed since; the rest is read whole, as
+// GitLab can't say what of it changed. Something that fails, such as one
+// project's pipelines, fails its resource, so a complete sync deletes none
+// of it, without stopping the rest. Then it points each project's webhook
+// at the integration, where it can, warning of what it couldn't.
 func (c *GitLabConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 	emit func(resource string, items []Item) error,
 ) (Report, error) {
 	pull := &gitlabPull{
 		pullRun: newPullRun(p.Resources, emit), config: c, request: p, warn: p.Warn, groups: newGitLabMergeGroups(),
-		listedAt: map[string]time.Time{},
+		listedAt: map[string]time.Time{}, runners: newGitLabRunnerSightings(),
 	}
 	client, err := newGitLabClient(c)
 	if err != nil {
@@ -134,7 +137,30 @@ func (p *gitlabPull) run(ctx context.Context) error {
 		return err
 	}
 
-	return forEach(p.projects, apiConcurrency, func(project map[string]any) error { return p.pullProject(ctx, project) })
+	if err := forEach(p.projects, apiConcurrency, func(project map[string]any) error { return p.pullProject(ctx, project) }); err != nil {
+		return err
+	}
+
+	return p.pullRunners(ctx)
+}
+
+// pullRunners reads the runners the attempts read in every project ran on,
+// each once, as the newest attempt on it across them found it. They're in
+// no one project, as several may share a runner. A runner that can't be
+// read fails them as a whole, so no project's cursor moves past the
+// attempts that would read it again.
+func (p *gitlabPull) pullRunners(ctx context.Context) (err error) {
+	if !p.want[gitlabRunners] {
+		return nil
+	}
+	ctx, span := telemetry.Start(ctx, "read "+gitlabRunners, telemetry.Resource.String(gitlabRunners))
+	defer func() { telemetry.End(span, err) }()
+	runners, at, readErr := p.runners.read(ctx, p.client)
+	if err := p.emitObjects(gitlabRunners, runners, nil, source{at: at}); err != nil {
+		return err
+	}
+
+	return p.fail(ctx, []string{gitlabRunners}, "", "", readErr)
 }
 
 // gitlabMissing is a listed group or project GitLab has no answer about,
@@ -701,6 +727,99 @@ func gitlabWithLastDeployment(ctx context.Context, client *gitlabClient, base, f
 	return nil
 }
 
+// gitlabApprovals reads the approvals of a project's deployments, which
+// GitLab gives only of a deployment on its own. An environment's rules say
+// whether its deployments need approval, so once one deployment to an
+// environment says none do, the rest of the sync reads no others of it,
+// and once one says nothing of approvals, as on GitLab's free tier, it
+// reads none.
+type gitlabApprovals struct {
+	client         *gitlabClient
+	base, fullPath string
+	none           map[string]bool
+	unknown        bool
+}
+
+// add puts what GitLab says of its approvals on a deployment it listed.
+func (a *gitlabApprovals) add(ctx context.Context, deployment map[string]any) error {
+	environment, _ := objectOf(deployment, "environment")["name"].(string)
+	var one map[string]any
+	switch {
+	case a.unknown:
+	case a.none[environment]:
+		one = map[string]any{"approvals": []any{}, "pending_approval_count": float64(0)}
+	default:
+		if _, err := a.client.get(ctx, a.base+"deployments/"+idOf(deployment["id"]), &one); err != nil && !apiGone(err) {
+			return err
+		}
+	}
+	gitlabWithApprovals(deployment, one, a.fullPath)
+	switch required := objectOf(deployment, parentKey)["approvalRequired"]; {
+	case one != nil && required == nil:
+		a.unknown = true
+	case required == false:
+		a.none[environment] = true
+	}
+
+	return nil
+}
+
+// gitlabWithApprovals puts under a deployment's _gp its project and what
+// one, the deployment as GitLab gives it on its own, says of its
+// approvals: approvalRequired, whether its environment's rules ask for
+// any; approvals, each with its user, status, created_at and comment;
+// approvedAt, when the last approval it needed was given, unless it still
+// waits for one or one was a rejection; and approvalSeconds, from when the
+// deployment was made, as its job became ready to run, until then. Each
+// is nil where GitLab says nothing of approvals. waitSeconds is from when
+// the deployment was made until its job started: approval, a manual play
+// and the wait for a runner.
+func gitlabWithApprovals(deployment, one map[string]any, fullPath string) {
+	created := timeOf(deployment, "created_at")
+	gp := map[string]any{"project": fullPath, "approvalRequired": nil, "approvals": nil, "approvedAt": nil, "approvalSeconds": nil, "waitSeconds": nil}
+	deployment[parentKey] = gp
+	if started := timeOf(objectOf(deployment, "deployable"), "started_at"); !started.IsZero() && !created.IsZero() {
+		gp["waitSeconds"] = gitlabSeconds(created, started)
+	}
+	given, ok := one["approvals"].([]any)
+	if !ok {
+		return
+	}
+	required := false
+	rules, _ := objectOf(one, "approval_summary")["rules"].([]any)
+	for _, rule := range rules {
+		r, _ := rule.(map[string]any)
+		if n, _ := r["required_approvals"].(float64); n > 0 {
+			required = true
+		}
+	}
+	pending, _ := one["pending_approval_count"].(float64)
+	approvals := make([]any, 0, len(given))
+	var (
+		approved   time.Time
+		approvedAt any
+		rejected   bool
+	)
+	for _, value := range given {
+		approval, _ := value.(map[string]any)
+		approvals = append(approvals, map[string]any{
+			"user": gitlabUser(approval["user"]), "status": approval["status"], "created_at": approval["created_at"], "comment": approval["comment"],
+		})
+		switch at := timeOf(approval, "created_at"); approval["status"] {
+		case "rejected":
+			rejected = true
+		case "approved":
+			if at.After(approved) {
+				approved, approvedAt = at, approval["created_at"]
+			}
+		}
+	}
+	gp["approvalRequired"], gp["approvals"] = required || pending > 0 || len(given) > 0, approvals
+	if approvedAt != nil && pending == 0 && !rejected {
+		gp["approvedAt"], gp["approvalSeconds"] = approvedAt, gitlabSeconds(created, approved)
+	}
+}
+
 // pullProject reads one project.
 func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) (err error) {
 	fullPath, _ := project["path_with_namespace"].(string)
@@ -739,10 +858,18 @@ func (p *gitlabPull) pullProject(ctx context.Context, project map[string]any) (e
 			return p.readChanged(ctx, base+"issues", gitlabIssues, scope, page(gitlabIssues, parent))
 		}},
 		{[]string{gitlabReleases}, simple(gitlabReleases, "releases")},
-		{[]string{gitlabPipelines, gitlabJobs}, func(ctx context.Context) error { return p.pullPipelines(ctx, base, fullPath, scope) }},
+		{gitlabRunResources, func(ctx context.Context) error { return p.pullPipelines(ctx, base, fullPath, scope) }},
 		{[]string{gitlabDeployments}, func(ctx context.Context) error {
 			since, _ := p.request.From(gitlabDeployments, scope)
-			return p.read(ctx, listing{path: base + "deployments?" + changedSince(since).Encode()}, page(gitlabDeployments, parent))
+			approvals := &gitlabApprovals{client: p.client, base: base, fullPath: fullPath, none: map[string]bool{}}
+			return p.read(ctx, listing{path: base + "deployments?" + changedSince(since).Encode()}, func(deployments []map[string]any, at time.Time) error {
+				for _, deployment := range deployments {
+					if err := approvals.add(ctx, deployment); err != nil {
+						return err
+					}
+				}
+				return page(gitlabDeployments, nil)(deployments, at)
+			})
 		}},
 		{[]string{gitlabEnvironments}, func(ctx context.Context) error {
 			return p.read(ctx, listing{path: base + "environments"}, func(environments []map[string]any, at time.Time) error {
@@ -821,59 +948,134 @@ func (p *gitlabPull) readChanged(ctx context.Context, path, resource, scope stri
 	return p.read(ctx, changed, page)
 }
 
+// gitlabRunResources are read together, as pipelines say which jobs to
+// read, and jobs which runners.
+var gitlabRunResources = []string{gitlabPipelines, gitlabJobs, gitlabJobAttempts, gitlabRunners}
+
+// gitlabAttemptResources are read from pipelines' jobs.
+var gitlabAttemptResources = []string{gitlabJobs, gitlabJobAttempts, gitlabRunners}
+
 // pullPipelines reads the pipelines that changed since the last sync read
-// them in the project, child pipelines among them, and their jobs' latest
-// attempts, at a request a pipeline. Retrying a job changes its pipeline,
-// so a retried job is read again with it. Jobs that fail fail only jobs,
-// so the pipelines' stale entities still go, and a pipeline deleted since
-// it was listed has none.
+// them in the project, child pipelines among them, with their times, and
+// every attempt of their jobs, at a request a pipeline, as jobs and as
+// job attempts, noting the runners they ran on. Retrying a job changes its pipeline, so its pipeline's
+// attempts are read again, and numbered again, with it. A project's
+// attempts are emitted together, oldest first. Times or jobs that fail
+// fail only their resources, and a pipeline deleted since it was listed
+// has none.
 func (p *gitlabPull) pullPipelines(ctx context.Context, base, fullPath, scope string) error {
-	parent := map[string]any{"project": fullPath}
-	var pipelinesSince, jobsSince time.Time
-	if p.want[gitlabPipelines] {
-		pipelinesSince, _ = p.request.From(gitlabPipelines, scope)
+	var (
+		since, jobsSince  time.Time
+		anyFrom, jobsFrom bool
+		wantJobs          = p.wantsAny(gitlabAttemptResources)
+	)
+	for _, resource := range gitlabRunResources {
+		if !p.want[resource] {
+			continue
+		}
+		from, _ := p.request.From(resource, scope)
+		if !anyFrom || from.Before(since) {
+			since, anyFrom = from, true
+		}
+		if resource != gitlabPipelines && (!jobsFrom || from.Before(jobsSince)) {
+			jobsSince, jobsFrom = from, true
+		}
 	}
-	if p.want[gitlabJobs] {
-		jobsSince, _ = p.request.From(gitlabJobs, scope)
-	}
-	since := pipelinesSince
-	if !p.want[gitlabPipelines] || (p.want[gitlabJobs] && jobsSince.Before(since)) {
-		since = jobsSince
-	}
+
 	// GitLab lists child pipelines, which a parent's trigger jobs make, only
 	// when asked for them alone, but sends their events like any other's.
 	var ids []string
+	manual := gitlabManual{}
 	for _, children := range []bool{false, true} {
 		query := changedSince(since)
 		if children {
 			query.Set("source", "parent_pipeline")
 		}
+		var (
+			pipelines []map[string]any
+			listedAt  time.Time
+		)
 		err := p.read(ctx, listing{path: base + "pipelines?" + query.Encode()}, func(objects []map[string]any, at time.Time) error {
-			for i, pipeline := range objects {
-				if id := idOf(pipeline["id"]); id != "" && !timeOf(pipeline, "updated_at").Before(jobsSince) {
+			for _, pipeline := range objects {
+				if id := idOf(pipeline["id"]); wantJobs && id != "" && !timeOf(pipeline, "updated_at").Before(jobsSince) {
 					ids = append(ids, id)
 				}
-				objects[i] = gitlabShape(pipeline, gitlabPipelineFields)
+				pipelines = append(pipelines, gitlabShape(pipeline, gitlabPipelineFields))
 			}
-			return p.emitObjects(gitlabPipelines, objects, parent, source{scope: scope, at: at})
+			listedAt = earliest(listedAt, at)
+			return nil
 		})
 		if err != nil {
 			return err
 		}
-	}
-	if !p.want[gitlabJobs] {
-		return nil
-	}
-	for _, id := range ids {
-		err := p.read(ctx, listing{path: base + "pipelines/" + id + "/jobs"}, func(jobs []map[string]any, at time.Time) error {
-			return p.emitObjects(gitlabJobs, jobs, parent, source{scope: scope, at: at})
-		})
-		if err := skipGone(err); err != nil {
-			return p.fail(ctx, []string{gitlabJobs}, fullPath, scope, err)
+		if !p.want[gitlabPipelines] || len(pipelines) == 0 {
+			continue
+		}
+		timesCtx, clock := withSourceClock(ctx)
+		var read gitlabManual
+		pipelines, read, err = gitlabWithTimes(timesCtx, p.client, base, fullPath, since, pipelines, children)
+		maps.Copy(manual, read)
+		if err == nil {
+			err = p.emitObjects(gitlabPipelines, pipelines, map[string]any{"project": fullPath}, source{scope: scope, at: earliest(listedAt, clock.take())})
+		}
+		if err := p.fail(ctx, []string{gitlabPipelines}, fullPath, scope, err); err != nil {
+			return err
 		}
 	}
+	if !wantJobs {
+		return nil
+	}
 
-	return nil
+	return p.fail(ctx, gitlabAttemptResources, fullPath, scope, p.pullAttempts(ctx, base, fullPath, scope, ids, manual))
+}
+
+// pullAttempts reads the attempts of the project's pipelines with ids, a
+// few pipelines at a time, with what they waited for, given the manual
+// jobs of those whose times said them and read for the rest, and emits
+// them once all are read, as both resources, so that across the project
+// the newest is written last, and notes their runners, which are read once
+// every project's are.
+func (p *gitlabPull) pullAttempts(ctx context.Context, base, fullPath, scope string, ids []string, manual gitlabManual) error {
+	var (
+		mu         sync.Mutex
+		byPipeline = map[string][]map[string]any{}
+		readAt     time.Time
+	)
+	err := forEach(ids, apiConcurrency, func(id string) error {
+		readCtx, clock := withSourceClock(ctx)
+		read, err := gitlabAttempts(readCtx, p.client, base, id, fullPath)
+		mu.Lock()
+		defer mu.Unlock()
+		byPipeline[id] = read
+		readAt = earliest(readAt, clock.take())
+		return skipGone(err)
+	})
+	if err != nil {
+		return err
+	}
+	unknown := slices.DeleteFunc(slices.Sorted(maps.Keys(byPipeline)), func(id string) bool { return manual[id] != nil || len(byPipeline[id]) == 0 })
+	if len(unknown) > 0 {
+		readCtx, clock := withSourceClock(ctx)
+		read, err := gitlabManualJobs(readCtx, p.client, fullPath, unknown)
+		if err != nil {
+			return err
+		}
+		readAt = earliest(readAt, clock.take())
+		maps.Copy(manual, read)
+	}
+	var attempts []map[string]any
+	for id, read := range byPipeline {
+		gitlabWaits(read, manual[id])
+		attempts = append(attempts, read...)
+	}
+	gitlabOldestFirst(attempts)
+	p.runners.add(attempts, readAt)
+	from := source{scope: scope, at: readAt}
+	if err := p.emitObjects(gitlabJobAttempts, attempts, nil, from); err != nil {
+		return err
+	}
+
+	return p.emitObjects(gitlabJobs, gitlabLatest(attempts), nil, from)
 }
 
 // gitlabScriptFields are what a job runs, left out of CI configs, since

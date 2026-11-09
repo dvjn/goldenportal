@@ -17,6 +17,7 @@ import {
   type TableData,
   type TextData,
   type TierData,
+  type TrendData,
   type Widget,
   type WidgetContext,
   type WidgetData,
@@ -31,6 +32,7 @@ import { PropertiesWidget } from "./properties-widget";
 import { ScorecardWidget } from "./scorecard-widget";
 import { StatWidget } from "./stat-widget";
 import { TableWidget } from "./table-widget";
+import { TrendWidget } from "./trend-widget";
 import { linkable, WidgetLink } from "./widget-link";
 
 // Spans are spelled out so Tailwind sees them. Below lg, half-width or
@@ -156,6 +158,8 @@ function WidgetBody(props: WidgetProps) {
       return <GroupWidget {...(props as WidgetProps<GroupData>)} />;
     case "matrix":
       return <MatrixWidget {...(props as WidgetProps<MatrixData>)} />;
+    case "trend":
+      return <TrendWidget {...(props as WidgetProps<TrendData>)} />;
     case "table":
       return <TableWidget {...(props as WidgetProps<TableData>)} />;
     case "scorecard":

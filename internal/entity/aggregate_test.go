@@ -63,6 +63,27 @@ func TestAggregatesAreOneStatement(t *testing.T) {
 	}
 }
 
+func TestNarrowedAggregatesFilterTheirRows(t *testing.T) {
+	c := &compiler{spec: service(t), specs: map[string]blueprint.Spec{"team": {Identifier: "team"}}}
+	critical := &Filter{Property: "tier", Op: OpEq, Value: "critical"}
+	for _, test := range []struct {
+		a    Aggregate
+		want string
+	}{
+		{Aggregate{Op: "count", Filter: critical}, `count(*) FILTER (WHERE (e.properties @> $1::jsonb))`},
+		{Aggregate{Op: "p95", Path: "stars"}, `percentile_cont(0.95) WITHIN GROUP (ORDER BY (CASE WHEN jsonb_typeof(e.properties -> 'stars') = 'number' THEN (e.properties -> 'stars')::numeric END))`},
+		{
+			Aggregate{Op: "share", Filter: critical, Share: &Filter{Property: "critical", Op: OpEq, Value: true}},
+			`100.0 * count(*) FILTER (WHERE (e.properties @> $1::jsonb) AND (e.computed @> $2::jsonb)) / nullif(count(*) FILTER (WHERE (e.properties @> $1::jsonb)), 0)`,
+		},
+	} {
+		c.args = nil
+		if got, err := aggregateSQL(c, test.a); err != nil || got != test.want {
+			t.Errorf("%+v = %s, %v\nwant %s", test.a, got, err, test.want)
+		}
+	}
+}
+
 func TestCheckAggregate(t *testing.T) {
 	specs := map[string]blueprint.Spec{"team": {Identifier: "team"}}
 	for _, test := range []struct {
@@ -75,6 +96,9 @@ func TestCheckAggregate(t *testing.T) {
 		{Aggregate{Op: "sum", Path: "tags"}, "works on numbers"},
 		{Aggregate{Op: "median", Path: "stars"}, "must be one of"},
 		{Aggregate{Op: "share"}, "needs the condition"},
+		{Aggregate{Op: "p95", Path: "stars"}, ""},
+		{Aggregate{Op: "p99", Path: "tier"}, "p99 works on numbers, and tier isn't one"},
+		{Aggregate{Op: "count", Filter: &Filter{Property: "nope", Op: OpExists}}, `no property "nope"`},
 	} {
 		err := CheckAggregate(specs, service(t), test.a)
 		if (test.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), test.want)) {

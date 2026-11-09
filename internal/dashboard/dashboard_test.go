@@ -491,6 +491,15 @@ spec:
 		{"scorecard of another blueprint", widget.Widget{Type: widget.TypeScorecard, Scorecard: "readiness", Query: &widget.Query{Blueprint: "team"}}, "error w.query"},
 		{"scorecard narrowed", widget.Widget{Type: widget.TypeScorecard, Scorecard: "readiness", Query: &widget.Query{Filter: &filter.Filter{Property: "tier", Op: "eq", Value: "a"}}}, ""},
 		{"properties", widget.Widget{Type: widget.TypeProperties, Properties: []string{"tier", "nope"}}, "error w.properties"},
+		{"percentile", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{P95: "coverage"}})}, ""},
+		{"percentile of text", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{P95: "tier"}})}, "error w.value.p95"},
+		{"bar measure", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "tier", Measure: &widget.Measure{Filter: &filter.Filter{Property: "tags", Op: "exists"}, Summary: widget.Summary{P90: "coverage"}}}, ""},
+		{"bar measure of text", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "tier", Measure: &widget.Measure{Summary: widget.Summary{P50: "ownerName"}}}, "error w.measure.p50"},
+		{"bar measure filter", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "tier", Measure: &widget.Measure{Filter: bad}}, "error w.measure.filter"},
+		{"matrix measures", widget.Widget{Type: widget.TypeMatrix, Query: services, GroupBy: "tier", Measures: []widget.Measure{{Title: "N"}, {Title: "S", Summary: widget.Summary{Share: bad}}, {Title: "A", Summary: widget.Summary{Avg: "tags"}}}}, "error w.measures[1].share, error w.measures[2].avg"},
+		{"trend", widget.Widget{Type: widget.TypeTrend, Query: services, Date: "createdAt", Measure: &widget.Measure{Summary: widget.Summary{Share: &filter.Filter{Property: "tier", Op: "eq", Value: "a"}}}, Link: &widget.Link{Query: services, Group: true}}, ""},
+		{"trend of text", widget.Widget{Type: widget.TypeTrend, Query: services, Date: "tier"}, "error w.date"},
+		{"trend measure", widget.Widget{Type: widget.TypeTrend, Query: services, Date: "updatedAt", Measure: &widget.Measure{Summary: widget.Summary{Max: "nope"}}}, "error w.measure.max"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -503,6 +512,18 @@ spec:
 				t.Fatalf("issues = %q, want %q", got, test.want)
 			}
 		})
+	}
+
+	for _, test := range []struct {
+		widget widget.Widget
+		want   string
+	}{
+		{widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{P95: "tier"}})}, "p95 works on numbers, and tier isn't one"},
+		{widget.Widget{Type: widget.TypeTrend, Query: services, Date: "coverage"}, "coverage isn't a date, so entities can't be put on its day"},
+	} {
+		if issues := checkWidgets([]widget.Widget{test.widget}, "service", blueprints, scorecards); len(issues) != 1 || issues[0].Message != test.want {
+			t.Errorf("issues = %+v, want %q", issues, test.want)
+		}
 	}
 }
 

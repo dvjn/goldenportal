@@ -11,11 +11,18 @@ import (
 	"sync"
 )
 
+// gitlabRetiredEvents are event settings no resource needs any more, which
+// webhooks set up before still have on, so they're turned off.
+var gitlabRetiredEvents = []string{"job_events"}
+
 // gitlabHookFlags says, of every event setting the connector manages,
 // whether resources need it; nil when none do. Push events are on unless
 // a webhook says otherwise, so each is set either way.
 func gitlabHookFlags(resources []string) map[string]bool {
 	flags := map[string]bool{}
+	for _, event := range gitlabRetiredEvents {
+		flags[event] = false
+	}
 	wanted := false
 	for _, r := range gitlabTable {
 		for _, event := range r.events {

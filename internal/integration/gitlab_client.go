@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -49,6 +50,10 @@ func (c *gitlabClient) write(ctx context.Context, method, path string, in, out a
 	return c.apiClient.write(ctx, method, "", path, in, out)
 }
 
+// errGraphQLRefused is GitLab answering a query with errors, as it does
+// when its version or tier lacks a field the query asks for.
+var errGraphQLRefused = errors.New("GitLab's GraphQL API refused the query")
+
 // graphql runs a query on GitLab's GraphQL API, beside the REST one under
 // the same instance, for what REST can't ask, such as a project's open
 // vulnerabilities by severity. A GraphQL error fails the call; a field the
@@ -72,7 +77,7 @@ func (c *gitlabClient) graphql(ctx context.Context, query string, variables map[
 		return fmt.Errorf("GitLab's GraphQL API answered with something that isn't JSON: %w", err)
 	}
 	if len(answer.Errors) > 0 {
-		return fmt.Errorf("GitLab's GraphQL API refused the query: %s", answer.Errors[0].Message)
+		return fmt.Errorf("%w: %s", errGraphQLRefused, answer.Errors[0].Message)
 	}
 
 	return json.Unmarshal(answer.Data, out)

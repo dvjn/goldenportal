@@ -35,6 +35,8 @@ type gitlabFixture struct {
 	// archived is the ID of a project that's archived, if any, and noCI one
 	// without a CI configuration file.
 	archived, noCI string
+	// noGraphQL makes the instance one without a GraphQL API.
+	noGraphQL bool
 
 	// scopes are the token's, or nil when the instance doesn't say.
 	scopes []string
@@ -66,6 +68,13 @@ var (
 
 func gitlabDaysAgo(days int) string {
 	return time.Now().AddDate(0, 0, -days).UTC().Format(time.RFC3339)
+}
+
+// gitlabLater is a while after a time, to the millisecond, as GitLab's
+// REST API gives times.
+func gitlabLater(at string, after time.Duration) string {
+	t, _ := time.Parse(time.RFC3339, at)
+	return t.Add(after).Format("2006-01-02T15:04:05.000Z")
 }
 
 func newGitLabFixture(t *testing.T) *gitlabFixture {
@@ -251,7 +260,7 @@ func (f *gitlabFixture) serveData(w http.ResponseWriter, r *http.Request, path s
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	switch {
 	case path == "/api/graphql":
-		f.vulnerabilities(w, r)
+		f.graphql(w, r)
 	case path == "/user":
 		user := map[string]any{"id": float64(7), "username": "portal-bot"}
 		if f.admin {
@@ -300,6 +309,8 @@ func (f *gitlabFixture) serveData(w http.ResponseWriter, r *http.Request, path s
 			}
 		}
 		f.page(w, r, out)
+	case path == "/runners/1":
+		f.reply(w, http.StatusOK, gitlabFixtureRunner())
 	case parts[0] == "projects" && len(parts) >= 2 && projects[parts[1]] != "":
 		id := projects[parts[1]]
 		if len(parts) == 2 {
@@ -338,13 +349,10 @@ func (f *gitlabFixture) serveProject(w http.ResponseWriter, r *http.Request, id,
 	issues := []map[string]any{
 		object(9, gitlabT3), object(8, gitlabT2, "state", "closed", "closed_at", gitlabT2), object(7, gitlabT0, "state", "closed", "closed_at", gitlabT0), object(6, gitlabT0),
 	}
-	// 14 is a child pipeline, which GitLab lists only when asked for them.
-	pipelines := []map[string]any{
-		object(14, gitlabT3, "ref", "main", "source", "parent_pipeline"), object(13, gitlabT3, "ref", "main", "status", "success"),
-		object(12, gitlabT2, "ref", "dev"), object(11, gitlabT0, "ref", "main"),
-	}
+	pipelines := gitlabFixturePipelines()
 	deployments := []map[string]any{
-		object(22, gitlabT3, "environment", map[string]any{"name": "production"}, "status", "success"),
+		object(22, gitlabT3, "environment", map[string]any{"name": "production"}, "status", "success",
+			"deployable", map[string]any{"id": float64(220), "started_at": gitlabLater(gitlabT3, 6*time.Minute)}),
 		object(21, gitlabT0, "environment", map[string]any{"name": "staging"}, "status", "success"),
 	}
 	lists := map[string][]map[string]any{
@@ -394,7 +402,7 @@ func (f *gitlabFixture) serveProject(w http.ResponseWriter, r *http.Request, id,
 		f.page(w, r, lists[rest])
 	case strings.HasPrefix(rest, "pipelines/") && strings.HasSuffix(rest, "/jobs"):
 		n, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(rest, "pipelines/"), "/jobs"))
-		f.page(w, r, []map[string]any{f.job(n*10, pipelines)})
+		f.page(w, r, f.pipelineJobs(n, pipelines, q.Get("include_retried") == "true"))
 	case strings.HasPrefix(rest, "jobs/"):
 		n, _ := strconv.Atoi(strings.TrimPrefix(rest, "jobs/"))
 		if job := f.job(n, pipelines); job != nil {
@@ -406,7 +414,8 @@ func (f *gitlabFixture) serveProject(w http.ResponseWriter, r *http.Request, id,
 		for _, p := range pipelines {
 			if idOf(p["id"]) == strings.TrimPrefix(rest, "pipelines/") {
 				p = maps.Clone(p)
-				p["duration"], p["started_at"] = float64(60), p["created_at"]
+				maps.Copy(p, gitlabFixturePipelineTimes(p))
+				p["detailed_status"] = map[string]any{"text": "passed"}
 				f.reply(w, http.StatusOK, p)
 				return
 			}
@@ -442,7 +451,16 @@ func (f *gitlabFixture) serveProject(w http.ResponseWriter, r *http.Request, id,
 	case strings.HasPrefix(rest, "deployments/"):
 		d := f.find(deployments, "id", strings.TrimPrefix(rest, "deployments/"))
 		if d != nil {
-			d["approvals"], d["pending_approval_count"] = []any{}, 0
+			d["approvals"], d["pending_approval_count"], d["approval_summary"] = []any{}, 0, map[string]any{"rules": []any{}}
+		}
+		// Deploying to production takes an approval, which ada gave five
+		// minutes after the deployment was made.
+		if d != nil && d["id"] == float64(22) {
+			d["approvals"] = []any{map[string]any{
+				"user":   map[string]any{"id": float64(1), "username": "ada", "name": "Ada", "state": "active"},
+				"status": "approved", "created_at": gitlabLater(gitlabT3, 5*time.Minute), "comment": "",
+			}}
+			d["approval_summary"] = map[string]any{"rules": []any{map[string]any{"access_level": float64(40), "required_approvals": float64(1)}}}
 		}
 		f.replyFound(w, d)
 	default:
@@ -450,18 +468,98 @@ func (f *gitlabFixture) serveProject(w http.ResponseWriter, r *http.Request, id,
 	}
 }
 
+// gitlabFixturePipelines are each project's pipelines, newest first. 14 is
+// a child pipeline, which GitLab lists only when asked for them.
+func gitlabFixturePipelines() []map[string]any {
+	object := func(n float64, at string, more ...any) map[string]any {
+		o := map[string]any{"id": n, "iid": n, "updated_at": at, "created_at": at}
+		for i := 0; i+1 < len(more); i += 2 {
+			o[more[i].(string)] = more[i+1]
+		}
+		return o
+	}
+	return []map[string]any{
+		object(14, gitlabT3, "ref", "main", "source", "parent_pipeline"), object(13, gitlabT3, "ref", "main", "status", "success"),
+		object(12, gitlabT2, "ref", "dev"), object(11, gitlabT0, "ref", "main"),
+	}
+}
+
+// gitlabFixturePipelineTimes are what GitLab's REST API says of a pipeline
+// on its own beyond its list, to the millisecond, as it gives them.
+func gitlabFixturePipelineTimes(p map[string]any) map[string]any {
+	ms := func(at any) any { return strings.TrimSuffix(at.(string), "Z") + ".482Z" }
+	times := map[string]any{
+		"duration": float64(60), "queued_duration": float64(2), "started_at": ms(p["created_at"]), "finished_at": nil,
+		"user": map[string]any{"id": float64(1), "username": "ada", "name": "Ada", "state": "active", "avatar_url": "https://gitlab.example.com/ada.png"},
+	}
+	if p["status"] == "success" {
+		times["finished_at"] = ms(p["updated_at"])
+	}
+	return times
+}
+
 // job is the job of a pipeline by ID, ten times the pipeline's, with the
-// pipeline as GitLab shows it on a job.
+// pipeline as GitLab shows it on a job. Pipeline 11's is a manual job,
+// which grace played ten minutes after it was made, and which queued for
+// half a minute.
 func (f *gitlabFixture) job(id int, pipelines []map[string]any) map[string]any {
 	for _, p := range pipelines {
 		if idOf(p["id"]) == strconv.Itoa(id/10) {
-			return map[string]any{
+			job := map[string]any{
 				"id": float64(id), "name": "build", "status": "success", "created_at": p["created_at"],
 				"pipeline": map[string]any{"id": p["id"], "created_at": p["created_at"], "ref": p["ref"]},
 			}
+			if id == 110 {
+				job["started_at"] = gitlabLater(p["created_at"].(string), 10*time.Minute)
+				job["queued_duration"] = 30.25
+				job["user"] = map[string]any{"id": float64(2), "username": "grace", "name": "Grace", "state": "active"}
+			}
+			return job
 		}
 	}
 	return nil
+}
+
+// pipelineJobs are a pipeline's jobs, newest first, as GitLab lists them:
+// each its build job, ten times the pipeline's ID, and pipeline 13 its test
+// job too, which failed on runner 1 and passed when retried there, picked
+// up by another of its managers, on a newer version. Without retried, each
+// job's latest attempt only.
+func (f *gitlabFixture) pipelineJobs(pipeline int, pipelines []map[string]any, retried bool) []map[string]any {
+	build := f.job(pipeline*10, pipelines)
+	if build == nil {
+		return nil
+	}
+	if pipeline != 13 {
+		return []map[string]any{build}
+	}
+	attempt := func(id float64, status string, manager float64, version string) map[string]any {
+		a := maps.Clone(build)
+		a["id"], a["name"], a["status"], a["tag_list"] = id, "test", status, []any{"docker"}
+		a["runner"] = map[string]any{"id": float64(1), "description": "runner 1", "runner_type": "instance_type", "is_shared": true, "online": true, "status": "online"}
+		a["runner_manager"] = map[string]any{"id": manager, "version": version, "platform": "linux", "architecture": "amd64"}
+		return a
+	}
+	jobs := []map[string]any{attempt(132, "success", 11, "18.5.0"), attempt(131, "failed", 10, "18.4.0"), build}
+	if !retried {
+		jobs = slices.Delete(jobs, 1, 2)
+	}
+	return jobs
+}
+
+// gitlabFixtureRunner is runner 1 as GitLab gives it on its own: an
+// instance's, with its IP address and when its token expires, which the
+// connector leaves out.
+func gitlabFixtureRunner() map[string]any {
+	return map[string]any{
+		"id": float64(1), "description": "runner 1", "name": nil, "runner_type": "instance_type", "is_shared": true, "active": true,
+		"paused": false, "online": true, "status": "online", "job_execution_status": "active", "ip_address": "10.0.0.1",
+		"token_expires_at": nil, "uuid": "019f35a1", "tag_list": []any{"docker"}, "run_untagged": true, "locked": false,
+		"access_level": "not_protected", "maximum_timeout": float64(3600), "maintenance_note": nil, "created_at": gitlabT0,
+		"contacted_at": gitlabT3, "version": "18.6.0", "revision": "abc123", "platform": "linux", "architecture": "amd64",
+		"created_by": map[string]any{"id": float64(1), "username": "ada", "name": "Ada", "avatar_url": "https://gitlab.example.com/ada.png"},
+		"projects":   []any{}, "groups": []any{},
+	}
 }
 
 func (f *gitlabFixture) find(objects []map[string]any, key, value string) map[string]any {
@@ -578,15 +676,100 @@ func (f *gitlabFixture) project(id string) map[string]any {
 	return p
 }
 
+// gitlabFixtureQuery is a GraphQL request the fixture answers.
+type gitlabFixtureQuery struct {
+	Query     string `json:"query"`
+	Variables struct {
+		Path   string   `json:"path"`
+		Since  *string  `json:"since"`
+		Source *string  `json:"source"`
+		After  *string  `json:"after"`
+		IDs    []string `json:"ids"`
+	} `json:"variables"`
+}
+
+// graphql answers GraphQL queries, unless noGraphQL says the instance has
+// no GraphQL API.
+func (f *gitlabFixture) graphql(w http.ResponseWriter, r *http.Request) {
+	if f.noGraphQL {
+		gitlabNotFound(w)
+		return
+	}
+	var query gitlabFixtureQuery
+	_ = json.NewDecoder(r.Body).Decode(&query)
+	if query.Variables.IDs != nil {
+		f.manualJobs(w, query)
+		return
+	}
+	if strings.Contains(query.Query, "pipelines(") {
+		f.pipelineTimes(w, query)
+		return
+	}
+	f.vulnerabilities(w, query)
+}
+
+// pipelineTimes answers the pipeline times query two pipelines a page, by
+// updatedAfter and source, as GitLab gives them: times to the second.
+func (f *gitlabFixture) pipelineTimes(w http.ResponseWriter, query gitlabFixtureQuery) {
+	var nodes []any
+	for _, p := range gitlabFixturePipelines() {
+		if (p["source"] == "parent_pipeline") != (query.Variables.Source != nil && *query.Variables.Source == "parent_pipeline") ||
+			query.Variables.Since != nil && p["updated_at"].(string) < *query.Variables.Since {
+			continue
+		}
+		times := gitlabFixturePipelineTimes(p)
+		node := map[string]any{
+			"id": "gid://gitlab/Ci::Pipeline/" + idOf(p["id"]), "duration": times["duration"], "queuedDuration": times["queued_duration"],
+			"startedAt": gitlabSecond(times["started_at"]), "finishedAt": gitlabSecond(times["finished_at"]),
+			"user": map[string]any{"id": "gid://gitlab/User/1", "username": "ada", "name": "Ada"},
+		}
+		if strings.Contains(query.Query, "manualJobs") {
+			maps.Copy(node, gitlabFixtureManual(p["id"]))
+		}
+		nodes = append(nodes, node)
+	}
+	from := 0
+	if query.Variables.After != nil {
+		from, _ = strconv.Atoi(*query.Variables.After)
+	}
+	to := min(from+2, len(nodes))
+	from = min(from, to)
+	page := map[string]any{"hasNextPage": to < len(nodes), "endCursor": strconv.Itoa(to)}
+	f.reply(w, http.StatusOK, map[string]any{"data": map[string]any{"project": map[string]any{
+		"pipelines": map[string]any{"pageInfo": page, "nodes": nodes[from:to]},
+	}}})
+}
+
+// gitlabFixtureManual is what GraphQL says of a pipeline's manual jobs:
+// pipeline 11's build job is one, which waits for its stage.
+func gitlabFixtureManual(pipeline any) map[string]any {
+	jobs := []any{}
+	if idOf(pipeline) == "11" {
+		jobs = append(jobs, map[string]any{"id": "gid://gitlab/Ci::Build/110", "schedulingType": "stage", "needs": map[string]any{"nodes": []any{}}})
+	}
+	return map[string]any{
+		"stages":     map[string]any{"nodes": []any{map[string]any{"name": "build"}, map[string]any{"name": "test"}}},
+		"manualJobs": map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": jobs},
+	}
+}
+
+// manualJobs answers the manual jobs query, for pipelines by ID.
+func (f *gitlabFixture) manualJobs(w http.ResponseWriter, query gitlabFixtureQuery) {
+	var nodes []any
+	for _, p := range gitlabFixturePipelines() {
+		id := "gid://gitlab/Ci::Pipeline/" + idOf(p["id"])
+		if slices.Contains(query.Variables.IDs, id) {
+			node := gitlabFixtureManual(p["id"])
+			node["id"] = id
+			nodes = append(nodes, node)
+		}
+	}
+	f.reply(w, http.StatusOK, map[string]any{"data": map[string]any{"project": map[string]any{"pipelines": map[string]any{"nodes": nodes}}}})
+}
+
 // vulnerabilities answers the vulnerability query: acme/api has some, and
 // the token can't see octo/tools's, which GitLab gives as null.
-func (f *gitlabFixture) vulnerabilities(w http.ResponseWriter, r *http.Request) {
-	var query struct {
-		Variables struct {
-			Path string `json:"path"`
-		} `json:"variables"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&query)
+func (f *gitlabFixture) vulnerabilities(w http.ResponseWriter, query gitlabFixtureQuery) {
 	none := map[string]any{"critical": 0, "high": 0, "medium": 0, "low": 0}
 	project := map[string]any{
 		"vulnerabilitySeveritiesCount": none, "sast": none, "secretDetection": none, "dependencyScanning": none,

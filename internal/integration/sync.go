@@ -17,6 +17,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/filter"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/telemetry"
 )
@@ -34,8 +35,19 @@ const (
 // sync, as a cron expression.
 const SyncSchedule = "* * * * *"
 
-// pullTimeout bounds how long one sync may spend fetching from a provider.
-const pullTimeout = 10 * time.Minute
+// pullHeadroom is how long before the next sync is due a sync stops
+// fetching, so one that runs long, as a first sync reading far back may,
+// ends in time for the next, which reads what it didn't from where it left
+// off in each scope.
+const pullHeadroom = 10 * time.Minute
+
+// pullTimeout bounds how long one sync may spend fetching from a provider:
+// until pullHeadroom before the next sync is due, or half the interval of
+// one too short to leave that much.
+func (s Spec) pullTimeout() time.Duration {
+	every := s.SyncEvery()
+	return max(every-pullHeadroom, every/2)
+}
 
 // writeBatch is how many entries a sync writes per transaction, so a large
 // sync neither holds one transaction open nor commits row by row.
@@ -102,6 +114,7 @@ type syncing struct {
 	mapping    mapper
 	request    PullRequest
 	run        *Run
+	timeout    time.Duration
 	// traced carries the sync's span, which finish ends, on whatever
 	// context it finishes on.
 	traced  context.Context
@@ -221,7 +234,7 @@ func startSync(ctx context.Context, db TxDB, identifier string, asked Run, only 
 
 	return &syncing{
 		db: db, lock: lock, id: id, identifier: identifier, spec: spec, puller: puller, mapping: m,
-		request: request, run: run, traced: ctx, span: span, started: time.Now(),
+		request: request, run: run, timeout: spec.pullTimeout(), traced: ctx, span: span, started: time.Now(),
 	}, nil
 }
 
@@ -297,11 +310,15 @@ func (s *syncing) pull(ctx context.Context) error {
 
 	// The lock holds a connection while fetching, so bound the fetch to keep
 	// a slow provider from holding it indefinitely.
-	pullCtx, cancel := context.WithTimeout(ctx, pullTimeout)
+	pullCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	var warnings []string
 	request := s.request
 	request.Warn = func(warning string) { warnings = append(warnings, warning) }
 	report, err := s.puller.Pull(pullCtx, s.db, request, emit)
+	if errors.Is(pullCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		warnings = append(warnings, "The sync stopped reading after "+filter.FormatDuration(s.timeout)+
+			", ahead of the next, which reads what this one didn't.")
+	}
 	cancel()
 	run.ReadSince = request.read.readSince()
 	if err != nil {
@@ -482,7 +499,7 @@ func SyncNow(ctx *gofr.Context, identifier, mode string) (*Run, error) {
 	started := *s.run
 	// A sync can outlast the request, whose context is cancelled when the
 	// client goes and mustn't be used once the handler returns, so it runs
-	// on a context of its own, still bounded by pullTimeout. finish logs how
+	// on a context of its own, still bounded by its pullTimeout. finish logs how
 	// it went.
 	background(func() { _, _ = s.finish(context.Background()) })
 

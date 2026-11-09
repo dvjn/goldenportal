@@ -509,6 +509,206 @@ describe("dashboards and page tabs", () => {
     expect(screen.getByRole("link", { name: "failed" })).toBeInTheDocument();
   });
 
+  it("shows a bar's measure for each group, a share with how many of how many", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        {
+          ...overview,
+          widgets: [
+            {
+              identifier: "failing",
+              type: "bar",
+              title: "Failure Share by Tier",
+              width: 6,
+              query: services,
+              groupBy: "tier",
+              measure: { share: { property: "status", op: "eq", value: "failed" } },
+              link: { query: services, group: true },
+            },
+            {
+              identifier: "slowest",
+              type: "bar",
+              title: "P95 Coverage by Tier",
+              width: 6,
+              query: services,
+              groupBy: "tier",
+              measure: { p95: "coverage" },
+            },
+          ],
+        },
+      ]),
+      "GET blueprints/service": ok(service),
+      "GET dashboards/overview/data": loaded({
+        failing: {
+          groups: [
+            {
+              value: "critical",
+              count: 4,
+              measure: { value: 50, count: 2, total: 4 },
+              link: { blueprint: "service", filter: critical },
+            },
+            { value: "standard", count: 3, measure: { value: 0, count: 0, total: 3 } },
+          ],
+          none: 0,
+          unit: "%",
+        },
+        slowest: {
+          groups: [
+            { value: "critical", count: 4, measure: { value: 92.5 } },
+            { value: "standard", count: 3, measure: { value: null } },
+          ],
+          none: 0,
+          unit: "%",
+        },
+      }),
+    });
+    renderRoute("/");
+
+    await screen.findByText("2 of 4");
+    const failingCard = screen
+      .getByText("Failure Share by Tier")
+      .closest("[data-slot=card]") as HTMLElement;
+    expect(
+      within(failingCard)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["critical50%2 of 4", "standard0%0 of 3"]);
+    expect(within(failingCard).getByRole("link", { name: "critical" })).toBeInTheDocument();
+    const slowest = screen
+      .getByText("P95 Coverage by Tier")
+      .closest("[data-slot=card]") as HTMLElement;
+    const items = within(slowest).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("92%");
+    expect(within(items[1]).getByTitle("Nothing to measure")).toBeInTheDocument();
+  });
+
+  it("shows a matrix's numbers in their units beside its shares", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        {
+          ...overview,
+          widgets: [
+            {
+              identifier: "byOwner",
+              type: "matrix",
+              title: "By Owner",
+              width: 12,
+              query: services,
+              groupBy: "owner",
+              measures: [
+                { title: "Failed", share: { property: "status", op: "eq", value: "failed" } },
+                { title: "P95 Duration", p95: "duration" },
+              ],
+            },
+          ],
+        },
+      ]),
+      "GET blueprints/service": ok(service),
+      "GET dashboards/overview/data": loaded({
+        byOwner: {
+          measures: [
+            { title: "Failed", unit: "%" },
+            { title: "P95 Duration", unit: "s" },
+          ],
+          rows: [
+            {
+              value: "payments",
+              title: "Payments",
+              count: 4,
+              link: { blueprint: "service", filter: critical },
+              cells: [
+                { value: 25, count: 1, total: 4, link: { blueprint: "service", filter: critical } },
+                { value: 340.5, link: { blueprint: "service", filter: critical } },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    renderRoute("/");
+
+    const row = (await screen.findByRole("link", { name: "Payments" })).closest(
+      "tr",
+    ) as HTMLElement;
+    expect(within(row).getByRole("link", { name: "25%" })).toBeInTheDocument();
+    expect(within(row).getByText("1 of 4")).toBeInTheDocument();
+    expect(within(row).getByRole("link", { name: "5m41s" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "P95 Duration" })).toBeInTheDocument();
+  });
+
+  it("shows a trend's measure over its range, and each day, linking to its entities", async () => {
+    const days = [
+      {
+        day: "2026-11-07",
+        value: 2,
+        link: { blueprint: "service", filter: critical },
+      },
+      { day: "2026-11-08", value: 0 },
+      { day: "2026-11-09", value: 5, link: { blueprint: "service", filter: critical } },
+    ];
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        {
+          ...overview,
+          widgets: [
+            {
+              identifier: "perDay",
+              type: "trend",
+              title: "Services per Day",
+              width: 6,
+              query: services,
+              date: "createdAt",
+              range: "3d",
+              link: { query: services, group: true },
+            },
+            {
+              identifier: "p95",
+              type: "trend",
+              title: "P95 Coverage per Day",
+              width: 6,
+              query: services,
+              date: "createdAt",
+              range: "3d",
+              measure: { p95: "coverage" },
+            },
+          ],
+        },
+      ]),
+      "GET blueprints/service": ok(service),
+      "GET dashboards/overview/data": loaded({
+        perDay: { all: { value: 7 }, days },
+        p95: {
+          unit: "%",
+          all: { value: 88 },
+          days: [
+            { day: "2026-11-07", value: 80 },
+            { day: "2026-11-08", value: null },
+            { day: "2026-11-09", value: 90 },
+          ],
+          link: { blueprint: "service" },
+        },
+      }),
+    });
+    renderRoute("/");
+
+    const nov7 = await screen.findByRole("link", { name: "Nov 7, 2026" });
+    expect(decodeURIComponent(nov7.getAttribute("href") ?? "")).toContain(
+      '"property":"tier","op":"eq","value":"critical"',
+    );
+    const perDay = screen.getByText("Services per Day").closest("[data-slot=card]") as HTMLElement;
+    expect(perDay).toHaveTextContent("Services per Day7");
+    // A day without entities counts none and links nowhere.
+    expect(perDay).toHaveTextContent("Nov 8, 2026: 0");
+    expect(within(perDay).queryByRole("link", { name: "Nov 8, 2026" })).not.toBeInTheDocument();
+    const p95 = screen.getByText("P95 Coverage per Day").closest("[data-slot=card]") as HTMLElement;
+    expect(p95).toHaveTextContent("88%");
+    expect(p95).toHaveTextContent("Nov 8, 2026: nothing to measure");
+    expect(within(p95).getByRole("link", { name: /View all/ })).toBeInTheDocument();
+  });
+
   it("shows a stat compactly with its icon, and a scorecard as numbers", async () => {
     stubApi({
       ...signedInMember,

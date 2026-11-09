@@ -39,7 +39,16 @@ func answered(ctx context.Context, header http.Header) {
 	if err != nil {
 		return
 	}
-	for ; c != nil; c = c.parent {
+	answeredAt(ctx, at)
+}
+
+// answeredAt notes an answer read under ctx at a time, such as one read
+// once for several objects.
+func answeredAt(ctx context.Context, at time.Time) {
+	if at.IsZero() {
+		return
+	}
+	for c, _ := ctx.Value(sourceClockKey{}).(*sourceClock); c != nil; c = c.parent {
 		c.mu.Lock()
 		if c.at.IsZero() || at.Before(c.at) {
 			c.at = at

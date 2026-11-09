@@ -67,6 +67,12 @@ spec:
     - resource: jobs
       blueprint: job
       entity: {identifier: .id}
+    - resource: job_attempts
+      blueprint: job-attempt
+      entity: {identifier: .id}
+    - resource: runners
+      blueprint: runner
+      entity: {identifier: .id}
     - resource: deployments
       blueprint: deployment
       entity: {identifier: .id}
@@ -320,7 +326,9 @@ func TestGitLabPull(t *testing.T) {
 		{gitlabIssues, []string{"iid"}, "9,8,7,6,9,8,7,6"},
 		// Child pipelines too, which GitLab lists only when asked for them.
 		{gitlabPipelines, []string{"id"}, "14,13,12,11,14,13,12,11,14,13,12,11"},
-		{gitlabJobs, []string{"id"}, "140,130,120,110,140,130,120,110,140,130,120,110"},
+		// Each job's latest attempt, and every attempt, retried ones too.
+		{gitlabJobs, []string{"id"}, "140,132,130,120,110,140,132,130,120,110,140,132,130,120,110"},
+		{gitlabJobAttempts, []string{"id"}, "140,132,131,130,120,110,140,132,131,130,120,110,140,132,131,130,120,110"},
 		{gitlabDeployments, []string{"id"}, "22,21,22,21,22,21"},
 		{gitlabEnvironments, []string{parentKey, "lastDeployment", "id"}, "22,21,22,21,22,21"},
 		{gitlabReleases, []string{parentKey, "project"}, "acme/api,acme/api,acme/platform/web,acme/platform/web,octo/tools,octo/tools"},
@@ -401,10 +409,26 @@ func TestGitLabPull(t *testing.T) {
 			t.Errorf("ci config = %v, want its jobs without their scripts", config)
 		}
 	}
+	// Pipelines as GitLab lists them, with their times from GraphQL, a page
+	// for each kind of pipeline in each project.
 	for _, pipeline := range pulled[gitlabPipelines] {
-		if pipeline["duration"] != nil || pipeline["started_at"] != nil {
-			t.Errorf("pipeline = %v, want it as GitLab lists it", pipeline)
+		want := gitlabFixturePipelineTimes(pipeline)
+		want["started_at"], want["finished_at"] = gitlabSecond(want["started_at"]), gitlabSecond(want["finished_at"])
+		want["user"] = map[string]any{"id": float64(1), "username": "ada", "name": "Ada"}
+		for field, value := range want {
+			if !reflect.DeepEqual(pipeline[field], value) {
+				t.Errorf("pipeline %v has %s %v, want %v", pipeline["id"], field, pipeline[field], value)
+			}
 		}
+		if pipeline["detailed_status"] != nil || nonJSON(pipeline) != "" {
+			t.Errorf("pipeline = %v, want it as GitLab lists it, with its times as JSON", pipeline)
+		}
+	}
+	if n := len(f.sent(http.MethodPost, "/api/graphql")); n != 3*(1+2+1) {
+		t.Errorf("asked GraphQL %d times, want once a project for vulnerabilities, and for each page of each kind of pipeline", n)
+	}
+	if n := len(slices.DeleteFunc(f.asked(), func(r string) bool { return !regexp.MustCompile(`/pipelines/\d+\?`).MatchString(r) })); n != 0 {
+		t.Errorf("read %d pipelines on their own, want their times from GraphQL", n)
 	}
 	if slices.ContainsFunc(f.asked(), func(r string) bool { return strings.Contains(r, "/projects/2/issues") }) {
 		t.Error("read the issues of a project with them turned off")
@@ -434,7 +458,7 @@ func TestGitLabPull(t *testing.T) {
 // requests and issues too; and jobs only of pipelines changed since jobs
 // were read.
 func TestGitLabPullFromCursors(t *testing.T) {
-	resources := []string{gitlabMergeRequests, gitlabIssues, gitlabPipelines, gitlabJobs, gitlabDeployments}
+	resources := []string{gitlabMergeRequests, gitlabIssues, gitlabPipelines, gitlabJobs, gitlabJobAttempts, gitlabDeployments}
 	minute := func(at string) time.Time {
 		t, _ := time.Parse(time.RFC3339, at)
 		return t.Add(-time.Minute)
@@ -452,13 +476,17 @@ func TestGitLabPullFromCursors(t *testing.T) {
 		want    map[string]string
 	}{
 		{"since the last sync", every(Cursor{Scopes: map[string]time.Time{"1": minute(gitlabT3)}}), map[string]string{
-			gitlabMergeRequests: "3", gitlabIssues: "9", gitlabPipelines: "14,13", gitlabJobs: "140,130", gitlabDeployments: "22",
+			gitlabMergeRequests: "3", gitlabIssues: "9", gitlabPipelines: "14,13", gitlabJobs: "140,132,130", gitlabJobAttempts: "140,132,131,130",
+			gitlabDeployments: "22",
 		}},
 		{"first, as far back as rows are kept", every(Cursor{Floor: minute(gitlabT2)}), map[string]string{
-			gitlabMergeRequests: "4,3,2", gitlabIssues: "9,6,8", gitlabPipelines: "14,13,12", gitlabJobs: "140,130,120", gitlabDeployments: "22",
+			gitlabMergeRequests: "4,3,2", gitlabIssues: "9,6,8", gitlabPipelines: "14,13,12", gitlabJobs: "140,132,130,120",
+			gitlabJobAttempts: "140,132,131,130,120", gitlabDeployments: "22",
 		}},
-		{"jobs since the last sync, pipelines in full", map[string]Cursor{gitlabJobs: {Scopes: map[string]time.Time{"1": minute(gitlabT3)}}}, map[string]string{
-			gitlabPipelines: "14,13,12,11", gitlabJobs: "140,130",
+		{"jobs since the last sync, pipelines in full", map[string]Cursor{
+			gitlabJobs: {Scopes: map[string]time.Time{"1": minute(gitlabT3)}}, gitlabJobAttempts: {Scopes: map[string]time.Time{"1": minute(gitlabT3)}},
+		}, map[string]string{
+			gitlabPipelines: "14,13,12,11", gitlabJobs: "140,132,130", gitlabJobAttempts: "140,132,131,130",
 		}},
 	}
 	for _, test := range tests {
@@ -514,11 +542,13 @@ func TestGitLabPullScopesItems(t *testing.T) {
 		switch {
 		case item.Resource == gitlabProjects:
 			want = idOf(object["id"])
+		// Several projects may share a runner, which is in none of them.
+		case item.Resource == gitlabRunners:
 		case !slices.Contains(gitlabGroupResources, item.Resource):
 			path, _ := valueAt(object, parentKey, "project").(string)
 			want = ids[path]
 		}
-		if item.Scope != want || want == "" && !slices.Contains(gitlabGroupResources, item.Resource) {
+		if item.Scope != want || want == "" && !slices.Contains(append([]string{gitlabRunners}, gitlabGroupResources...), item.Resource) {
 			t.Errorf("%s %v has scope %q, want %q", item.Resource, object["id"], item.Scope, want)
 		}
 		if item.SourceAt.Before(before) || item.SourceAt.After(time.Now()) {
@@ -819,18 +849,24 @@ func TestGitLabReceive(t *testing.T) {
 		{"Issue Hook", `{"object_kind": "issue", "object_attributes": {"iid": 9, "action": "update"}, ` + project + `}`, "issue acme/api#9"},
 		{"Issue Hook", `{"object_kind": "work_item", "object_attributes": {"iid": 6, "type": "Task"}, ` + project + `}`, "issue acme/api#6"},
 		{"Issue Hook", `{"object_kind": "issue", "object_attributes": {"iid": 5, "action": "close"}, ` + project + `}`, ""},
-		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 13, "ref": "main", "tag": false}, ` + project + `}`, "pipeline 13, project acme/api"},
-		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 12, "ref": "dev", "tag": false}, ` + project + `}`, "pipeline 12"},
-		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 11, "ref": "dev"}, ` + project + `}`, "pipeline 11"},
-		{"Job Hook", `{"object_kind": "build", "build_id": 130, "pipeline_id": 13, "project_id": 1, ` + project + `}`, "job 130"},
-		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 14, "ref": "main", "tag": false}, ` + project + `}`, "pipeline 14, project acme/api"},
-		{"Job Hook", `{"object_kind": "build", "build_id": 140, "pipeline_id": 14, "project_id": 1, ` + project + `}`, "job 140"},
+		// A pipeline's event reads every attempt of its jobs again, oldest
+		// first, each job's latest, and the runners they ran on.
+		{
+			"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 13, "ref": "main", "tag": false}, ` + project + `}`,
+			"pipeline 13, job-attempt 130, job-attempt 131, job-attempt 132, job 130, job 132, runner 1, project acme/api",
+		},
+		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 12, "ref": "dev", "tag": false}, ` + project + `}`, "pipeline 12, job-attempt 120, job 120"},
+		// However old the pipeline, as syncs read it.
+		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 11, "ref": "dev"}, ` + project + `}`, "pipeline 11, job-attempt 110, job 110"},
+		{
+			"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 14, "ref": "main", "tag": false}, ` + project + `}`,
+			"pipeline 14, job-attempt 140, job 140, project acme/api",
+		},
+		{"Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 15, "ref": "dev"}, ` + project + `}`, ""},
+		// A job's own events are left to its pipeline's.
+		{"Job Hook", `{"object_kind": "build", "build_id": 130, "pipeline_id": 13, "project_id": 1, ` + project + `}`, ""},
 		// The project an event names must be the one its ID is.
 		{"Push Hook", `{"object_kind": "push", "ref": "refs/heads/main", "after": "ma1n", "project": {"id": 3, "path_with_namespace": "acme/api", "default_branch": "main"}}`, ""},
-		// An attempt since retried isn't the job's latest, which syncs read.
-		{"Job Hook", `{"object_kind": "build", "build_id": 131, "pipeline_id": 13, "project_id": 1, ` + project + `}`, ""},
-		// However old its pipeline, a job is written, as syncs read it.
-		{"Job Hook", `{"object_kind": "build", "build_id": 110, "pipeline_id": 11, "project_id": 1, ` + project + `}`, "job 110"},
 		{"Deployment Hook", `{"object_kind": "deployment", "deployment_id": 22, "status": "success", ` + project + `}`, "deployment 22"},
 		// A deployment that finished may be what's deployed to its environment.
 		{"Deployment Hook", `{"object_kind": "deployment", "deployment_id": 21, "environment": "staging", ` + project + `}`, "deployment 21, environment acme/api/staging"},
@@ -885,7 +921,7 @@ func TestGitLabReceive(t *testing.T) {
 	if _, err := config.Receive(t.Context(), Request{Resources: config.Receives(), Header: header, Body: []byte(body)}, false); !errors.Is(err, ErrUnverified) {
 		t.Errorf("without the server's key: err = %v", err)
 	}
-	if items, err := config.Receive(t.Context(), Request{Resources: config.Receives(), Header: http.Header{"X-Gitlab-Event": {"Pipeline Hook"}}, Body: []byte(body)}, true); err != nil || len(items) != 2 {
+	if items, err := config.Receive(t.Context(), Request{Resources: config.Receives(), Header: http.Header{"X-Gitlab-Event": {"Pipeline Hook"}}, Body: []byte(body)}, true); err != nil || len(items) != 8 {
 		t.Errorf("with an ingestion token: items = %+v, err = %v", items, err)
 	}
 	if _, err := receiveGitLab(t, config, "", body); !errors.As(err, new(ReceiveError)) {
@@ -941,18 +977,18 @@ func TestGitLabReceiveBurst(t *testing.T) {
 	_, config := gitlabSpec(t, gitlabYAML, f.url())
 	slow := func(w http.ResponseWriter) {
 		time.Sleep(20 * time.Millisecond)
-		_, _ = w.Write([]byte(`[{"id": 130, "pipeline": {"id": 13, "created_at": "` + gitlabT3 + `"}}]`))
+		_, _ = w.Write([]byte(`[{"id": 120, "name": "build", "pipeline": {"id": 12, "created_at": "` + gitlabT2 + `"}}]`))
 	}
 	const events = 4 * apiConcurrency
 	for range events {
-		f.answer("/projects/1/pipelines/13/jobs", slow)
+		f.answer("/projects/1/pipelines/12/jobs", slow)
 	}
-	body := `{"object_kind": "build", "build_id": 130, "pipeline_id": 13, "project": {"id": 1, "path_with_namespace": "acme/api"}}`
+	body := `{"object_kind": "pipeline", "object_attributes": {"id": 12, "ref": "dev"}, "project": {"id": 1, "path_with_namespace": "acme/api"}}`
 	var wg sync.WaitGroup
 	var received atomic.Int32
 	for range events {
 		wg.Go(func() {
-			if items, err := receiveGitLab(t, config, "Job Hook", body); err == nil && len(items) == 1 {
+			if items, err := receiveGitLab(t, config, "Pipeline Hook", body); err == nil && len(items) == 3 {
 				received.Add(1)
 			}
 		})
@@ -995,7 +1031,7 @@ func TestGitLabCheck(t *testing.T) {
 	f.deny("/jobs")
 	f.deny("/groups/10/members")
 	want := "The token can't read members of the group acme; give its user at least the Reporter role there. " +
-		"The token can't read pipelines and jobs of octo/tools; give its user at least the Reporter role there, or turn those features on for it."
+		"The token can't read pipelines, jobs, job_attempts and runners of octo/tools; give its user at least the Reporter role there, or turn those features on for it."
 	if got := check(config); got != want {
 		t.Errorf("check = %s\nwant    %s", got, want)
 	}
@@ -1103,17 +1139,17 @@ func TestGitLabPullSetsUpTheWebhook(t *testing.T) {
 	if changes() != 1 {
 		t.Errorf("an unchanged webhook was changed: %v", f.asked())
 	}
-	sync(gitlabMergeRequests, gitlabJobs)
-	if changes() != 2 || f.hook(api, 1)["push_events"] != false || f.hook(api, 1)["job_events"] != true {
+	sync(gitlabMergeRequests, gitlabTags)
+	if changes() != 2 || f.hook(api, 1)["push_events"] != false || f.hook(api, 1)["tag_push_events"] != true || f.hook(api, 1)["job_events"] != false {
 		t.Errorf("hook = %v, want its events those of the resources mapped now", f.hook(api, 1))
 	}
 	// The server's key changed, and with it every integration's secret.
 	secret = "rotated"
-	sync(gitlabMergeRequests, gitlabJobs)
+	sync(gitlabMergeRequests, gitlabTags)
 	if changes() != 3 || f.hook(api, 1)["token"] != "rotated" || f.hook(api, 1)["url"] == address {
 		t.Errorf("hook = %v, want the new secret and its fingerprint", f.hook(api, 1))
 	}
-	sync(gitlabMergeRequests, gitlabJobs)
+	sync(gitlabMergeRequests, gitlabTags)
 	if changes() != 3 {
 		t.Errorf("a webhook with the new secret was changed again")
 	}
@@ -1127,17 +1163,17 @@ func TestGitLabPullSetsUpTheWebhook(t *testing.T) {
 	f.hooks[api][1]["enable_ssl_verification"] = false
 	f.mu.Unlock()
 	secret = "rotated again"
-	sync(gitlabMergeRequests, gitlabJobs)
+	sync(gitlabMergeRequests, gitlabTags)
 	if len(f.sent(http.MethodDelete, api+"/101")) != 1 || len(f.hooks[api]) != 2 || len(warnings) != 0 {
 		t.Fatalf("hooks = %v, warnings = %v, want the one turned off made anew", f.hooks[api], warnings)
 	}
 	if hook := f.hook(api, 1); hook["id"] == float64(101) || hook["token"] != secret || hook["alert_status"] != "executable" ||
-		hook["enable_ssl_verification"] != false || hook["job_events"] != true {
+		hook["enable_ssl_verification"] != false || hook["tag_push_events"] != true {
 		t.Errorf("hook = %v, want a new one, with the new secret, sending what it did, without certificate checks", hook)
 	}
 	// What lasts the check says, so syncs don't say it every time.
 	f.deny(tools)
-	sync(gitlabMergeRequests, gitlabJobs)
+	sync(gitlabMergeRequests, gitlabTags)
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %v, want none of a webhook the token can't manage", warnings)
 	}
@@ -1238,6 +1274,32 @@ func gitlabPayloadAPI(t *testing.T, objects map[string]any) string {
 	return server.URL
 }
 
+// gitlabPayloadJobs are the attempts of the example pipeline's jobs, newest
+// first, shaped as GitLab's jobs API gives them: its test job failed on
+// one runner and passed when retried on another.
+func gitlabPayloadJobs(pipeline map[string]any) []any {
+	attempt := func(id float64, name, status string, runner float64) map[string]any {
+		return map[string]any{
+			"id": id, "name": name, "stage": name, "status": status, "ref": "master", "tag": false, "allow_failure": false,
+			"created_at": "2016-08-12T15:23:28.000Z", "started_at": "2016-08-12T15:26:29.000Z", "finished_at": "2016-08-12T15:27:32.000Z",
+			"duration": 63.2, "queued_duration": 0.9, "failure_reason": map[string]any{"failed": "script_failure"}[status],
+			"tag_list": []any{"docker", "linux"}, "web_url": "http://192.168.64.1:3005/gitlab-org/gitlab-test/-/jobs/" + idOf(id),
+			"commit":   map[string]any{"id": pipeline["sha"], "short_id": "bcbb5ec3", "title": "Test commit"},
+			"pipeline": map[string]any{"id": pipeline["id"], "project_id": 1, "ref": "master", "sha": pipeline["sha"], "status": "success", "created_at": pipeline["created_at"]},
+			"runner": map[string]any{
+				"id": runner, "description": "docker-" + idOf(runner), "ip_address": nil, "active": true, "paused": false, "is_shared": true,
+				"runner_type": "instance_type", "name": nil, "online": true, "status": "online",
+			},
+			"runner_manager": map[string]any{
+				"id": runner * 10, "system_id": "s_89e5e9956577", "version": "16.11.1", "revision": "535ced5f", "platform": "linux",
+				"architecture": "amd64", "created_at": "2016-08-12T15:20:00.000Z", "contacted_at": "2016-08-12T15:28:00.000Z", "status": "online",
+			},
+			"artifacts": []any{}, "archived": false,
+		}
+	}
+	return []any{attempt(380, "test", "success", 7), attempt(377, "test", "failed", 6), attempt(376, "build", "success", 6)}
+}
+
 // TestGitLabReceivesRealPayloads runs GitLab's own example payloads
 // through Receive and the seed's GitLab mappings, with what they're about
 // answered as objects shaped as GitLab's API gives them, and checks what
@@ -1283,7 +1345,7 @@ func TestGitLabReceivesRealPayloads(t *testing.T) {
 		"/projects/1/pipelines":              []any{pipeline},
 		"/projects/1":                        map[string]any{"id": 1, "path": "gitlab-test", "name": "Gitlab Test", "path_with_namespace": "gitlab-org/gitlab-test", "default_branch": "master", "visibility": "private", "archived": false, "web_url": "http://192.168.64.1:3005/gitlab-org/gitlab-test", "last_activity_at": "2016-08-12T15:23:28Z", "permissions": map[string]any{}},
 		"/projects/2/merge_requests":         []any{map[string]any{"id": 93, "iid": 16, "project_id": 2, "title": "Draft: Update README.md", "state": "opened", "draft": true, "author": map[string]any{"username": "root"}, "source_branch": "feature", "web_url": "http://example.com/flightjs/flight-management/-/merge_requests/16", "created_at": "2026-01-16T05:56:22Z", "updated_at": "2026-01-16T05:56:22Z"}},
-		"/projects/380/pipelines/2366/jobs":  []any{map[string]any{"id": 1977, "name": "test", "stage": "test", "status": "created", "pipeline": map[string]any{"id": 2366, "created_at": "2021-02-23T02:41:37Z"}}},
+		"/projects/1/pipelines/31/jobs":      gitlabPayloadJobs(pipeline),
 		"/projects/30/deployments/15":        map[string]any{"id": 15, "iid": 2, "sha": "279484c09fbe69ededfced8c1bb6e6d24616b468", "ref": "master", "status": "success", "created_at": "2021-04-28T19:49:00Z", "finished_at": "2021-04-28T19:50:00Z", "environment": map[string]any{"id": 9, "name": "staging"}},
 		"/projects/2/releases/v1.1":          map[string]any{"tag_name": "v1.1", "name": "v1.1", "released_at": "2020-11-02T12:55:12Z"},
 	}
@@ -1293,8 +1355,12 @@ func TestGitLabReceivesRealPayloads(t *testing.T) {
 		{"tag_push.json", "Tag Push Hook", "", "tag jsmith/example@v1.0.0"},
 		{"issue.json", "Issue Hook", "", "issue gitlabhq/gitlab-test#23"},
 		{"merge_request.json", "Merge Request Hook", "merge-request flightjs/flight-management!16", "merge-request flightjs/flight-management!16"},
-		{"pipeline.json", "Pipeline Hook", "pipeline 31, repository gitlab-org/gitlab-test", "pipeline 31, project gitlab-org/gitlab-test"},
-		{"build.json", "Job Hook", "", "job 1977"},
+		{
+			"pipeline.json", "Pipeline Hook",
+			"pipeline 31, job-attempt 376, job-attempt 377, job-attempt 380, job 31:build, job 31:test, runner 6, runner 7, repository gitlab-org/gitlab-test",
+			"pipeline 31, job-attempt 376, job-attempt 377, job-attempt 380, job 376, job 380, runner 6, runner 7, project gitlab-org/gitlab-test",
+		},
+		{"build.json", "Job Hook", "", ""},
 		{"deployment.json", "Deployment Hook", "deployment gitlab-15", "deployment 15"},
 		{"release.json", "Release Hook", "", "release gitlab-org/release-webhook-example@v1.1"},
 	}
@@ -1372,4 +1438,123 @@ func nonJSON(v any) string {
 	}
 
 	return fmt.Sprintf("a %T", v)
+}
+
+// TestGitLabWithApprovals checks what a deployment says of its approvals:
+// when the last one it needed was given, unless it still waits for one or
+// one was a rejection, and nothing where GitLab says nothing of them.
+func TestGitLabWithApprovals(t *testing.T) {
+	approval := func(username, status, at string) any {
+		return map[string]any{"user": map[string]any{"id": float64(1), "username": username, "name": username, "state": "active"}, "status": status, "created_at": at, "comment": ""}
+	}
+	rules := map[string]any{"rules": []any{map[string]any{"required_approvals": float64(2)}}}
+	deployment := func() map[string]any {
+		return map[string]any{"id": float64(1), "created_at": "2026-11-04T13:00:00.000Z", "deployable": map[string]any{"started_at": "2026-11-04T13:20:00.500Z"}}
+	}
+	for _, test := range []struct {
+		name string
+		one  map[string]any
+		want string
+	}{
+		{"approved", map[string]any{
+			"approvals":        []any{approval("ada", "approved", "2026-11-04T13:05:00.000Z"), approval("grace", "approved", "2026-11-04T13:15:00.000Z")},
+			"approval_summary": rules, "pending_approval_count": float64(0),
+		}, `{"approvalRequired":true,"approvalSeconds":900,"approvedAt":"2026-11-04T13:15:00.000Z","approvedBy":["ada","grace"],"waitSeconds":1200.5}`},
+		{"waiting", map[string]any{
+			"approvals": []any{approval("ada", "approved", "2026-11-04T13:05:00.000Z")}, "approval_summary": rules, "pending_approval_count": float64(1),
+		}, `{"approvalRequired":true,"approvalSeconds":null,"approvedAt":null,"approvedBy":["ada"],"waitSeconds":1200.5}`},
+		{"rejected", map[string]any{
+			"approvals":        []any{approval("ada", "approved", "2026-11-04T13:05:00.000Z"), approval("grace", "rejected", "2026-11-04T13:15:00.000Z")},
+			"approval_summary": rules, "pending_approval_count": float64(0),
+		}, `{"approvalRequired":true,"approvalSeconds":null,"approvedAt":null,"approvedBy":["ada"],"waitSeconds":1200.5}`},
+		{
+			"not needed",
+			map[string]any{"approvals": []any{}, "approval_summary": map[string]any{"rules": []any{}}, "pending_approval_count": float64(0)},
+			`{"approvalRequired":false,"approvalSeconds":null,"approvedAt":null,"approvedBy":[],"waitSeconds":1200.5}`,
+		},
+		{"not said", map[string]any{}, `{"approvalRequired":null,"approvalSeconds":null,"approvedAt":null,"approvedBy":null,"waitSeconds":1200.5}`},
+	} {
+		d := deployment()
+		gitlabWithApprovals(d, test.one, "acme/api")
+		got := map[string]any{}
+		for _, key := range []string{"approvalRequired", "approvedAt", "approvalSeconds", "waitSeconds"} {
+			got[key] = valueAt(d, parentKey, key)
+		}
+		got["approvedBy"] = nil
+		if approvals, ok := valueAt(d, parentKey, "approvals").([]any); ok {
+			by := []string{}
+			for _, a := range approvals {
+				if valueAt(a.(map[string]any), "status") == "approved" {
+					by = append(by, valueAt(a.(map[string]any), "user", "username").(string))
+				}
+			}
+			got["approvedBy"] = by
+		}
+		if j, _ := json.Marshal(got); string(j) != test.want {
+			t.Errorf("%s: deployment carries %s, want %s", test.name, j, test.want)
+		}
+		if bad := nonJSON(d); bad != "" {
+			t.Errorf("%s: deployment carries %s, which jq can't read", test.name, bad)
+		}
+	}
+}
+
+// TestGitLabPullApprovals checks a sync reads each deployment on its own
+// for its approvals, as an event does, except where one of its
+// environment's said it needed none, or GitLab said nothing of them.
+func TestGitLabPullApprovals(t *testing.T) {
+	f := newGitLabFixture(t)
+	_, config := gitlabSpec(t, gitlabProjectYAML("acme/api"), f.url())
+	pulled, failed := pullGitLab(t, config, gitlabDeployments)
+	if len(failed) != 0 {
+		t.Fatalf("failed = %v", failed)
+	}
+	byID := map[string]map[string]any{}
+	for _, d := range pulled[gitlabDeployments] {
+		byID[idOf(d["id"])] = d
+	}
+	production, staging := byID["22"], byID["21"]
+	if valueAt(production, parentKey, "approvalRequired") != true || valueAt(production, parentKey, "approvalSeconds") != float64(300) ||
+		valueAt(production, parentKey, "approvedAt") != gitlabLater(gitlabT3, 5*time.Minute) || valueAt(production, parentKey, "waitSeconds") != float64(360) ||
+		valueAt(production, parentKey, "project") != "acme/api" || production["approvals"] != nil {
+		t.Errorf("deployment 22 = %v, want it as GitLab lists it, approved after five minutes and started after six", production)
+	}
+	if valueAt(staging, parentKey, "approvalRequired") != false {
+		t.Errorf("deployment 21 = %v, want it needing no approval", staging)
+	}
+	items, err := receiveGitLab(t, config, "Deployment Hook", `{"object_kind": "deployment", "deployment_id": 22, `+
+		`"project": {"id": 1, "path_with_namespace": "acme/api", "default_branch": "main"}}`)
+	if err != nil || len(items) != 1 || !reflect.DeepEqual(items[0].Object, production) {
+		t.Errorf("an event gives deployment 22 as %+v, %v; want it as a sync does, %v", items, err, production)
+	}
+
+	client, err := newGitLabClient(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvals := &gitlabApprovals{client: client, base: "projects/1/", fullPath: "acme/api", none: map[string]bool{}}
+	asked := len(f.sent(http.MethodGet, "/projects/1/deployments/21"))
+	for _, id := range []float64{21, 21} {
+		if err := approvals.add(t.Context(), map[string]any{"id": id, "environment": map[string]any{"name": "staging"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := len(f.sent(http.MethodGet, "/projects/1/deployments/21")) - asked; n != 1 {
+		t.Errorf("read %d staging deployments on their own, want only the first, which said none need approval", n)
+	}
+
+	f.answer("/projects/1/deployments/22", func(w http.ResponseWriter) {
+		f.reply(w, http.StatusOK, map[string]any{"id": 22, "environment": map[string]any{"name": "production"}})
+	})
+	approvals = &gitlabApprovals{client: client, base: "projects/1/", fullPath: "acme/api", none: map[string]bool{}}
+	asked = len(f.sent(http.MethodGet, "/projects/1/deployments/22"))
+	for range 2 {
+		d := map[string]any{"id": float64(22), "environment": map[string]any{"name": "production"}}
+		if err := approvals.add(t.Context(), d); err != nil || valueAt(d, parentKey, "approvalRequired") != nil {
+			t.Errorf("without approvals from GitLab, deployment 22 = %v, %v; want them unknown", d, err)
+		}
+	}
+	if n := len(f.sent(http.MethodGet, "/projects/1/deployments/22")) - asked; n != 1 {
+		t.Errorf("read %d deployments on their own, want only the first, which said nothing of approvals", n)
+	}
 }

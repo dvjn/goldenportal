@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 )
 
 // gitlabNoCommit is the commit a push names as a tag's new head when it
@@ -153,34 +154,55 @@ func gitlabEventRefs(payload, project map[string]any) []gitlabRef {
 		}
 		refs := []gitlabRef{ref(gitlabPipelines, func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
 			pipeline, err := gitlabFetch(base+"pipelines/"+id)(ctx, client)
-			return gitlabShape(pipeline, gitlabPipelineFields), err
+			if err != nil {
+				return nil, err
+			}
+			shaped := gitlabShape(pipeline, gitlabPipelineFields)
+			maps.Copy(shaped, gitlabPipelineTimes(pipeline))
+			return shaped, nil
 		}, nil)}
+		// Its jobs' attempts, retried ones included, as a sync reads them.
+		attempts := gitlabPipelineAttempts(base, id, fullPath)
+		refs = append(refs, gitlabRef{resource: gitlabJobAttempts, scope: scope, fetchAll: attempts},
+			gitlabRef{resource: gitlabJobs, scope: scope, fetchAll: func(ctx context.Context, client *gitlabClient) ([]map[string]any, error) {
+				all, err := attempts(ctx, client)
+				return gitlabLatest(all), err
+			}},
+			// The runners they ran on, in no one project, as a sync gives them.
+			gitlabRef{resource: gitlabRunners, fetchAll: func(ctx context.Context, client *gitlabClient) ([]map[string]any, error) {
+				all, err := attempts(ctx, client)
+				if err != nil {
+					return nil, err
+				}
+				runners := newGitLabRunnerSightings()
+				runners.add(all, time.Time{})
+				read, _, err := runners.read(ctx, client)
+				return read, err
+			}})
 		// A pipeline on the default branch may be the project's latest,
 		// which its item carries.
 		if attributes["ref"] == project["default_branch"] && attributes["tag"] != true {
 			refs = append(refs, gitlabProjectRef(project))
 		}
 		return refs
-	case "build":
-		id, pipeline := idOf(payload["build_id"]), idOf(payload["pipeline_id"])
-		if id == "" || pipeline == "" {
-			return nil
-		}
-		return []gitlabRef{ref(gitlabJobs, func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
-			return gitlabLatestAttempt(ctx, client, base, pipeline, id)
-		}, nil)}
 	case "deployment":
 		id := idOf(payload["deployment_id"])
 		if id == "" {
 			return nil
 		}
-		refs := []gitlabRef{ref(gitlabDeployments, func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
+		// A deployment read on its own has its approvals, which go under _gp
+		// as a sync puts them.
+		refs := []gitlabRef{{resource: gitlabDeployments, scope: scope, fetch: func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
 			d, err := gitlabFetch(base+"deployments/"+id)(ctx, client)
+			if err != nil {
+				return nil, err
+			}
+			gitlabWithApprovals(d, d, fullPath)
 			for _, field := range gitlabApprovalFields {
 				delete(d, field)
 			}
-			return d, err
-		}, nil)}
+			return d, nil
+		}}}
 		// A deployment that finished may be what's deployed to its
 		// environment, which the environment's item carries.
 		if environment, _ := payload["environment"].(string); environment != "" {
@@ -208,22 +230,6 @@ func gitlabEventRefs(payload, project map[string]any) []gitlabRef {
 	}
 
 	return nil
-}
-
-// gitlabLatestAttempt is a job as a sync reads it: from its pipeline's jobs,
-// which hold only each job's latest attempt. Its retried attempts are nil.
-func gitlabLatestAttempt(ctx context.Context, client *gitlabClient, base, pipeline, id string) (map[string]any, error) {
-	var job map[string]any
-	err := client.list(ctx, base+"pipelines/"+pipeline+"/jobs", func(jobs []map[string]any) (bool, error) {
-		for _, j := range jobs {
-			if idOf(j["id"]) == id {
-				job = j
-				return false, nil
-			}
-		}
-		return true, nil
-	})
-	return job, err
 }
 
 // gitlabProjectRef is the project an event is in, read again with what its

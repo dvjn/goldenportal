@@ -361,6 +361,8 @@ func TestSchemaFieldsMatchParsers(t *testing.T) {
 		{"Blueprint", "/$defs/link", widget.LinkFields, nil},
 		{"Blueprint", "/$defs/rowLink", widget.RowLinkFields, nil},
 		{"Blueprint", "/$defs/column", widget.ColumnFields, nil},
+		{"Blueprint", "/$defs/measure", widget.MeasureFields, nil},
+		{"Blueprint", "/$defs/matrixMeasure", widget.MatrixMeasureFields, nil},
 		{"Integration", "/$defs/spec", integration.SpecFields, nil},
 		{"Integration", "/$defs/connector", integration.ConnectorFields, nil},
 		{"Integration", "/$defs/sync", integration.SyncFields, nil},

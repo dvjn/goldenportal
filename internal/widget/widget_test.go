@@ -149,10 +149,71 @@ func TestValueOp(t *testing.T) {
 		{Value{Max: "readiness.score"}, "max", "readiness.score"},
 		{Value{Share: share}, OpShare, ""},
 		{Value{JQ: "length"}, OpJQ, ""},
+		{Value{Summary: Summary{P95: "duration"}}, "p95", "duration"},
 	} {
 		if op, path := test.value.Op(); op != test.op || path != test.path {
 			t.Errorf("Op(%+v) = %s %s, want %s %s", test.value, op, path, test.op, test.path)
 		}
+	}
+}
+
+func TestParseMeasuresAndTrends(t *testing.T) {
+	widgets, issues := parse(t, `
+p95:
+  type: stat
+  title: P95 Duration
+  value: {p95: duration, unit: s}
+failing:
+  type: bar
+  title: Failure Share by Stage
+  groupBy: stage
+  measure: {filter: {property: status, op: ne, value: skipped}, share: {property: status, op: eq, value: failed}}
+  sort: -measure
+byStage:
+  type: matrix
+  title: By Stage
+  groupBy: stage
+  sort: -P95
+  measures:
+    - {title: Jobs}
+    - {title: P95, p95: duration}
+perDay:
+  type: trend
+  title: Jobs per Day
+  date: finishedAt
+  link: {query: jobs, group: true}
+p95PerDay:
+  type: trend
+  title: P95 per Day
+  date: finishedAt
+  range: 2w
+  measure: {p95: duration}
+`, Scope{Blueprint: "job", Queries: []Query{{Name: "jobs", Blueprint: "job"}}})
+	if configdoc.HasErrors(issues) {
+		t.Fatalf("issues = %+v", issues)
+	}
+	p95, failing, byStage, perDay, p95PerDay := widgets[0], widgets[1], widgets[2], widgets[3], widgets[4]
+	if op, path := p95.Value.Op(); op != "p95" || path != "duration" || p95.Value.Unit != "s" {
+		t.Errorf("stat = %+v", p95.Value)
+	}
+	if op, _ := failing.Measure.Op(); op != OpShare || failing.Measure.Filter.Value != "skipped" || failing.Sort != "-measure" || failing.Width != 6 {
+		t.Errorf("bar = %+v", failing)
+	}
+	if op, _ := byStage.Measures[0].Op(); op != OpCount || byStage.Measures[1].P95 != "duration" || byStage.Sort != "-P95" {
+		t.Errorf("matrix = %+v", byStage)
+	}
+	if perDay.Width != 6 || perDay.Date != "finishedAt" || perDay.Range != DefaultRange || perDay.Measure != nil || !perDay.Link.Group {
+		t.Errorf("trend defaults = %+v", perDay)
+	}
+	if days, ok := TrendDays(p95PerDay.Range); !ok || days != 14 || p95PerDay.Measure.P95 != "duration" {
+		t.Errorf("trend = %+v", p95PerDay)
+	}
+	if got := len(failing.Filters()); got != 2 {
+		t.Errorf("bar filters = %d, want the measure's filter and share", got)
+	}
+	bound := failing.MapFilters(func(*filter.Filter) *filter.Filter { return nil })
+	if bound.Measure.Filter != nil || bound.Measure.Share != nil || failing.Measure.Share == nil {
+		t.Errorf("MapFilters = %+v, original %+v", bound.Measure, failing.Measure)
 	}
 }
 
@@ -186,7 +247,21 @@ func TestParseReportsProblems(t *testing.T) {
 		{"limit", "w: {type: table, title: W, limit: 500}", catalog, "widgets.w.limit", "1 to 50"},
 		{"matrix group by", "w: {type: matrix, title: W, measures: [{title: M, share: {property: a, op: exists}}]}", catalog, "widgets.w.groupBy", "add the property"},
 		{"matrix measures", "w: {type: matrix, title: W, groupBy: owner}", catalog, "widgets.w.measures", "add the measures"},
-		{"measure share", "w: {type: matrix, title: W, groupBy: owner, measures: [{title: M}]}", catalog, "widgets.w.measures[0].share", "add the condition"},
+		{"measure ops", "w: {type: matrix, title: W, groupBy: owner, measures: [{title: M, p95: a, avg: a}]}", catalog, "widgets.w.measures[0].p95", "a measure takes one of"},
+		{"percentile takes a path", "w: {type: stat, title: W, value: {p95: 'a b'}}", catalog, "widgets.w.value.p95", "p95 takes the path of a number field"},
+		{"value ops", "w: {type: stat, title: W, value: {p99: a, jq: length}}", catalog, "widgets.w.value.jq", "a value takes one of sum, avg, min, max, p50, p90, p95, p99, share, jq"},
+		{"bar measure title", "w: {type: bar, title: W, groupBy: a, measure: {title: M}}", catalog, "widgets.w.measure.title", "unknown field"},
+		{"measure share unit", "w: {type: bar, title: W, groupBy: a, measure: {share: {property: a, op: exists}, unit: s}}", catalog, "widgets.w.measure.unit", "percent"},
+		{"bar sort", "w: {type: bar, title: W, groupBy: a, sort: -size}", catalog, "widgets.w.sort", "sort is count or group, with a leading - for descending"},
+		{"bar sort without measure", "w: {type: bar, title: W, groupBy: a, sort: -measure}", catalog, "widgets.w.sort", "sort is count or group"},
+		{"donut measure", "w: {type: donut, title: W, groupBy: a, measure: {p95: a}}", catalog, "widgets.w.measure", "unknown field"},
+		{"matrix sort", "w: {type: matrix, title: W, groupBy: a, sort: -Nope, measures: [{title: Failed, share: {property: a, op: exists}}]}", catalog, "widgets.w.sort", "a measure's title, with a leading - for descending, such as -Failed"},
+		{"measure titles", "w: {type: matrix, title: W, groupBy: a, measures: [{title: M}, {title: M, p95: a}]}", catalog, "widgets.w.measures[1].title", "another measure is titled M"},
+		{"trend date", "w: {type: trend, title: W}", catalog, "widgets.w.date", "add the date field"},
+		{"trend date path", "w: {type: trend, title: W, date: 'a b'}", catalog, "widgets.w.date", "isn't a field's path"},
+		{"trend range hours", "w: {type: trend, title: W, date: a, range: 36h}", catalog, "widgets.w.range", "1d to 365d"},
+		{"trend range too long", "w: {type: trend, title: W, date: a, range: 400d}", catalog, "widgets.w.range", "1d to 365d"},
+		{"trend sort", "w: {type: trend, title: W, date: a, sort: -count}", catalog, "widgets.w.sort", "unknown field"},
 		{"measure title", "w: {type: matrix, title: W, groupBy: owner, measures: [{share: {property: a, op: exists}}]}", catalog, "widgets.w.measures[0].title", "add the measure's title"},
 		{"properties off entity", "w: {type: properties, title: W}", catalog, "widgets.w.type", "go on entity pages"},
 		{"unknown text variable", "w: {type: markdown, text: 'Hi {{ $me.nmae }}'}", catalog, "widgets.w.text", "unknown variable $me.nmae; known: $me, $me.email, $me.name, $me.role, $me.groups"},
@@ -242,7 +317,7 @@ func TestParseReportsProblemsInQueries(t *testing.T) {
 		{"variable as a property", "q: {filter: {property: $title, op: exists}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "unknown variable $title"},
 		{"scorecard as a property", "q: {filter: {property: $scorecard.readiness, op: exists}}", "w: {type: table, title: W, query: q}", catalog, "queries.q.filter", "unknown variable $scorecard.readiness"},
 		{"undeclared input", "q: {blueprint: s, filter: {property: owner, op: in, values: $input.team}}", "w: {type: table, title: W, query: q}", Scope{Inputs: []string{"tier"}}, "queries.q.filter", `no input "team"`},
-		{"group off groups", "q: {}", "w: {type: table, title: W, link: {query: q, group: true}}", catalog, "widgets.w.link.group", "only bars, donuts and splits"},
+		{"group off groups", "q: {}", "w: {type: table, title: W, link: {query: q, group: true}}", catalog, "widgets.w.link.group", "only bars, donuts, splits and trends"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -52,10 +51,39 @@ type (
 		None   int     `json:"none"`
 		// NoneLink opens the entities without a value.
 		NoneLink *linkData `json:"noneLink,omitempty"`
-		Link     *linkData `json:"link,omitempty"`
+		// NoneMeasure is a bar's measure of the entities without a value,
+		// and Unit follows each group's.
+		NoneMeasure *reading  `json:"noneMeasure,omitempty"`
+		Unit        string    `json:"unit,omitempty"`
+		Link        *linkData `json:"link,omitempty"`
 	}
 	group struct {
 		entity.Facet
+		// Measure is what a bar's measure comes to for the group.
+		Measure *reading  `json:"measure,omitempty"`
+		Link    *linkData `json:"link,omitempty"`
+	}
+	// reading is what a measure comes to for a group or a day: its value,
+	// and for a share, how many of how many it is. One with nothing to
+	// work on, such as a share of no entities, has no value.
+	reading struct {
+		Value *float64 `json:"value"`
+		Count *int     `json:"count,omitempty"`
+		Total *int     `json:"total,omitempty"`
+	}
+	// trendData is a measure for each day of a trend's range, oldest first,
+	// and over all of them, in a unit.
+	trendData struct {
+		Unit string     `json:"unit,omitempty"`
+		All  reading    `json:"all"`
+		Days []trendDay `json:"days"`
+		Link *linkData  `json:"link,omitempty"`
+	}
+	// trendDay is a UTC day, as 2026-11-09, and its link, when it links
+	// each day to its entities.
+	trendDay struct {
+		Day string `json:"day"`
+		reading
 		Link *linkData `json:"link,omitempty"`
 	}
 	// tierData counts entities by tier, with the scorecard's tiers to
@@ -66,13 +94,18 @@ type (
 		Scorecard *tableScorecard       `json:"scorecard"`
 		Link      *linkData             `json:"link,omitempty"`
 	}
-	// matrixData is a share per group per measure: a row for each of the
-	// widget's groups, a cell in it for each measure, and when asked, the
-	// shares over every group.
+	// matrixData is each measure per group: a row for each of the widget's
+	// groups, a cell in it for each measure, and when asked, the measures
+	// over every group.
 	matrixData struct {
-		Measures []string     `json:"measures"`
-		Overall  []matrixCell `json:"overall,omitempty"`
-		Rows     []matrixRow  `json:"rows"`
+		Measures []matrixMeasure `json:"measures"`
+		Overall  []matrixCell    `json:"overall,omitempty"`
+		Rows     []matrixRow     `json:"rows"`
+	}
+	// matrixMeasure heads a column, whose numbers follow its unit.
+	matrixMeasure struct {
+		Title string `json:"title"`
+		Unit  string `json:"unit,omitempty"`
 	}
 	// matrixRow is a group's cells, and links to its entities.
 	matrixRow struct {
@@ -80,14 +113,12 @@ type (
 		Cells []matrixCell `json:"cells"`
 		Link  *linkData    `json:"link,omitempty"`
 	}
-	// matrixCell is how many of how many match, with the share, and links
-	// to those that don't, the ones to work on. A cell no entity counts in
-	// has no share.
+	// matrixCell is what a measure comes to for a group. A share links to
+	// the entities that don't match, the ones to work on, and any other
+	// measure to the entities it applies to.
 	matrixCell struct {
-		Value *float64  `json:"value"`
-		Count int       `json:"count"`
-		Total int       `json:"total"`
-		Link  *linkData `json:"link,omitempty"`
+		reading
+		Link *linkData `json:"link,omitempty"`
 	}
 	textData struct {
 		Text string `json:"text"`
@@ -160,6 +191,8 @@ type loader struct {
 	ladders    map[string]blueprint.Ladder
 	scorecards map[string]scorecard.Spec
 	env        widget.Env
+	// now is when the page loads, which trends end on the day of.
+	now time.Time
 	// log logs what failed without the viewer being told why.
 	log func(ctx context.Context, msg string, err error, attrs ...attribute.KeyValue)
 }
@@ -176,6 +209,8 @@ type plan struct {
 	values     []*float64
 	valuesErr  error
 	groups     map[string]*grouping
+	measured   []*measuredGroups
+	trends     []*trendDays
 	pages      map[string]*page
 	tiers      map[string]*tiers
 	documents  *documents
@@ -189,6 +224,28 @@ type grouping struct {
 	facets []entity.Facet
 	none   int
 	err    error
+}
+
+// measuredGroups are aggregates for each group, in an order of their own,
+// which a widget reads alone.
+type measuredGroups struct {
+	path       string
+	aggregates []entity.Aggregate
+	sort       entity.GroupSort
+	limit      int
+	groups     []entity.Measured
+	none       *entity.Measured
+	err        error
+}
+
+// trendDays are aggregates for each day of a range.
+type trendDays struct {
+	path       string
+	from, to   time.Time
+	aggregates []entity.Aggregate
+	days       []entity.Day
+	all        entity.Day
+	err        error
 }
 
 type page struct {
@@ -303,7 +360,12 @@ func (l loader) need(w widget.Widget, planFor func(*widget.Query, *filter.Filter
 		if w.Query == nil {
 			return nil
 		}
-		return l.matrix(w, planFor)
+		return l.matrix(w, planFor(w.Query, w.Query.Filter))
+	case widget.TypeTrend:
+		if w.Query == nil {
+			return nil
+		}
+		return l.trend(w, planFor(w.Query, w.Query.Filter))
 	case widget.TypeTable:
 		if w.Query == nil {
 			return nil
@@ -317,9 +379,8 @@ func (l loader) need(w widget.Widget, planFor func(*widget.Query, *filter.Filter
 func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 	v := *w.Value
 	op, path := v.Op()
-	unit := v.Unit
-	switch op {
-	case widget.OpJQ:
+	unit := l.unit(p.query.Blueprint, v.Summary)
+	if op == widget.OpJQ {
 		if p.documents == nil {
 			p.documents = &documents{}
 		}
@@ -332,13 +393,6 @@ func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 				return nil, err
 			}
 			return statData{Value: value, Unit: unit, Link: l.link(w, nil)}, nil
-		}
-	case widget.OpShare:
-		unit = "%"
-	case widget.OpCount:
-	default:
-		if info, err := entity.Describe(l.blueprints, p.query.Blueprint, path); err == nil && unit == "" && info.Property != nil && info.Property.Display != nil {
-			unit = info.Property.Display.Unit
 		}
 	}
 	i := len(p.aggregates)
@@ -363,6 +417,85 @@ func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 		}
 		return data, nil
 	}
+}
+
+// unit is what follows a summary's number: % for a share, the summary's
+// own, or else the unit of the field it works on.
+func (l loader) unit(bp blueprint.Spec, s widget.Summary) string {
+	op, path := s.Op()
+	switch {
+	case op == widget.OpShare:
+		return "%"
+	case s.Unit != "" || op == widget.OpCount:
+		return s.Unit
+	}
+	if info, err := entity.Describe(l.blueprints, bp, path); err == nil && info.Property != nil && info.Property.Display != nil {
+		return info.Property.Display.Unit
+	}
+
+	return ""
+}
+
+// measurement is where a measure's aggregates are among those a statement
+// works out: its value, and for a share, how many it applies to and how
+// many of those match, so it can say how many of how many. A measure that
+// counts without narrowing reads the count every group has.
+type measurement struct {
+	at    int
+	share bool
+	count bool
+}
+
+// measurement adds what a measure reads to aggregates, its filters bound
+// for whoever is looking; nil counts.
+func (l loader) measurement(m *widget.Measure, aggregates *[]entity.Aggregate) measurement {
+	if m == nil {
+		return measurement{at: -1, count: true}
+	}
+	op, path := m.Op()
+	narrow := l.bind(m.Filter)
+	out := measurement{at: len(*aggregates), share: op == widget.OpShare, count: op == widget.OpCount}
+	*aggregates = append(*aggregates, entity.Aggregate{Op: op, Path: path, Share: l.bind(m.Share), Filter: narrow})
+	if out.share {
+		*aggregates = append(*aggregates,
+			entity.Aggregate{Op: widget.OpCount, Filter: narrow},
+			entity.Aggregate{Op: widget.OpCount, Filter: and(narrow, l.bind(m.Share))})
+	}
+
+	return out
+}
+
+// read is what the measure comes to from a statement's values and count.
+func (m measurement) read(values []*float64, count int) reading {
+	if m.at < 0 {
+		n := float64(count)
+		return reading{Value: &n}
+	}
+	r := reading{Value: values[m.at]}
+	if m.share {
+		total, matched := countOf(values[m.at+1]), countOf(values[m.at+2])
+		r.Count, r.Total = &matched, &total
+	}
+
+	return r
+}
+
+// groupSort is the order a bar's or a matrix's sort asks for, with the
+// measurement each measure title names.
+func groupSort(sort string, measures map[string]measurement) entity.GroupSort {
+	key, descending := strings.CutPrefix(sort, "-")
+	out := entity.GroupSort{By: entity.SortCount, Descending: descending}
+	switch key {
+	case widget.SortCount:
+	case widget.SortGroup:
+		out.By = entity.SortGroup
+	default:
+		if m, ok := measures[key]; ok && m.at >= 0 {
+			out.By = m.at
+		}
+	}
+
+	return out
 }
 
 // countIndex is where the plan's count of its entities is among its
@@ -420,197 +553,6 @@ func (p *plan) grouping(path string, limit int) *grouping {
 	g.limit = max(g.limit, limit)
 
 	return g
-}
-
-func (l loader) groups(w widget.Widget, p *plan) func() (any, error) {
-	g := p.grouping(w.GroupBy, w.Limit)
-
-	return func() (any, error) {
-		if p.err != nil {
-			return nil, p.err
-		}
-		if g.err != nil {
-			return nil, g.err
-		}
-		facets := g.facets[:min(len(g.facets), w.Limit)]
-		data := groupData{Groups: make([]group, len(facets)), None: g.none}
-		linkGroups := w.Link != nil && w.Link.Group
-		if !linkGroups {
-			data.Link = l.link(w, nil)
-		}
-		info, _ := entity.Describe(l.blueprints, p.query.Blueprint, w.GroupBy)
-		single := info.Property == nil || (!info.Property.Many && info.Property.Type != "array") || info.Kind == "tier"
-		for i, facet := range facets {
-			// A group takes its property's color for its value, unless it
-			// has its own, as a tier does.
-			if facet.Color == "" && info.Property != nil && info.Property.Display != nil {
-				facet.Color = info.Property.Display.Colors[fmt.Sprint(facet.Value)]
-			}
-			data.Groups[i] = group{Facet: facet}
-			if linkGroups {
-				data.Groups[i].Link = l.groupLink(w, single, &filter.Filter{Property: w.GroupBy, Op: filter.OpEq, Value: facet.Value})
-			}
-		}
-		if w.Type == widget.TypeSplit {
-			byEnum(data.Groups, info.Property)
-		}
-		// A list counts as none when it's empty, which exists can't say.
-		if g.none > 0 && linkGroups && single {
-			data.NoneLink = l.groupLink(w, single, &filter.Filter{Not: &filter.Filter{Property: w.GroupBy, Op: filter.OpExists}})
-		}
-		return data, nil
-	}
-}
-
-// matrix works out each measure for each group, from two counts per
-// measure: of the entities it applies to, and of those matching it, each
-// grouped and in all. Rows are the query's largest groups.
-func (l loader) matrix(w widget.Widget, planFor func(*widget.Query, *filter.Filter) *plan) func() (any, error) {
-	rows := planFor(w.Query, w.Query.Filter)
-	rowGroups := rows.grouping(w.GroupBy, w.Limit)
-	type counts struct {
-		plan          *plan
-		groups        *grouping
-		total         int
-		filter, share *filter.Filter
-	}
-	count := func(f *filter.Filter) counts {
-		p := planFor(w.Query, f)
-		return counts{plan: p, groups: p.grouping(w.GroupBy, widget.MaxGroups), total: p.countIndex()}
-	}
-	measures := make([][2]counts, len(w.Measures))
-	for i, m := range w.Measures {
-		base := and(w.Query.Filter, m.Filter)
-		measures[i] = [2]counts{count(base), count(and(base, m.Share))}
-		measures[i][0].filter, measures[i][0].share = base, m.Share
-	}
-
-	return func() (any, error) {
-		if err := cmp.Or(rows.err, rowGroups.err); err != nil {
-			return nil, err
-		}
-		for _, pair := range measures {
-			for _, c := range pair {
-				if err := cmp.Or(c.plan.err, c.plan.valuesErr, c.groups.err); err != nil {
-					return nil, err
-				}
-			}
-		}
-		info, _ := entity.Describe(l.blueprints, rows.query.Blueprint, w.GroupBy)
-		single := info.Property == nil || (!info.Property.Many && info.Property.Type != "array") || info.Kind == "tier"
-		groups := make([]group, min(len(rowGroups.facets), w.Limit))
-		for i := range groups {
-			groups[i] = group{Facet: rowGroups.facets[i]}
-			if groups[i].Color == "" && info.Property != nil && info.Property.Display != nil {
-				groups[i].Color = info.Property.Display.Colors[fmt.Sprint(groups[i].Value)]
-			}
-		}
-		byEnum(groups, info.Property)
-
-		data := matrixData{Measures: make([]string, len(w.Measures)), Rows: make([]matrixRow, len(groups))}
-		for i, m := range w.Measures {
-			data.Measures[i] = m.Title
-			if w.Overall {
-				base, hit := measures[i][0], measures[i][1]
-				data.Overall = append(data.Overall, l.cell(w, base.filter, base.share, nil,
-					countOf(base.plan.values[base.total]), countOf(hit.plan.values[hit.total])))
-			}
-		}
-		for r, g := range groups {
-			data.Rows[r] = matrixRow{Facet: g.Facet}
-			op := filter.OpEq
-			if !single {
-				op = filter.OpContains
-			}
-			condition := &filter.Filter{Property: w.GroupBy, Op: op, Value: g.Value}
-			data.Rows[r].Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.linkFilter(and(w.Query.Filter, condition))}
-			for i := range w.Measures {
-				base, hit := measures[i][0], measures[i][1]
-				data.Rows[r].Cells = append(data.Rows[r].Cells, l.cell(w, base.filter, base.share, condition,
-					facetCount(base.groups.facets, g.Value), facetCount(hit.groups.facets, g.Value)))
-			}
-		}
-		// A group no measure applies to, such as repositories without CI
-		// when every measure counts those with, has nothing to read.
-		data.Rows = slices.DeleteFunc(data.Rows, func(row matrixRow) bool {
-			return !slices.ContainsFunc(row.Cells, func(c matrixCell) bool { return c.Value != nil })
-		})
-		return data, nil
-	}
-}
-
-// cell is one share in a matrix, linking to the entities it applies to
-// that don't match, when there are any.
-func (l loader) cell(w widget.Widget, base, share, group *filter.Filter, total, count int) matrixCell {
-	c := matrixCell{Count: count, Total: total}
-	if total == 0 {
-		return c
-	}
-	value := float64(count) * 100 / float64(total)
-	c.Value = &value
-	if count < total && share != nil {
-		c.Link = &linkData{Blueprint: w.Query.Blueprint, Filter: l.linkFilter(and(base, group, &filter.Filter{Not: share}))}
-	}
-
-	return c
-}
-
-// and is every condition given, flattened, or nil without any.
-func and(filters ...*filter.Filter) *filter.Filter {
-	var conditions []filter.Filter
-	for _, f := range filters {
-		switch {
-		case f == nil:
-		case len(f.And) > 0:
-			conditions = append(conditions, f.And...)
-		default:
-			conditions = append(conditions, *f)
-		}
-	}
-	switch len(conditions) {
-	case 0:
-		return nil
-	case 1:
-		return &conditions[0]
-	}
-
-	return &filter.Filter{And: conditions}
-}
-
-func countOf(value *float64) int {
-	if value == nil {
-		return 0
-	}
-	return int(math.Round(*value))
-}
-
-func facetCount(facets []entity.Facet, value any) int {
-	for _, f := range facets {
-		if fmt.Sprint(f.Value) == fmt.Sprint(value) {
-			return f.Count
-		}
-	}
-	return 0
-}
-
-// byEnum puts a split's groups in the order its property lists its values,
-// such as a status's lifecycle, since a split reads as one whole left to
-// right; values it doesn't list keep their count order, after those it does.
-func byEnum(groups []group, property *blueprint.Property) {
-	if property == nil {
-		return
-	}
-	values := property.Enum
-	if values == nil && property.Items != nil {
-		values = property.Items.Enum
-	}
-	rank := func(g group) int {
-		if i := slices.IndexFunc(values, func(v any) bool { return fmt.Sprint(v) == fmt.Sprint(g.Value) }); i >= 0 {
-			return i
-		}
-		return len(values)
-	}
-	slices.SortStableFunc(groups, func(a, b group) int { return rank(a) - rank(b) })
 }
 
 func (l loader) table(w widget.Widget, p *plan) func() (any, error) {
@@ -763,6 +705,18 @@ func (l loader) tasks(p *plan) []func() {
 			g.facets, g.none, g.err = l.store.Group(ctx, p.match, g.path, g.limit)
 			return g.err
 		}, attribute.String("gp.group_by", g.path)))
+	}
+	for _, g := range p.measured {
+		tasks = append(tasks, read("read measured groups", func(ctx context.Context) error {
+			g.groups, g.none, g.err = l.store.GroupBy(ctx, p.match, g.path, g.aggregates, g.sort, g.limit)
+			return g.err
+		}, attribute.String("gp.group_by", g.path)))
+	}
+	for _, t := range p.trends {
+		tasks = append(tasks, read("read trend", func(ctx context.Context) error {
+			t.days, t.all, t.err = l.store.Trend(ctx, p.match, t.path, t.from, t.to, t.aggregates)
+			return t.err
+		}, attribute.String("gp.date", t.path)))
 	}
 	for _, pg := range p.pages {
 		tasks = append(tasks, read("read rows", func(ctx context.Context) error {

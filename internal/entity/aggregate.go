@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 )
@@ -45,16 +48,21 @@ func (m Match) compiler() *compiler {
 }
 
 // Aggregate is one way to sum up the entities a query matches: count them,
-// sum, avg, min or max a number field, or share, the percent of them that
-// meet a condition.
+// sum, avg, min, max or take an exact percentile of a number field, or
+// share, the percent of them that meet a condition. Filter narrows them to
+// those it applies to first.
 type Aggregate struct {
-	Op    string
-	Path  string
-	Share *Filter
+	Op     string
+	Path   string
+	Share  *Filter
+	Filter *Filter
 }
 
 // Aggregates are the ops an Aggregate can be.
-var Aggregates = []string{"count", "sum", "avg", "min", "max", "share"}
+var Aggregates = []string{"count", "sum", "avg", "min", "max", "p50", "p90", "p95", "p99", "share"}
+
+// percentiles are the fractions the percentile ops stand for.
+var percentiles = map[string]string{"p50": "0.5", "p90": "0.9", "p95": "0.95", "p99": "0.99"}
 
 // CheckAggregate reports whether a blueprint's entities can be summed up this way.
 func CheckAggregate(specs map[string]blueprint.Spec, spec blueprint.Spec, a Aggregate) error {
@@ -62,10 +70,31 @@ func CheckAggregate(specs map[string]blueprint.Spec, spec blueprint.Spec, a Aggr
 	return err
 }
 
+// aggregateSQL is an aggregate as SQL over the rows of one group, which
+// for a narrowed one is only its filter's.
 func aggregateSQL(c *compiler, a Aggregate) (string, error) {
+	var narrow string
+	if a.Filter != nil {
+		condition, err := c.compile(*a.Filter, 1)
+		if err != nil {
+			return "", err
+		}
+		narrow = condition
+	}
+	// of is an aggregate over the rows the conditions given and the
+	// filter's all hold for.
+	of := func(aggregate string, conditions ...string) string {
+		if narrow != "" {
+			conditions = append([]string{narrow}, conditions...)
+		}
+		if len(conditions) == 0 {
+			return aggregate
+		}
+		return aggregate + " FILTER (WHERE " + strings.Join(conditions, " AND ") + ")"
+	}
 	switch a.Op {
 	case "count":
-		return "count(*)", nil
+		return of("count(*)"), nil
 	case "share":
 		if a.Share == nil {
 			return "", fmt.Errorf("share needs the condition its entities meet")
@@ -74,8 +103,8 @@ func aggregateSQL(c *compiler, a Aggregate) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return "100.0 * count(*) FILTER (WHERE " + condition + ") / nullif(count(*), 0)", nil
-	case "sum", "avg", "min", "max":
+		return "100.0 * " + of("count(*)", condition) + " / nullif(" + of("count(*)") + ", 0)", nil
+	case "sum", "avg", "min", "max", "p50", "p90", "p95", "p99":
 		fld, err := c.field(a.Path)
 		if err != nil {
 			return "", err
@@ -83,17 +112,17 @@ func aggregateSQL(c *compiler, a Aggregate) (string, error) {
 		if fld.many || (fld.kind != "number" && fld.kind != "integer") {
 			return "", fmt.Errorf("%s works on numbers, and %s isn't one", a.Op, a.Path)
 		}
-		return a.Op + "(" + fld.number() + ")", nil
+		if fraction, ok := percentiles[a.Op]; ok {
+			return of("percentile_cont(" + fraction + ") WITHIN GROUP (ORDER BY " + fld.number() + ")"), nil
+		}
+		return of(a.Op + "(" + fld.number() + ")"), nil
 	}
 
 	return "", fmt.Errorf("aggregate must be one of %s", strings.Join(Aggregates, ", "))
 }
 
-// Aggregates works out every aggregate of m's entities in one statement.
-// Each is nil when there's nothing to work on, such as the average of no
-// values.
-func (s Store) Aggregates(ctx context.Context, m Match, aggregates []Aggregate) ([]*float64, error) {
-	c := m.compiler()
+// aggregateColumns are aggregates as SQL columns, each a float8.
+func aggregateColumns(c *compiler, aggregates []Aggregate) ([]string, error) {
 	columns := make([]string, len(aggregates))
 	for i, a := range aggregates {
 		sql, err := aggregateSQL(c, a)
@@ -101,6 +130,31 @@ func (s Store) Aggregates(ctx context.Context, m Match, aggregates []Aggregate) 
 			return nil, FilterError{err}
 		}
 		columns[i] = "(" + sql + ")::float8"
+	}
+
+	return columns, nil
+}
+
+// scanValues reads aggregates as columns read them, nil for SQL's null.
+func scanValues(values []sql.NullFloat64) []*float64 {
+	out := make([]*float64, len(values))
+	for i, value := range values {
+		if value.Valid {
+			out[i] = &value.Float64
+		}
+	}
+
+	return out
+}
+
+// Aggregates works out every aggregate of m's entities in one statement.
+// Each is nil when there's nothing to work on, such as the average of no
+// values.
+func (s Store) Aggregates(ctx context.Context, m Match, aggregates []Aggregate) ([]*float64, error) {
+	c := m.compiler()
+	columns, err := aggregateColumns(c, aggregates)
+	if err != nil {
+		return nil, err
 	}
 	values := make([]sql.NullFloat64, len(aggregates))
 	targets := make([]any, len(values))
@@ -111,14 +165,8 @@ func (s Store) Aggregates(ctx context.Context, m Match, aggregates []Aggregate) 
 	WHERE `+m.where, c.args...).Scan(targets...); err != nil {
 		return nil, err
 	}
-	out := make([]*float64, len(values))
-	for i, value := range values {
-		if value.Valid {
-			out[i] = &value.Float64
-		}
-	}
 
-	return out, nil
+	return scanValues(values), nil
 }
 
 // Facet is one value of a field and how many entities have it. Title names
@@ -168,10 +216,63 @@ func groupField(c *compiler, path string) (field, error) {
 // statement, most common first, up to limit values. Lists count each item.
 // None counts the entities without a value, or with an empty list.
 func (s Store) Group(ctx context.Context, m Match, path string, limit int) (facets []Facet, none int, err error) {
+	groups, without, err := s.GroupBy(ctx, m, path, nil, MostFirst, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	facets = make([]Facet, len(groups))
+	for i, g := range groups {
+		facets[i] = g.Facet
+	}
+	if without != nil {
+		none = without.Count
+	}
+
+	return facets, none, nil
+}
+
+// GroupSort is the order groups come in: by how many entities each has, by
+// one of the aggregates asked for, or by the group's value, in the order
+// its property lists its values or its scorecard its tiers.
+type GroupSort struct {
+	// By is SortCount, SortGroup or the index of an aggregate.
+	By         int
+	Descending bool
+}
+
+// What a GroupSort can be by, beside an aggregate's index.
+const (
+	SortCount = -1
+	SortGroup = -2
+)
+
+// MostFirst is the order groups come in unless asked for another.
+var MostFirst = GroupSort{By: SortCount, Descending: true}
+
+// Measured is a group and its aggregates, in the order they were asked for.
+type Measured struct {
+	Facet
+	Values []*float64
+}
+
+// GroupBy works out aggregates for each value a field has across m's
+// entities in one statement, up to limit values in sort's order. Lists
+// count each item. None is the entities without a value, or with an empty
+// list, or nil when there are none.
+func (s Store) GroupBy(ctx context.Context, m Match, path string, aggregates []Aggregate, sort GroupSort, limit int) (groups []Measured, none *Measured, err error) {
 	c := m.compiler()
 	fld, err := groupField(c, path)
 	if err != nil {
-		return nil, 0, FilterError{err}
+		return nil, nil, FilterError{err}
+	}
+	columns, err := aggregateColumns(c, aggregates)
+	if err != nil {
+		return nil, nil, err
+	}
+	var inner, outer string
+	for i, column := range columns {
+		inner += ", " + column + " AS v" + strconv.Itoa(i)
+		outer += ", g.v" + strconv.Itoa(i)
 	}
 	value, from := fld.json(), entityFrom
 	if fld.many {
@@ -185,51 +286,105 @@ func (s Store) Group(ctx context.Context, m Match, path string, limit int) (face
 		join = `
 	LEFT JOIN entities t ON t.blueprint_id = ` + blueprintID(fld.relation) + ` AND t.identifier = g.value #>> '{}'`
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT g.value, g.count, `+title+` FROM (SELECT `+value+` AS value, count(*) AS count`+from+`
+	// The group without a value comes first, so the limit never cuts it.
+	rows, err := s.db.QueryContext(ctx, `SELECT g.value, g.count, `+title+outer+` FROM (SELECT `+value+` AS value, count(*) AS count`+inner+from+`
 	WHERE `+m.where+`
 	GROUP BY 1) g`+join+`
-	ORDER BY g.value IS NULL DESC, g.count DESC, g.value
+	ORDER BY g.value IS NULL DESC, `+groupOrder(c, fld, m.ladders, sort)+`
 	LIMIT `+c.arg(limit+1), c.args...)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
-	facets = []Facet{}
+	groups = []Measured{}
 	for rows.Next() {
 		var (
 			raw   []byte
-			count int
 			named sql.NullString
+			g     Measured
 		)
-		if err := rows.Scan(&raw, &count, &named); err != nil {
-			return nil, 0, err
+		values := make([]sql.NullFloat64, len(aggregates))
+		targets := []any{&raw, &g.Count, &named}
+		for i := range values {
+			targets = append(targets, &values[i])
+		}
+		if err := rows.Scan(targets...); err != nil {
+			return nil, nil, err
+		}
+		if len(aggregates) > 0 {
+			g.Values = scanValues(values)
 		}
 		if raw == nil {
-			none = count
+			none = &g
 			continue
 		}
-		f := Facet{Count: count, Title: named.String}
-		if err := json.Unmarshal(raw, &f.Value); err != nil {
-			return nil, 0, err
+		g.Title = named.String
+		if err := json.Unmarshal(raw, &g.Value); err != nil {
+			return nil, nil, err
 		}
-		facets = append(facets, f)
+		groups = append(groups, g)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	if len(facets) > limit {
-		facets = facets[:limit]
+	if len(groups) > limit {
+		groups = groups[:limit]
 	}
 	if ladder, ok := m.ladders[fld.scorecard]; ok && fld.kind == kindTier {
-		for i, f := range facets {
-			if at := slices.IndexFunc(ladder.Tiers, func(r blueprint.Rung) bool { return r.Name == f.Value }); at >= 0 {
-				facets[i].Title, facets[i].Color = ladder.Tiers[at].Title, ladder.Tiers[at].Color
+		for i, g := range groups {
+			if at := slices.IndexFunc(ladder.Tiers, func(r blueprint.Rung) bool { return r.Name == g.Value }); at >= 0 {
+				groups[i].Title, groups[i].Color = ladder.Tiers[at].Title, ladder.Tiers[at].Color
 			}
 		}
 	}
 
-	return facets, none, nil
+	return groups, none, nil
+}
+
+// groupOrder is SQL ordering groups by sort. Ties go to the larger group,
+// then the value, so the groups a limit keeps are always the same.
+func groupOrder(c *compiler, fld field, ladders map[string]blueprint.Ladder, sort GroupSort) string {
+	direction := " ASC"
+	if sort.Descending {
+		direction = " DESC"
+	}
+	switch {
+	case sort.By == SortCount:
+		return "g.count" + direction + ", g.value"
+	case sort.By >= 0:
+		return "g.v" + strconv.Itoa(sort.By) + direction + " NULLS LAST, g.count DESC, g.value"
+	}
+	var keys []string
+	if listed := listedValues(fld, ladders); len(listed) > 0 {
+		keys = append(keys, "array_position("+c.arg(pq.Array(listed))+"::text[], g.value #>> '{}')"+direction+" NULLS LAST")
+	}
+	if fld.relation != "" {
+		keys = append(keys, "t.title"+direction+" NULLS LAST")
+	}
+
+	return strings.Join(append(keys, "g.value"+direction), ", ")
+}
+
+// listedValues are a field's values in the order its definition lists
+// them: a scorecard's tiers up its ladder, or a property's enum, as text.
+func listedValues(fld field, ladders map[string]blueprint.Ladder) []string {
+	if fld.kind == kindTier {
+		return ladders[fld.scorecard].Names()
+	}
+	if fld.prop == nil {
+		return nil
+	}
+	values := fld.prop.Enum
+	if values == nil && fld.prop.Items != nil {
+		values = fld.prop.Items.Enum
+	}
+	listed := make([]string, len(values))
+	for i, value := range values {
+		listed[i] = fmt.Sprint(value)
+	}
+
+	return listed
 }
 
 // CheckSort reports whether a blueprint's entities can be sorted this way.

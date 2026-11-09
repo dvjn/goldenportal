@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -56,6 +57,13 @@ type Widget struct {
 	// Overall adds a matrix row of each measure over every group, for a
 	// page without stats that show them.
 	Overall bool `json:"overall,omitempty"`
+	// Measure is what a bar shows for each group, or a trend for each day,
+	// in place of how many entities there are.
+	Measure *Measure `json:"measure,omitempty"`
+	// Date is the field whose day a trend puts each entity on, and Range
+	// how many days back it goes, as a duration such as 30d.
+	Date  string `json:"date,omitempty"`
+	Range string `json:"range,omitempty"`
 	// Path and Line say where the widget is written, for issues.
 	Path string `json:"-"`
 	Line int    `json:"-"`
@@ -74,49 +82,74 @@ type Query struct {
 	Line int    `json:"-"`
 }
 
-// Value is a number worked out from a query's entities: how many there
-// are, unless it names one way to sum them up. The database works out all
-// but jq, which runs over the matching entities, loaded and capped.
-type Value struct {
-	Query Query `json:"query"`
-	// Sum, Avg, Min and Max name a number field's path.
+// Summary is how a number sums up entities: how many there are, unless it
+// names one way to. The database works out each of them.
+type Summary struct {
+	// Sum, Avg, Min, Max and the percentiles name a number field's path.
+	// Percentiles are exact, interpolated between the two nearest values.
 	Sum string `json:"sum,omitempty"`
 	Avg string `json:"avg,omitempty"`
 	Min string `json:"min,omitempty"`
 	Max string `json:"max,omitempty"`
+	P50 string `json:"p50,omitempty"`
+	P90 string `json:"p90,omitempty"`
+	P95 string `json:"p95,omitempty"`
+	P99 string `json:"p99,omitempty"`
 	// Share is the percent of the entities matching a condition.
 	Share *filter.Filter `json:"share,omitempty"`
-	JQ    string         `json:"jq,omitempty"`
-	// Unit follows the number. Share is always %, and sum, avg, min and
-	// max take their field's unit unless this says otherwise.
+	// Unit follows the number. Share is always %, and the ops on a field
+	// take its unit unless this says otherwise.
 	Unit string `json:"unit,omitempty"`
 }
 
-// Value ops, beside sum, avg, min and max.
+// Value is a number worked out from a query's entities: a summary of them,
+// or jq, which runs over the matching entities, loaded and capped.
+type Value struct {
+	Query Query `json:"query"`
+	Summary
+	JQ string `json:"jq,omitempty"`
+}
+
+// Ops beside those on a field's path.
 const (
 	OpCount = "count"
 	OpShare = "share"
 	OpJQ    = "jq"
 )
 
-// Op is how the value sums up its entities, with the path it works on.
-func (v Value) Op() (op, path string) {
-	switch {
-	case v.Sum != "":
-		return "sum", v.Sum
-	case v.Avg != "":
-		return "avg", v.Avg
-	case v.Min != "":
-		return "min", v.Min
-	case v.Max != "":
-		return "max", v.Max
-	case v.Share != nil:
+// PathOps are the ops on a number field's path, in the order they're read.
+var PathOps = []string{"sum", "avg", "min", "max", "p50", "p90", "p95", "p99"}
+
+// paths is where the summary keeps each op on a field's path.
+func (s *Summary) paths() map[string]*string {
+	return map[string]*string{
+		"sum": &s.Sum, "avg": &s.Avg, "min": &s.Min, "max": &s.Max,
+		"p50": &s.P50, "p90": &s.P90, "p95": &s.P95, "p99": &s.P99,
+	}
+}
+
+// Op is how the summary sums up its entities, with the path it works on.
+func (s Summary) Op() (op, path string) {
+	paths := s.paths()
+	for _, op := range PathOps {
+		if *paths[op] != "" {
+			return op, *paths[op]
+		}
+	}
+	if s.Share != nil {
 		return OpShare, ""
-	case v.JQ != "":
-		return OpJQ, ""
 	}
 
 	return OpCount, ""
+}
+
+// Op is how the value sums up its entities, with the path it works on.
+func (v Value) Op() (op, path string) {
+	if v.JQ != "" {
+		return OpJQ, ""
+	}
+
+	return v.Summary.Op()
 }
 
 // Link is what a widget, or each of its groups or rows, opens: the catalog
@@ -142,13 +175,13 @@ type Column struct {
 	Unit  string `json:"unit,omitempty"`
 }
 
-// Measure is a share a matrix works out for each of its groups: of the
-// query's entities, narrowed by Filter to those it applies to, the percent
-// matching Share.
+// Measure is a number worked out for each group or day of a widget's
+// entities, from those Filter narrows them to, the ones it applies to. A
+// matrix's measures are its columns, each with a title.
 type Measure struct {
-	Title  string         `json:"title"`
+	Title  string         `json:"title,omitempty"`
 	Filter *filter.Filter `json:"filter,omitempty"`
-	Share  *filter.Filter `json:"share"`
+	Summary
 }
 
 // Widget types.
@@ -163,6 +196,7 @@ const (
 	TypeMarkdown   = "markdown"
 	TypeProperties = "properties"
 	TypeActions    = "actions"
+	TypeTrend      = "trend"
 )
 
 // The keys each mapping of a widget takes, beside its type's own, exported
@@ -176,7 +210,10 @@ var (
 	RowLinkFields = []string{"url", "path"}
 	LinkFields    = slices.Concat(RowLinkFields, []string{"query", "filter", "group"})
 	ColumnFields  = []string{"title", "path", "jq", "unit"}
-	MeasureFields = []string{"title", "filter", "share"}
+	// MeasureFields are a bar's or a trend's measure's; a matrix's measures
+	// also take a title.
+	MeasureFields       = slices.Concat([]string{"filter", "unit"}, summaryOps)
+	MatrixMeasureFields = slices.Concat([]string{"title"}, MeasureFields)
 )
 
 // TypeFields lists the keys a widget of a type takes, or nil for a type
@@ -196,10 +233,11 @@ var types = map[string]struct {
 	width  int
 }{
 	TypeStat:       {[]string{"value", "link", "icon", "color"}, 3},
-	TypeBar:        {[]string{"query", "groupBy", "limit", "link"}, 6},
+	TypeBar:        {[]string{"query", "groupBy", "measure", "sort", "limit", "link"}, 6},
 	TypeDonut:      {[]string{"query", "groupBy", "limit", "link"}, 4},
 	TypeSplit:      {[]string{"query", "groupBy", "limit", "link"}, 6},
-	TypeMatrix:     {[]string{"query", "groupBy", "limit", "measures", "overall"}, 12},
+	TypeMatrix:     {[]string{"query", "groupBy", "measures", "sort", "limit", "overall"}, 12},
+	TypeTrend:      {[]string{"query", "date", "range", "measure", "link"}, 6},
 	TypeTable:      {[]string{"query", "columns", "sort", "limit", "link", "rowLink"}, 12},
 	TypeScorecard:  {[]string{"scorecard", "query", "link"}, 6},
 	TypeMarkdown:   {[]string{"text"}, 6},
@@ -225,6 +263,10 @@ const (
 	MaxTableRows = 50
 	MaxGroups    = 20
 	GridColumns  = 12
+	// MaxTrendDays caps how far back a trend reads, and DefaultRange is how
+	// far it reads unless it says.
+	MaxTrendDays = 365
+	DefaultRange = "30d"
 )
 
 var namePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
@@ -394,6 +436,19 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 			r.Errorf(key, path+".groupBy", "add the property to count entities by, in groupBy")
 		}
 		w.Limit = limit(r, fields["limit"], path+".limit", 8, MaxGroups)
+		if n := fields["measure"]; n != nil {
+			w.Measure = parseMeasure(r, n, path+".measure", MeasureFields, scope)
+		}
+		if n := fields["sort"]; n != nil {
+			w.Sort = r.Text(n, path+".sort")
+			keys := []string{SortCount, SortGroup}
+			if w.Measure != nil {
+				keys = append(keys, SortMeasure)
+			}
+			if _, ok := groupSortKey(w.Sort, keys); !ok {
+				r.Errorf(n, path+".sort", "sort is %s, with a leading - for descending, such as -%s", or(keys), keys[len(keys)-1])
+			}
+		}
 	case TypeMatrix:
 		w.GroupBy = r.Text(fields["groupBy"], path+".groupBy")
 		if w.GroupBy == "" {
@@ -405,6 +460,33 @@ func parseOne(r *configdoc.Reader, path, id string, key, node *yaml.Node, scope 
 			if err := n.Decode(&w.Overall); err != nil || n.Tag != "!!bool" {
 				r.Errorf(n, path+".overall", "overall must be true or false")
 			}
+		}
+		if n := fields["sort"]; n != nil {
+			w.Sort = r.Text(n, path+".sort")
+			keys := []string{SortCount, SortGroup}
+			for _, m := range w.Measures {
+				keys = append(keys, m.Title)
+			}
+			if _, ok := groupSortKey(w.Sort, keys); !ok {
+				r.Errorf(n, path+".sort", "sort is count, group or a measure's title, with a leading - for descending, such as -%s", keys[len(keys)-1])
+			}
+		}
+	case TypeTrend:
+		w.Date = r.Text(fields["date"], path+".date")
+		if fields["date"] == nil {
+			r.Errorf(key, path+".date", "add the date field whose day each entity counts on, in date, such as createdAt")
+		} else {
+			checkPath(r, fields["date"], path+".date", w.Date)
+		}
+		w.Range = DefaultRange
+		if n := fields["range"]; n != nil {
+			w.Range = r.Text(n, path+".range")
+			if _, ok := TrendDays(w.Range); !ok {
+				r.Errorf(n, path+".range", "range is how many days back the trend goes, 1d to %dd, such as 30d or 12w", MaxTrendDays)
+			}
+		}
+		if n := fields["measure"]; n != nil {
+			w.Measure = parseMeasure(r, n, path+".measure", MeasureFields, scope)
 		}
 	case TypeTable:
 		w.Columns = parseColumns(r, fields["columns"], path+".columns", scope)
@@ -457,9 +539,49 @@ func identifiers(r *configdoc.Reader, n *yaml.Node, path, whose string) []string
 	return names
 }
 
-// valueOps are the ways a value can sum up its entities besides counting
-// them, of which it takes at most one.
-var valueOps = []string{"sum", "avg", "min", "max", OpShare, OpJQ}
+// summaryOps are the ways a summary can sum up its entities besides
+// counting them, of which it takes at most one; a value can also take jq.
+var (
+	summaryOps = slices.Concat(PathOps, []string{OpShare})
+	valueOps   = slices.Concat(summaryOps, []string{OpJQ})
+)
+
+// Sort keys for a bar's or a matrix's groups, besides a matrix measure's
+// title: how many entities each has, its value in the order its property
+// lists them, and a bar's measure.
+const (
+	SortCount   = "count"
+	SortGroup   = "group"
+	SortMeasure = "measure"
+)
+
+// groupSortKey reads which of keys a group sort is by, and whether it's
+// one of them.
+func groupSortKey(sort string, keys []string) (string, bool) {
+	key := strings.TrimPrefix(sort, "-")
+	return key, slices.Contains(keys, key)
+}
+
+// TrendDays is how many days a trend's range covers, and whether it's a
+// whole number of them, 1 to MaxTrendDays.
+func TrendDays(text string) (int, bool) {
+	d, ok := filter.ParseDuration(text)
+	if !ok || !strings.HasSuffix(text, "d") && !strings.HasSuffix(text, "w") {
+		return 0, false
+	}
+	days := int(d / (24 * time.Hour))
+
+	return days, days >= 1 && days <= MaxTrendDays
+}
+
+// or lists choices as "a, b or c".
+func or(choices []string) string {
+	if len(choices) < 2 {
+		return strings.Join(choices, "")
+	}
+
+	return strings.Join(choices[:len(choices)-1], ", ") + " or " + choices[len(choices)-1]
+}
 
 // parseValue reads a stat's value: a query, and at most one way to sum up
 // its entities, which are counted otherwise.
@@ -472,37 +594,14 @@ func parseValue(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sc
 	if !ok {
 		return nil
 	}
-	v := &Value{Unit: r.Text(fields["unit"], path+".unit")}
+	v := &Value{}
 	if q := queryRef(r, node, fields["query"], path+".query", scope); q != nil {
 		v.Query = *q
 	}
-	var set []string
-	for _, op := range valueOps {
-		if fields[op] != nil {
-			set = append(set, op)
-		}
-	}
-	if len(set) > 1 {
-		r.Errorf(fields[set[1]], path+"."+set[1], "a value takes one of %s, and this has %s", strings.Join(valueOps, ", "), strings.Join(set, " and "))
+	if !oneOp(r, fields, path, "a value", valueOps) {
 		return v
 	}
-	for _, op := range []struct {
-		name   string
-		target *string
-	}{{"sum", &v.Sum}, {"avg", &v.Avg}, {"min", &v.Min}, {"max", &v.Max}} {
-		if n := fields[op.name]; n != nil {
-			*op.target = r.Text(n, path+"."+op.name)
-			if !validPath(*op.target) {
-				r.Errorf(n, path+"."+op.name, "%s takes the path of a number field, such as cost or service.cost", op.name)
-			}
-		}
-	}
-	if n := fields[OpShare]; n != nil {
-		v.Share = parseFilter(r, n, path+".share", scope)
-		if v.Share != nil && v.Unit != "" {
-			r.Errorf(fields["unit"], path+".unit", "share is a percent, so it takes no unit")
-		}
-	}
+	v.Summary = parseSummary(r, fields, path, scope)
 	if n := fields[OpJQ]; n != nil {
 		v.JQ = strings.TrimSpace(r.Text(n, path+".jq"))
 		if v.JQ == "" {
@@ -515,6 +614,64 @@ func parseValue(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sc
 	return v
 }
 
+// oneOp reports whether a value or a measure takes at most one of ops, and
+// says which it has too many of when it doesn't.
+func oneOp(r *configdoc.Reader, fields map[string]*yaml.Node, path, what string, ops []string) bool {
+	var set []string
+	for _, op := range ops {
+		if fields[op] != nil {
+			set = append(set, op)
+		}
+	}
+	if len(set) > 1 {
+		r.Errorf(fields[set[1]], path+"."+set[1], "%s takes one of %s, and this has %s", what, strings.Join(ops, ", "), strings.Join(set, " and "))
+		return false
+	}
+
+	return true
+}
+
+// parseSummary reads a summary's op and unit from a value's or a measure's
+// fields.
+func parseSummary(r *configdoc.Reader, fields map[string]*yaml.Node, path string, scope Scope) Summary {
+	s := Summary{Unit: r.Text(fields["unit"], path+".unit")}
+	paths := s.paths()
+	for _, op := range PathOps {
+		if n := fields[op]; n != nil {
+			*paths[op] = r.Text(n, path+"."+op)
+			if !validPath(*paths[op]) {
+				r.Errorf(n, path+"."+op, "%s takes the path of a number field, such as cost or service.cost", op)
+			}
+		}
+	}
+	if n := fields[OpShare]; n != nil {
+		s.Share = parseFilter(r, n, path+".share", scope)
+		if s.Share != nil && s.Unit != "" {
+			r.Errorf(fields["unit"], path+".unit", "share is a percent, so it takes no unit")
+		}
+	}
+
+	return s
+}
+
+// parseMeasure reads a measure: at most one way to sum up the entities it
+// applies to, which are counted otherwise.
+func parseMeasure(r *configdoc.Reader, node *yaml.Node, path string, allowed []string, scope Scope) *Measure {
+	fields, ok := r.Fields(node, path, allowed...)
+	if !ok {
+		return nil
+	}
+	m := &Measure{Title: r.Text(fields["title"], path+".title")}
+	if n := fields["filter"]; n != nil {
+		m.Filter = parseFilter(r, n, path+".filter", scope)
+	}
+	if oneOp(r, fields, path, "a measure", summaryOps) {
+		m.Summary = parseSummary(r, fields, path, scope)
+	}
+
+	return m
+}
+
 var pathPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*(\.[a-zA-Z][a-zA-Z0-9_-]*)*$`)
 
 // validPath reports whether text is written as a field's path. Whether the
@@ -522,8 +679,8 @@ var pathPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*(\.[a-zA-Z][a-zA-Z0
 func validPath(text string) bool { return pathPattern.MatchString(text) }
 
 // parseLink reads a link: a query, which opens the catalog with its
-// entities, or a url or path template. Only bars, donuts and splits link each
-// group, and rows, which have no query of their own, only take templates.
+// entities, or a url or path template. Only bars, donuts, splits and trends
+// link each group, a trend's being its days, and rows, which have no query of their own, only take templates.
 func parseLink(r *configdoc.Reader, node *yaml.Node, path, widgetType string, scope Scope) *Link {
 	if node.Kind != yaml.MappingNode {
 		r.Errorf(node, path, "%s is {query}, {url} or {path}", path)
@@ -565,8 +722,8 @@ func parseLink(r *configdoc.Reader, node *yaml.Node, path, widgetType string, sc
 	if n := fields["group"]; n != nil {
 		l.Group = r.Bool(n, path+".group")
 		switch {
-		case widgetType != TypeBar && widgetType != TypeDonut && widgetType != TypeSplit:
-			r.Errorf(n, path+".group", "only bars, donuts and splits have groups to link")
+		case widgetType != TypeBar && widgetType != TypeDonut && widgetType != TypeSplit && widgetType != TypeTrend:
+			r.Errorf(n, path+".group", "only bars, donuts, splits and trends have groups to link")
 		case l.Query == nil:
 			r.Errorf(n, path+".group", "group adds each group's value to a query, so it goes with query")
 		}
@@ -635,26 +792,20 @@ func parseMeasures(r *configdoc.Reader, key, node *yaml.Node, path string, scope
 	var measures []Measure
 	r.List(node, path, func(i int, item *yaml.Node) {
 		itemPath := fmt.Sprintf("%s[%d]", path, i)
-		fields, ok := r.Fields(item, itemPath, MeasureFields...)
-		if !ok {
+		m := parseMeasure(r, item, itemPath, MatrixMeasureFields, scope)
+		if m == nil {
 			return
 		}
-		m := Measure{Title: r.Text(fields["title"], itemPath+".title")}
-		if m.Title == "" {
+		switch {
+		case m.Title == "":
 			r.Errorf(item, itemPath+".title", "add the measure's title")
+		case slices.ContainsFunc(measures, func(other Measure) bool { return other.Title == m.Title }):
+			r.Errorf(item, itemPath+".title", "another measure is titled %s; titles name the columns, so each needs its own", m.Title)
 		}
-		if n := fields["filter"]; n != nil {
-			m.Filter = parseFilter(r, n, itemPath+".filter", scope)
-		}
-		if n := fields["share"]; n != nil {
-			m.Share = parseFilter(r, n, itemPath+".share", scope)
-		} else {
-			r.Errorf(item, itemPath+".share", "add the condition the measure is the share of, in share")
-		}
-		measures = append(measures, m)
+		measures = append(measures, *m)
 	})
 	if node == nil || (node.Kind == yaml.SequenceNode && len(node.Content) == 0) {
-		r.Errorf(configdoc.OrNode(node, key), path, "add the measures, each a title and a share")
+		r.Errorf(configdoc.OrNode(node, key), path, "add the measures, each a title and what it sums up, such as share or p95")
 	}
 
 	return measures
@@ -682,7 +833,7 @@ func (w Widget) Filters() []*filter.Filter {
 	if w.Link != nil && w.Link.Filter != nil {
 		filters = append(filters, w.Link.Filter)
 	}
-	for _, m := range w.Measures {
+	for _, m := range w.measures() {
 		for _, f := range []*filter.Filter{m.Filter, m.Share} {
 			if f != nil {
 				filters = append(filters, f)
@@ -691,6 +842,15 @@ func (w Widget) Filters() []*filter.Filter {
 	}
 
 	return filters
+}
+
+// measures lists a matrix's measures, or a bar's or a trend's one.
+func (w Widget) measures() []Measure {
+	if w.Measure != nil {
+		return []Measure{*w.Measure}
+	}
+
+	return w.Measures
 }
 
 func (w Widget) valueQuery() *Query {
@@ -731,12 +891,20 @@ func (w Widget) MapFilters(fn func(*filter.Filter) *filter.Filter) Widget {
 		link.Filter = fn(link.Filter)
 		w.Link = &link
 	}
+	mapMeasure := func(m Measure) Measure {
+		m.Filter, m.Share = fn(m.Filter), fn(m.Share)
+		return m
+	}
 	if w.Measures != nil {
 		measures := make([]Measure, len(w.Measures))
 		for i, m := range w.Measures {
-			measures[i] = Measure{Title: m.Title, Filter: fn(m.Filter), Share: fn(m.Share)}
+			measures[i] = mapMeasure(m)
 		}
 		w.Measures = measures
+	}
+	if w.Measure != nil {
+		measure := mapMeasure(*w.Measure)
+		w.Measure = &measure
 	}
 
 	return w

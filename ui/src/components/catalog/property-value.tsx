@@ -11,7 +11,13 @@ import { Progress } from "@/components/ui/progress";
 import type { Display, Property } from "@/features/blueprints";
 import type { Link } from "@/features/catalog";
 import { swatch } from "@/lib/colors";
-import { formatAbsolute, formatDate, formatPercent, formatRelative } from "@/lib/format";
+import {
+  formatAbsolute,
+  formatDate,
+  formatPercent,
+  formatRelative,
+  formatSeconds,
+} from "@/lib/format";
 import { valueLabel } from "./value-label";
 
 type PropertyValueProps = {
@@ -72,8 +78,20 @@ export function isWebUrl(text: string) {
 export function formatNumber(value: number, unit?: string) {
   // Percents are whole and round down, as every percent is, so 100% means all.
   if (unit === "%") return formatPercent(Math.floor(value + 1e-9), 100);
+  if (unit === "s") return formatSeconds(value);
+  return formatExact(value, unit);
+}
+
+// formatExact writes a number with its unit as is, with no shortening.
+export function formatExact(value: number, unit?: string) {
   const text = numbers.format(value);
   return unit ? `${text} ${unit}` : text;
+}
+
+// exactTitle is the hover text for a number formatNumber shortened, so the
+// exact value stays within reach.
+export function exactTitle(value: number | null | undefined, unit?: string) {
+  return unit === "s" && typeof value === "number" ? formatExact(value, unit) : undefined;
 }
 
 // PropertyValue shows one value the way its property's display says.
@@ -184,13 +202,19 @@ export function PropertyValue({
       return (
         <span className="flex min-w-24 items-center gap-2">
           <Progress value={Math.min(100, Math.max(0, percent))} className="h-1.5 flex-1" />
-          <span className="text-xs tabular-nums">{formatNumber(value, unit)}</span>
+          <span className="text-xs tabular-nums" title={exactTitle(value, unit)}>
+            {formatNumber(value, unit)}
+          </span>
         </span>
       );
     }
     if (as === "badge")
       return <ValueBadge value={formatNumber(value, unit)} color={colors?.[String(value)]} />;
-    return <span className="tabular-nums">{formatNumber(value, unit)}</span>;
+    return (
+      <span className="tabular-nums" title={exactTitle(value, unit)}>
+        {formatNumber(value, unit)}
+      </span>
+    );
   }
 
   const text = String(value);

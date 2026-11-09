@@ -148,7 +148,7 @@
         },
         "group": {
           "type": "boolean",
-          "description": "Bars, donuts and splits only: each group opens its own entities."
+          "description": "Bars, donuts, splits and trends only: each group, or a trend's each day, opens its own entities."
         },
         "url": {
           "allOf": [{ "$ref": "#/$defs/template" }],
@@ -187,17 +187,18 @@
     },
     "value": {
       "type": "object",
-      "description": "The number a stat shows, worked out from a query's entities: how many there are, unless it has one of sum, avg, min, max, share or jq.",
+      "description": "The number a stat shows, worked out from a query's entities: how many there are, unless it has one of sum, avg, min, max, p50, p90, p95, p99, share or jq.",
       "properties": {
         "query": { "$ref": "#/$defs/queryRef" },
-        "unit": {
-          "type": "string",
-          "description": "Follows the number, such as ms. sum, avg, min and max take their field's unit unless this says otherwise; share is always %, so takes none."
-        },
+        "unit": { "$ref": "#/$defs/summaryUnit" },
         "sum": { "$ref": "#/$defs/path", "description": "The path of a number field to total." },
         "avg": { "$ref": "#/$defs/path", "description": "The path of a number field to average." },
         "min": { "$ref": "#/$defs/path", "description": "The path of a number field to take the lowest of." },
         "max": { "$ref": "#/$defs/path", "description": "The path of a number field to take the highest of." },
+        "p50": { "$ref": "#/$defs/percentile", "description": "The path of a number field to take the median of." },
+        "p90": { "$ref": "#/$defs/percentile", "description": "The path of a number field to take the 90th percentile of." },
+        "p95": { "$ref": "#/$defs/percentile", "description": "The path of a number field to take the 95th percentile of, such as duration." },
+        "p99": { "$ref": "#/$defs/percentile", "description": "The path of a number field to take the 99th percentile of." },
         "share": {
           "$ref": "#/$defs/filter",
           "description": "Shows the percent of the query's entities matching this condition."
@@ -206,6 +207,38 @@
           "$ref": "#/$defs/jq",
           "description": "jq over the query's entities, as a list, that gives a number. Slower than the others, so prefer them."
         }
+      },
+      "dependentSchemas": {
+        "share": { "properties": { "unit": false } }
+      },
+      "additionalProperties": false
+    },
+    "summaryUnit": {
+      "type": "string",
+      "description": "Follows the number, such as ms. The ops on a field take its unit unless this says otherwise; share is always %, so takes none."
+    },
+    "percentile": {
+      "$ref": "#/$defs/path",
+      "description": "The path of a number field to take an exact percentile of, interpolated between the two nearest values."
+    },
+    "measure": {
+      "type": "object",
+      "description": "What a bar shows for each group, or a trend for each day: how many entities there are, unless it has one of sum, avg, min, max, p50, p90, p95, p99 or share.",
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/filter",
+          "description": "Narrows the entities the measure works on to those it applies to, such as finished jobs."
+        },
+        "unit": { "$ref": "#/$defs/summaryUnit" },
+        "sum": { "$ref": "#/$defs/value/properties/sum" },
+        "avg": { "$ref": "#/$defs/value/properties/avg" },
+        "min": { "$ref": "#/$defs/value/properties/min" },
+        "max": { "$ref": "#/$defs/value/properties/max" },
+        "p50": { "$ref": "#/$defs/value/properties/p50" },
+        "p90": { "$ref": "#/$defs/value/properties/p90" },
+        "p95": { "$ref": "#/$defs/value/properties/p95" },
+        "p99": { "$ref": "#/$defs/value/properties/p99" },
+        "share": { "$ref": "#/$defs/filter", "description": "The condition the measure is the percent of, such as failed." }
       },
       "dependentSchemas": {
         "share": { "properties": { "unit": false } }
@@ -264,7 +297,7 @@
     },
     "barWidget": {
       "type": "object",
-      "description": "Bars counting a query's entities by a field. Default width 6.",
+      "description": "Bars counting a query's entities by a field, or showing a measure of each group, such as the share that failed. Default width 6.",
       "properties": {
         "type": { "const": "bar" },
         "title": { "$ref": "#/$defs/widgetTitle" },
@@ -272,7 +305,13 @@
         "width": { "$ref": "#/$defs/width" },
         "query": { "$ref": "#/$defs/queryRef" },
         "groupBy": { "$ref": "#/$defs/groupBy" },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many groups to show, largest first. Default 8." },
+        "measure": { "$ref": "#/$defs/measure" },
+        "sort": {
+          "type": "string",
+          "enum": ["count", "-count", "group", "-group", "measure", "-measure"],
+          "description": "The order of the groups, and which a limit keeps: by count, by the measure, or by group, in the order the property lists its values. A leading - is descending. Default -measure with a measure, else -count."
+        },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many groups to show, the first in the sort's order. Default 8." },
         "link": { "$ref": "#/$defs/link" }
       },
       "required": ["type", "title", "groupBy"],
@@ -312,7 +351,7 @@
     },
     "matrixWidget": {
       "type": "object",
-      "description": "A table with a row for each value of a field and a column for each measure, each cell the share of that row's entities matching the measure, linking to those that don't. Default width 12.",
+      "description": "A table with a row for each value of a field and a column for each measure, such as a share, which links to the entities that don't match it, or a p95. Default width 12.",
       "properties": {
         "type": { "const": "matrix" },
         "title": { "$ref": "#/$defs/widgetTitle" },
@@ -320,30 +359,67 @@
         "width": { "$ref": "#/$defs/width" },
         "query": { "$ref": "#/$defs/queryRef" },
         "groupBy": { "$ref": "#/$defs/groupBy", "description": "The path of the field whose values make the rows, such as owner." },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many rows to show, the largest. Default 10." },
         "measures": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/measure" },
+          "items": { "$ref": "#/$defs/matrixMeasure" },
           "description": "The columns, in order."
         },
+        "sort": {
+          "type": "string",
+          "description": "The order of the rows, and which a limit keeps: count, group, or a measure's title, such as -P95 Duration. A leading - is descending. Default the largest groups, in the order the property lists its values."
+        },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many rows to show. Default 10." },
         "overall": { "type": "boolean", "description": "Adds a row of each measure over every group, for a page without stats that show them." }
       },
       "required": ["type", "title", "groupBy", "measures"],
       "additionalProperties": false
     },
-    "measure": {
+    "matrixMeasure": {
       "type": "object",
-      "description": "A column of a matrix: the percent of each row's entities matching share.",
+      "description": "A column of a matrix: a measure of each row's entities, under its title.",
       "properties": {
         "title": { "type": "string", "pattern": "\\S" },
-        "filter": {
-          "$ref": "#/$defs/filter",
-          "description": "Narrows the entities the measure counts to those it applies to."
-        },
-        "share": { "$ref": "#/$defs/filter", "description": "The condition the measure is the share of." }
+        "filter": { "$ref": "#/$defs/measure/properties/filter" },
+        "unit": { "$ref": "#/$defs/summaryUnit" },
+        "sum": { "$ref": "#/$defs/value/properties/sum" },
+        "avg": { "$ref": "#/$defs/value/properties/avg" },
+        "min": { "$ref": "#/$defs/value/properties/min" },
+        "max": { "$ref": "#/$defs/value/properties/max" },
+        "p50": { "$ref": "#/$defs/value/properties/p50" },
+        "p90": { "$ref": "#/$defs/value/properties/p90" },
+        "p95": { "$ref": "#/$defs/value/properties/p95" },
+        "p99": { "$ref": "#/$defs/value/properties/p99" },
+        "share": { "$ref": "#/$defs/measure/properties/share" }
       },
-      "required": ["title", "share"],
+      "required": ["title"],
+      "dependentSchemas": {
+        "share": { "properties": { "unit": false } }
+      },
+      "additionalProperties": false
+    },
+    "trendWidget": {
+      "type": "object",
+      "description": "A measure for each day of a range ending today, in UTC, such as pipelines per day or their p95 duration per day. Default width 6.",
+      "properties": {
+        "type": { "const": "trend" },
+        "title": { "$ref": "#/$defs/widgetTitle" },
+        "description": { "$ref": "#/$defs/widgetDescription" },
+        "width": { "$ref": "#/$defs/width" },
+        "query": { "$ref": "#/$defs/queryRef" },
+        "date": {
+          "$ref": "#/$defs/path",
+          "description": "The path of the date field whose day each entity counts on, such as triggeredAt. The one a blueprint's retention keeps rows by is the quickest."
+        },
+        "range": {
+          "type": "string",
+          "pattern": "^[0-9]+[dw]$",
+          "description": "How many days back the trend goes, up to 365d, such as 30d or 12w. Default 30d."
+        },
+        "measure": { "$ref": "#/$defs/measure" },
+        "link": { "$ref": "#/$defs/link" }
+      },
+      "required": ["type", "title", "date"],
       "additionalProperties": false
     },
     "tableWidget": {
@@ -454,6 +530,7 @@
         { "$ref": "#/$defs/donutWidget" },
         { "$ref": "#/$defs/splitWidget" },
         { "$ref": "#/$defs/matrixWidget" },
+        { "$ref": "#/$defs/trendWidget" },
         { "$ref": "#/$defs/tableWidget" },
         { "$ref": "#/$defs/scorecardWidget" },
         { "$ref": "#/$defs/markdownWidget" },

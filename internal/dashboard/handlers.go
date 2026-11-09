@@ -317,7 +317,7 @@ func newLoader(ctx *gofr.Context, env widget.Env, own *blueprint.Spec) (loader, 
 
 	return loader{
 		ctx: ctx, db: ctx.SQL, store: entity.NewStore(ctx.SQL), blueprints: blueprints, ladders: ladders,
-		scorecards: scorecards, env: env, log: telemetry.Error,
+		scorecards: scorecards, env: env, now: time.Now(), log: telemetry.Error,
 	}, nil
 }
 

@@ -83,7 +83,11 @@ tracker:
 # a project every so often, sent as an event to the project's webhooks, which
 # the integration's syncs set up, with their secret token in X-Gitlab-Token;
 # pipelines and deployments finish after a while, which sends their events
-# too.
+# too. A pipeline's jobs run on a few runners, each of which it describes on
+# its own too, its test job sometimes fails and passes when retried, and its
+# deploy job is a manual one someone plays a while after tests pass.
+# Deployments to production wait for an approval, and its GraphQL API
+# answers only what the integration asks of pipelines.
 gitlab:
   url: http://localhost:47800/gitlab
   token: "${GP_SECRET_GITLAB_TOKEN}"

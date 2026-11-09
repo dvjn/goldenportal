@@ -603,6 +603,39 @@ spec:
       title: Finished
       type: string
       format: date-time
+    seconds:
+      title: Took
+      type: number
+      compute: if .finishedAt then (.finishedAt | fromdateiso8601) - (.startedAt | fromdateiso8601) else null end
+      display:
+        unit: s
+    approvalRequired:
+      title: Approval Required
+      description: Whether its environment's rules ask for approval before it runs; empty where GitLab says nothing of approvals.
+      type: boolean
+    approvedBy:
+      title: Approved By
+      description: Who approved it.
+      type: array
+      items:
+        type: string
+    approvedAt:
+      title: Approved
+      description: When the last approval it needed was given; empty while it waits for one, or if one was a rejection.
+      type: string
+      format: date-time
+    approvalSeconds:
+      title: Waited for Approval
+      description: From when it was created, as its job became ready to run, until it was approved.
+      type: number
+      display:
+        unit: s
+    waitSeconds:
+      title: Waited to Start
+      description: From when it was created until its job started, approval, a manual play and the runner queue included.
+      type: number
+      display:
+        unit: s
     owner:
       title: Owner
       lookup: service.owner.title
@@ -833,6 +866,461 @@ spec:
     keep: 7d
   catalog:
     columns: [repo, ref, status, triggeredAt]
+$yaml$),
+  ('job-attempt', $yaml$kind: Blueprint
+metadata:
+  identifier: job-attempt
+  title: Job Attempt
+  description: One run of a CI job in a pipeline; retrying the job runs another.
+  icon: play
+  color: teal
+spec:
+  properties:
+    pipeline:
+      title: Pipeline
+      relation: pipeline
+      required: true
+    repo:
+      title: Repository
+      relation: repository
+      required: true
+    runner:
+      title: Runner
+      relation: runner
+    name:
+      title: Job
+      type: string
+    stage:
+      title: Stage
+      type: string
+    status:
+      title: Status
+      type: string
+      enum: [created, waiting_for_resource, preparing, pending, running, success, failed, canceling, canceled, skipped, manual, scheduled]
+      display:
+        as: badge
+        colors: {running: sky, pending: gray, success: emerald, failed: red, canceled: gray, skipped: gray, manual: amber}
+    failureReason:
+      title: Failure Reason
+      type: string
+    allowFailure:
+      title: Allowed to Fail
+      type: boolean
+    attempt:
+      title: Attempt
+      type: number
+    retried:
+      title: Retried
+      description: Whether a later attempt of the same job replaced it.
+      type: boolean
+    seconds:
+      title: Took
+      type: number
+      display:
+        unit: s
+    queuedSeconds:
+      title: Queued
+      type: number
+      display:
+        unit: s
+    waitSeconds:
+      title: Waited
+      description: From when it was created, with its pipeline or on a retry, until it queued for a runner. Includes waiting for earlier stages or needed jobs, for a manual play, a delay or a resource group; excludes the runner queue and the run.
+      type: number
+      display:
+        unit: s
+    stageWaitSeconds:
+      title: Waited for Earlier Jobs
+      description: The part of the wait until the jobs it waited for, in earlier stages or that it needs, had finished; all of it for a job that isn't manual.
+      type: number
+      display:
+        unit: s
+    playWaitSeconds:
+      title: Waited for Play
+      description: For a manual job, from when the jobs it waited for had finished until someone played it, deployment approval included; 0 for any other job.
+      type: number
+      display:
+        unit: s
+    manual:
+      title: Manual
+      description: Whether it's a manual job, which someone plays.
+      type: boolean
+    playedBy:
+      title: Played By
+      description: Who played it, for a manual job.
+      type: string
+    tags:
+      title: Runner Tags
+      description: The tags the job asked its runner to have.
+      type: array
+      items:
+        type: string
+    ref:
+      title: Ref
+      type: string
+    commit:
+      title: Commit
+      type: string
+    addedAt:
+      title: Job Created
+      description: When GitLab created it, with its pipeline or on a retry.
+      type: string
+      format: date-time
+    queuedAt:
+      title: Job Queued
+      description: When it queued for a runner, once what it waited for was done.
+      type: string
+      format: date-time
+    startedAt:
+      title: Started
+      type: string
+      format: date-time
+    finishedAt:
+      title: Finished
+      type: string
+      format: date-time
+    triggeredAt:
+      title: Triggered
+      description: When its pipeline was triggered, so it leaves with its pipeline.
+      type: string
+      format: date-time
+    url:
+      title: URL
+      type: string
+      format: uri
+  retention:
+    by: triggeredAt
+    keep: 7d
+  catalog:
+    columns: [name, repo, status, attempt, seconds, runner, startedAt]
+$yaml$),
+  ('job', $yaml$kind: Blueprint
+metadata:
+  identifier: job
+  title: Job
+  description: A CI job in a pipeline, as its latest attempt left it, with how many attempts it took.
+  icon: list-checks
+  color: teal
+spec:
+  properties:
+    pipeline:
+      title: Pipeline
+      relation: pipeline
+      required: true
+    repo:
+      title: Repository
+      relation: repository
+      required: true
+    runner:
+      title: Runner
+      relation: runner
+    name:
+      title: Job
+      type: string
+    stage:
+      title: Stage
+      type: string
+    status:
+      title: Status
+      type: string
+      enum: [created, waiting_for_resource, preparing, pending, running, success, failed, canceling, canceled, skipped, manual, scheduled]
+      display:
+        as: badge
+        colors: {running: sky, pending: gray, success: emerald, failed: red, canceled: gray, skipped: gray, manual: amber}
+    failureReason:
+      title: Failure Reason
+      type: string
+    attempts:
+      title: Attempts
+      type: number
+    failedAttempts:
+      title: Failed Attempts
+      type: number
+    flaky:
+      title: Flaky
+      description: Whether it failed and then passed when retried in the same pipeline.
+      type: boolean
+    seconds:
+      title: Took
+      type: number
+      display:
+        unit: s
+    queuedSeconds:
+      title: Queued
+      type: number
+      display:
+        unit: s
+    waitSeconds:
+      title: Waited
+      description: From when it was created, with its pipeline or on a retry, until it queued for a runner. Includes waiting for earlier stages or needed jobs, for a manual play, a delay or a resource group; excludes the runner queue and the run.
+      type: number
+      display:
+        unit: s
+    stageWaitSeconds:
+      title: Waited for Earlier Jobs
+      description: The part of the wait until the jobs it waited for, in earlier stages or that it needs, had finished; all of it for a job that isn't manual.
+      type: number
+      display:
+        unit: s
+    playWaitSeconds:
+      title: Waited for Play
+      description: For a manual job, from when the jobs it waited for had finished until someone played it, deployment approval included; 0 for any other job.
+      type: number
+      display:
+        unit: s
+    manual:
+      title: Manual
+      description: Whether it's a manual job, which someone plays.
+      type: boolean
+    playedBy:
+      title: Played By
+      description: Who played it, for a manual job.
+      type: string
+    addedAt:
+      title: Job Created
+      description: When GitLab created it, with its pipeline or on a retry.
+      type: string
+      format: date-time
+    queuedAt:
+      title: Job Queued
+      description: When it queued for a runner, once what it waited for was done.
+      type: string
+      format: date-time
+    finishedAt:
+      title: Finished
+      type: string
+      format: date-time
+    triggeredAt:
+      title: Triggered
+      description: When its pipeline was triggered, so it leaves with its pipeline.
+      type: string
+      format: date-time
+    url:
+      title: URL
+      type: string
+      format: uri
+  retention:
+    by: triggeredAt
+    keep: 7d
+  catalog:
+    columns: [name, repo, stage, status, attempts, flaky, seconds, waitSeconds, finishedAt]
+$yaml$),
+  ('runner', $yaml$kind: Blueprint
+metadata:
+  identifier: runner
+  title: Runner
+  description: A CI runner that jobs ran on, as GitLab describes it, with the jobs it ran.
+  icon: server
+  color: gray
+spec:
+  properties:
+    type:
+      title: Type
+      type: string
+      enum: [instance, group, project]
+    status:
+      title: Status
+      type: string
+      enum: [online, offline, stale, never_contacted]
+      display:
+        as: badge
+        colors: {online: emerald, offline: gray, stale: amber, never_contacted: gray}
+    paused:
+      title: Paused
+      type: boolean
+    jobExecution:
+      title: Job Execution
+      description: Whether it was running jobs when last read.
+      type: string
+      enum: [active, idle]
+    shared:
+      title: Shared
+      type: boolean
+    tags:
+      title: Tags
+      type: array
+      items:
+        type: string
+    runUntagged:
+      title: Runs Untagged Jobs
+      type: boolean
+    locked:
+      title: Locked to Its Projects
+      type: boolean
+    accessLevel:
+      title: Access Level
+      description: Whether it runs jobs only for protected branches and tags.
+      type: string
+      enum: [not_protected, ref_protected]
+    maximumTimeout:
+      title: Maximum Timeout
+      type: number
+      display:
+        unit: s
+    maintenanceNote:
+      title: Maintenance Note
+      type: string
+    groups:
+      title: Groups
+      relation: namespace
+      many: true
+    repositories:
+      title: Repositories
+      relation: repository
+      many: true
+    version:
+      title: Version
+      type: string
+    revision:
+      title: Revision
+      type: string
+    platform:
+      title: Platform
+      type: string
+    architecture:
+      title: Architecture
+      type: string
+    registeredBy:
+      title: Registered By
+      type: string
+    registeredAt:
+      title: Registered
+      type: string
+      format: date-time
+    contactedAt:
+      title: Last Contact
+      type: string
+      format: date-time
+    lastJobAt:
+      title: Last Job
+      type: string
+      format: date-time
+    url:
+      title: URL
+      type: string
+      format: uri
+  # A runner is read only when jobs ran on it, so one that ran none for a
+  # while leaves.
+  retention:
+    by: lastJobAt
+    keep: 7d
+  catalog:
+    columns: [type, status, tags, version, platform, lastJobAt]
+  entity:
+    header:
+      badges: [status, type]
+      link: url
+    sections:
+      - title: Scheduling
+        properties: [paused, jobExecution, shared, tags, runUntagged, locked, accessLevel, maximumTimeout]
+      - title: Ownership
+        properties: [groups, repositories, registeredBy, registeredAt, maintenanceNote]
+      - title: Software
+        properties: [version, revision, platform, architecture, contactedAt, lastJobAt]
+    queries:
+      attempts:
+        blueprint: job-attempt
+        filter: {property: runner, op: eq, value: $entity}
+      finished:
+        blueprint: job-attempt
+        filter:
+          and:
+            - {property: runner, op: eq, value: $entity}
+            - {property: status, op: in, values: [success, failed]}
+      failed:
+        blueprint: job-attempt
+        filter:
+          and:
+            - {property: runner, op: eq, value: $entity}
+            - {property: status, op: eq, value: failed}
+    tabs:
+      jobs:
+        title: Jobs
+        icon: play
+        widgets:
+          attempts:
+            type: stat
+            title: Job Attempts
+            description: Ran on it, last 7 days.
+            icon: play
+            color: teal
+            value: {query: attempts}
+            link: {query: attempts}
+          failing:
+            type: stat
+            title: Failed
+            description: Of finished attempts, last 7 days.
+            icon: circle-x
+            color: red
+            value: {query: finished, share: {property: status, op: eq, value: failed}}
+            link: {query: failed}
+          queued:
+            type: stat
+            title: P95 Queue Time
+            description: How long 95% of attempts waited for it at most, last 7 days.
+            icon: hourglass
+            color: amber
+            value: {query: attempts, p95: queuedSeconds}
+            link: {query: attempts}
+          took:
+            type: stat
+            title: P95 Job Time
+            description: How long 95% of attempts ran at most, last 7 days.
+            icon: timer
+            color: orange
+            value: {query: finished, p95: seconds}
+            link: {query: finished}
+          perDay:
+            type: trend
+            title: Job Attempts per Day
+            description: By when their pipeline was triggered, each UTC day.
+            query: attempts
+            date: triggeredAt
+            range: 7d
+            link: {query: attempts, group: true}
+          queuedPerDay:
+            type: trend
+            title: P95 Queue Time per Day
+            description: How long 95% of attempts waited for it at most, each UTC day.
+            query: attempts
+            date: triggeredAt
+            range: 7d
+            measure: {p95: queuedSeconds, unit: s}
+            link: {query: attempts, group: true}
+          byJob:
+            type: matrix
+            width: 6
+            title: By Job
+            description: Finished attempts, last 7 days.
+            query: finished
+            groupBy: name
+            limit: 8
+            sort: -Attempts
+            measures:
+              - {title: Attempts}
+              - {title: Passed, share: {property: status, op: eq, value: success}}
+              - {title: P95 Time, p95: seconds, unit: s}
+          byRepository:
+            type: matrix
+            width: 6
+            title: By Repository
+            description: Finished attempts, last 7 days.
+            query: finished
+            groupBy: repo
+            limit: 8
+            sort: -Attempts
+            measures:
+              - {title: Attempts}
+              - {title: Passed, share: {property: status, op: eq, value: success}}
+              - {title: P95 Time, p95: seconds, unit: s}
+          recentFailures:
+            type: table
+            title: Recent Failed Attempts
+            query: failed
+            columns: [{path: name}, {path: repo}, {path: failureReason}, {path: attempt}, {path: seconds}, {path: startedAt}]
+            sort: -startedAt
+            limit: 10
+            link: {query: failed}
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -1063,7 +1551,7 @@ $yaml$),
 metadata:
   identifier: gitlab
   title: GitLab
-  description: Groups, projects with their default branches and CI configs, merge requests, pipelines and deployments from the acme group on GitLab.
+  description: Groups, projects with their default branches and CI configs, merge requests, pipelines with their jobs and runners, and deployments from the acme group on GitLab.
 spec:
   connector:
     type: gitlab
@@ -1152,6 +1640,106 @@ spec:
           status: '{"success": "succeeded", "failed": "failed", "canceled": "failed"}[.status] // "running"'
           startedAt: .created_at
           finishedAt: if .status | IN("success", "failed", "canceled") then .finished_at // .updated_at else null end
+          approvalRequired: ._gp.approvalRequired
+          approvedBy: ._gp.approvals | values | map(select(.status == "approved") | .user.username)
+          approvedAt: ._gp.approvedAt
+          approvalSeconds: ._gp.approvalSeconds
+          waitSeconds: ._gp.waitSeconds
+    # Every attempt of every job, numbered under _gp, and each job as its
+    # latest attempt left it.
+    - resource: job_attempts
+      blueprint: job-attempt
+      mode: upsert
+      entity:
+        identifier: .id
+        title: '.name + " #" + (._gp.attempt | tostring)'
+        properties:
+          pipeline: .pipeline.id | tostring
+          repo: ._gp.project
+          runner: .runner.id | values | tostring
+          name: .name
+          stage: .stage
+          status: .status
+          failureReason: .failure_reason
+          allowFailure: .allow_failure
+          attempt: ._gp.attempt
+          retried: ._gp.retried
+          seconds: .duration
+          queuedSeconds: .queued_duration
+          addedAt: .created_at
+          queuedAt: ._gp.queuedAt
+          waitSeconds: ._gp.waitSeconds
+          stageWaitSeconds: ._gp.stageWaitSeconds
+          playWaitSeconds: ._gp.playWaitSeconds
+          manual: ._gp.manual
+          playedBy: ._gp.playedBy.username
+          tags: .tag_list
+          ref: .ref
+          commit: .commit.id
+          startedAt: .started_at
+          finishedAt: .finished_at
+          triggeredAt: .pipeline.created_at
+          url: .web_url
+    - resource: jobs
+      blueprint: job
+      mode: upsert
+      entity:
+        identifier: (.pipeline.id | tostring) + ":" + .name
+        title: .name
+        properties:
+          pipeline: .pipeline.id | tostring
+          repo: ._gp.project
+          runner: .runner.id | values | tostring
+          name: .name
+          stage: .stage
+          status: .status
+          failureReason: .failure_reason
+          attempts: ._gp.attempts
+          failedAttempts: ._gp.failedAttempts
+          flaky: ._gp.flaky
+          seconds: .duration
+          queuedSeconds: .queued_duration
+          addedAt: .created_at
+          queuedAt: ._gp.queuedAt
+          waitSeconds: ._gp.waitSeconds
+          stageWaitSeconds: ._gp.stageWaitSeconds
+          playWaitSeconds: ._gp.playWaitSeconds
+          manual: ._gp.manual
+          playedBy: ._gp.playedBy.username
+          finishedAt: .finished_at
+          triggeredAt: .pipeline.created_at
+          url: .web_url
+    # Each runner the attempts ran on, read on its own, or as its newest
+    # attempt found it when GitLab won't say more.
+    - resource: runners
+      blueprint: runner
+      mode: upsert
+      entity:
+        identifier: .id
+        title: ._gp.title
+        properties:
+          type: .runner_type | rtrimstr("_type")
+          status: .status
+          paused: .paused
+          jobExecution: .job_execution_status
+          shared: .is_shared
+          tags: .tag_list
+          runUntagged: .run_untagged
+          locked: .locked
+          accessLevel: .access_level
+          maximumTimeout: .maximum_timeout
+          maintenanceNote: .maintenance_note
+          groups: ._gp.groups
+          repositories: ._gp.projects
+          version: .version
+          revision: .revision
+          platform: .platform
+          architecture: .architecture
+          registeredBy: .created_by.username
+          registeredAt: .created_at
+          contactedAt: .contacted_at
+          lastJobAt: ._gp.lastJobAt
+          url: ._gp.url
 $yaml$)
 ), created AS (
   INSERT INTO config_documents (kind, identifier, published_version)
@@ -1415,6 +2003,9 @@ spec:
           - {property: startedAt, op: within, value: 7d}
     actions:
       blueprint: action
+    deployments:
+      blueprint: deployment
+      filter: {property: startedAt, op: within, value: 14d}
   widgets:
     open:
       type: stat
@@ -1503,6 +2094,45 @@ spec:
       sort: -startedAt
       limit: 8
       link: {query: runs}
+    deployTime:
+      type: stat
+      title: P95 Deploy Time
+      description: How long 95% of finished deployments took at most, last 14 days.
+      icon: timer
+      color: orange
+      value: {query: deployments, p95: seconds}
+      link: {query: deployments}
+    perDay:
+      type: trend
+      width: 9
+      title: Deployments per Day
+      description: Started each UTC day, last 14 days.
+      query: deployments
+      date: startedAt
+      range: 14d
+      link: {query: deployments, group: true}
+    failing:
+      type: bar
+      title: Failure Share by Service
+      description: Of finished deployments, last 14 days.
+      query: deployments
+      groupBy: service
+      measure:
+        filter: {property: status, op: ne, value: running}
+        share: {property: status, op: eq, value: failed}
+      sort: -measure
+      link: {query: deployments, group: true}
+    byEnvironment:
+      type: matrix
+      width: 6
+      title: By Environment
+      description: Last 14 days.
+      query: deployments
+      groupBy: environment
+      measures:
+        - {title: Deployments}
+        - {title: Succeeded, filter: {property: status, op: ne, value: running}, share: {property: status, op: eq, value: succeeded}}
+        - {title: P95 Time, p95: seconds}
 $yaml$),
   ('portal', $yaml$kind: Dashboard
 metadata:

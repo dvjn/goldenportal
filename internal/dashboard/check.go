@@ -270,18 +270,25 @@ func (c *widgetCheck) scorecard() {
 	}
 }
 
-// entities checks what bars, donuts, matrices and tables show of bp's entities.
+// entities checks what bars, donuts, matrices, trends and tables show of
+// bp's entities.
 func (c *widgetCheck) entities(bp blueprint.Spec) {
 	w := c.w
 	switch w.Type {
 	case widget.TypeBar, widget.TypeDonut, widget.TypeSplit:
 		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
+		if w.Measure != nil {
+			c.measure(bp, "measure", *w.Measure)
+		}
 	case widget.TypeMatrix:
 		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
 		for i, m := range w.Measures {
-			field := fmt.Sprintf("measures[%d]", i)
-			c.fail(field+".filter", checkFilter(c.blueprints, bp, m.Filter))
-			c.fail(field+".share", checkFilter(c.blueprints, bp, m.Share))
+			c.measure(bp, fmt.Sprintf("measures[%d]", i), m)
+		}
+	case widget.TypeTrend:
+		c.fail("date", entity.CheckTrend(c.blueprints, bp, w.Date))
+		if w.Measure != nil {
+			c.measure(bp, "measure", *w.Measure)
 		}
 	case widget.TypeTable:
 		for _, column := range w.Columns {
@@ -292,6 +299,19 @@ func (c *widgetCheck) entities(bp blueprint.Spec) {
 		if w.Sort != "" {
 			c.fail("sort", entity.CheckSort(c.blueprints, bp, w.Sort))
 		}
+	}
+}
+
+// measure checks what a measure works on: the entities its filter narrows
+// to, and its share's condition or the field it sums up.
+func (c *widgetCheck) measure(bp blueprint.Spec, field string, m widget.Measure) {
+	c.fail(field+".filter", checkFilter(c.blueprints, bp, m.Filter))
+	switch op, path := m.Op(); op {
+	case widget.OpCount:
+	case widget.OpShare:
+		c.fail(field+".share", checkFilter(c.blueprints, bp, m.Share))
+	default:
+		c.fail(field+"."+op, entity.CheckAggregate(c.blueprints, bp, entity.Aggregate{Op: op, Path: path}))
 	}
 }
 
@@ -307,8 +327,11 @@ func (c *widgetCheck) link() {
 		return
 	}
 	c.fail("link.filter", checkFilter(c.blueprints, bp, l.Filter))
-	if l.Group && c.w.GroupBy != "" {
+	switch {
+	case l.Group && c.w.GroupBy != "":
 		c.fail("link.group", entity.CheckFilter(c.blueprints, bp, filter.Filter{Property: c.w.GroupBy, Op: filter.OpExists}))
+	case l.Group && c.w.Date != "":
+		c.fail("link.group", entity.CheckFilter(c.blueprints, bp, filter.Filter{Property: c.w.Date, Op: filter.OpGte, Value: "2026-10-25T00:00:00Z"}))
 	}
 }
 

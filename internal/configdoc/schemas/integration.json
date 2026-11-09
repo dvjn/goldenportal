@@ -72,7 +72,7 @@
             "properties": {
               "mappings": {
                 "items": {
-                  "description": "A gitlab mapping. Each item is GitLab's REST object as its lists give it, with what it belongs to under _gp: _gp.project, the project's full path, on everything in a project; _gp.group on members; and _gp.lastDeployment, the last successful deployment or null, on environments. A project carries what its default branch has, each null when it has none: _gp.defaultBranch, the branch, with protected and its commit; _gp.ciConfig, its CI lint, with valid, errors, warnings, includes and jobs without their scripts; and _gp.latestPipeline, its latest pipeline other than a child pipeline, as the pipelines resource gives one. A deleted tag or release carries only its name, or tag_name, and _gp, so identifiers must use only those. excludeArchived leaves archived projects out whole; a filter drops only the entities of its own mapping. The examples map each resource.",
+                  "description": "A gitlab mapping. Each item is GitLab's REST object as its lists give it, with what it belongs to under _gp: _gp.project, the project's full path, on everything in a project; _gp.group on members; and _gp.lastDeployment, the last successful deployment or null, on environments. Jobs and job attempts are GitLab's job objects: job_attempts every attempt of every job, retried ones included, oldest first, and jobs each job's latest attempt, a job being its name in its pipeline; each carries _gp.attempt, which try it is from 1, _gp.retried, whether a later one replaced it, _gp.attempts, how many its job had, _gp.failedAttempts, how many failed, and _gp.flaky, whether its job failed and then passed when retried. Each also carries what it waited for before it queued for a runner, each null until it starts: _gp.queuedAt, when it queued; _gp.waitSeconds, from its created_at until then, for earlier stages or needed jobs, a manual play, a delay or a resource group, but not the runner queue, its queued_duration; _gp.manual, whether it's a manual job, null where GitLab's GraphQL API doesn't say; _gp.playWaitSeconds, for a manual job, from when the jobs it waited for had finished until it was played, and 0 otherwise; _gp.stageWaitSeconds, the rest of the wait; and _gp.playedBy, the user who played a manual job, with id, username and name. A deployment carries what GitLab says of its approvals, each null where it says nothing of them, as on its free tier: _gp.approvalRequired, whether its environment's rules ask for approval; _gp.approvals, each with user, status, created_at and comment; _gp.approvedAt, when the last approval it needed was given, null while it waits or if one was a rejection; and _gp.approvalSeconds, from its created_at until then; and _gp.waitSeconds, from its created_at until its job started. Pipelines carry GitLab's duration and queued_duration in seconds, downstream pipelines included, started_at and finished_at to the second, and the user who started them. An attempt carries the runner it ran on, and runner_manager, with the runner's version, platform and architecture. Runners are each runner the job attempts read ran on, read on their own once a sync, without their IP address or token: GitLab's runner object with description, tag_list, run_untagged, locked, paused, access_level, maximum_timeout, maintenance_note, created_by, created_at, contacted_at, job_execution_status, version, revision, platform and architecture; or, where GitLab refuses or has no such runner, the attempt's runner with its runner_manager's version, revision, platform and architecture. Each carries _gp.title, its description, else its name, else its type and ID; _gp.groups and _gp.projects, the full paths of the groups and projects it belongs to; _gp.url, its page in its group or first project, or null for an instance's; and _gp.lastJobAt, when the newest attempt on it started, or was created. A project carries what its default branch has, each null when it has none: _gp.defaultBranch, the branch, with protected and its commit; _gp.ciConfig, its CI lint, with valid, errors, warnings, includes and jobs without their scripts; and _gp.latestPipeline, its latest pipeline other than a child pipeline, as GitLab lists pipelines, without their times. A deleted tag or release carries only its name, or tag_name, and _gp, so identifiers must use only those. excludeArchived leaves archived projects out whole; a filter drops only the entities of its own mapping. The examples map each resource.",
                   "examples": [
                     {
                       "resource": "groups",
@@ -189,16 +189,67 @@
                     {
                       "resource": "jobs",
                       "blueprint": "job",
+                      "mode": "upsert",
                       "entity": {
-                        "identifier": ".id",
+                        "identifier": "(.pipeline.id | tostring) + \":\" + .name",
                         "title": ".name",
                         "properties": {
                           "pipeline": ".pipeline.id | tostring",
+                          "repo": "._gp.project",
+                          "name": ".name",
                           "stage": ".stage",
                           "status": ".status",
-                          "startedAt": ".started_at",
+                          "attempts": "._gp.attempts",
+                          "failedAttempts": "._gp.failedAttempts",
+                          "flaky": "._gp.flaky",
                           "seconds": ".duration",
+                          "waitSeconds": "._gp.waitSeconds",
                           "url": ".web_url"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "job_attempts",
+                      "blueprint": "job-attempt",
+                      "mode": "upsert",
+                      "entity": {
+                        "identifier": ".id",
+                        "title": ".name + \" #\" + (._gp.attempt | tostring)",
+                        "properties": {
+                          "pipeline": ".pipeline.id | tostring",
+                          "repo": "._gp.project",
+                          "runner": ".runner.id | values | tostring",
+                          "status": ".status",
+                          "failureReason": ".failure_reason",
+                          "attempt": "._gp.attempt",
+                          "retried": "._gp.retried",
+                          "seconds": ".duration",
+                          "queuedSeconds": ".queued_duration",
+                          "waitSeconds": "._gp.waitSeconds",
+                          "playWaitSeconds": "._gp.playWaitSeconds",
+                          "manual": "._gp.manual",
+                          "playedBy": "._gp.playedBy.username",
+                          "startedAt": ".started_at",
+                          "url": ".web_url"
+                        }
+                      }
+                    },
+                    {
+                      "resource": "runners",
+                      "blueprint": "runner",
+                      "mode": "upsert",
+                      "entity": {
+                        "identifier": ".id",
+                        "title": "._gp.title",
+                        "properties": {
+                          "type": ".runner_type | rtrimstr(\"_type\")",
+                          "status": ".status",
+                          "tags": ".tag_list",
+                          "version": ".version",
+                          "groups": "._gp.groups",
+                          "repositories": "._gp.projects",
+                          "lastJobAt": "._gp.lastJobAt",
+                          "url": "._gp.url"
                         }
                       }
                     },
@@ -214,7 +265,8 @@
                           "version": ".sha[0:8]",
                           "status": ".status",
                           "startedAt": ".created_at",
-                          "finishedAt": ".finished_at"
+                          "finishedAt": ".finished_at",
+                          "approvalSeconds": "._gp.approvalSeconds"
                         }
                       }
                     },
@@ -260,6 +312,8 @@
                         "releases",
                         "pipelines",
                         "jobs",
+                        "job_attempts",
+                        "runners",
                         "deployments",
                         "environments",
                         "members"
@@ -425,7 +479,7 @@
     },
     "gitlabConfig": {
       "type": "object",
-      "description": "The gitlab connector's config. Groups, members, projects, tags, releases and environments are read whole on every sync; merge requests, issues, pipelines with their jobs, and deployments are read from where the last sync left off in each project, and in full when a reconcile mapping needs them on a complete sync. Once the server has GP_BASE_URL and GP_WEBHOOK_KEY, syncs set up a webhook on each project they read, and never remove one. Groups and members change only on a sync.",
+      "description": "The gitlab connector's config. Groups, members, projects, tags, releases and environments are read whole on every sync; merge requests, issues, pipelines with their jobs and job attempts, and deployments are read from where the last sync left off in each project, and in full when a reconcile mapping needs them on a complete sync. Once the server has GP_BASE_URL and GP_WEBHOOK_KEY, syncs set up a webhook on each project they read, and never remove one. Groups and members change only on a sync.",
       "properties": {
         "url": {
           "type": "string",

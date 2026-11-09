@@ -4,6 +4,7 @@ import { EntityLink } from "@/components/catalog/entity-link";
 import {
   BooleanValue,
   EmptyValue,
+  exactTitle,
   formatNumber,
   PropertyValue,
 } from "@/components/catalog/property-value";
@@ -178,7 +179,11 @@ function Computed({ value, unit }: Readonly<{ value: unknown; unit?: string }>) 
     return <EmptyValue />;
   }
   if (typeof value === "number") {
-    return <span className="tabular-nums">{formatNumber(value, unit)}</span>;
+    return (
+      <span className="tabular-nums" title={exactTitle(value, unit)}>
+        {formatNumber(value, unit)}
+      </span>
+    );
   }
   // A yes or no reads the same as a boolean property's.
   if (typeof value === "boolean") return <BooleanValue value={value} compact />;

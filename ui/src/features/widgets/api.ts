@@ -10,6 +10,7 @@ export type WidgetType =
   | "donut"
   | "split"
   | "matrix"
+  | "trend"
   | "table"
   | "scorecard"
   | "markdown"
@@ -34,23 +35,29 @@ export type WidgetLink = {
 // the server works out for each row.
 export type Column = { path?: string; title?: string; jq?: string; unit?: string };
 
-// Measure is a matrix's column: the share of each group's entities, of
-// those filter narrows them to, that match share.
-export type Measure = { title: string; filter?: Filter; share: Filter };
-
-// Value is the number a stat shows from a query's entities: their count,
-// unless it names a field to sum, average or take the least or most of,
-// a condition whose share of them it is, or jq over them.
-export type Value = {
-  query: Query;
+// Summary is how a number sums up entities: their count, unless it names
+// a field to sum, average, take the least, most or an exact percentile of,
+// or a condition whose share of them it is.
+export type Summary = {
   sum?: string;
   avg?: string;
   min?: string;
   max?: string;
+  p50?: string;
+  p90?: string;
+  p95?: string;
+  p99?: string;
   share?: Filter;
-  jq?: string;
   unit?: string;
 };
+
+// Measure is a summary of each group's or day's entities, of those filter
+// narrows them to. A matrix's measures are its columns, each titled.
+export type Measure = Summary & { title?: string; filter?: Filter };
+
+// Value is the number a stat shows from a query's entities: a summary of
+// them, or jq over them.
+export type Value = Summary & { query: Query; jq?: string };
 
 // Widget is one tile on a page: a dashboard on Home, or a tab a blueprint
 // gives its catalog or entity pages.
@@ -81,6 +88,13 @@ export type Widget = {
   measures?: Measure[];
   // overall adds a matrix row of each measure over every group.
   overall?: boolean;
+  // measure is what a bar shows for each group, or a trend for each day,
+  // in place of a count.
+  measure?: Measure;
+  // date is the field whose day a trend puts each entity on, and range how
+  // many days back it goes, such as 30d.
+  date?: string;
+  range?: string;
   // actions and then workflows are what an actions widget offers to run, in
   // order.
   actions?: string[];
@@ -129,14 +143,24 @@ export type StatData = {
   total?: number;
   link?: LinkData;
 };
+// Reading is what a measure comes to for a group or a day, and for a
+// share, count of total. One with nothing to work on has no value.
+export type Reading = { value: number | null; count?: number; total?: number };
 // none counts the entities without a value, which noneLink opens. A
-// group's color, such as a scorecard tier's, wins over its property's.
+// group's color, such as a scorecard tier's, wins over its property's. A
+// bar with a measure has each group's, and the unit they're in.
 export type GroupData = {
-  groups: (Facet & { color?: string; link?: LinkData })[];
+  groups: (Facet & { color?: string; measure?: Reading; link?: LinkData })[];
   none: number;
   noneLink?: LinkData;
+  noneMeasure?: Reading;
+  unit?: string;
   link?: LinkData;
 };
+// TrendData is a measure for each UTC day of a trend's range, oldest
+// first, as 2026-11-09, and over all of them.
+export type TrendDay = Reading & { day: string; link?: LinkData };
+export type TrendData = { unit?: string; all: Reading; days: TrendDay[]; link?: LinkData };
 // TierData counts entities by the highest tier they reached, and their
 // checks by outcome; failed takes in those that errored. scorecard has
 // the tiers to show them by.
@@ -174,15 +198,22 @@ export type TableData = {
 };
 // MatrixData has a row of cells per group, one per measure, after the
 // measures over every group. A cell no entity counts in has no value.
-export type MatrixCell = { value: number | null; count: number; total: number; link?: LinkData };
+export type MatrixCell = Reading & { link?: LinkData };
 export type MatrixData = {
-  measures: string[];
+  measures: { title: string; unit?: string }[];
   overall?: MatrixCell[];
   rows: (Facet & { color?: string; cells: MatrixCell[]; link?: LinkData })[];
 };
 // TextData is a markdown widget's text, filled in for whoever is looking.
 export type TextData = { text: string };
-export type WidgetData = StatData | GroupData | MatrixData | TableData | TierData | TextData;
+export type WidgetData =
+  | StatData
+  | GroupData
+  | MatrixData
+  | TrendData
+  | TableData
+  | TierData
+  | TextData;
 
 // WidgetResult is one widget's share of its page's data, or why it
 // couldn't load, so one failing widget leaves the rest.

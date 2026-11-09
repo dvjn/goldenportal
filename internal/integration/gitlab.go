@@ -32,6 +32,8 @@ const (
 	gitlabReleases      = "releases"
 	gitlabPipelines     = "pipelines"
 	gitlabJobs          = "jobs"
+	gitlabJobAttempts   = "job_attempts"
+	gitlabRunners       = "runners"
 	gitlabDeployments   = "deployments"
 	gitlabEnvironments  = "environments"
 	gitlabMembers       = "members"
@@ -69,7 +71,11 @@ var gitlabTable = []gitlabResource{
 	{name: gitlabIssues, features: []string{"issues"}, probe: "issues", events: []string{"issues_events", "confidential_issues_events"}},
 	{name: gitlabReleases, features: []string{"releases"}, probe: "releases", events: []string{"releases_events"}},
 	{name: gitlabPipelines, features: []string{"builds"}, probe: "pipelines", events: []string{"pipeline_events"}},
-	{name: gitlabJobs, features: []string{"builds"}, probe: "jobs", events: []string{"job_events"}},
+	// A pipeline's events re-read all its jobs, which takes fewer requests
+	// than a job's own events would, as each attempt sends several.
+	{name: gitlabJobs, features: []string{"builds"}, probe: "jobs", events: []string{"pipeline_events"}},
+	{name: gitlabJobAttempts, features: []string{"builds"}, probe: "jobs", events: []string{"pipeline_events"}},
+	{name: gitlabRunners, features: []string{"builds"}, probe: "jobs", events: []string{"pipeline_events"}},
 	// GitLab forbids a project's deployments and environments while its
 	// CI/CD is off, whatever its environments setting says.
 	{name: gitlabDeployments, features: []string{"builds", "environments"}, probe: "deployments", events: []string{"deployment_events"}},
@@ -187,8 +193,9 @@ func (c *GitLabConfig) Receives() []string {
 func (c *GitLabConfig) ReceivesEvents() {}
 
 // UsesSince marks the connector as reading only what changed: merge
-// requests, issues, pipelines with their jobs, and deployments, from where
-// the last sync left off in each project.
+// requests, issues, pipelines with their jobs, job attempts and the runners
+// those ran on, and deployments, from where the last sync left off in each
+// project.
 func (c *GitLabConfig) UsesSince() bool { return true }
 
 // groupOf is the listed group that p, a project's or another group's full
