@@ -12,7 +12,8 @@ export type SearchKind =
   | "workflow";
 
 // SearchResult is something a search found, as the server shows it: an
-// entity has its blueprint, and detail, that blueprint's title.
+// entity has its blueprint, and detail, that blueprint's title. A scorecard
+// has the blueprint whose catalog page shows it.
 export type SearchResult = {
   kind: SearchKind;
   identifier: string;

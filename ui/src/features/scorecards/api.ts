@@ -27,7 +27,23 @@ export type ScorecardSpec = {
 };
 
 export type Scorecard = ConfigDoc<ScorecardSpec>;
-export type ScorecardSummary = DocSummary;
+// ScorecardSummary is a scorecard as listed, with the blueprint it grades.
+export type ScorecardSummary = DocSummary & { facts?: { blueprint: string } };
+
+// gradedBy are the listed scorecards that grade a blueprint.
+export function gradedBy(list: DocSummary[], blueprint: string): ScorecardSummary[] {
+  return (list as ScorecardSummary[]).filter((s) => s.facts?.blueprint === blueprint);
+}
+
+// builtUnder is the blueprint a scorecard's build page sits under: its
+// draft's while there is one, as that's what builders are working on.
+export function builtUnder(doc: Scorecard): string {
+  return doc.draft?.spec.blueprint || doc.published?.spec.blueprint || "";
+}
+
+// scorecardView is the catalog tab of a blueprint that shows a scorecard's
+// results. The prefix keeps it apart from the blueprint's own tabs.
+export const scorecardView = (identifier: string) => `scorecard-${identifier}`;
 
 export type Status = "passed" | "failed" | "skipped" | "errored";
 
@@ -76,28 +92,40 @@ export type Summary = {
 
 export type ResultPage = Page<EntityResult>;
 
-export type ResultQuery = { tier?: string; q?: string; page?: number; size?: number };
+export type ResultQuery = {
+  filter?: Filter;
+  q?: string;
+  sort?: string;
+  page?: number;
+  size?: number;
+};
 
 export const scorecards = configDocs<ScorecardSpec>("scorecards");
 
 const path = (identifier: string) => `scorecards/${encodeURIComponent(identifier)}`;
 
 export const scorecardKeys = {
-  summary: (identifier: string) => [...scorecards.keys.detail(identifier), "summary"] as const,
+  summary: (identifier: string, filter?: Filter) =>
+    [...scorecards.keys.detail(identifier), "summary", filter ?? null] as const,
   results: (identifier: string, query: ResultQuery) =>
     [...scorecards.keys.detail(identifier), "results", query] as const,
   entity: (blueprint: string, identifier: string) =>
     ["entity-scorecards", blueprint, identifier] as const,
 };
 
-export async function getSummary(identifier: string): Promise<Summary> {
-  return (await api.get(`${path(identifier)}/summary`).json<ApiDataResponse<Summary>>()).data;
+export async function getSummary(identifier: string, filter?: Filter): Promise<Summary> {
+  const searchParams = new URLSearchParams();
+  if (filter) searchParams.set("filter", JSON.stringify(filter));
+  return (
+    await api.get(`${path(identifier)}/summary`, { searchParams }).json<ApiDataResponse<Summary>>()
+  ).data;
 }
 
 export async function listResults(identifier: string, query: ResultQuery): Promise<ResultPage> {
   const searchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== "") searchParams.set(key, String(value));
+    if (value === undefined || value === "") continue;
+    searchParams.set(key, key === "filter" ? JSON.stringify(value) : String(value));
   }
   return (
     await api
@@ -125,10 +153,10 @@ export async function listEntityScorecards(
   ).data;
 }
 
-export const summaryQueryOptions = (identifier: string) =>
+export const summaryQueryOptions = (identifier: string, filter?: Filter) =>
   queryOptions({
-    queryKey: scorecardKeys.summary(identifier),
-    queryFn: () => getSummary(identifier),
+    queryKey: scorecardKeys.summary(identifier, filter),
+    queryFn: () => getSummary(identifier, filter),
   });
 
 export const resultsQueryOptions = (identifier: string, query: ResultQuery) =>

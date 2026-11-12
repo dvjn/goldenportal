@@ -44,10 +44,15 @@ const builtIns = new Set([
   "updatedAt",
 ]);
 
+// checkField is a scorecard property's check, such as health.checks.hasReadme.
+const checkField = /^[^.]+\.checks\.[^.]+$/;
+
 // menuField reports whether the menu filters a field: the blueprint's own
-// properties, scorecard tiers among them, and the day it was updated, not
-// the other built-ins or anything a path reaches through a relation.
+// properties, scorecard tiers and checks among them, and the day it was
+// updated, not the other built-ins or anything a path reaches through a
+// relation.
 function menuField(property: string, date: boolean) {
+  if (checkField.test(property)) return !date;
   if (property.includes(".")) return false;
   if (!builtIns.has(property)) return true;
   return date && property === "updatedAt";

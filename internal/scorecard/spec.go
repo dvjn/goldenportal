@@ -82,6 +82,28 @@ func (s Spec) Stats() map[string]int {
 	return map[string]int{"tiers": len(s.Tiers), "criteria": criteria}
 }
 
+// Ladders are the scorecards as blueprints and filters see them.
+func Ladders(specs map[string]Spec) map[string]blueprint.Ladder {
+	ladders := make(map[string]blueprint.Ladder, len(specs))
+	for identifier, spec := range specs {
+		ladder := blueprint.Ladder{Blueprint: spec.Blueprint}
+		for _, tier := range spec.Tiers {
+			rung := blueprint.Rung{Name: tier.Name, Title: tier.Title, Color: tier.Color, Criteria: map[string]any{}}
+			for _, criterion := range tier.Criteria {
+				rung.Criteria[criterion.ID] = nil
+			}
+			ladder.Tiers = append(ladder.Tiers, rung)
+		}
+		ladders[identifier] = ladder
+	}
+
+	return ladders
+}
+
+// Facts name the blueprint a scorecard grades, so its blueprint's pages
+// can list it.
+func (s Spec) Facts() map[string]any { return map[string]any{"blueprint": s.Blueprint} }
+
 // Parse reads a scorecard document and checks everything that doesn't
 // depend on its blueprint.
 func Parse(source string) (Spec, []configdoc.Issue) {
@@ -230,7 +252,11 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 	}
 	var issues []configdoc.Issue
 	if spec.Filter != nil {
-		if err := entity.CheckFilter(published, bp, *spec.Filter); err != nil {
+		ladders, err := blueprint.Ladders(ctx, db)
+		if err != nil {
+			return nil, err
+		}
+		if err := entity.CheckFilter(published, ladders, bp, *spec.Filter); err != nil {
 			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: "spec.filter", Message: err.Error()})
 		}
 	}

@@ -3,15 +3,18 @@ import { Library } from "lucide-react";
 import { BlueprintOverview } from "@/components/blueprints/blueprint-overview";
 import { DocPage, validateDocSearch } from "@/components/config-docs/doc-page";
 import { PageError } from "@/components/page-error";
+import { BlueprintScorecards } from "@/components/scorecards/blueprint-scorecards";
 import { Button } from "@/components/ui/button";
 import { blueprints, useBlueprint } from "@/features/blueprints";
+import { scorecards } from "@/features/scorecards";
 
 export const Route = createFileRoute("/_app/blueprints/$identifier")({
-  validateSearch: validateDocSearch,
+  validateSearch: (search) => validateDocSearch(search, ["scorecards"]),
   loader: ({ context, params }) =>
     Promise.all([
       context.queryClient.ensureQueryData(blueprints.queries.detail(params.identifier)),
       context.queryClient.ensureQueryData(blueprints.queries.versions(params.identifier)),
+      context.queryClient.ensureQueryData(scorecards.queries.list),
     ]),
   component: BlueprintPage,
   errorComponent: (props) => (
@@ -46,6 +49,13 @@ function BlueprintPage() {
         )
       }
       overview={(spec, doc) => <BlueprintOverview spec={spec} blueprint={doc} />}
+      extraTabs={[
+        {
+          value: "scorecards",
+          title: "Scorecards",
+          content: <BlueprintScorecards blueprint={identifier} />,
+        },
+      ]}
     />
   );
 }

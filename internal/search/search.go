@@ -21,7 +21,7 @@ const Limit = 10
 
 // Result is something a search found. An entity has Blueprint, which its
 // page is under, and Detail, that blueprint's title, which says what kind
-// of entity it is.
+// of entity it is. A scorecard has Blueprint too, whose catalog page shows it.
 type Result struct {
 	Kind       string `json:"kind"`
 	Identifier string `json:"identifier"`

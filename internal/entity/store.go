@@ -197,7 +197,7 @@ func (s Store) Search(ctx context.Context, blueprints []string, text string, lim
 // List returns a page of entities. Filter and sort problems come back as a
 // FilterError, since they're the caller's to fix.
 func (s Store) List(ctx context.Context, q Query) (Page, error) {
-	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, args: []any{q.Blueprint.Identifier}}
+	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders, args: []any{q.Blueprint.Identifier}}
 	where := "b.kind = 'blueprint' AND b.identifier = $1"
 	if q.Search != "" {
 		search := c.arg("%" + likeEscaper.Replace(q.Search) + "%")

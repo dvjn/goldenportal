@@ -4,8 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import type { Property } from "@/features/blueprints";
 
 // PropertyType shows a property's type, linking relations to their
-// blueprint and scorecard properties to their scorecard.
-export function PropertyType({ property }: Readonly<{ property: Property }>) {
+// blueprint and, given the blueprint the property is on, scorecard
+// properties to their scorecard, which grades that blueprint.
+export function PropertyType({
+  property,
+  blueprint,
+}: Readonly<{ property: Property; blueprint?: string }>) {
   if (property.relation) {
     return (
       <Badge asChild variant="outline" className="font-mono">
@@ -17,10 +21,13 @@ export function PropertyType({ property }: Readonly<{ property: Property }>) {
       </Badge>
     );
   }
-  if (property.scorecard) {
+  if (property.scorecard && blueprint) {
     return (
       <Badge asChild variant="outline" className="font-mono">
-        <Link to="/scorecards/$identifier" params={{ identifier: property.scorecard }}>
+        <Link
+          to="/blueprints/$blueprint/scorecards/$identifier"
+          params={{ blueprint, identifier: property.scorecard }}
+        >
           <ArrowRight aria-hidden />
           {property.scorecard}
         </Link>

@@ -235,7 +235,35 @@ type CriterionAt struct {
 	Errored int    `json:"errored"`
 }
 
-func summarize(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec) (Summary, error) {
+// resultFrom joins results to their entities as e, with the documents a
+// compiled filter reads, the blueprint as b and the connection as i.
+const resultFrom = `
+	FROM scorecard_results r
+	JOIN entities e ON e.id = r.entity_id
+	JOIN config_documents b ON b.id = e.blueprint_id
+	JOIN config_documents i ON i.id = e.connection_id`
+
+// Scope narrows a scorecard's results to the entities Filter matches, a
+// filter on Blueprint, the blueprint the scorecard grades. Blueprints are
+// those its relations lead to, and Ladders the scorecards whose tiers and
+// checks it names. Without a Filter it keeps every result.
+type Scope struct {
+	Blueprints map[string]blueprint.Spec
+	Ladders    map[string]blueprint.Ladder
+	Blueprint  blueprint.Spec
+	Filter     *entity.Filter
+}
+
+// where is SQL for the scope on resultFrom, its values numbered after args.
+func (s Scope) where(args []any) (string, []any, error) {
+	if s.Filter == nil {
+		return "true", args, nil
+	}
+
+	return entity.Where(s.Blueprints, s.Ladders, s.Blueprint, *s.Filter, args)
+}
+
+func summarize(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec, scope Scope) (Summary, error) {
 	summary := Summary{Tiers: []TierCount{}, Criteria: []CriterionAt{}}
 	tiers := map[string]int{}
 	err := db.QueryRowContext(ctx, `SELECT last_evaluated_at FROM scorecard_evaluations WHERE scorecard_id = $1`,
@@ -243,7 +271,13 @@ func summarize(ctx context.Context, db configdoc.DB, scorecardID string, spec Sp
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Summary{}, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT tier, count(*) FROM scorecard_results WHERE scorecard_id = $1 GROUP BY tier`, scorecardID)
+	where, args, err := scope.where([]any{scorecardID})
+	if err != nil {
+		return Summary{}, err
+	}
+	rows, err := db.QueryContext(ctx, `SELECT r.tier, count(*)`+resultFrom+`
+		WHERE r.scorecard_id = $1 AND `+where+`
+		GROUP BY r.tier`, args...)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -269,10 +303,10 @@ func summarize(ctx context.Context, db configdoc.DB, scorecardID string, spec Sp
 
 	counts := map[string]*CriterionAt{}
 	criteria, err := db.QueryContext(ctx, `
-		SELECT c.key, c.value ->> 'status', count(*)
-		FROM scorecard_results r, jsonb_each(r.criteria) c
-		WHERE r.scorecard_id = $1
-		GROUP BY 1, 2`, scorecardID)
+		SELECT c.key, c.value ->> 'status', count(*)`+resultFrom+`
+		CROSS JOIN LATERAL jsonb_each(r.criteria) c
+		WHERE r.scorecard_id = $1 AND `+where+`
+		GROUP BY 1, 2`, args...)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -332,12 +366,13 @@ type EntityResult struct {
 // that join scorecard_evaluations as v.
 const evaluatedAt = `coalesce(v.last_evaluated_at, r.changed_at)`
 
-// ResultQuery picks a page of a scorecard's results, worst tier first.
+// ResultQuery picks a page of a scorecard's results in Scope, worst tier
+// first unless Sort says otherwise.
 type ResultQuery struct {
-	// Tiers filter to entities whose highest tier is one of them; "none"
-	// for those with none.
-	Tiers    []string
-	Search   string
+	Scope
+	Search string
+	// Sort is one of ResultSorts, or -field for descending.
+	Sort     string
 	Page     int
 	PageSize int
 }
@@ -349,30 +384,27 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 	for _, tier := range spec.Tiers {
 		tierOrder = append(tierOrder, tier.Name)
 	}
-	tiers := make([]string, len(q.Tiers))
-	for i, tier := range q.Tiers {
-		if tier != "none" {
-			tiers[i] = tier
-		}
-	}
 	search := ""
 	if q.Search != "" {
 		search = "%" + likeEscaper.Replace(q.Search) + "%"
 	}
+	where, args, err := q.where([]any{scorecardID, search, pq.Array(tierOrder)})
+	if err != nil {
+		return ResultPage{}, err
+	}
+	limit := "$" + strconv.Itoa(len(args)+1)
+	offset := "$" + strconv.Itoa(len(args)+2)
+	args = append(args, q.PageSize, (q.Page-1)*q.PageSize)
 
 	rows, err := db.QueryContext(ctx, `
 		SELECT b.identifier, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
-			r.passed, r.failed, r.skipped, r.errored, r.criteria, count(*) OVER ()
-		FROM scorecard_results r
+			r.passed, r.failed, r.skipped, r.errored, r.criteria, count(*) OVER ()`+resultFrom+`
 		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id
-		JOIN entities e ON e.id = r.entity_id
-		JOIN config_documents b ON b.id = e.blueprint_id
 		WHERE r.scorecard_id = $1
-			AND (cardinality($2::text[]) = 0 OR r.tier = ANY($2))
-			AND ($3 = '' OR e.identifier ILIKE $3 OR e.title ILIKE $3)
-		ORDER BY array_position($4::text[], r.tier), r.score NULLS FIRST, e.title, e.identifier
-		LIMIT $5 OFFSET $6`,
-		scorecardID, pq.Array(tiers), search, pq.Array(tierOrder), q.PageSize, (q.Page-1)*q.PageSize)
+			AND ($2 = '' OR e.identifier ILIKE $2 OR e.title ILIKE $2)
+			AND `+where+`
+		ORDER BY `+resultOrder(q.Sort, "array_position($3::text[], r.tier)")+`
+		LIMIT `+limit+` OFFSET `+offset, args...)
 	if err != nil {
 		return ResultPage{}, err
 	}
@@ -388,6 +420,31 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 	}
 
 	return page, rows.Err()
+}
+
+// resultOrder is the ORDER BY for a ResultQuery's Sort, with tier the
+// expression for a result's place up the tiers. Results without a score
+// count as the lowest. Ties go by tier the same way, then by title and
+// identifier so pages are stable.
+func resultOrder(sort, tier string) string {
+	field, desc := strings.CutPrefix(sort, "-")
+	direction, nulls := "ASC", "NULLS FIRST"
+	if desc {
+		direction, nulls = "DESC", "NULLS LAST"
+	}
+	tier += " " + direction
+	score := "r.score " + direction + " " + nulls
+	var by []string
+	switch field {
+	case "score":
+		by = []string{score, tier}
+	case "passed", "failed", "skipped":
+		by = []string{"r." + field + " " + direction, tier, score}
+	default:
+		by = []string{tier, score}
+	}
+
+	return strings.Join(append(by, "e.title", "e.identifier"), ", ")
 }
 
 func scanResult(scan func(...any) error, extra ...any) (EntityResult, error) {

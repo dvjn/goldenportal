@@ -181,7 +181,7 @@ describe("catalog", () => {
       "href",
       "/catalog",
     );
-    expect(screen.getByRole("link", { name: "Scorecards" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Self-Service" })).toBeInTheDocument();
     // With no header to lead, the page still starts with the trigger that
     // opens the sidebar on phones.
     const trail = screen.getByRole("main").querySelector<HTMLElement>('[data-slot="page-crumbs"]')

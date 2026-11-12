@@ -119,7 +119,8 @@ func (s Spec) HasProperty(id string) bool {
 func (s Spec) Property(id string) (Property, bool) { return s.property(id) }
 
 // Ladder is what blueprints need of a published scorecard, which this
-// package can't import: the blueprint it scores and its tiers, lowest first.
+// package can't import: the blueprint it scores and its tiers, lowest first,
+// with their checks.
 type Ladder struct {
 	Blueprint string `json:"blueprint"`
 	Tiers     []Rung `json:"tiers"`
@@ -130,6 +131,8 @@ type Rung struct {
 	Name  string `json:"name"`
 	Title string `json:"title"`
 	Color string `json:"color,omitempty"`
+	// Criteria are keyed by check identifier; only the keys are read.
+	Criteria map[string]any `json:"-"`
 }
 
 // Names lists the tier names lowest first, after "" for no tier, which is
@@ -141,6 +144,19 @@ func (l Ladder) Names() []string {
 	}
 
 	return names
+}
+
+// Checks lists the identifiers of the ladder's checks, sorted.
+func (l Ladder) Checks() []string {
+	var checks []string
+	for _, rung := range l.Tiers {
+		for id := range rung.Criteria {
+			checks = append(checks, id)
+		}
+	}
+	slices.Sort(checks)
+
+	return checks
 }
 
 // Ladders reads every published scorecard's ladder, by identifier, with any

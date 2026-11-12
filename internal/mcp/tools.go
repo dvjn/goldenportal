@@ -177,9 +177,15 @@ type (
 	searchArgs struct {
 		Text string `json:"text" jsonschema:"Words in a title or identifier; empty lists blueprints, dashboards, scorecards and connections"`
 	}
+	summaryArgs struct {
+		Identifier string `json:"identifier"`
+		Filter     string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the scorecard's blueprint, to count only the entities it matches. The blueprint's property of type scorecard naming this scorecard reaches the result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed, skipped or errored)"`
+	}
 	resultsArgs struct {
 		Identifier string `json:"identifier"`
-		Tiers      string `json:"tiers,omitempty" jsonschema:"Comma-separated tier names, or none for entities that reached no tier"`
+		Search     string `json:"search,omitempty"`
+		Filter     string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the scorecard's blueprint. The blueprint's property of type scorecard naming this scorecard reaches the result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed, skipped or errored)"`
+		Sort       string `json:"sort,omitempty" jsonschema:"tier, score, passed, failed or skipped, with a leading - for descending; omit for worst tier first. Tiers sort up the scorecard's tiers, not by name"`
 		Page       int    `json:"page,omitempty"`
 		Size       int    `json:"size,omitempty"`
 	}
@@ -297,15 +303,11 @@ var tools = []tool{
 	read("get_entity_scorecards", "Read an entity's current scorecard results.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a entityArgs) (any, error) {
 		return b.services.EntityScorecards(ctx, a.Blueprint, a.Identifier)
 	}),
-	read("get_scorecard_summary", "Read how many entities reached each of a scorecard's tiers and how each criterion fares.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
-		return b.services.ScorecardSummary(ctx, a.Identifier)
+	read("get_scorecard_summary", "Read how many entities reached each of a scorecard's tiers and how many pass, fail, skip or error on each criterion, optionally of the entities a filter matches.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a summaryArgs) (any, error) {
+		return b.services.ScorecardSummary(ctx, a.Identifier, scorecard.SummaryRequest{Filter: a.Filter})
 	}),
-	read("list_scorecard_results", "Page a scorecard's entity results, worst tier first, optionally narrowed to some tiers.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a resultsArgs) (any, error) {
-		req := scorecard.ResultsRequest{Page: a.Page, Size: a.Size}
-		if a.Tiers != "" {
-			req.Tiers = strings.Split(a.Tiers, ",")
-		}
-		return b.services.ScorecardResults(ctx, a.Identifier, req)
+	read("list_scorecard_results", "Page a scorecard's entity results, worst tier first unless sorted, optionally searched and filtered with the shared filter tree, such as by tier or a check's status.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a resultsArgs) (any, error) {
+		return b.services.ScorecardResults(ctx, a.Identifier, scorecard.ResultsRequest{Search: a.Search, Filter: a.Filter, Sort: a.Sort, Page: a.Page, Size: a.Size})
 	}),
 	read("get_blueprint_usage", "Read what uses a blueprint: its sources with each connection's last run, connections writing it, scorecards, dashboards and relations, with its entity count.", auth.RoleMember, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
 		return b.services.BlueprintUsage(ctx, a.Identifier)

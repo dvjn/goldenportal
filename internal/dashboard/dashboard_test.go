@@ -420,7 +420,7 @@ spec:
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := []string{}
-			for _, issue := range checkInputs([]Input{test.input}, blueprints) {
+			for _, issue := range checkInputs([]Input{test.input}, blueprints, nil) {
 				got = append(got, issue.Severity+" "+issue.Path)
 			}
 			if strings.Join(got, " ") != test.want {
@@ -535,7 +535,7 @@ func TestCheckQueries(t *testing.T) {
 		{Name: "later", Blueprint: "deployment", Path: "spec.queries.later"},
 	}
 	got := []string{}
-	for _, issue := range checkQueries(queries, blueprints) {
+	for _, issue := range checkQueries(queries, blueprints, nil) {
 		got = append(got, issue.Severity+" "+issue.Path)
 	}
 	if want := "error spec.queries.bad.filter, warning spec.queries.later.blueprint"; strings.Join(got, ", ") != want {
@@ -639,7 +639,7 @@ spec:
 	}}
 	for _, w := range own.Entity.Tabs[0].Widgets {
 		f := widget.BindData(w.Value.Query.Filter, sampleEntity(own, nil))
-		if err := checkFilter(nil, target, f); err != nil {
+		if err := checkFilter(nil, nil, target, f); err != nil {
 			t.Errorf("%s: %v", w.ID, err)
 		}
 	}

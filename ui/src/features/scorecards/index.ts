@@ -1,9 +1,11 @@
 export {
+  builtUnder,
   type Criterion,
   type EntityResult,
   type EntityScorecard,
   entityScorecardsQueryOptions,
   evaluateScorecard,
+  gradedBy,
   type Result,
   type ResultQuery,
   resultsQueryOptions,
@@ -15,6 +17,7 @@ export {
   type Summary,
   scorecardKeys,
   scorecards,
+  scorecardView,
   summaryQueryOptions,
   type Tier,
 } from "./api";

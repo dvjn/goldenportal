@@ -5,12 +5,13 @@ type Handler = (request: Request) => Response | Promise<Response>;
 // stubApi answers API requests by "METHOD path", where path is relative to
 // /api/web, e.g. "GET me" or "POST auth/login". Unstubbed requests fail loudly.
 // It returns the requests it saw, keyed the same way, with readable bodies.
-// Home finds no dashboards, and nothing waits on approval, unless a test
-// stubs some.
+// Home finds no dashboards, nothing waits on approval, and no scorecards
+// grade a blueprint, unless a test stubs some.
 export function stubApi(stubs: Record<string, Handler>) {
   const routes: Record<string, Handler> = {
     "GET home": ok([]),
     "GET approvals": ok([]),
+    "GET scorecards": ok([]),
     ...stubs,
   };
   const requests: Record<string, Request> = {};

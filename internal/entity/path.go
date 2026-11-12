@@ -21,8 +21,9 @@ type field struct {
 	kind     string
 	// relation is the blueprint a relation points at.
 	relation string
-	// scorecard is the scorecard a tier is on.
-	scorecard string
+	// scorecard is the scorecard a tier is on, and check with checkOf the
+	// check a status is of and its scorecard.
+	scorecard, check, checkOf string
 	// prop is the property the path ends on, and builtIn the built-in
 	// field, for showing its values.
 	prop    *blueprint.Property
@@ -43,6 +44,9 @@ const (
 	kindDate = "date-time"
 	kindTier = "tier"
 )
+
+// CheckStatuses are what a check's status can be.
+var CheckStatuses = []string{"passed", "failed", "skipped", "errored"}
 
 // ScorecardFields are what a dot after a scorecard property reads of the
 // entity's result, beside checks.<id>, a check's status.
@@ -197,6 +201,7 @@ func scorecardField(alias string, prop blueprint.Property, rest string) (field, 
 		fld.column, fld.many, fld.kind = false, true, "array"
 	case isCheck && widget.ValidName(check):
 		fld.value, fld.kind = result("r.criteria -> "+quoteLiteral(check)+" ->> 'status'"), "string"
+		fld.check, fld.checkOf = check, prop.Scorecard
 	case slices.Contains(ScorecardFields, rest):
 		fld.value = result("r." + rest)
 	default:

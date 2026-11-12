@@ -42,7 +42,6 @@ const sectionPages: Record<string, PageName> = {
   "/": "home",
   "/catalog": "catalog",
   "/self-service": "selfService",
-  "/scorecards": "scorecards",
   "/runs": "runs",
   "/approvals": "approvals",
   "/blueprints": "blueprints",

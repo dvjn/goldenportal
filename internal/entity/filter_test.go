@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -223,5 +224,65 @@ func TestOrderBy(t *testing.T) {
 	}
 	if _, err := c.orderBy("$updatedAt", nil); err == nil || !strings.Contains(err.Error(), `no property "$updatedAt"`) {
 		t.Errorf("err = %v, want an unknown property", err)
+	}
+}
+
+func TestCheckFilterScorecardNames(t *testing.T) {
+	ladders := map[string]blueprint.Ladder{"service-readiness": {Blueprint: "service", Tiers: []blueprint.Rung{
+		{Name: "bronze", Criteria: map[string]any{"hasOwner": nil}},
+		{Name: "gold", Criteria: map[string]any{"onCall": nil, "documented": nil}},
+	}}}
+	team := blueprint.Spec{Identifier: "team", Properties: []blueprint.Property{{ID: "lead", Relation: "service"}}}
+	specs := map[string]blueprint.Spec{"service": service(t), "team": team}
+	tests := []struct {
+		name, filter string
+		on           blueprint.Spec
+		want         string
+	}{
+		{"known tiers", `{"property":"readiness","op":"in","values":["","gold"]}`, service(t), ""},
+		{"known check and statuses", `{"property":"readiness.checks.onCall","op":"in","values":["failed","skipped"]}`, service(t), ""},
+		{"any value", `{"not":{"property":"readiness.checks.hasOwner","op":"exists"}}`, service(t), ""},
+		{
+			"unknown tier", `{"property":"readiness","op":"eq","value":"platinum"}`, service(t),
+			`readiness is a tier of service-readiness: bronze, gold, or "" for none, not "platinum"`,
+		},
+		{
+			"unknown check", `{"property":"readiness.checks.hasDocs","op":"eq","value":"failed"}`, service(t),
+			`service-readiness has no check "hasDocs"; its checks are documented, hasOwner, onCall`,
+		},
+		{
+			"unknown status", `{"property":"readiness.checks.onCall","op":"ne","value":"failing"}`, service(t),
+			`readiness.checks.onCall is a check's status: passed, failed, skipped, errored, not "failing"`,
+		},
+		{"through a relation", `{"property":"lead.readiness","op":"eq","value":"silver"}`, team, "not \"silver\""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f, err := ParseFilter(test.filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = CheckFilter(specs, ladders, test.on, *f)
+			if test.want == "" && err != nil || test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)) {
+				t.Fatalf("err = %v, want %q", err, test.want)
+			}
+		})
+	}
+
+	// A scorecard that isn't published has nothing to check against.
+	f, _ := ParseFilter(`{"property":"readiness","op":"eq","value":"platinum"}`)
+	if err := CheckFilter(specs, nil, service(t), *f); err != nil {
+		t.Errorf("err = %v without ladders", err)
+	}
+}
+
+func TestListRejectsUnknownChecks(t *testing.T) {
+	f, _ := ParseFilter(`{"property":"readiness.checks.hasDocs","op":"eq","value":"failed"}`)
+	ladders := map[string]blueprint.Ladder{"service-readiness": {Tiers: []blueprint.Rung{{Name: "gold", Criteria: map[string]any{"onCall": nil}}}}}
+	// The filter is refused before the database is asked.
+	_, err := Store{}.List(t.Context(), Query{Blueprint: service(t), Ladders: ladders, Filter: f, Page: 1, PageSize: 10})
+	var filterErr FilterError
+	if !errors.As(err, &filterErr) || !strings.Contains(err.Error(), `no check "hasDocs"`) {
+		t.Fatalf("err = %v, want a FilterError naming the check", err)
 	}
 }

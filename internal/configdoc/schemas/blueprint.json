@@ -463,7 +463,7 @@
     },
     "scorecardProperty": {
       "type": "object",
-      "description": "An entity's result on a scorecard, which the scorecard works out. Paths follow it into tier, score and checks, such as readiness.tier.",
+      "description": "An entity's result on a scorecard, which the scorecard works out. A path naming it reads the tier reached, and follows it into score, counts and checks, such as readiness.checks.hasOwner.",
       "properties": {
         "title": { "$ref": "#/$defs/propertyTitle" },
         "description": { "$ref": "#/$defs/propertyDescription" },

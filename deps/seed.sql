@@ -110,7 +110,7 @@ spec:
             title: Readiness
             scorecard: service-readiness
             query: owned
-            link: {path: /scorecards/service-readiness}
+            link: {path: /catalog/service?view=scorecard-service-readiness}
           services:
             type: table
             title: Services
@@ -225,7 +225,7 @@ spec:
             title: Readiness
             width: 4
             scorecard: service-readiness
-            link: {path: /scorecards/service-readiness}
+            link: {path: /catalog/service?view=scorecard-service-readiness}
           critical:
             type: table
             title: Critical Services
@@ -1951,7 +1951,7 @@ spec:
       title: Service Readiness
       scorecard: service-readiness
       query: services
-      link: {path: /scorecards/service-readiness}
+      link: {path: /catalog/service?view=scorecard-service-readiness}
     byOwner:
       type: bar
       title: Services by Owner

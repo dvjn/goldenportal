@@ -2,6 +2,8 @@ package scorecard
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -10,7 +12,10 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/lib/pq"
 
+	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 const readinessYAML = `
@@ -60,6 +65,9 @@ func TestParse(t *testing.T) {
 	}
 	if got := spec.Stats(); got["criteria"] != 4 {
 		t.Errorf("stats = %v", got)
+	}
+	if got := spec.Facts(); got["blueprint"] != "service" {
+		t.Errorf("facts = %v", got)
 	}
 
 	head := "kind: Scorecard\nmetadata: {identifier: s, title: S}\nspec:\n  blueprint: service\n"
@@ -171,20 +179,30 @@ func TestDiff(t *testing.T) {
 	}
 }
 
-func TestResultsFilterBySeveralTiers(t *testing.T) {
+func TestResultsNarrowByFilter(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	graded, issues := blueprint.Parse("kind: Blueprint\nmetadata: {identifier: service, title: Service}\n" +
+		"spec:\n  properties:\n    readiness: {type: scorecard, scorecard: sc}\n")
+	if blueprint.HasErrors(issues) {
+		t.Fatal(issues)
+	}
+	f, err := entity.ParseFilter(`{"property": "readiness.checks.hasOwner", "op": "in", "values": ["failed", "skipped"]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	spec := Spec{Tiers: []Tier{{Name: "bronze"}, {Name: "silver"}}}
-	// "none" is the empty tier of entities that reached none.
-	mock.ExpectQuery(regexp.QuoteMeta(`r.tier = ANY($2)`)).
-		WithArgs("sc", pq.Array([]string{"silver", ""}), "", pq.Array([]string{"", "bronze", "silver"}), 10, 0).
+	// The filter's values follow the query's own, before the paging.
+	mock.ExpectQuery(regexp.QuoteMeta(`'hasOwner'`)).
+		WithArgs("sc", "", pq.Array([]string{"", "bronze", "silver"}), "failed", "skipped", 10, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "x", "c", "total"}).
 			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, 0, []byte(`{}`), 1))
 
-	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Tiers: []string{"silver", "none"}, Page: 1, PageSize: 10})
+	scope := Scope{Blueprints: map[string]blueprint.Spec{"service": graded}, Blueprint: graded, Filter: f}
+	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,5 +211,55 @@ func TestResultsFilterBySeveralTiers(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestResultsRequestChecksSortAndPaging(t *testing.T) {
+	q, err := ResultsRequest{Search: "led", Sort: "-tier"}.query()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Search != "led" || q.Sort != "-tier" || q.Page != 1 || q.PageSize != 10 {
+		t.Errorf("query = %+v", q)
+	}
+	for _, sort := range []string{"", "tier", "score", "-score", "passed", "-failed", "skipped"} {
+		if _, err := (ResultsRequest{Sort: sort}).query(); err != nil {
+			t.Errorf("sort %q: %v", sort, err)
+		}
+	}
+
+	tests := []struct {
+		name string
+		req  ResultsRequest
+		want string
+	}{
+		{"unknown sort", ResultsRequest{Sort: "title"}, `sort must be tier, score, passed, failed or skipped, with a leading - for descending, not "title"`},
+		{"doubled minus", ResultsRequest{Sort: "--tier"}, "sort must be"},
+		{"bad size", ResultsRequest{Size: 7}, "size must be"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := test.req.query()
+			var httpErr httpx.Error
+			if !errors.As(err, &httpErr) || httpErr.Code != http.StatusBadRequest ||
+				!strings.Contains(err.Error(), test.want) {
+				t.Fatalf("err = %v, want a 400 saying %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestResultOrder(t *testing.T) {
+	tests := []struct{ sort, want string }{
+		{"", "tier ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
+		{"-tier", "tier DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
+		{"score", "r.score ASC NULLS FIRST, tier ASC, e.title, e.identifier"},
+		{"-failed", "r.failed DESC, tier DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
+		{"skipped", "r.skipped ASC, tier ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
+	}
+	for _, test := range tests {
+		if got := resultOrder(test.sort, "tier"); got != test.want {
+			t.Errorf("resultOrder(%q) = %q, want %q", test.sort, got, test.want)
+		}
 	}
 }

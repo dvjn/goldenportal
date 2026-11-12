@@ -4,26 +4,14 @@ import { Columns3, FileCode, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
 import type { ReactNode } from "react";
 import { RowActions, useRowActions } from "@/components/actions/entity-actions";
 import { BlueprintIcon, IconTile } from "@/components/catalog/blueprint-icon";
+import { useCatalogFilters } from "@/components/catalog/catalog-filters";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { EmptyValue, PropertyValue } from "@/components/catalog/property-value";
 import { SplitTitle } from "@/components/catalog/split-title";
 import { UnpublishedBlueprint } from "@/components/catalog/unpublished-blueprint";
-import { valueLabel } from "@/components/catalog/value-label";
-import {
-  chipsOf,
-  dateFilter,
-  optionsFilter,
-  replaceConditions,
-  useFixedSummaries,
-} from "@/components/catalog/where-filters";
 import {
   DataTable,
-  type DataTableChip,
   DataTableColumnHeader,
-  type DataTableFilterField,
-  type DataTableFilters,
-  type DataTableFilterValue,
-  type DataTableOption,
   dataTableColumns,
   pageSize,
   type TableSearch,
@@ -34,7 +22,9 @@ import { EmptyState } from "@/components/empty-state";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { PageError } from "@/components/page-error";
 import { PageHeader } from "@/components/page-header";
+import { pageIcons } from "@/components/page-icons";
 import { PageTab } from "@/components/page-tabs";
+import { ScorecardResults } from "@/components/scorecards/scorecard-results";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -54,15 +44,15 @@ import {
   type EntityQuery,
   entitiesQueryOptions,
   type Filter,
-  facetsQueryOptions,
 } from "@/features/catalog";
-import { scorecards } from "@/features/scorecards";
+import { gradedBy, scorecards, scorecardView } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 import { usePageTitle } from "@/lib/page-title";
 
 // CatalogSearch is the page's state in the URL: view is the open tab, a
-// dashboard or "entities", and the rest is the table's; cols lists the
-// shown columns, and filter the conditions every entity listed meets.
+// dashboard, a scorecard's results or "entities", filter the conditions
+// every entity either table lists meets, and the rest is the open table's;
+// cols lists the entities table's shown columns.
 type CatalogSearch = TableSearch & {
   view?: string;
   filter?: Filter[];
@@ -105,6 +95,17 @@ function validFilter(filter: unknown): Filter[] | undefined {
   return conditions.length > 0 ? conditions : undefined;
 }
 
+const isScorecardView = (view?: string) => view?.startsWith(scorecardView("")) ?? false;
+
+// entitySearch is the entities table's part of the search. A scorecard's
+// results table has the search box, sorting and paging while its tab is
+// open, so the entities, which the tab still counts, are left unsearched.
+function entitySearch({ view, ...search }: CatalogSearch): CatalogSearch {
+  if (!isScorecardView(view)) return search;
+  const { q: _q, sort: _s, page: _p, ...rest } = search;
+  return rest;
+}
+
 function queryFrom(blueprint: string, search: CatalogSearch, size: number): EntityQuery {
   return {
     blueprint,
@@ -118,10 +119,11 @@ function queryFrom(blueprint: string, search: CatalogSearch, size: number): Enti
 
 export const Route = createFileRoute("/_app/catalog/$blueprint/")({
   validateSearch: validateCatalogSearch,
-  loaderDeps: ({ search: { view: _, ...table } }) => table,
+  loaderDeps: ({ search }) => entitySearch(search),
   loader: ({ context, params, deps }) =>
     Promise.all([
       context.queryClient.ensureQueryData(blueprints.queries.detail(params.blueprint)),
+      context.queryClient.ensureQueryData(scorecards.queries.list),
       context.queryClient.ensureQueryData(
         entitiesQueryOptions(queryFrom(params.blueprint, deps, pageSize(deps))),
       ),
@@ -138,26 +140,6 @@ function sortable(property: Property) {
   return (
     !property.lookup && !property.many && property.type !== "array" && property.type !== "object"
   );
-}
-
-// filterable properties get a filter with their values to pick from: those
-// whose display asks for one, or else those with few values.
-function filterable(property: Property) {
-  if (property.lookup) return false;
-  if (property.display?.filter !== undefined) return property.display.filter;
-  return (
-    Boolean(property.relation) ||
-    Boolean(property.scorecard) ||
-    Boolean(property.enum) ||
-    property.type === "boolean" ||
-    (property.type === "array" && property.items?.type === "string")
-  );
-}
-
-// dateFilterable properties get a date range filter unless their display says otherwise.
-function dateFilterable(property: Property) {
-  if (property.lookup || property.display?.filter === false) return false;
-  return property.format === "date" || property.format === "date-time";
 }
 
 // builtInColumns are the fields every entity has that can be columns,
@@ -191,15 +173,19 @@ function BlueprintCatalogPage() {
   const spec = doc.published?.spec;
   usePageTitle(spec?.title ?? doc.title);
   const builder = hasRole(useMe().role, "builder");
+  const entities = entitySearch(search);
   const page = useQuery({
-    ...entitiesQueryOptions(queryFrom(blueprint, search, usePageSize(search))),
+    ...entitiesQueryOptions(queryFrom(blueprint, entities, usePageSize(entities))),
     placeholderData: keepPreviousData,
   });
+  // Only published scorecards have results to show.
+  const { data: scorecardList } = useSuspenseQuery(scorecards.queries.list);
+  const graded = gradedBy(scorecardList, blueprint).filter((s) => s.publishedVersion > 0);
   const conditions = search.filter ?? [];
-  const chipModels = chipsOf(conditions);
-  const fixedSummaries = useFixedSummaries(
-    blueprint,
-    chipModels.flatMap((chip) => (chip.kind === "fixed" ? [chip.filter] : [])),
+  const setSearch = (patch: Partial<CatalogSearch>) =>
+    navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
+  const filters = useCatalogFilters(blueprint, spec, conditions, (next) =>
+    setSearch({ filter: next.length > 0 ? next : undefined, page: undefined }),
   );
   const rowActions = useRowActions(
     blueprint,
@@ -209,8 +195,6 @@ function BlueprintCatalogPage() {
   if (!spec) return <UnpublishedBlueprint blueprint={blueprint} title={doc.title} />;
 
   const shown = search.cols?.split(",") ?? defaultColumns(spec);
-  const setSearch = (patch: Partial<CatalogSearch>) =>
-    navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
 
   // The subtitle the entity page shows also stands under each title.
   const subtitle = spec.properties.find(
@@ -299,131 +283,17 @@ function BlueprintCatalogPage() {
     }),
   ];
 
-  const setFilter = (next: Filter[]) =>
-    setSearch({ filter: next.length > 0 ? next : undefined, page: undefined });
-  // Every filter is offered, shown as a column or not. A date property whose
-  // display asks for a filter gets the date one, not a list of its values.
-  const filterFields: DataTableFilterField[] = [
-    ...spec.properties
-      .filter((property) => filterable(property) && !dateFilterable(property))
-      .map(
-        (property): DataTableFilterField => ({
-          kind: "options",
-          id: property.identifier,
-          title: property.title,
-          useOptions: propertyOptions(blueprint, property),
-          negatable: true,
-        }),
-      ),
-    ...spec.properties.filter(dateFilterable).map(
-      (property): DataTableFilterField => ({
-        kind: "date",
-        id: property.identifier,
-        title: property.title,
-      }),
-    ),
-    { kind: "date", id: "updatedAt", title: "Updated" },
-  ];
-  // A link can filter by any property, so a chip whose property has no field
-  // of its own gets one, to show and change it.
-  const fieldFor = (kind: "options" | "date", id: string, values: string[]) => {
-    const own = filterFields.find((field) => field.id === id && field.kind === kind);
-    if (own) return own;
-    const property = spec.properties.find((p) => p.identifier === id);
-    const title = property?.title ?? id;
-    if (kind === "date") return { kind, id, title } satisfies DataTableFilterField;
-    return {
-      kind,
-      id,
-      title,
-      negatable: true,
-      useOptions: () =>
-        values.map((key) => ({
-          value: key,
-          label: valueLabel(JSON.parse(key) as unknown, { property }),
-        })),
-    } satisfies DataTableFilterField;
-  };
-  const chips: DataTableChip[] = [];
-  const filterValue: DataTableFilters = {};
-  const negated: Record<string, boolean> = {};
-  let fixedChips = 0;
-  for (const chip of chipModels) {
-    const onRemove = () => setFilter(replaceConditions(conditions, chip.indices, []));
-    if (chip.kind === "fixed") {
-      chips.push({ ...fixedSummaries[fixedChips++], onRemove });
-      continue;
-    }
-    const field = fieldFor(chip.kind, chip.property, chip.kind === "options" ? chip.values : []);
-    if (chip.kind === "date") {
-      filterValue[chip.property] = chip.range;
-      chips.push({
-        title: field.title,
-        field,
-        value: chip.range,
-        onChange: (value) =>
-          setFilter(
-            replaceConditions(
-              conditions,
-              chip.indices,
-              dateFilter(chip.property, Array.isArray(value) ? {} : value),
-            ),
-          ),
-        onRemove,
-      });
-      continue;
-    }
-    // Property values are keyed by their JSON, so values of any type fit the picker.
-    filterValue[chip.property] = chip.values;
-    negated[chip.property] = chip.negated;
-    chips.push({
-      title: field.title,
-      summary: chip.values.length === 0 ? (chip.negated ? "No Value" : "Any Value") : undefined,
-      field,
-      value: chip.values,
-      negated: chip.negated,
-      onChange: (value, not) =>
-        setFilter(
-          replaceConditions(
-            conditions,
-            chip.indices,
-            optionsConditions(
-              chip.property,
-              Array.isArray(value) ? value : [],
-              not ?? chip.negated,
-              chip.values.length === 0,
-            ),
-          ),
-        ),
-      onRemove,
-    });
-  }
-  // Picking a value for a property that has a chip changes it; otherwise
-  // the condition joins the rest.
-  const pick = (id: string, value: DataTableFilterValue | undefined, not?: boolean) => {
-    const field = filterFields.find((f) => f.id === id);
-    if (!field) return;
-    const chip = chipModels.find(
-      (c) => c.kind !== "fixed" && c.kind === field.kind && c.property === id,
-    );
-    const next =
-      field.kind === "date"
-        ? dateFilter(id, Array.isArray(value) ? {} : (value ?? {}))
-        : optionsConditions(
-            id,
-            Array.isArray(value) ? value : [],
-            not ?? false,
-            chip?.kind === "options" && chip.values.length === 0,
-          );
-    setFilter(chip ? replaceConditions(conditions, chip.indices, next) : [...conditions, ...next]);
-  };
-  // The blueprint's own tabs come first, then the entities table every catalog page has.
+  // The blueprint's own tabs come first, then the entities table every
+  // catalog page has, then its scorecards' results, so the first tab is the
+  // one that opens.
   const views = spec.catalog?.tabs ?? [];
-  const view = views.some((v) => v.identifier === search.view)
-    ? search.view
-    : search.view === "entities" || views.length === 0
-      ? "entities"
-      : views[0].identifier;
+  const view =
+    views.some((v) => v.identifier === search.view) ||
+    graded.some((s) => scorecardView(s.identifier) === search.view)
+      ? (search.view as string)
+      : search.view === "entities" || views.length === 0
+        ? "entities"
+        : views[0].identifier;
 
   const header = (tabs?: ReactNode) => (
     <PageHeader
@@ -462,14 +332,8 @@ function BlueprintCatalogPage() {
       pending={page.isPending}
       error={page.error}
       onRetry={() => void page.refetch()}
-      filters={{
-        fields: filterFields,
-        value: filterValue,
-        negated,
-        onChange: pick,
-        chips,
-      }}
-      onClearFilters={() => setFilter([])}
+      filters={filters.filters}
+      onClearFilters={filters.onClearFilters}
       actions={
         // With no entities there are no columns to choose; a search or filter
         // that matches none keeps the menu, so the toolbar doesn't shift.
@@ -492,7 +356,7 @@ function BlueprintCatalogPage() {
     />
   );
 
-  if (views.length === 0) {
+  if (views.length === 0 && graded.length === 0) {
     return (
       <div className="flex flex-col gap-6">
         {header()}
@@ -505,7 +369,21 @@ function BlueprintCatalogPage() {
     <Tabs
       value={view}
       onValueChange={(next) =>
-        navigate({ search: (prev) => ({ ...prev, view: next }), replace: true })
+        navigate({
+          search: (prev) =>
+            // A scorecard's results and the entities share the table's
+            // search, sort and page, which don't carry from one to another.
+            isScorecardView(prev.view) || isScorecardView(next)
+              ? {
+                  ...prev,
+                  view: next,
+                  q: undefined,
+                  sort: undefined,
+                  page: undefined,
+                }
+              : { ...prev, view: next },
+          replace: true,
+        })
       }
     >
       {header(
@@ -523,6 +401,12 @@ function BlueprintCatalogPage() {
               <span className="text-xs text-muted-foreground tabular-nums">{page.data.total}</span>
             )}
           </PageTab>
+          {graded.map((s) => (
+            <PageTab key={s.identifier} value={scorecardView(s.identifier)}>
+              {s.icon ? <BlueprintIcon icon={s.icon} /> : <pageIcons.scorecards aria-hidden />}
+              {s.title}
+            </PageTab>
+          ))}
         </TabsList>,
       )}
       {views.map((v) => (
@@ -534,73 +418,22 @@ function BlueprintCatalogPage() {
           />
         </TabsContent>
       ))}
+      {graded.map((s) => (
+        <TabsContent key={s.identifier} value={scorecardView(s.identifier)} className="pt-2">
+          <ScorecardResults
+            identifier={s.identifier}
+            search={search}
+            where={search.filter && { and: search.filter }}
+            property={spec.properties.find((p) => p.scorecard === s.identifier)?.identifier}
+            catalogFilters={filters}
+          />
+        </TabsContent>
+      ))}
       <TabsContent value="entities" className="pt-2">
         {table}
       </TabsContent>
     </Tabs>
   );
-}
-
-// optionsConditions says picked values as conditions. With none picked, a
-// chip that only tested for a value stays that test, as toggling it between
-// any value and no value does, and any other has nothing left to say.
-function optionsConditions(
-  property: string,
-  keys: string[],
-  negated: boolean,
-  testsForValue: boolean,
-): Filter[] {
-  return keys.length === 0 && !testsForValue ? [] : [optionsFilter(property, keys, negated)];
-}
-
-// propertyOptions is the hook a property's filter loads its options with,
-// once the filter is picked.
-function propertyOptions(blueprint: string, property: Property) {
-  return function useOptions() {
-    return usePropertyOptions(blueprint, property);
-  };
-}
-
-// usePropertyOptions loads the values a property can be filtered to. Enums
-// and booleans offer their values, and scorecards no tier and their tiers;
-// relations and tag lists offer what entities actually have. Options are
-// keyed by their JSON, so values of any type fit the picker.
-function usePropertyOptions(blueprint: string, property: Property): DataTableOption[] | undefined {
-  const scorecard = useQuery({
-    ...scorecards.queries.detail(property.scorecard ?? ""),
-    enabled: Boolean(property.scorecard),
-  });
-  const tiers = scorecard.data?.published?.spec.tiers;
-  const fixed = property.scorecard
-    ? tiers && ["", ...tiers.map((tier) => tier.name)]
-    : (property.enum ?? (property.type === "boolean" ? [true, false] : undefined));
-  const facets = useQuery({
-    ...facetsQueryOptions(blueprint, property.identifier),
-    enabled: !property.scorecard && (!fixed || property.type === "boolean"),
-  });
-  if (!fixed && !facets.data) return undefined;
-  const counts = new Map(facets.data?.map((facet) => [JSON.stringify(facet.value), facet]));
-  const values = fixed ?? facets.data?.map((facet) => facet.value) ?? [];
-
-  const titles = new Map<string, string>(
-    property.scorecard
-      ? [["", "No Tier"], ...(tiers ?? []).map((tier) => [tier.name, tier.title] as const)]
-      : (facets.data ?? []).flatMap((facet) =>
-          typeof facet.value === "string" && facet.title
-            ? [[facet.value, facet.title] as const]
-            : [],
-        ),
-  );
-
-  return values.map((value) => {
-    const key = JSON.stringify(value);
-    const facet = counts.get(key);
-    return {
-      value: key,
-      label: valueLabel(value, { property, titles }),
-      count: facet?.count ?? (facets.data ? 0 : undefined),
-    };
-  });
 }
 
 // BuiltInCell shows a field every entity has: dates as how long ago, and

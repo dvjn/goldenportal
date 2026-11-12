@@ -132,7 +132,12 @@ describe("app shell", () => {
                   detail: "Team",
                   blueprint: "team",
                 },
-                { kind: "scorecard", identifier: "payout-ready", title: "Payout Readiness" },
+                {
+                  kind: "scorecard",
+                  identifier: "payout-ready",
+                  title: "Payout Readiness",
+                  blueprint: "team",
+                },
               ],
         )();
       },
@@ -165,5 +170,15 @@ describe("app shell", () => {
     await user.keyboard("{Enter}");
     await vi.waitFor(() => expect(router.state.location.pathname).toBe("/catalog/team/payments"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    // A scorecard opens its tab of the catalog page of the blueprint it grades.
+    await user.keyboard("{Control>}k{/Control}");
+    const third = within(await screen.findByRole("dialog"));
+    await user.type(third.getByRole("combobox"), "pay");
+    await user.click(await third.findByRole("option", { name: /Payout Readiness/ }));
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe("/catalog/team");
+      expect(router.state.location.search).toEqual({ view: "scorecard-payout-ready" });
+    });
   });
 });

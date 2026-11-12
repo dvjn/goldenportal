@@ -37,16 +37,20 @@ export const CompactBreadcrumbs = createContext(false);
 export const PageCrumbIcon = createContext<ReactNode>(null);
 
 // LinkIcon is the icon of the page a link opens, read from where it goes: a
-// section's, or a blueprint's catalog page's, tinted as the blueprint is.
-// Anything else gets the plain tile, so every crumb leads with one.
+// section's, or a blueprint's catalog or build page's, tinted as the
+// blueprint is. Anything else gets the plain tile, so every crumb leads
+// with one.
 export function LinkIcon({ link }: Readonly<{ link: ReactNode }>) {
   const props = isValidElement(link)
-    ? (link.props as { to?: unknown; params?: { blueprint?: unknown } })
+    ? (link.props as { to?: unknown; params?: { blueprint?: unknown; identifier?: unknown } })
     : {};
   const section = sectionPage(props.to);
   if (section) return <PageIcon page={section} />;
   if (props.to === "/catalog/$blueprint" && typeof props.params?.blueprint === "string") {
     return <BlueprintTile blueprint={props.params.blueprint} />;
+  }
+  if (props.to === "/blueprints/$identifier" && typeof props.params?.identifier === "string") {
+    return <BlueprintTile blueprint={props.params.identifier} />;
   }
   return <IconTile size="lg" />;
 }

@@ -65,7 +65,7 @@ export function BlueprintOverview({
         <Card className="gap-0 pb-0">
           <CardTitleBar title="Properties" />
           <CardContent className="px-0">
-            <PropertiesTable properties={spec.properties} />
+            <PropertiesTable blueprint={spec.identifier} properties={spec.properties} />
           </CardContent>
         </Card>
         <SourcesCard spec={spec} usage={usage} />
@@ -78,7 +78,10 @@ export function BlueprintOverview({
   );
 }
 
-function PropertiesTable({ properties }: Readonly<{ properties: Property[] }>) {
+function PropertiesTable({
+  blueprint,
+  properties,
+}: Readonly<{ blueprint: string; properties: Property[] }>) {
   return (
     <Table>
       <TableHeader>
@@ -128,7 +131,7 @@ function PropertiesTable({ properties }: Readonly<{ properties: Property[] }>) {
               </div>
             </TableCell>
             <TableCell className={tableCellClass}>
-              <PropertyType property={property} />
+              <PropertyType property={property} blueprint={blueprint} />
             </TableCell>
             <TableCell className={cn(tableCellClass, "whitespace-normal")}>
               <Rules property={property} />

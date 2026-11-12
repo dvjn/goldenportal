@@ -25,7 +25,6 @@ const mainItems = [
   { to: "/", label: "Home", icon: pageIcons.home, exact: true },
   { to: "/catalog", label: "Catalog", icon: pageIcons.catalog, exact: false },
   { to: "/self-service", label: "Self-Service", icon: pageIcons.selfService, exact: false },
-  { to: "/scorecards", label: "Scorecards", icon: pageIcons.scorecards, exact: false },
 ] as const;
 
 const activityItems = [
@@ -42,9 +41,9 @@ const buildItems = [
 ] as const;
 
 // AppSidebar is the app's navigation. Members get Home, with its dashboards under
-// it, the catalog, self-service and scorecards, and their activity: their runs and
-// what waits on their approval, counted; builders also get what they build, and
-// admins Settings.
+// it, the catalog, with each blueprint's scorecards, and self-service, and their
+// activity: their runs and what waits on their approval, counted; builders also
+// get what they build, and admins Settings.
 export function AppSidebar() {
   const { name, logoUrl } = useConfig();
   const { role } = useMe();

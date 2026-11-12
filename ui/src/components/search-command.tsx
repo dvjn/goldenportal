@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { scorecardView } from "@/features/scorecards";
 import { type SearchKind, type SearchResult, searchQueryOptions } from "@/features/search";
 import { modKey, useShortcut } from "@/hooks/use-shortcut";
 
@@ -70,9 +71,14 @@ const kinds: Record<SearchKind, { label: string; open: (r: SearchResult) => Navi
     }),
   },
   dashboard: { label: "Dashboard", open: (r) => ({ to: "/", search: { d: r.identifier } }) },
+  // A scorecard's results are a tab of its blueprint's catalog page.
   scorecard: {
     label: "Scorecard",
-    open: (r) => ({ to: "/scorecards/$identifier", params: { identifier: r.identifier } }),
+    open: (r) => ({
+      to: "/catalog/$blueprint",
+      params: { blueprint: r.blueprint ?? "" },
+      search: { view: scorecardView(r.identifier) },
+    }),
   },
   connection: {
     label: "Connection",

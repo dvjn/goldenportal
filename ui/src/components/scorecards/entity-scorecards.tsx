@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
-import { Check, ChevronDown, CircleCheck, CircleMinus, CircleX, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { CardTitleBar } from "@/components/card-sections";
 import { EmptyValue } from "@/components/catalog/property-value";
+import { checkStatuses } from "@/components/scorecards/check-status";
 import { CriterionDetails } from "@/components/scorecards/criterion-details";
 import { TierBadge, tierColors } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,24 +16,10 @@ import {
   type ScorecardSpec,
   type Status,
   scorecards,
+  scorecardView,
   type Tier,
 } from "@/features/scorecards";
 import { formatAbsolute, formatPercent } from "@/lib/format";
-
-const statuses: Record<Status, { icon: typeof CircleCheck; className: string; label: string }> = {
-  passed: {
-    icon: CircleCheck,
-    className: "text-emerald-600 dark:text-emerald-400",
-    label: "Passed",
-  },
-  failed: { icon: CircleX, className: "text-destructive", label: "Failed" },
-  skipped: { icon: CircleMinus, className: "text-muted-foreground", label: "Skipped" },
-  errored: {
-    icon: TriangleAlert,
-    className: "text-amber-600 dark:text-amber-400",
-    label: "Errored",
-  },
-};
 
 const blocking = (status?: Status) => status === "failed" || status === "errored";
 
@@ -82,8 +69,9 @@ function StandingCard({
         <div className="flex items-start justify-between gap-6">
           <div className="grid gap-1">
             <Link
-              to="/scorecards/$identifier"
-              params={{ identifier: result.scorecard }}
+              to="/catalog/$blueprint"
+              params={{ blueprint: result.blueprint }}
+              search={{ view: scorecardView(result.scorecard) }}
               className="w-fit text-xs font-medium hover:underline"
               title={`At this tier since ${formatAbsolute(result.changedAt)}, evaluated ${formatAbsolute(result.evaluatedAt)}`}
             >
@@ -122,7 +110,7 @@ function Marks({
     <ul className="flex flex-wrap justify-end gap-0.5" aria-label={label}>
       {criteria.map((criterion) => {
         const status = result.criteria[criterion.identifier]?.status ?? "skipped";
-        const { icon: Icon, className, label } = statuses[status];
+        const { icon: Icon, className, label } = checkStatuses[status];
         return (
           <li key={criterion.identifier} title={`${criterion.title}: ${label}`}>
             <Icon className={cn("size-4", className)} aria-label={`${criterion.title}: ${label}`} />
@@ -239,7 +227,7 @@ function CriterionRow({
   result,
 }: Readonly<{ criterion: Criterion; result: EntityScorecard }>) {
   const outcome = result.criteria[criterion.identifier] ?? { status: "skipped" as Status };
-  const { icon: Icon, className, label } = statuses[outcome.status];
+  const { icon: Icon, className, label } = checkStatuses[outcome.status];
 
   return (
     <li className="flex items-start gap-2.5 text-sm">

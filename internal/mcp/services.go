@@ -35,7 +35,7 @@ type Services interface {
 	DashboardData(ctx *gofr.Context, name string, inputs map[string][]string) (dashboard.PageData, error)
 
 	EntityScorecards(ctx *gofr.Context, blueprint, identifier string) ([]scorecard.EntityScorecard, error)
-	ScorecardSummary(ctx *gofr.Context, name string) (scorecard.SummaryView, error)
+	ScorecardSummary(ctx *gofr.Context, name string, req scorecard.SummaryRequest) (scorecard.SummaryView, error)
 	ScorecardResults(ctx *gofr.Context, name string, req scorecard.ResultsRequest) (scorecard.ResultPage, error)
 	EvaluateScorecard(ctx *gofr.Context, name string) (scorecard.Evaluated, error)
 
@@ -111,8 +111,8 @@ func (portal) EntityScorecards(ctx *gofr.Context, blueprint, identifier string) 
 	return scorecard.ForEntity(ctx, blueprint, identifier)
 }
 
-func (portal) ScorecardSummary(ctx *gofr.Context, name string) (scorecard.SummaryView, error) {
-	return scorecard.GetSummary(ctx, name)
+func (portal) ScorecardSummary(ctx *gofr.Context, name string, req scorecard.SummaryRequest) (scorecard.SummaryView, error) {
+	return scorecard.GetSummary(ctx, name, req)
 }
 
 func (portal) ScorecardResults(ctx *gofr.Context, name string, req scorecard.ResultsRequest) (scorecard.ResultPage, error) {

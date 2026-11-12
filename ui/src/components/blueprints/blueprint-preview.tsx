@@ -18,7 +18,7 @@ export function BlueprintPreview({ spec }: Readonly<{ spec: BlueprintSpec }>) {
               {property.identifier}
             </code>
           </div>
-          <PropertyType property={property} />
+          <PropertyType property={property} blueprint={spec.identifier} />
         </li>
       ))}
     </ul>

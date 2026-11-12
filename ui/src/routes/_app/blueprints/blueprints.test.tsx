@@ -264,7 +264,7 @@ describe("blueprints", () => {
     // The trail's last crumb carries the page's icon, so the bar doesn't repeat it.
     expect(compact.parentElement?.querySelectorAll(":scope > span")).toHaveLength(0);
     expect(within(bar).getByRole("link", { name: "Export" })).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
     await user.click(within(bar).getByRole("tab", { name: "Versions" }));
     await waitFor(() => expect(router.state.location.search).toEqual({ tab: "versions" }));
     expect(within(bar).getByRole("tab", { name: "Versions" })).toHaveAttribute(

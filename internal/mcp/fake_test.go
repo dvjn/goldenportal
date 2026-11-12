@@ -68,7 +68,7 @@ func (f fakeServices) EntityScorecards(*gofr.Context, string, string) ([]scoreca
 	return []scorecard.EntityScorecard{{Scorecard: "ready", EntityResult: scorecard.EntityResult{Result: scorecard.Result{Tier: "gold"}}}}, nil
 }
 
-func (f fakeServices) ScorecardSummary(_ *gofr.Context, name string) (scorecard.SummaryView, error) {
+func (f fakeServices) ScorecardSummary(_ *gofr.Context, name string, _ scorecard.SummaryRequest) (scorecard.SummaryView, error) {
 	if name != "ready" {
 		return scorecard.SummaryView{}, notFound()
 	}

@@ -7,7 +7,8 @@ import (
 	"github.com/dvjn/goldenportal/internal/search"
 )
 
-// Search finds published scorecards, which everyone can open.
+// Search finds published scorecards, which everyone can open, with the
+// blueprint whose catalog shows each.
 func Search(ctx *gofr.Context, _ auth.Principal, text string) ([]search.Result, error) {
 	specs, err := Published(ctx, ctx.SQL)
 	if err != nil {
@@ -16,7 +17,7 @@ func Search(ctx *gofr.Context, _ auth.Principal, text string) ([]search.Result, 
 	results := make([]search.Result, 0, len(specs))
 	for _, spec := range specs {
 		results = append(results, search.Result{
-			Kind: "scorecard", Identifier: spec.Identifier, Title: spec.Title, Icon: spec.Icon, Color: spec.Color,
+			Kind: "scorecard", Identifier: spec.Identifier, Title: spec.Title, Blueprint: spec.Blueprint, Icon: spec.Icon, Color: spec.Color,
 		})
 	}
 

@@ -3,6 +3,7 @@ package entity
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,20 +43,34 @@ func ParseFilter(raw string) (*Filter, error) { return filter.Parse(raw) }
 
 // CheckFilter reports whether a filter fits a blueprint, without running it.
 // specs are the blueprints its relations lead to, for properties that
-// follow them.
-func CheckFilter(specs map[string]blueprint.Spec, spec blueprint.Spec, f Filter) error {
-	c := &compiler{spec: spec, specs: specs}
+// follow them, and ladders the scorecards whose tiers and checks it names.
+func CheckFilter(specs map[string]blueprint.Spec, ladders map[string]blueprint.Ladder, spec blueprint.Spec, f Filter) error {
+	c := &compiler{spec: spec, specs: specs, ladders: ladders}
 	_, err := c.compile(f, 1)
 
 	return err
 }
 
+// Where compiles a filter for a query of spec's entities as e, joined to
+// their blueprint's document as b and their connection's as i, checking the
+// tiers and checks it names against ladders. The filter's values number
+// after args, and come back added to them.
+func Where(specs map[string]blueprint.Spec, ladders map[string]blueprint.Ladder, spec blueprint.Spec, f Filter, args []any) (string, []any, error) {
+	c := &compiler{spec: spec, specs: specs, ladders: ladders, args: args}
+	sql, err := c.compile(f, 1)
+
+	return sql, c.args, err
+}
+
 // compiler turns a filter into SQL, adding values as query arguments.
 // specs are the blueprints relations lead to, and hops how many it has
-// followed to reach spec.
+// followed to reach spec. With ladders, a tier or check the scorecard
+// doesn't have is an error; stored filters are checked when published, so
+// running them after a scorecard changes matches nothing instead.
 type compiler struct {
 	spec       blueprint.Spec
 	specs      map[string]blueprint.Spec
+	ladders    map[string]blueprint.Ladder
 	args       []any
 	conditions int
 	hops       int
@@ -122,6 +137,9 @@ func (c *compiler) condition(f Filter) (string, error) {
 	if f.ValuesFrom != "" {
 		return "", fmt.Errorf("values on %s names %s, which isn't set here", f.Property, f.ValuesFrom)
 	}
+	if err := c.checkScorecard(fld, f); err != nil {
+		return "", err
+	}
 
 	switch f.Op {
 	case OpExists:
@@ -182,6 +200,51 @@ func (c *compiler) condition(f Filter) (string, error) {
 	return "", fmt.Errorf("unknown op %q on %s; use eq, ne, in, contains, exists, gt, gte, lt, lte or within", f.Op, f.Property)
 }
 
+// checkScorecard reports a tier or check that the scorecard a field reads
+// doesn't have, or a status no check has. A scorecard not in ladders isn't
+// published, so it has no results to compare.
+func (c *compiler) checkScorecard(fld field, f Filter) error {
+	var values []any
+	switch f.Op {
+	case OpEq, OpNe:
+		values = []any{f.Value}
+	case OpIn:
+		values = f.Values
+	}
+	scorecard := fld.scorecard
+	if fld.check != "" {
+		scorecard = fld.checkOf
+	}
+	switch ladder, ok := c.ladders[scorecard]; {
+	case !ok:
+	case fld.kind == kindTier:
+		names := ladder.Names()
+		for _, value := range values {
+			if name, _ := value.(string); !slices.Contains(names, name) {
+				return fmt.Errorf("%s is a tier of %s: %s, or \"\" for none, not %v",
+					f.Property, fld.scorecard, strings.Join(names[1:], ", "), quoted(value))
+			}
+		}
+	case fld.check != "":
+		if checks := ladder.Checks(); !slices.Contains(checks, fld.check) {
+			return fmt.Errorf("%s has no check %q; its checks are %s", fld.checkOf, fld.check, strings.Join(checks, ", "))
+		}
+		for _, value := range values {
+			if status, _ := value.(string); !slices.Contains(CheckStatuses, status) {
+				return fmt.Errorf("%s is a check's status: %s, not %v", f.Property, strings.Join(CheckStatuses, ", "), quoted(value))
+			}
+		}
+	}
+
+	return nil
+}
+
+// quoted writes a value as JSON would, so text reads apart from numbers.
+func quoted(value any) string {
+	encoded, _ := json.Marshal(value)
+	return string(encoded)
+}
+
 // within matches dates in the last duration, from that long ago on.
 func (c *compiler) within(fld field, f Filter) (string, error) {
 	text, _ := f.Value.(string)
@@ -227,7 +290,7 @@ func (c *compiler) follow(f Filter, name, rest string) (string, error) {
 	}
 	// The subquery's aliases shadow the outer ones, so the condition
 	// compiles as it would on target's own entities.
-	inner := &compiler{spec: target, specs: c.specs, args: c.args, conditions: c.conditions, hops: c.hops + 1}
+	inner := &compiler{spec: target, specs: c.specs, ladders: c.ladders, args: c.args, conditions: c.conditions, hops: c.hops + 1}
 	f.Property = rest
 	sql, err := inner.condition(f)
 	c.args, c.conditions = inner.args, inner.conditions

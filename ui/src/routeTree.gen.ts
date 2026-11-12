@@ -49,6 +49,8 @@ import { Route as AppWorkflowsIdentifierRouteImport } from "./routes/_app/workfl
 import { Route as AppWorkflowsNewRouteImport } from "./routes/_app/workflows/new";
 import { Route as AppCatalogBlueprintIndexRouteImport } from "./routes/_app/catalog/$blueprint/index";
 import { Route as AppCatalogBlueprintSplatRouteImport } from "./routes/_app/catalog/$blueprint/$";
+import { Route as AppBlueprintsBlueprintScorecardsIdentifierRouteImport } from "./routes/_app/blueprints/$blueprint/scorecards/$identifier";
+import { Route as AppBlueprintsBlueprintScorecardsNewRouteImport } from "./routes/_app/blueprints/$blueprint/scorecards/new";
 
 const AppRoute = AppRouteImport.update({
   id: "/_app",
@@ -253,6 +255,18 @@ const AppCatalogBlueprintSplatRoute =
     path: "/catalog/$blueprint/$",
     getParentRoute: () => AppRoute,
   } as any);
+const AppBlueprintsBlueprintScorecardsIdentifierRoute =
+  AppBlueprintsBlueprintScorecardsIdentifierRouteImport.update({
+    id: "/$blueprint/scorecards/$identifier",
+    path: "/$blueprint/scorecards/$identifier",
+    getParentRoute: () => AppBlueprintsRoute,
+  } as any);
+const AppBlueprintsBlueprintScorecardsNewRoute =
+  AppBlueprintsBlueprintScorecardsNewRouteImport.update({
+    id: "/$blueprint/scorecards/new",
+    path: "/$blueprint/scorecards/new",
+    getParentRoute: () => AppBlueprintsRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof AppIndexRoute;
@@ -294,6 +308,8 @@ export interface FileRoutesByFullPath {
   "/workflows/": typeof AppWorkflowsIndexRoute;
   "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
+  "/blueprints/$blueprint/scorecards/$identifier": typeof AppBlueprintsBlueprintScorecardsIdentifierRoute;
+  "/blueprints/$blueprint/scorecards/new": typeof AppBlueprintsBlueprintScorecardsNewRoute;
 }
 export interface FileRoutesByTo {
   "/sign-in": typeof SignInRoute;
@@ -329,6 +345,8 @@ export interface FileRoutesByTo {
   "/workflows": typeof AppWorkflowsIndexRoute;
   "/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/catalog/$blueprint": typeof AppCatalogBlueprintIndexRoute;
+  "/blueprints/$blueprint/scorecards/$identifier": typeof AppBlueprintsBlueprintScorecardsIdentifierRoute;
+  "/blueprints/$blueprint/scorecards/new": typeof AppBlueprintsBlueprintScorecardsNewRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -372,6 +390,8 @@ export interface FileRoutesById {
   "/_app/workflows/": typeof AppWorkflowsIndexRoute;
   "/_app/catalog/$blueprint/$": typeof AppCatalogBlueprintSplatRoute;
   "/_app/catalog/$blueprint/": typeof AppCatalogBlueprintIndexRoute;
+  "/_app/blueprints/$blueprint/scorecards/$identifier": typeof AppBlueprintsBlueprintScorecardsIdentifierRoute;
+  "/_app/blueprints/$blueprint/scorecards/new": typeof AppBlueprintsBlueprintScorecardsNewRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -414,7 +434,9 @@ export interface FileRouteTypes {
     | "/settings/"
     | "/workflows/"
     | "/catalog/$blueprint/$"
-    | "/catalog/$blueprint/";
+    | "/catalog/$blueprint/"
+    | "/blueprints/$blueprint/scorecards/$identifier"
+    | "/blueprints/$blueprint/scorecards/new";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/sign-in"
@@ -449,7 +471,9 @@ export interface FileRouteTypes {
     | "/settings"
     | "/workflows"
     | "/catalog/$blueprint/$"
-    | "/catalog/$blueprint";
+    | "/catalog/$blueprint"
+    | "/blueprints/$blueprint/scorecards/$identifier"
+    | "/blueprints/$blueprint/scorecards/new";
   id:
     | "__root__"
     | "/_app"
@@ -491,7 +515,9 @@ export interface FileRouteTypes {
     | "/_app/settings/"
     | "/_app/workflows/"
     | "/_app/catalog/$blueprint/$"
-    | "/_app/catalog/$blueprint/";
+    | "/_app/catalog/$blueprint/"
+    | "/_app/blueprints/$blueprint/scorecards/$identifier"
+    | "/_app/blueprints/$blueprint/scorecards/new";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -782,6 +808,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppCatalogBlueprintSplatRouteImport;
       parentRoute: typeof AppRoute;
     };
+    "/_app/blueprints/$blueprint/scorecards/$identifier": {
+      id: "/_app/blueprints/$blueprint/scorecards/$identifier";
+      path: "/$blueprint/scorecards/$identifier";
+      fullPath: "/blueprints/$blueprint/scorecards/$identifier";
+      preLoaderRoute: typeof AppBlueprintsBlueprintScorecardsIdentifierRouteImport;
+      parentRoute: typeof AppBlueprintsRoute;
+    };
+    "/_app/blueprints/$blueprint/scorecards/new": {
+      id: "/_app/blueprints/$blueprint/scorecards/new";
+      path: "/$blueprint/scorecards/new";
+      fullPath: "/blueprints/$blueprint/scorecards/new";
+      preLoaderRoute: typeof AppBlueprintsBlueprintScorecardsNewRouteImport;
+      parentRoute: typeof AppBlueprintsRoute;
+    };
   }
 }
 
@@ -805,12 +845,18 @@ interface AppBlueprintsRouteChildren {
   AppBlueprintsIdentifierRoute: typeof AppBlueprintsIdentifierRoute;
   AppBlueprintsNewRoute: typeof AppBlueprintsNewRoute;
   AppBlueprintsIndexRoute: typeof AppBlueprintsIndexRoute;
+  AppBlueprintsBlueprintScorecardsIdentifierRoute: typeof AppBlueprintsBlueprintScorecardsIdentifierRoute;
+  AppBlueprintsBlueprintScorecardsNewRoute: typeof AppBlueprintsBlueprintScorecardsNewRoute;
 }
 
 const AppBlueprintsRouteChildren: AppBlueprintsRouteChildren = {
   AppBlueprintsIdentifierRoute: AppBlueprintsIdentifierRoute,
   AppBlueprintsNewRoute: AppBlueprintsNewRoute,
   AppBlueprintsIndexRoute: AppBlueprintsIndexRoute,
+  AppBlueprintsBlueprintScorecardsIdentifierRoute:
+    AppBlueprintsBlueprintScorecardsIdentifierRoute,
+  AppBlueprintsBlueprintScorecardsNewRoute:
+    AppBlueprintsBlueprintScorecardsNewRoute,
 };
 
 const AppBlueprintsRouteWithChildren = AppBlueprintsRoute._addFileChildren(

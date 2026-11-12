@@ -1,0 +1,187 @@
+import { cn } from "cn";
+import type { ReactNode } from "react";
+import { CardSection, CardTitleBar } from "@/components/card-sections";
+import { EmptyValue } from "@/components/catalog/property-value";
+import { Code } from "@/components/code";
+import { Detail, DetailList } from "@/components/detail-list";
+import { checkStatuses } from "@/components/scorecards/check-status";
+import { CriterionDetails } from "@/components/scorecards/criterion-details";
+import { TierBadge } from "@/components/scorecards/tier-badge";
+import { Card, CardContent } from "@/components/ui/card";
+import type { ScorecardSpec, Status, Summary } from "@/features/scorecards";
+import { formatAbsolute, formatPercent, formatRelative, percentOf } from "@/lib/format";
+
+// AboutCard says what a scorecard grades and when it last did. children
+// are details that go first, and action sits in the title bar.
+export function AboutCard({
+  spec,
+  summary,
+  action,
+  children,
+}: Readonly<{ spec: ScorecardSpec; summary?: Summary; action?: ReactNode; children?: ReactNode }>) {
+  return (
+    <Card>
+      <CardTitleBar title="About" action={action} />
+      <CardContent className="grid gap-3 text-sm">
+        {spec.description && <p className="text-muted-foreground">{spec.description}</p>}
+        <DetailList>
+          {children}
+          {summary && (
+            <Detail label="Entities">
+              <span className="font-medium tabular-nums">{summary.entities}</span>
+            </Detail>
+          )}
+          {summary?.evaluatedAt && (
+            <Detail label="Evaluated">
+              <span title={formatAbsolute(summary.evaluatedAt)}>
+                {formatRelative(summary.evaluatedAt)}
+              </span>
+            </Detail>
+          )}
+          {spec.filter && (
+            <Detail label="Only">
+              <Code>{describeFilter(spec.filter)}</Code>
+            </Detail>
+          )}
+        </DetailList>
+      </CardContent>
+    </Card>
+  );
+}
+
+// describeFilter writes a filter compactly, e.g. tier ne experimental.
+function describeFilter(filter: unknown): string {
+  const f = filter as Record<string, unknown>;
+  if (Array.isArray(f.and)) return f.and.map(describeFilter).join(" and ");
+  if (Array.isArray(f.or)) return `(${f.or.map(describeFilter).join(" or ")})`;
+  if (f.not) return `not ${describeFilter(f.not)}`;
+  const value = f.values ?? f.value;
+  return [f.property, f.op, value === undefined ? "" : JSON.stringify(value)].join(" ").trim();
+}
+
+// CriteriaResults are how each criterion fares, for CriteriaCard to show
+// beside it. onPick, when given, filters to the entities with a status on
+// a criterion.
+type CriteriaResults = {
+  summary?: Summary;
+  onPick?: (criterion: string, status: Status) => void;
+};
+
+// CriteriaCard lists a scorecard's criteria tier by tier, each with its
+// check and fix, and with results, its pass rate and how many entities
+// pass, fail and skip it.
+export function CriteriaCard({
+  spec,
+  results,
+}: Readonly<{ spec: ScorecardSpec; results?: CriteriaResults }>) {
+  const counts = new Map(results?.summary?.criteria.map((c) => [c.identifier, c]));
+
+  return (
+    <Card className="gap-0 pb-0">
+      <CardTitleBar title="Criteria" />
+      <CardContent className="grid px-0">
+        {spec.tiers.map((tier) => (
+          <CardSection key={tier.name} heading={<TierBadge tiers={spec.tiers} name={tier.name} />}>
+            <ul className="grid">
+              {tier.criteria.map((criterion) => {
+                const c = counts.get(criterion.identifier);
+                const applicable = c ? c.passed + c.failed + c.errored : 0;
+                const rate = applicable > 0 && c ? percentOf(c.passed, applicable) : null;
+                return (
+                  <li
+                    key={criterion.identifier}
+                    className={
+                      results
+                        ? "grid items-center gap-x-4 gap-y-1 py-1.5 text-sm md:grid-cols-[minmax(0,1fr)_8rem_3rem_auto]"
+                        : "grid py-1.5 text-sm"
+                    }
+                  >
+                    <div className="grid min-w-0">
+                      <CriterionDetails criterion={criterion} className="-mb-1 pb-1 font-medium" />
+                      {criterion.fix && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {criterion.fix}
+                        </span>
+                      )}
+                    </div>
+                    {results && (
+                      <>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+                          <div
+                            className="h-full rounded-full bg-emerald-500"
+                            style={{ width: `${rate ?? 0}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums md:text-right">
+                          {c && rate !== null ? (
+                            formatPercent(c.passed, applicable)
+                          ) : (
+                            <EmptyValue title="No entity has been checked" />
+                          )}
+                        </span>
+                        <StatusCounts
+                          title={criterion.title}
+                          counts={c}
+                          onPick={
+                            results.onPick &&
+                            ((status) => results.onPick?.(criterion.identifier, status))
+                          }
+                        />
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </CardSection>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+// countedStatuses are those every criterion counts; errored shows only
+// when some entity errored.
+const countedStatuses: Status[] = ["passed", "failed", "skipped"];
+
+// StatusCounts says how many entities have each status on a criterion. With
+// onPick, every count picks its status, none too, so a filter on one status
+// can move to another.
+function StatusCounts({
+  title,
+  counts,
+  onPick,
+}: Readonly<{
+  title: string;
+  counts?: Record<Status, number>;
+  onPick?: (status: Status) => void;
+}>) {
+  const shown = counts?.errored ? [...countedStatuses, "errored" as const] : countedStatuses;
+  return (
+    <span className="flex gap-3 text-xs text-muted-foreground tabular-nums">
+      {shown.map((status) => {
+        const n = counts?.[status] ?? 0;
+        const text = `${n} ${checkStatuses[status].label.toLowerCase()}`;
+        const className = cn("w-20 text-left", n > 0 && checkStatuses[status].className);
+        if (!onPick) {
+          return (
+            <span key={status} className={className}>
+              {text}
+            </span>
+          );
+        }
+        return (
+          <button
+            key={status}
+            type="button"
+            className={cn(className, "hover:underline")}
+            aria-label={`${title}: ${text}`}
+            onClick={() => onPick(status)}
+          >
+            {text}
+          </button>
+        );
+      })}
+    </span>
+  );
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/oauth"
+	"github.com/dvjn/goldenportal/internal/scorecard"
 )
 
 // prompt is a task a user starts, such as a slash command, offered like
@@ -163,7 +164,9 @@ var prompts = []prompt{
 			if document.Status >= 400 {
 				return nil, invalidParams("scorecard " + name + ": " + apiMessage(document))
 			}
-			summary := b.run(ctx, func(g *gofr.Context) (any, error) { return b.services.ScorecardSummary(g, name) })
+			summary := b.run(ctx, func(g *gofr.Context) (any, error) {
+				return b.services.ScorecardSummary(g, name, scorecard.SummaryRequest{})
+			})
 			messages := []*mcp.PromptMessage{
 				text(fmt.Sprintf("Explain where entities fall short on the %s scorecard: which criteria fail most, "+
 					"and the changes that would lift the most entities a tier. Use list_scorecard_results for examples.", a["scorecard"])),
