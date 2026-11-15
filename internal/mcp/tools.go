@@ -179,12 +179,12 @@ type (
 	}
 	summaryArgs struct {
 		Identifier string `json:"identifier"`
-		Filter     string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the scorecard's blueprint, to count only the entities it matches. The blueprint's property of type scorecard naming this scorecard reaches the result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed, skipped or errored)"`
+		Filter     string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the scorecard's blueprint, to count only the entities it matches. The blueprint's property of type scorecard naming this scorecard reaches the result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed or skipped)"`
 	}
 	resultsArgs struct {
 		Identifier string `json:"identifier"`
 		Search     string `json:"search,omitempty"`
-		Filter     string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the scorecard's blueprint. The blueprint's property of type scorecard naming this scorecard reaches the result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed, skipped or errored)"`
+		Filter     string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the scorecard's blueprint. The blueprint's property of type scorecard naming this scorecard reaches the result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed or skipped)"`
 		Sort       string `json:"sort,omitempty" jsonschema:"tier, score, passed, failed or skipped, with a leading - for descending; omit for worst tier first. Tiers sort up the scorecard's tiers, not by name"`
 		Page       int    `json:"page,omitempty"`
 		Size       int    `json:"size,omitempty"`

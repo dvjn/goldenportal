@@ -31,5 +31,6 @@ func All() map[int64]migration.Migrate {
 		20261110120000: renameToConnections(),
 		20261110140000: sourcesOnBlueprints(),
 		20261116120000: evaluatedVersions(),
+		20261116140000: dropErroredResults(),
 	}
 }

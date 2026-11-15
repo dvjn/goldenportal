@@ -42,7 +42,8 @@ var Kind = configdoc.Kind[Spec]{
 
 // Checker checks a blueprint against what this package can't import: the
 // widgets on its pages against the blueprints and scorecards they show,
-// and its retention against the connections that write it.
+// its retention against the connections that write it, and the scorecards
+// whose filters read it.
 type Checker func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error)
 
 // Register serves blueprints, checked by checkers too. committed, if set,

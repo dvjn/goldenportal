@@ -19,7 +19,6 @@ type Result struct {
 	Passed  int    `json:"passed"`
 	Failed  int    `json:"failed"`
 	Skipped int    `json:"skipped"`
-	Errored int    `json:"errored"`
 	// Failing are the identifiers of the checks it fails.
 	Failing []string `json:"failing"`
 	// Checks are each check's status, by identifier.
@@ -49,7 +48,7 @@ func (s Store) resolveScorecards(ctx context.Context, spec blueprint.Spec, entit
 		ids[i], byID[e.ID] = e.ID, e
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT r.entity_id, s.identifier, r.tier, r.score,
- r.passed, r.failed, r.skipped, r.errored, r.criteria
+ r.passed, r.failed, r.skipped, r.criteria
  FROM scorecard_results r JOIN config_documents s ON s.id = r.scorecard_id
  WHERE r.entity_id = ANY($1::uuid[]) AND s.kind = 'scorecard' AND s.published_version IS NOT NULL
  AND s.identifier = ANY($2)`, pq.Array(ids), pq.Array(names))
@@ -64,7 +63,7 @@ func (s Store) resolveScorecards(ctx context.Context, spec blueprint.Spec, entit
 			criteria []byte
 		)
 		if err := rows.Scan(&id, &name, &result.Tier, &result.Score, &result.Passed, &result.Failed,
-			&result.Skipped, &result.Errored, &criteria); err != nil {
+			&result.Skipped, &criteria); err != nil {
 			return err
 		}
 		var statuses map[string]struct {

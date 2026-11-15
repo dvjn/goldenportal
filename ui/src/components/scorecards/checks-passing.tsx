@@ -2,7 +2,7 @@ import { EmptyValue } from "@/components/catalog/property-value";
 import { formatPercent } from "@/lib/format";
 
 // ChecksPassing leads a scorecard's results with the share of checks that
-// pass. Errored checks count as failing.
+// pass.
 export function ChecksPassing({ passed, failed }: Readonly<{ passed: number; failed: number }>) {
   return (
     <div className="flex items-baseline gap-2">
@@ -19,12 +19,12 @@ export function ChecksPassing({ passed, failed }: Readonly<{ passed: number; fai
 }
 
 // checkTotals sums a scorecard summary's criteria into passed and failed.
-export function checkTotals(criteria: { passed: number; failed: number; errored: number }[]): {
+export function checkTotals(criteria: { passed: number; failed: number }[]): {
   passed: number;
   failed: number;
 } {
   return criteria.reduce(
-    (sum, c) => ({ passed: sum.passed + c.passed, failed: sum.failed + c.failed + c.errored }),
+    (sum, c) => ({ passed: sum.passed + c.passed, failed: sum.failed + c.failed }),
     { passed: 0, failed: 0 },
   );
 }

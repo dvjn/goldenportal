@@ -1,7 +1,6 @@
 package scorecard
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"regexp"
@@ -33,19 +32,19 @@ spec:
       criteria:
         hasOwner:
           title: Has an owner
-          check: .owner != null
+          check: {property: owner, op: exists}
           fix: Set the owner.
     - name: silver
       criteria:
         hasRepository:
-          check: .repository != null
+          check: {property: repository, op: exists}
         pagesOnCall:
-          when: .tier == "critical"
-          check: .oncall != null
+          when: {property: tier, op: eq, value: critical}
+          check: {property: oncall, op: exists}
     - name: gold
       criteria:
         manyStars:
-          check: (.stars | tonumber) > 100
+          check: {property: stars, op: gt, value: 100}
 `
 
 func mustParse(t *testing.T, source string) Spec {
@@ -70,16 +69,25 @@ func TestParse(t *testing.T) {
 		t.Errorf("facts = %v", got)
 	}
 
+	if c := spec.Tiers[1].Criteria[1]; c.When == nil || c.When.Property != "tier" || c.Check.Op != "exists" {
+		t.Errorf("pagesOnCall = %+v", c)
+	}
+
 	head := "kind: Scorecard\nmetadata: {identifier: s, title: S}\nspec:\n  blueprint: service\n"
+	check := "{check: {property: owner, op: exists}}"
 	tests := []struct{ name, source, want string }{
 		{"no tiers", head, "add the tiers"},
 		{"empty tier", head + "  tiers:\n    - name: a\n", "add the criteria"},
-		{"no check", head + "  tiers:\n    - name: a\n      criteria:\n        c: {title: C}\n", "add a jq check"},
-		{"bad jq", head + "  tiers:\n    - name: a\n      criteria:\n        c: {check: '.a |'}\n", "not valid jq"},
-		{"repeated criterion", head + "  tiers:\n    - name: a\n      criteria:\n        c: {check: 'true'}\n    - name: b\n      criteria:\n        c: {check: 'true'}\n", "named across tiers"},
-		{"repeated tier", head + "  tiers:\n    - name: a\n      criteria:\n        c: {check: 'true'}\n    - name: a\n      criteria:\n        d: {check: 'true'}\n", "already named \"a\""},
-		{"bad color", head + "  tiers:\n    - name: a\n      color: gold\n      criteria:\n        c: {check: 'true'}\n", "color must be one of"},
-		{"bad filter", head + "  filter: [1]\n  tiers:\n    - name: a\n      criteria:\n        c: {check: 'true'}\n", "filter is not valid JSON"},
+		{"no check", head + "  tiers:\n    - name: a\n      criteria:\n        c: {title: C}\n", "add a check, a filter such as {property: hasReadme, op: eq, value: true}"},
+		{"check a list", head + "  tiers:\n    - name: a\n      criteria:\n        c: {check: [1]}\n", "a check is a filter, a mapping such as {property: hasReadme, op: eq, value: true}"},
+		{"check true", head + "  tiers:\n    - name: a\n      criteria:\n        c: {check: true}\n", "a check is a filter, a mapping such as"},
+		{"empty check", head + "  tiers:\n    - name: a\n      criteria:\n        c: {check: {}}\n", "a check is a filter and needs a condition, such as"},
+		{"empty when", head + "  tiers:\n    - name: a\n      criteria:\n        c: {when: {}, check: {property: a, op: exists}}\n", "when is a filter and needs a condition"},
+		{"bad filter", head + "  tiers:\n    - name: a\n      criteria:\n        c: {check: {values: 1}}\n", "values must be a list"},
+		{"repeated criterion", head + "  tiers:\n    - name: a\n      criteria:\n        c: " + check + "\n    - name: b\n      criteria:\n        c: " + check + "\n", "named across tiers"},
+		{"repeated tier", head + "  tiers:\n    - name: a\n      criteria:\n        c: " + check + "\n    - name: a\n      criteria:\n        d: " + check + "\n", "already named \"a\""},
+		{"bad color", head + "  tiers:\n    - name: a\n      color: gold\n      criteria:\n        c: " + check + "\n", "color must be one of"},
+		{"bad scope", head + "  filter: [1]\n  tiers:\n    - name: a\n      criteria:\n        c: " + check + "\n", "filter is not valid JSON"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -95,75 +103,30 @@ func TestParse(t *testing.T) {
 	}
 }
 
-func TestEvaluate(t *testing.T) {
-	spec := mustParse(t, readinessYAML)
-	checks, err := compileSpec(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	evaluate := func(properties map[string]any) Result {
-		return checks.evaluate(context.Background(), spec, properties)
-	}
-
-	tests := []struct {
-		name       string
-		properties map[string]any
-		tier       string
-		score      int
-		status     map[string]string
-	}{
+// TestParseRejectsJQ checks a check or when written as jq, as scorecards
+// once were, points to filters and to a computed property on the blueprint.
+func TestParseRejectsJQ(t *testing.T) {
+	tests := []struct{ name, from, to, path, want string }{
 		{
-			"nothing",
-			map[string]any{},
-			"", 0,
-			map[string]string{"hasOwner": StatusFailed, "pagesOnCall": StatusSkipped},
-		},
-		{"bronze only", map[string]any{"owner": "payments"}, "bronze", 33, nil},
-		{
-			"silver, on-call skipped",
-			map[string]any{"owner": "a", "repository": "r", "stars": 5.0},
-			"silver", 66,
-			map[string]string{"manyStars": StatusFailed},
+			"check", "check: {property: owner, op: exists}", "check: .owner != null",
+			"spec.tiers[0].criteria.hasOwner.check",
+			"a check is a filter, as the catalog writes them, such as {property: hasReadme, op: eq, value: true}; " +
+				"jq over one entity belongs in a computed property on service, which the check reads",
 		},
 		{
-			"silver needs on-call when critical",
-			map[string]any{"owner": "a", "repository": "r", "tier": "critical", "stars": 500.0},
-			"bronze", 75,
-			map[string]string{"pagesOnCall": StatusFailed},
-		},
-		{"gold", map[string]any{"owner": "a", "repository": "r", "stars": 500.0}, "gold", 100, nil},
-		{"a failed lower tier caps the tier", map[string]any{"repository": "r", "stars": 500.0}, "", 66, nil},
-		{
-			"an error blocks its tier",
-			map[string]any{"owner": "a", "repository": "r", "stars": "many"},
-			"silver", 66,
-			map[string]string{"manyStars": StatusErrored},
+			"when", "when: {property: tier, op: eq, value: critical}", `when: .tier == "critical"`,
+			"spec.tiers[1].criteria.pagesOnCall.when",
+			"when is a filter, as the catalog writes them, such as {property: hasReadme, op: eq, value: true}; " +
+				"jq over one entity belongs in a computed property on service, which when reads",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			r := evaluate(test.properties)
-			if r.Tier != test.tier {
-				t.Errorf("tier = %q, want %q (%+v)", r.Tier, test.tier, r.Criteria)
-			}
-			if r.Score == nil || *r.Score != test.score {
-				t.Errorf("score = %v, want %d", r.Score, test.score)
-			}
-			for id, status := range test.status {
-				if got := r.Criteria[id].Status; got != status {
-					t.Errorf("%s = %s, want %s", id, got, status)
-				}
+			_, issues := Parse(strings.Replace(readinessYAML, test.from, test.to, 1))
+			if len(issues) != 1 || issues[0].Path != test.path || issues[0].Message != test.want || issues[0].Line == 0 {
+				t.Fatalf("issues = %+v, want one at %s saying %q", issues, test.path, test.want)
 			}
 		})
-	}
-}
-
-func TestChecksMustBeBoolean(t *testing.T) {
-	spec := mustParse(t, strings.Replace(readinessYAML, "check: .owner != null", "check: .owner", 1))
-	checks, _ := compileSpec(spec)
-	r := checks.evaluate(context.Background(), spec, map[string]any{"properties": map[string]any{"owner": "a"}})
-	if got := r.Criteria["hasOwner"]; got.Status != StatusErrored || !strings.Contains(got.Message, "true or false") {
-		t.Fatalf("hasOwner = %+v", got)
 	}
 }
 
@@ -172,7 +135,7 @@ func TestDiff(t *testing.T) {
 	if changes := Diff(before, before); len(changes) != 0 {
 		t.Fatalf("no change: %+v", changes)
 	}
-	after := mustParse(t, strings.Replace(readinessYAML, "> 100", "> 10", 1))
+	after := mustParse(t, strings.Replace(readinessYAML, "value: 100", "value: 10", 1))
 	changes := Diff(before, after)
 	if len(changes) != 1 || changes[0].ID != "manyStars" || changes[0].Breaking {
 		t.Fatalf("changes = %+v", changes)
@@ -198,8 +161,8 @@ func TestResultsNarrowByFilter(t *testing.T) {
 	// The filter's values follow the query's own, before the paging.
 	mock.ExpectQuery(regexp.QuoteMeta(`'hasOwner'`)).
 		WithArgs("sc", "", pq.Array([]string{"", "bronze", "silver"}), "failed", "skipped", 10, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "x", "c", "total"}).
-			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, 0, []byte(`{}`), 1))
+		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "c", "total"}).
+			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, []byte(`{}`), 1))
 
 	scope := Scope{Blueprints: map[string]blueprint.Spec{"service": graded}, Blueprint: graded, Filter: f}
 	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Page: 1, PageSize: 10})
@@ -260,6 +223,30 @@ func TestResultOrder(t *testing.T) {
 	for _, test := range tests {
 		if got := resultOrder(test.sort, "tier"); got != test.want {
 			t.Errorf("resultOrder(%q) = %q, want %q", test.sort, got, test.want)
+		}
+	}
+}
+
+// TestNoErroredStatus checks filters can't ask for an errored check or count,
+// since a check that can't run fails its publish instead.
+func TestNoErroredStatus(t *testing.T) {
+	graded, issues := blueprint.Parse("kind: Blueprint\nmetadata: {identifier: service, title: Service}\n" +
+		"spec:\n  properties:\n    readiness: {type: scorecard, scorecard: readiness}\n")
+	if blueprint.HasErrors(issues) {
+		t.Fatal(issues)
+	}
+	specs := map[string]blueprint.Spec{"service": graded}
+	ladders := Ladders(map[string]Spec{"readiness": mustParse(t, readinessYAML)})
+	for raw, want := range map[string]string{
+		`{"property": "readiness.checks.hasOwner", "op": "eq", "value": "errored"}`: "passed, failed, skipped, not \"errored\"",
+		`{"property": "readiness.errored", "op": "gt", "value": 0}`:                 "readiness.errored isn't on a scorecard result",
+	} {
+		f, err := entity.ParseFilter(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := entity.CheckFilter(specs, ladders, graded, *f); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", raw, err, want)
 		}
 	}
 }

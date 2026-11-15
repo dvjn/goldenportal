@@ -221,7 +221,6 @@ const scoreFields: Record<string, string> = {
   passed: "Passed",
   failed: "Failed",
   skipped: "Skipped",
-  errored: "Errored",
   failing: "Failing",
   checks: "Checks",
 };

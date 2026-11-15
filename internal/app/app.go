@@ -91,7 +91,7 @@ func New() *gofr.App {
 	oauthServer.Register(api)
 	access.Register(api)
 	connection.Register(api, app.Config.Get("GP_BASE_URL"), app.Config.Get(connection.WebhookKeyEnv))
-	blueprint.Register(api, []blueprint.Checker{dashboard.CheckPages, connection.CheckSources}, scorecard.EvaluateScoring)
+	blueprint.Register(api, []blueprint.Checker{dashboard.CheckPages, connection.CheckSources, scorecard.CheckGraders}, scorecard.EvaluateScoring)
 	entity.Register(api, mustSchedule(app, entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule))
 	connection.RegisterIngest(app)
 	scorecard.Register(api, mustSchedule(app, scorecard.EvaluationScheduleEnv, scorecard.DefaultEvaluationSchedule))

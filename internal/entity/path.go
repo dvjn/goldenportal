@@ -46,11 +46,11 @@ const (
 )
 
 // CheckStatuses are what a check's status can be.
-var CheckStatuses = []string{"passed", "failed", "skipped", "errored"}
+var CheckStatuses = []string{"passed", "failed", "skipped"}
 
 // ScorecardFields are what a dot after a scorecard property reads of the
 // entity's result, beside checks.<id>, a check's status.
-var ScorecardFields = []string{"score", "passed", "failed", "skipped", "errored", "failing"}
+var ScorecardFields = []string{"score", "passed", "failed", "skipped", "failing"}
 
 // reader finds what paths read, from an entity of one blueprint through
 // the relations specs lead to.

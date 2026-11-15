@@ -3,11 +3,10 @@ import { Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { CardSection, CardTitleBar } from "@/components/card-sections";
 import { EmptyValue } from "@/components/catalog/property-value";
-import { Code } from "@/components/code";
 import { Detail, DetailList } from "@/components/detail-list";
 import { RunStatusMark, type StatusLook } from "@/components/run-status-mark";
 import { checkStatuses } from "@/components/scorecards/check-status";
-import { CriterionDetails } from "@/components/scorecards/criterion-details";
+import { CriterionDetails, FilterSummary } from "@/components/scorecards/criterion-details";
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ScorecardSpec, Status, Summary } from "@/features/scorecards";
@@ -55,23 +54,13 @@ export function AboutCard({
           )}
           {spec.filter && (
             <Detail label="Only">
-              <Code>{describeFilter(spec.filter)}</Code>
+              <FilterSummary blueprint={spec.blueprint} filter={spec.filter} />
             </Detail>
           )}
         </DetailList>
       </CardContent>
     </Card>
   );
-}
-
-// describeFilter writes a filter compactly, e.g. tier ne experimental.
-function describeFilter(filter: unknown): string {
-  const f = filter as Record<string, unknown>;
-  if (Array.isArray(f.and)) return f.and.map(describeFilter).join(" and ");
-  if (Array.isArray(f.or)) return `(${f.or.map(describeFilter).join(" or ")})`;
-  if (f.not) return `not ${describeFilter(f.not)}`;
-  const value = f.values ?? f.value;
-  return [f.property, f.op, value === undefined ? "" : JSON.stringify(value)].join(" ").trim();
 }
 
 // CriteriaResults are how each criterion fares, for CriteriaCard to show
@@ -100,7 +89,7 @@ export function CriteriaCard({
             <ul className="grid">
               {tier.criteria.map((criterion) => {
                 const c = counts.get(criterion.identifier);
-                const applicable = c ? c.passed + c.failed + c.errored : 0;
+                const applicable = c ? c.passed + c.failed : 0;
                 const rate = applicable > 0 && c ? percentOf(c.passed, applicable) : null;
                 return (
                   <li
@@ -112,7 +101,11 @@ export function CriteriaCard({
                     }
                   >
                     <div className="grid min-w-0">
-                      <CriterionDetails criterion={criterion} className="-mb-1 pb-1 font-medium" />
+                      <CriterionDetails
+                        criterion={criterion}
+                        blueprint={spec.blueprint}
+                        className="-mb-1 pb-1 font-medium"
+                      />
                       {criterion.fix && (
                         <span className="truncate text-xs text-muted-foreground">
                           {criterion.fix}
@@ -155,8 +148,6 @@ export function CriteriaCard({
   );
 }
 
-// countedStatuses are those every criterion counts; errored shows only
-// when some entity errored.
 const countedStatuses: Status[] = ["passed", "failed", "skipped"];
 
 // StatusCounts says how many entities have each status on a criterion. With
@@ -171,10 +162,9 @@ function StatusCounts({
   counts?: Record<Status, number>;
   onPick?: (status: Status) => void;
 }>) {
-  const shown = counts?.errored ? [...countedStatuses, "errored" as const] : countedStatuses;
   return (
     <span className="flex gap-3 text-xs text-muted-foreground tabular-nums">
-      {shown.map((status) => {
+      {countedStatuses.map((status) => {
         const n = counts?.[status] ?? 0;
         const text = `${n} ${checkStatuses[status].label.toLowerCase()}`;
         const className = cn("w-20 text-left", n > 0 && checkStatuses[status].className);

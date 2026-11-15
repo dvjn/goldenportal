@@ -34,9 +34,6 @@ type TxDB interface {
 	Begin() (*gofrSQL.Tx, error)
 }
 
-// evaluationPage is how many entities are scored per query.
-const evaluationPage = 100
-
 // Evaluate scores every entity in a published scorecard's scope and stores
 // the results that changed, dropping those of entities no longer in scope.
 // It gives up with ErrEvaluating when the scorecard is already being
@@ -175,98 +172,13 @@ func evaluateIn(ctx context.Context, db configdoc.DB, spec Spec, version int) (s
 		_, err := db.ExecContext(ctx, `DELETE FROM scorecard_results WHERE scorecard_id = $1`, scorecardID)
 		return 0, 0, err
 	}
-	checks, err := compileSpec(spec)
+	statement, args, err := evaluation(specs, bp, spec, scorecardID)
 	if err != nil {
 		return 0, 0, err
 	}
+	err = db.QueryRowContext(ctx, statement, args...).Scan(&scored, &written)
 
-	entities := entity.NewStore(db)
-	ids := []string{}
-	for page := 1; ; page++ {
-		result, err := entities.List(ctx, entity.Query{Blueprint: bp, Blueprints: specs, Filter: spec.Filter, Page: page, PageSize: evaluationPage})
-		if err != nil {
-			return 0, 0, err
-		}
-		if err := entities.Resolve(ctx, specs, bp, result.Items); err != nil {
-			return 0, 0, err
-		}
-		pageIDs := make([]string, len(result.Items))
-		outcomes := make([]Result, len(result.Items))
-		for i, e := range result.Items {
-			pageIDs[i], outcomes[i] = e.ID, checks.evaluate(ctx, spec, Input(e))
-		}
-		n, err := saveResults(ctx, db, scorecardID, pageIDs, outcomes)
-		if err != nil {
-			return 0, 0, err
-		}
-		written += n
-		ids = append(ids, pageIDs...)
-		if len(result.Items) < evaluationPage {
-			break
-		}
-	}
-
-	if _, err := db.ExecContext(ctx, `
-		DELETE FROM scorecard_results WHERE scorecard_id = $1 AND NOT (entity_id = ANY($2::uuid[]))`,
-		scorecardID, pq.Array(ids)); err != nil {
-		return 0, 0, err
-	}
-
-	return len(ids), written, nil
-}
-
-// Input is the document checks run against: the entity flat, with its
-// relations, computed values, resolved lookups and scorecard results
-// beside its built-in fields.
-func Input(e *entity.Entity) map[string]any { return entity.Document(e) }
-
-// saveResults writes the results of entities that are new or changed, and
-// says how many. Results are compared in Postgres, as jsonb, and those that
-// didn't change aren't touched at all, since even an update that changes
-// nothing locks and logs its row. A result's tier keeps the time it was
-// reached until it changes.
-func saveResults(ctx context.Context, db configdoc.DB, scorecardID string, entityIDs []string, results []Result) (int, error) {
-	if len(results) == 0 {
-		return 0, nil
-	}
-	var (
-		tiers, scores, criteria          []string
-		passed, failed, skipped, errored []int64
-	)
-	for _, r := range results {
-		encoded, err := json.Marshal(r.Criteria)
-		if err != nil {
-			return 0, err
-		}
-		score := ""
-		if r.Score != nil {
-			score = strconv.Itoa(*r.Score)
-		}
-		tiers, scores, criteria = append(tiers, r.Tier), append(scores, score), append(criteria, string(encoded))
-		passed, failed = append(passed, int64(r.Passed)), append(failed, int64(r.Failed))
-		skipped, errored = append(skipped, int64(r.Skipped)), append(errored, int64(r.Errored))
-	}
-	result, err := db.ExecContext(ctx, `
-		INSERT INTO scorecard_results AS r (scorecard_id, entity_id, tier, score, passed, failed, skipped, errored, criteria)
-		SELECT $1, i.entity_id, i.tier, nullif(i.score, '')::integer, i.passed, i.failed, i.skipped, i.errored, i.criteria::jsonb
-		FROM unnest($2::uuid[], $3::text[], $4::text[], $5::integer[], $6::integer[], $7::integer[], $8::integer[], $9::text[])
-			AS i (entity_id, tier, score, passed, failed, skipped, errored, criteria)
-		LEFT JOIN scorecard_results s ON s.scorecard_id = $1 AND s.entity_id = i.entity_id
-		WHERE s.entity_id IS NULL OR (s.tier, s.score, s.passed, s.failed, s.skipped, s.errored, s.criteria)
-			IS DISTINCT FROM (i.tier, nullif(i.score, '')::integer, i.passed, i.failed, i.skipped, i.errored, i.criteria::jsonb)
-		ORDER BY i.entity_id
-		ON CONFLICT (scorecard_id, entity_id) DO UPDATE
-			SET tier = excluded.tier, score = excluded.score, passed = excluded.passed, failed = excluded.failed,
-				skipped = excluded.skipped, errored = excluded.errored, criteria = excluded.criteria,
-				changed_at = CASE WHEN r.tier = excluded.tier THEN r.changed_at ELSE now() END`,
-		scorecardID, pq.Array(entityIDs), pq.Array(tiers), pq.Array(scores), pq.Array(passed), pq.Array(failed),
-		pq.Array(skipped), pq.Array(errored), pq.Array(criteria))
-	if err != nil {
-		return 0, err
-	}
-	n, err := result.RowsAffected()
-
-	return int(n), err
+	return scored, written, err
 }
 
 // Summary is how a scorecard's entities are doing overall.
@@ -293,7 +205,6 @@ type CriterionAt struct {
 	Passed  int    `json:"passed"`
 	Failed  int    `json:"failed"`
 	Skipped int    `json:"skipped"`
-	Errored int    `json:"errored"`
 }
 
 // resultFrom joins results to their entities as e, with the documents a
@@ -394,8 +305,6 @@ func summarize(ctx context.Context, db configdoc.DB, scorecardID string, spec Sp
 			at.Failed = count
 		case StatusSkipped:
 			at.Skipped = count
-		case StatusErrored:
-			at.Errored = count
 		}
 	}
 	if err := criteria.Err(); err != nil {
@@ -461,7 +370,7 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 
 	rows, err := db.QueryContext(ctx, `
 		SELECT b.identifier, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
-			r.passed, r.failed, r.skipped, r.errored, r.criteria, count(*) OVER ()`+resultFrom+`
+			r.passed, r.failed, r.skipped, r.criteria, count(*) OVER ()`+resultFrom+`
 		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id
 		WHERE r.scorecard_id = $1
 			AND ($2 = '' OR e.identifier ILIKE $2 OR e.title ILIKE $2)
@@ -517,7 +426,7 @@ func scanResult(scan func(...any) error, extra ...any) (EntityResult, error) {
 	)
 	if err := scan(append([]any{
 		&r.Blueprint, &r.Identifier, &r.Title, &r.ChangedAt, &r.EvaluatedAt, &r.Tier, &r.Score,
-		&r.Passed, &r.Failed, &r.Skipped, &r.Errored, &criteria,
+		&r.Passed, &r.Failed, &r.Skipped, &criteria,
 	}, extra...)...); err != nil {
 		return EntityResult{}, err
 	}
@@ -536,7 +445,7 @@ type EntityScorecard struct {
 func entityResults(ctx context.Context, db configdoc.DB, blueprintIdentifier, identifier string) ([]EntityScorecard, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT s.identifier, b.identifier, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
-			r.passed, r.failed, r.skipped, r.errored, r.criteria
+			r.passed, r.failed, r.skipped, r.criteria
 		FROM scorecard_results r
 		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id
 		JOIN config_documents s ON s.id = r.scorecard_id

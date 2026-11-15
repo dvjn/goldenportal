@@ -252,7 +252,7 @@ func TestCheckFilterScorecardNames(t *testing.T) {
 		},
 		{
 			"unknown status", `{"property":"readiness.checks.onCall","op":"ne","value":"failing"}`, service(t),
-			`readiness.checks.onCall is a check's status: passed, failed, skipped, errored, not "failing"`,
+			`readiness.checks.onCall is a check's status: passed, failed, skipped, not "failing"`,
 		},
 		{"through a relation", `{"property":"lead.readiness","op":"eq","value":"silver"}`, team, "not \"silver\""},
 	}

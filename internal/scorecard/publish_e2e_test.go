@@ -42,7 +42,7 @@ spec:
   tiers:
     - name: owned
       criteria:
-        hasOwner: {check: .owner != null}
+        hasOwner: {check: {property: owner, op: exists}}
 `
 	reachableYAML = `kind: Scorecard
 metadata: {identifier: reachable, title: Reachable}
@@ -51,12 +51,12 @@ spec:
   tiers:
     - name: reachable
       criteria:
-        hasSlack: {check: .slack != null}
+        hasSlack: {check: {property: slack, op: exists}}
 `
 )
 
 var registerKinds = sync.OnceFunc(func() {
-	blueprint.Register(httpxtest.New(), nil, EvaluateScoring)
+	blueprint.Register(httpxtest.New(), []blueprint.Checker{CheckGraders}, EvaluateScoring)
 	Register(httpxtest.New(), DefaultEvaluationSchedule)
 })
 

@@ -68,7 +68,7 @@ func Diff(previous, next Spec) []configdoc.Change {
 				add("criteria", c.ID, configdoc.ChangeAdded, "adds it to %s", tier.Name)
 			case tierOf[c.ID] != tier.Name:
 				add("criteria", c.ID, configdoc.ChangeChanged, "moves it from %s to %s", tierOf[c.ID], tier.Name)
-			case old.Check != c.Check || old.When != c.When:
+			case !reflect.DeepEqual(old.Check, c.Check) || !reflect.DeepEqual(old.When, c.When):
 				add("criteria", c.ID, configdoc.ChangeChanged, "changes what it checks")
 			case old.Title != c.Title || old.Description != c.Description || old.Fix != c.Fix:
 				add("criteria", c.ID, configdoc.ChangeChanged, "changes its title, description or fix")

@@ -4,8 +4,9 @@ import { TierBadge } from "@/components/scorecards/tier-badge";
 import { blueprints, useBlueprint } from "@/features/blueprints";
 import { type ScorecardSpec, scorecards } from "@/features/scorecards";
 
-// Checks are jq over the flat entity: .owner, not .properties.owner. A
-// blueprint holds the results as a property once it declares one such as
+// Checks are filters, as the catalog writes them; updatedAt is on every
+// blueprint, so the template saves as it is. A blueprint holds the results
+// as a property once it declares one such as
 // readiness: {type: scorecard, scorecard: example}.
 const template = (blueprint: string) => `kind: Scorecard
 metadata:
@@ -18,10 +19,10 @@ spec:
     - name: bronze
       title: Bronze
       criteria:
-        hasOwner:
-          title: Has an owner
-          check: .owner != null
-          fix: Set the owner where this entity comes from.
+        recentlyUpdated:
+          title: Updated in the last 30 days
+          check: {property: updatedAt, op: within, value: 30d}
+          fix: Check that its source still sends it.
 `;
 
 export const Route = createFileRoute("/_app/blueprints/$blueprint/scorecards/new")({

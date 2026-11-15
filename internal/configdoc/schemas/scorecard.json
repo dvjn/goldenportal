@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Scorecard",
-  "description": "A scorecard rates the entities of one blueprint against a ladder of tiers, such as bronze, silver and gold, each a set of jq checks. To show results in the catalog, the blueprint declares a property with type: scorecard naming it.",
+  "description": "A scorecard rates the entities of one blueprint against a ladder of tiers, such as bronze, silver and gold, each a set of checks. To show results in the catalog, the blueprint declares a property with type: scorecard naming it.",
   "type": "object",
   "properties": {
     "kind": { "const": "Scorecard" },
@@ -52,12 +52,12 @@
         "title": { "type": "string", "description": "What the check asks, such as Has an owner. Defaults to its identifier." },
         "description": { "type": "string", "description": "Why the check matters." },
         "check": {
-          "$ref": "#/$defs/jq",
-          "description": "jq over the entity giving true or false, such as .owner != null. Lookups and scorecard properties are there too."
+          "$ref": "#/$defs/filter",
+          "description": "A filter on the blueprint's entities, as the catalog writes them: those it matches pass, such as {property: hasReadme, op: eq, value: true}. Logic a filter can't express belongs in a computed property on the blueprint, which the check reads."
         },
         "when": {
-          "$ref": "#/$defs/jq",
-          "description": "jq over the entity; the check only applies to entities it's true for, such as .critical."
+          "$ref": "#/$defs/filter",
+          "description": "A filter on the blueprint's entities; the check only applies to those it matches and the rest skip it, such as {property: tier, op: eq, value: critical}."
         },
         "fix": { "type": "string", "description": "What to do when the check fails, shown to the entity's owners." }
       },

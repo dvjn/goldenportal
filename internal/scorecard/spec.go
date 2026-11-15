@@ -1,11 +1,12 @@
-// Package scorecard rates entities against ordered tiers of jq checks, such
-// as bronze, silver and gold, and keeps each entity's latest results.
+// Package scorecard rates entities against ordered tiers of checks, such as
+// bronze, silver and gold, and keeps each entity's latest results.
 package scorecard
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -43,18 +44,18 @@ type Tier struct {
 	Criteria []Criterion `json:"criteria"`
 }
 
-// Criterion is one check, written in jq against the entity.
+// Criterion is one check, a filter on the blueprint's entities: those it
+// matches pass.
 type Criterion struct {
-	ID          string `json:"identifier"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	// Check must give true or false.
-	Check string `json:"check"`
-	// When, if set, skips the criterion for entities it's false for.
-	When string `json:"when,omitempty"`
+	ID          string        `json:"identifier"`
+	Title       string        `json:"title"`
+	Description string        `json:"description,omitempty"`
+	Check       entity.Filter `json:"check"`
+	// When, if set, skips the criterion for entities it doesn't match.
+	When *entity.Filter `json:"when,omitempty"`
 	// Fix tells people what to do when the check fails.
-	Fix  string `json:"fix,omitempty"`
-	line int
+	Fix                 string `json:"fix,omitempty"`
+	checkLine, whenLine int
 }
 
 // The keys each mapping of a scorecard takes, exported so the documents'
@@ -140,7 +141,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	ids := map[string]bool{}
 	tierNames := map[string]bool{}
 	r.List(fields["tiers"], "spec.tiers", func(i int, node *yaml.Node) {
-		spec.Tiers = append(spec.Tiers, parseTier(r, fmt.Sprintf("spec.tiers[%d]", i), node, ids, tierNames))
+		spec.Tiers = append(spec.Tiers, parseTier(r, fmt.Sprintf("spec.tiers[%d]", i), node, spec.Blueprint, ids, tierNames))
 	})
 	if len(spec.Tiers) == 0 {
 		r.Errorf(configdoc.OrNode(fields["tiers"], doc.Spec), "spec.tiers", "add the tiers, lowest first")
@@ -149,7 +150,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	return spec, r.Issues
 }
 
-func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map[string]bool) Tier {
+func parseTier(r *configdoc.Reader, path string, node *yaml.Node, graded string, ids, names map[string]bool) Tier {
 	tier := Tier{Criteria: []Criterion{}}
 	fields, ok := r.Fields(node, path, TierFields...)
 	if !ok {
@@ -177,7 +178,7 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 
 	r.Each(fields["criteria"], path+".criteria", func(id string, key, value *yaml.Node) {
 		criterionPath := path + ".criteria." + id
-		c := Criterion{ID: id, Title: id, line: key.Line}
+		c := Criterion{ID: id, Title: id, checkLine: key.Line}
 		switch {
 		case !namePattern.MatchString(id):
 			r.Errorf(key, criterionPath, "%q must start with a letter and use only letters, digits, - and _", id)
@@ -195,8 +196,14 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 		}
 		c.Description = r.Text(criterionFields["description"], criterionPath+".description")
 		c.Fix = r.Text(criterionFields["fix"], criterionPath+".fix")
-		c.Check = readJQ(r, criterionFields["check"], value, criterionPath+".check", true)
-		c.When = readJQ(r, criterionFields["when"], value, criterionPath+".when", false)
+		if n := criterionFields["check"]; n == nil {
+			r.Errorf(value, criterionPath+".check", "add a check, a filter such as %s", checkExample)
+		} else if f := readCondition(r, n, criterionPath+".check", "a check is", "the check", graded); f != nil {
+			c.Check, c.checkLine = *f, n.Line
+		}
+		if n := criterionFields["when"]; n != nil {
+			c.When, c.whenLine = readCondition(r, n, criterionPath+".when", "when is", "when", graded), n.Line
+		}
 		tier.Criteria = append(tier.Criteria, c)
 	})
 	if len(tier.Criteria) == 0 {
@@ -206,22 +213,35 @@ func parseTier(r *configdoc.Reader, path string, node *yaml.Node, ids, names map
 	return tier
 }
 
-func readJQ(r *configdoc.Reader, node, parent *yaml.Node, path string, required bool) string {
-	if node == nil {
-		if required {
-			r.Errorf(parent, path, "add a jq check that gives true or false, such as .owner != null")
-		}
-		return ""
+const checkExample = "{property: hasReadme, op: eq, value: true}"
+
+// readCondition reads a check or when, a filter. jq, written as text, is
+// pointed at a computed property on graded, the blueprint scored.
+func readCondition(r *configdoc.Reader, node *yaml.Node, path, isA, reader, graded string) *entity.Filter {
+	switch {
+	case node.Kind == yaml.ScalarNode && node.Tag == "!!str":
+		r.Errorf(node, path, "%s a filter, as the catalog writes them, such as %s; jq over one entity belongs in a computed property on %s, which %s reads",
+			isA, checkExample, graded, reader)
+		return nil
+	case node.Kind != yaml.MappingNode:
+		r.Errorf(node, path, "%s a filter, a mapping such as %s", isA, checkExample)
+		return nil
+	case len(node.Content) == 0:
+		r.Errorf(node, path, "%s a filter and needs a condition, such as %s", isA, checkExample)
+		return nil
 	}
-	if node.Kind != yaml.ScalarNode {
-		r.Errorf(node, path, "quote this jq expression, or write it as a block scalar with |-, since YAML reads it as a list or mapping")
-		return ""
+	var raw any
+	if err := node.Decode(&raw); err != nil {
+		r.Errorf(node, path, "this is not a valid filter: %v", err)
+		return nil
 	}
-	if err := blueprint.CompileExpression(node.Value); err != nil {
-		r.Errorf(node, path, "this is not valid jq: %v", err)
+	f, err := toFilter(raw)
+	if err != nil {
+		r.Errorf(node, path, "%v", err)
+		return nil
 	}
 
-	return node.Value
+	return f
 }
 
 // toFilter turns a filter written in YAML into the catalog's filter.
@@ -234,10 +254,34 @@ func toFilter(raw any) (*entity.Filter, error) {
 	return entity.ParseFilter(string(encoded))
 }
 
+// condition is one of a scorecard's filters, where it's written.
+type condition struct {
+	path   string
+	line   int
+	filter entity.Filter
+}
+
+// conditions are the scorecard's filter, and each criterion's check and when.
+func (s Spec) conditions() []condition {
+	var out []condition
+	if s.Filter != nil {
+		out = append(out, condition{"spec.filter", 0, *s.Filter})
+	}
+	for i, tier := range s.Tiers {
+		for _, c := range tier.Criteria {
+			path := fmt.Sprintf("spec.tiers[%d].criteria.%s", i, c.ID)
+			out = append(out, condition{path + ".check", c.checkLine, c.Check})
+			if c.When != nil {
+				out = append(out, condition{path + ".when", c.whenLine, *c.When})
+			}
+		}
+	}
+
+	return out
+}
+
 // Check checks the scorecard against its blueprint: an unpublished one is
-// a warning, as is one with no property holding the results, which then
-// only show on the scorecard's own pages. A filter it can't answer is an
-// error.
+// a warning. A filter, check or when it can't answer is an error.
 func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, error) {
 	published, err := blueprint.Published(ctx, db)
 	if err != nil {
@@ -250,14 +294,57 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 			Message: fmt.Sprintf("no blueprint %q is published yet, so nothing is scored until it is", spec.Blueprint),
 		}}, nil
 	}
+	ladders, err := blueprint.Ladders(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	var issues []configdoc.Issue
-	if spec.Filter != nil {
-		ladders, err := blueprint.Ladders(ctx, db)
-		if err != nil {
-			return nil, err
+	for _, c := range spec.conditions() {
+		if err := entity.CheckFilter(published, ladders, bp, c.filter); err != nil {
+			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: c.path, Line: c.line, Message: err.Error()})
 		}
-		if err := entity.CheckFilter(published, ladders, bp, *spec.Filter); err != nil {
-			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: "spec.filter", Message: err.Error()})
+	}
+
+	return issues, nil
+}
+
+// CheckGraders checks publishing next leaves every published scorecard's
+// filters answerable, whether they grade it or follow a relation to it. A
+// filter only next breaks is an error on next, so the scorecard is fixed
+// first; one already broken is the scorecard's own to report.
+func CheckGraders(ctx context.Context, db configdoc.DB, next blueprint.Spec) ([]configdoc.Issue, error) {
+	before, err := blueprint.Published(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	after := maps.Clone(before)
+	after[next.Identifier] = next
+	specs, err := Published(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	ladders := Ladders(specs)
+
+	var issues []configdoc.Issue
+	for _, identifier := range slices.Sorted(maps.Keys(specs)) {
+		spec := specs[identifier]
+		graded, ok := after[spec.Blueprint]
+		if !ok {
+			continue
+		}
+		for _, c := range spec.conditions() {
+			err := entity.CheckFilter(after, ladders, graded, c.filter)
+			if err == nil {
+				continue
+			}
+			if was, ok := before[spec.Blueprint]; ok && entity.CheckFilter(before, ladders, was, c.filter) != nil {
+				continue
+			}
+			issues = append(issues, configdoc.Issue{
+				Severity: configdoc.SeverityError, Path: "spec.properties",
+				Message: fmt.Sprintf("scorecard %s reads this blueprint at %s, which this change breaks: %v; change the scorecard first",
+					identifier, c.path, err),
+			})
 		}
 	}
 

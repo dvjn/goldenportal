@@ -1,20 +1,22 @@
 package scorecard
 
 import (
-	"context"
-	"errors"
-	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 
-	"github.com/dvjn/goldenportal/internal/jq"
+	"github.com/lib/pq"
+
+	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/entity"
 )
 
-// Criterion outcomes. Skipped is neutral; errored blocks its tier without
-// counting as a fail, since the check is at fault, not the entity.
+// Criterion outcomes. Skipped is neutral: the criterion's when doesn't
+// match the entity.
 const (
 	StatusPassed  = "passed"
 	StatusFailed  = "failed"
 	StatusSkipped = "skipped"
-	StatusErrored = "errored"
 )
 
 // Result is how one entity did on a scorecard.
@@ -27,117 +29,111 @@ type Result struct {
 	Passed   int                        `json:"passed"`
 	Failed   int                        `json:"failed"`
 	Skipped  int                        `json:"skipped"`
-	Errored  int                        `json:"errored"`
 	Criteria map[string]CriterionResult `json:"criteria"`
 }
 
-// CriterionResult is how an entity did on one criterion. Message says why
-// it errored.
+// CriterionResult is how an entity did on one criterion.
 type CriterionResult struct {
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	Status string `json:"status"`
 }
 
-// compiled holds a scorecard's checks, compiled once for all entities.
-type compiled struct {
-	check, when map[string]*jq.Code
-}
+// The statuses as SQL literals.
+const (
+	passedSQL  = "'" + StatusPassed + "'"
+	failedSQL  = "'" + StatusFailed + "'"
+	skippedSQL = "'" + StatusSkipped + "'"
+)
 
-func compileSpec(spec Spec) (compiled, error) {
-	c := compiled{check: map[string]*jq.Code{}, when: map[string]*jq.Code{}}
+// evaluation is one statement that scores every entity of bp in spec's
+// scope, writes the results that changed and drops those of entities out
+// of scope. It gives how many entities it scored and results it wrote.
+// Unchanged results aren't touched, since even an update that changes
+// nothing locks and logs its row, and a tier keeps the time it was reached
+// until it changes.
+func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, scorecardID string) (string, []any, error) {
+	var ids []string
 	for _, tier := range spec.Tiers {
-		for _, criterion := range tier.Criteria {
-			code, err := jq.Compile(criterion.Check)
+		for _, c := range tier.Criteria {
+			ids = append(ids, c.ID)
+		}
+	}
+	args := []any{scorecardID, bp.Identifier, pq.Array(ids)}
+	arg := func(value any) string {
+		args = append(args, value)
+		return "$" + strconv.Itoa(len(args))
+	}
+	// Filters on other scorecards' tiers and checks were checked when
+	// published; one since changed matches nothing rather than failing.
+	where := func(f entity.Filter) (string, error) {
+		var (
+			sql string
+			err error
+		)
+		sql, args, err = entity.Where(specs, nil, bp, f, args)
+		return "coalesce(" + sql + ", false)", err
+	}
+
+	scope := "true"
+	if spec.Filter != nil {
+		var err error
+		if scope, err = where(*spec.Filter); err != nil {
+			return "", nil, err
+		}
+	}
+	var statuses, reached []string
+	for _, tier := range spec.Tiers {
+		for _, c := range tier.Criteria {
+			check, err := where(c.Check)
 			if err != nil {
-				return c, fmt.Errorf("%s check: %w", criterion.ID, err)
+				return "", nil, err
 			}
-			c.check[criterion.ID] = code
-			if criterion.When != "" {
-				if c.when[criterion.ID], err = jq.Compile(criterion.When); err != nil {
-					return c, fmt.Errorf("%s when: %w", criterion.ID, err)
+			status := "WHEN " + check + " THEN " + passedSQL + " ELSE " + failedSQL
+			if c.When != nil {
+				when, err := where(*c.When)
+				if err != nil {
+					return "", nil, err
 				}
+				status = "WHEN NOT " + when + " THEN " + skippedSQL + " " + status
 			}
+			statuses = append(statuses, "CASE "+status+" END")
 		}
+		// A tier is reached when none of its criteria, nor any below, failed.
+		reached = append(reached, "WHEN NOT "+failedSQL+" = ANY(statuses[1:"+strconv.Itoa(len(statuses))+"]) THEN "+arg(tier.Name))
 	}
+	slices.Reverse(reached)
 
-	return c, nil
-}
-
-// evaluate scores one entity, given as the document checks run against.
-func (c compiled) evaluate(ctx context.Context, spec Spec, input map[string]any) Result {
-	result := Result{Criteria: map[string]CriterionResult{}}
-	reaching := true
-	for _, tier := range spec.Tiers {
-		met := true
-		for _, criterion := range tier.Criteria {
-			outcome := c.run(ctx, criterion.ID, input)
-			result.Criteria[criterion.ID] = outcome
-			switch outcome.Status {
-			case StatusPassed:
-				result.Passed++
-			case StatusFailed:
-				result.Failed++
-				met = false
-			case StatusSkipped:
-				result.Skipped++
-			case StatusErrored:
-				result.Errored++
-				met = false
-			}
-		}
-		if reaching && met {
-			result.Tier = tier.Name
-		} else {
-			reaching = false
-		}
-	}
-
-	if applicable := result.Passed + result.Failed + result.Errored; applicable > 0 {
-		// Whole numbers round down, so 100 means every check passed.
-		score := 100 * result.Passed / applicable
-		result.Score = &score
-	}
-
-	return result
-}
-
-func (c compiled) run(ctx context.Context, id string, input map[string]any) CriterionResult {
-	if when, ok := c.when[id]; ok {
-		applies, err := runBool(ctx, when, input)
-		if err != nil {
-			return CriterionResult{Status: StatusErrored, Message: "when: " + err.Error()}
-		}
-		if !applies {
-			return CriterionResult{Status: StatusSkipped}
-		}
-	}
-
-	passed, err := runBool(ctx, c.check[id], input)
-	switch {
-	case err != nil:
-		return CriterionResult{Status: StatusErrored, Message: err.Error()}
-	case passed:
-		return CriterionResult{Status: StatusPassed}
-	}
-
-	return CriterionResult{Status: StatusFailed}
-}
-
-var errNotBool = errors.New("gave something other than true or false")
-
-// runBool runs a check and takes its first result, which must be a boolean.
-func runBool(ctx context.Context, code *jq.Code, input map[string]any) (bool, error) {
-	value, ok, err := code.First(ctx, jq.DefaultTimeout, input)
-	if err != nil {
-		return false, err
-	}
-	if !ok {
-		return false, errors.New("gave no result")
-	}
-	passed, ok := value.(bool)
-	if !ok {
-		return false, errNotBool
-	}
-
-	return passed, nil
+	return `
+		WITH checked AS (
+			SELECT e.id, ARRAY[` + strings.Join(statuses, ", ") + `]::text[] AS statuses
+			FROM entities e
+			JOIN config_documents b ON b.id = e.blueprint_id
+			JOIN config_documents i ON i.id = e.connection_id
+			WHERE b.kind = 'blueprint' AND b.identifier = $2 AND ` + scope + `
+		), counted AS (
+			SELECT id AS entity_id, CASE ` + strings.Join(reached, " ") + ` ELSE '' END AS tier,
+				cardinality(array_positions(statuses, ` + passedSQL + `)) AS passed,
+				cardinality(array_positions(statuses, ` + failedSQL + `)) AS failed,
+				cardinality(array_positions(statuses, ` + skippedSQL + `)) AS skipped,
+				(SELECT jsonb_object_agg(k, jsonb_build_object('status', v)) FROM unnest($3::text[], statuses) AS c (k, v)) AS criteria
+			FROM checked
+		), scored AS (
+			SELECT *, CASE WHEN passed + failed > 0 THEN 100 * passed / (passed + failed) END AS score FROM counted
+		), written AS (
+			INSERT INTO scorecard_results AS r (scorecard_id, entity_id, tier, score, passed, failed, skipped, criteria)
+			SELECT $1::uuid, s.entity_id, s.tier, s.score, s.passed, s.failed, s.skipped, s.criteria
+			FROM scored s
+			LEFT JOIN scorecard_results o ON o.scorecard_id = $1::uuid AND o.entity_id = s.entity_id
+			WHERE o.entity_id IS NULL OR (o.tier, o.score, o.passed, o.failed, o.skipped, o.criteria)
+				IS DISTINCT FROM (s.tier, s.score, s.passed, s.failed, s.skipped, s.criteria)
+			ORDER BY s.entity_id
+			ON CONFLICT (scorecard_id, entity_id) DO UPDATE
+				SET tier = excluded.tier, score = excluded.score, passed = excluded.passed, failed = excluded.failed,
+					skipped = excluded.skipped, criteria = excluded.criteria,
+					changed_at = CASE WHEN r.tier = excluded.tier THEN r.changed_at ELSE now() END
+			RETURNING 1
+		), removed AS (
+			DELETE FROM scorecard_results r
+			WHERE r.scorecard_id = $1::uuid AND NOT EXISTS (SELECT 1 FROM checked c WHERE c.id = r.entity_id)
+		)
+		SELECT (SELECT count(*) FROM checked), (SELECT count(*) FROM written)`, args, nil
 }

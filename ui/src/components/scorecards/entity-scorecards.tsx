@@ -5,7 +5,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { CardTitleBar } from "@/components/card-sections";
 import { EmptyValue } from "@/components/catalog/property-value";
-import { checkStatuses } from "@/components/scorecards/check-status";
+import { statusLook } from "@/components/scorecards/check-status";
 import { CriterionDetails } from "@/components/scorecards/criterion-details";
 import { TierBadge, tierColors } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,8 +20,6 @@ import {
   type Tier,
 } from "@/features/scorecards";
 import { formatAbsolute, formatPercent } from "@/lib/format";
-
-const blocking = (status?: Status) => status === "failed" || status === "errored";
 
 // ScorecardTab labels an entity's tab for one scorecard with the tier reached.
 export function ScorecardTab({ result }: Readonly<{ result: EntityScorecard }>) {
@@ -110,7 +108,7 @@ function Marks({
     <ul className="flex flex-wrap justify-end gap-0.5" aria-label={label}>
       {criteria.map((criterion) => {
         const status = result.criteria[criterion.identifier]?.status ?? "skipped";
-        const { icon: Icon, className, label } = checkStatuses[status];
+        const { icon: Icon, className, label } = statusLook(status);
         return (
           <li key={criterion.identifier} title={`${criterion.title}: ${label}`}>
             <Icon className={cn("size-4", className)} aria-label={`${criterion.title}: ${label}`} />
@@ -190,7 +188,7 @@ function TierSection({
   tier: Tier;
   result: EntityScorecard;
 }>) {
-  const failing = tier.criteria.some((c) => blocking(result.criteria[c.identifier]?.status));
+  const failing = tier.criteria.some((c) => result.criteria[c.identifier]?.status === "failed");
   // A tier with something to fix starts open; the rest fold away.
   const [open, setOpen] = useState(failing);
 
@@ -227,7 +225,7 @@ function CriterionRow({
   result,
 }: Readonly<{ criterion: Criterion; result: EntityScorecard }>) {
   const outcome = result.criteria[criterion.identifier] ?? { status: "skipped" as Status };
-  const { icon: Icon, className, label } = checkStatuses[outcome.status];
+  const { icon: Icon, className, label } = statusLook(outcome.status);
 
   return (
     <li className="flex items-start gap-2.5 text-sm">
@@ -235,13 +233,9 @@ function CriterionRow({
       <div className="grid min-w-0 flex-1 gap-0.5">
         <CriterionDetails
           criterion={criterion}
+          blueprint={result.blueprint}
           className={cn(outcome.status === "skipped" && "text-muted-foreground")}
         />
-        {outcome.status === "errored" && outcome.message && (
-          <span className="font-mono text-xs text-amber-700 dark:text-amber-400">
-            {outcome.message}
-          </span>
-        )}
         {outcome.status === "skipped" && (
           <span className="text-xs text-muted-foreground">Doesn't apply to this entity</span>
         )}

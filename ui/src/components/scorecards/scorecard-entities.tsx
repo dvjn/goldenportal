@@ -91,10 +91,9 @@ export function ScorecardEntities({
       header: () => "Failing",
       cell: ({ row }) => {
         // Failing checks keep the scorecard's order.
-        const failing = [...titles.keys()].filter((id) => {
-          const status = row.original.criteria[id]?.status;
-          return status === "failed" || status === "errored";
-        });
+        const failing = [...titles.keys()].filter(
+          (id) => row.original.criteria[id]?.status === "failed",
+        );
         if (failing.length === 0) return <EmptyValue />;
         return (
           <ListValue

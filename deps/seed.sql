@@ -176,6 +176,12 @@ spec:
       compute: .tier == "critical"
       display:
         hidden: true
+    tagged:
+      title: Tagged
+      type: boolean
+      compute: (.tags // []) | length > 0
+      display:
+        hidden: true
     readiness:
       title: Readiness
       type: scorecard
@@ -1790,11 +1796,11 @@ spec:
       criteria:
         hasOwner:
           title: Has an owner
-          check: .owner != null
+          check: {property: owner, op: exists}
           fix: Set the owning team in the service registry.
         hasRepository:
           title: Has a repository
-          check: .repository != null
+          check: {property: repository, op: exists}
           fix: Add the repository URL to the service registry.
     - name: silver
       title: Silver
@@ -1802,16 +1808,16 @@ spec:
       criteria:
         ownerOnSlack:
           title: Owner has a Slack channel
-          check: .ownerSlack != null
+          check: {property: ownerSlack, op: exists}
           fix: Give the owning team a Slack channel in the team directory.
         tagged:
           title: Tagged
-          check: (.tags // []) | length > 0
+          check: {property: tagged, op: eq, value: true}
           fix: Tag the service in the service registry.
         criticalOnCall:
           title: Owner is on call
-          when: .critical
-          check: .ownerOncall != null
+          when: {property: critical, op: eq, value: true}
+          check: {property: ownerOncall, op: exists}
           fix: Critical services need an owning team with an on-call rotation.
     - name: gold
       title: Gold
@@ -1819,11 +1825,11 @@ spec:
       criteria:
         deployedRecently:
           title: Deployed in the last 6 hours
-          check: (.lastDeployedAt // "1970-01-01T00:00:00Z" | fromdate) > (now - 6 * 3600)
+          check: {property: lastDeployedAt, op: within, value: 6h}
           fix: Ship small changes often.
         dependenciesKnown:
           title: Dependencies are listed
-          check: .dependsOn != null
+          check: {property: dependsOn, op: exists}
           fix: List what the service calls in the service registry.
 $yaml$),
   ('team-basics', $yaml$kind: Scorecard
@@ -1842,10 +1848,10 @@ spec:
       criteria:
         slack:
           title: Has a Slack channel
-          check: .slackChannel != null
+          check: {property: slackChannel, op: exists}
         oncall:
           title: Has an on-call rotation
-          check: .oncall != null
+          check: {property: oncall, op: exists}
           fix: Add the team's on-call rotation to the team directory.
 $yaml$)
 ), created AS (

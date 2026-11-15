@@ -12,7 +12,7 @@ export function Code({ className, ...props }: ComponentProps<"code">) {
   );
 }
 
-// CodeBlock is a longer expression laid out to read, such as a check's jq.
+// CodeBlock is a longer expression laid out to read, such as JSON.
 export function CodeBlock({ className, ...props }: ComponentProps<"pre">) {
   return (
     <pre

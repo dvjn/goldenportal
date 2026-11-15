@@ -1,14 +1,17 @@
 import { cn } from "cn";
 import { CardSection } from "@/components/card-sections";
-import { CodeBlock } from "@/components/code";
+import { useFixedSummaries } from "@/components/catalog/where-filters";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import type { Filter } from "@/features/catalog";
 import type { Criterion } from "@/features/scorecards";
 
 // CriterionDetails names a criterion and shows what it checks on hover.
+// blueprint is the one the scorecard grades, which names the filters' fields.
 export function CriterionDetails({
   criterion,
+  blueprint,
   className,
-}: Readonly<{ criterion: Criterion; className?: string }>) {
+}: Readonly<{ criterion: Criterion; blueprint: string; className?: string }>) {
   return (
     <HoverCard openDelay={200}>
       <HoverCardTrigger asChild>
@@ -26,14 +29,28 @@ export function CriterionDetails({
           <p className="border-b px-4 py-3 text-sm">{criterion.description}</p>
         )}
         <CardSection title="Check">
-          <CodeBlock>{criterion.check}</CodeBlock>
+          <FilterSummary blueprint={blueprint} filter={criterion.check} className="text-sm" />
         </CardSection>
         {criterion.when && (
-          <CardSection title="Only when">
-            <CodeBlock>{criterion.when}</CodeBlock>
+          <CardSection title="Only When">
+            <FilterSummary blueprint={blueprint} filter={criterion.when} className="text-sm" />
           </CardSection>
         )}
       </HoverCardContent>
     </HoverCard>
+  );
+}
+
+// FilterSummary says a filter on blueprint's entities as the catalog's chips do.
+export function FilterSummary({
+  blueprint,
+  filter,
+  className,
+}: Readonly<{ blueprint: string; filter: Filter; className?: string }>) {
+  const [said] = useFixedSummaries(blueprint, [filter]);
+  return (
+    <p className={className}>
+      {said.title}: {said.summary}
+    </p>
   );
 }

@@ -115,6 +115,7 @@ var prompts = []prompt{
 			}
 			return task + ".\n\n" +
 				"Read the blueprint and query_entities first, so criteria use real properties and values entities can actually meet. " +
+				"Each check and when is a filter, as query_entities takes them; logic a filter can't express belongs in a computed property on the blueprint, which the check then reads. " +
 				"Propose tiers and criteria and agree them with me before writing it."
 		}),
 	authoring("build_dashboard", "Build a dashboard", "Show what matters on a dashboard", "dashboards",

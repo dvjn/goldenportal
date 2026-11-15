@@ -24,7 +24,11 @@ const spec: ScorecardSpec = {
       name: "bronze",
       title: "Bronze",
       criteria: [
-        { identifier: "hasOwner", title: "Has an owner", check: ".properties.owner != null" },
+        {
+          identifier: "hasOwner",
+          title: "Has an owner",
+          check: { property: "owner", op: "exists" },
+        },
       ],
     },
     {
@@ -34,7 +38,8 @@ const spec: ScorecardSpec = {
         {
           identifier: "onCall",
           title: "Owner is on call",
-          check: ".properties.ownerOncall != null",
+          when: { property: "tier", op: "eq", value: "critical" },
+          check: { property: "ownerOncall", op: "exists" },
           fix: "Add an on-call rotation.",
         },
       ],
@@ -78,8 +83,8 @@ const summary: Summary = {
     { name: "silver", count: 0 },
   ],
   criteria: [
-    { identifier: "hasOwner", passed: 2, failed: 1, skipped: 0, errored: 0 },
-    { identifier: "onCall", passed: 0, failed: 2, skipped: 1, errored: 0 },
+    { identifier: "hasOwner", passed: 2, failed: 1, skipped: 0 },
+    { identifier: "onCall", passed: 0, failed: 2, skipped: 1 },
   ],
 };
 
@@ -94,7 +99,6 @@ const ledger: EntityResult = {
   passed: 1,
   failed: 1,
   skipped: 0,
-  errored: 0,
   criteria: { hasOwner: { status: "passed" }, onCall: { status: "failed" } },
 };
 
@@ -313,6 +317,37 @@ describe("a scorecard in the catalog", () => {
     );
   });
 
+  it("shows a status it doesn't know, stored before an evaluation, as skipped", async () => {
+    const removed: string = "errored";
+    const stale = { ...ledger.criteria, onCall: { status: removed } } as EntityResult["criteria"];
+    stubApi({
+      ...member,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service/entities/ledger": ok({
+        blueprint: "service",
+        identifier: "ledger",
+        title: "Ledger",
+        properties: {},
+        related: {},
+        connection: "registry",
+        createdAt: "2026-10-24T10:00:00Z",
+        updatedAt: "2026-10-24T10:00:00Z",
+        incoming: [],
+      }),
+      "GET catalog/service/scorecards": ok([
+        { ...ledger, criteria: stale, scorecard: "readiness", scorecardTitle: "Readiness" },
+      ]),
+      "GET scorecards/readiness": ok(readiness),
+    });
+    renderRoute("/catalog/service/ledger?tab=readiness");
+
+    const marks = within(await screen.findByRole("list", { name: "Criteria" }));
+    expect(marks.getAllByRole("listitem").map((item) => item.title)).toEqual([
+      expect.stringMatching(/: Passed$/),
+      expect.stringMatching(/: Skipped$/),
+    ]);
+  });
+
   it("links an entity's result to the scorecard's tab, marking each criterion in order", async () => {
     stubApi({
       ...member,
@@ -428,6 +463,16 @@ describe("building a scorecard", () => {
     expect(await about.findByText("Entities")).toBeInTheDocument();
     // How entities fare is the catalog's to show.
     expect(screen.queryByText("66%")).not.toBeInTheDocument();
+  });
+
+  it("shows each criterion's check and when as the filters they are", async () => {
+    stubApi(buildRoutes);
+    renderRoute("/blueprints/service/scorecards/readiness");
+
+    await userEvent.setup().hover(await screen.findByText("Owner is on call"));
+    expect(await screen.findByText("ownerOncall: Any Value")).toBeVisible();
+    expect(screen.getByText("tier: critical")).toBeVisible();
+    expect(screen.getByText("Only When")).toBeVisible();
   });
 
   it("moves to the blueprint the scorecard grades", async () => {

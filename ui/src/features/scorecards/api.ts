@@ -7,8 +7,8 @@ export type Criterion = {
   identifier: string;
   title: string;
   description?: string;
-  check: string;
-  when?: string;
+  check: Filter;
+  when?: Filter;
   fix?: string;
 };
 
@@ -45,7 +45,7 @@ export function builtUnder(doc: Scorecard): string {
 // results. The prefix keeps it apart from the blueprint's own tabs.
 export const scorecardView = (identifier: string) => `scorecard-${identifier}`;
 
-export type Status = "passed" | "failed" | "skipped" | "errored";
+export type Status = "passed" | "failed" | "skipped";
 
 export type Result = {
   // tier is the highest tier reached, or empty for none.
@@ -54,8 +54,7 @@ export type Result = {
   passed: number;
   failed: number;
   skipped: number;
-  errored: number;
-  criteria: Record<string, { status: Status; message?: string }>;
+  criteria: Record<string, { status: Status }>;
 };
 
 // ScoreValue is a scorecard property's value on an entity: its stored
@@ -89,7 +88,6 @@ export type Summary = {
     passed: number;
     failed: number;
     skipped: number;
-    errored: number;
   }[];
 };
 

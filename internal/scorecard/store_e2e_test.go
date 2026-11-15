@@ -3,67 +3,30 @@
 package scorecard
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/pgtest"
 )
 
-// TestSaveResultsWritesOnlyChanges checks a result is written only when it
-// changed, and keeps the time its tier was reached until the tier changes.
-func TestSaveResultsWritesOnlyChanges(t *testing.T) {
-	db := pgtest.New(t)
-	ctx := t.Context()
-	blueprintID := pgtest.Publish(t, db, "blueprint", "service", "kind: Blueprint")
-	connectionID := pgtest.Publish(t, db, "connection", "source", "kind: Connection")
-	scorecardID := pgtest.Publish(t, db, Name, "health", "kind: Scorecard")
-	var entities []string
-	for _, identifier := range []string{"api", "web"} {
-		var id string
-		if err := db.QueryRowContext(ctx, `
-			INSERT INTO entities (blueprint_id, identifier, title, connection_id) VALUES ($1, $2, $2, $3) RETURNING id`,
-			blueprintID, identifier, connectionID).Scan(&id); err != nil {
-			t.Fatal(err)
-		}
-		entities = append(entities, id)
-	}
-	score := func(n int) *int { return &n }
-	result := func(tier string, points int) Result {
-		return Result{Tier: tier, Score: score(points), Passed: 1, Criteria: map[string]CriterionResult{"owner": {Status: StatusPassed}}}
-	}
-	save := func(api, web Result) int {
-		t.Helper()
-		n, err := saveResults(ctx, db, scorecardID, entities, []Result{api, web})
+// seedResults stores results as an evaluation would.
+func seedResults(t *testing.T, db configdoc.DB, scorecardID string, entityIDs []string, results []Result) {
+	t.Helper()
+	for i, r := range results {
+		criteria, err := json.Marshal(r.Criteria)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return n
-	}
-	changedAt := func() (api, web time.Time) {
-		t.Helper()
-		if err := db.QueryRowContext(ctx, `
-			SELECT (SELECT changed_at FROM scorecard_results WHERE entity_id = $1), (SELECT changed_at FROM scorecard_results WHERE entity_id = $2)`,
-			entities[0], entities[1]).Scan(&api, &web); err != nil {
+		if _, err := db.ExecContext(t.Context(), `
+			INSERT INTO scorecard_results (scorecard_id, entity_id, tier, score, passed, failed, skipped, criteria)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			scorecardID, entityIDs[i], r.Tier, r.Score, r.Passed, r.Failed, r.Skipped, criteria); err != nil {
 			t.Fatal(err)
 		}
-		return api, web
-	}
-
-	if n := save(result("gold", 100), result("", 0)); n != 2 {
-		t.Fatalf("first save wrote %d", n)
-	}
-	api, web := changedAt()
-	if n := save(result("gold", 100), result("", 0)); n != 0 {
-		t.Fatalf("an unchanged save wrote %d", n)
-	}
-	if n := save(result("gold", 90), result("bronze", 50)); n != 2 {
-		t.Fatalf("a changed save wrote %d", n)
-	}
-	if apiNow, webNow := changedAt(); !apiNow.Equal(api) || !webNow.After(web) {
-		t.Errorf("changed at %v and %v, from %v and %v: want only the new tier's time moved", apiNow, webNow, api, web)
 	}
 }
 
@@ -96,7 +59,7 @@ func TestResultsSortAndFilter(t *testing.T) {
 		{"alpha", Result{Tier: "gold", Score: score(100), Passed: 4, Criteria: criteria(StatusPassed)}},
 		{"bravo", Result{Tier: "silver", Score: score(75), Passed: 3, Failed: 1, Skipped: 2, Criteria: criteria(StatusSkipped)}},
 		{"charlie", Result{Tier: "", Score: score(25), Passed: 1, Failed: 2, Criteria: criteria(StatusFailed)}},
-		{"delta", Result{Tier: "bronze", Score: score(50), Passed: 2, Failed: 1, Skipped: 1, Criteria: criteria(StatusErrored)}},
+		{"delta", Result{Tier: "bronze", Score: score(50), Passed: 2, Failed: 1, Skipped: 1, Criteria: criteria(StatusFailed)}},
 		{"echo", Result{Tier: "", Criteria: criteria("")}},
 	}
 	var (
@@ -112,9 +75,7 @@ func TestResultsSortAndFilter(t *testing.T) {
 		}
 		ids, outcome = append(ids, id), append(outcome, s.result)
 	}
-	if _, err := saveResults(ctx, db, scorecardID, ids, outcome); err != nil {
-		t.Fatal(err)
-	}
+	seedResults(t, db, scorecardID, ids, outcome)
 	spec := Spec{Tiers: []Tier{
 		{Name: "bronze", Criteria: []Criterion{{ID: "owner"}}},
 		{Name: "silver", Criteria: []Criterion{{ID: "stars"}}},
@@ -152,7 +113,7 @@ func TestResultsSortAndFilter(t *testing.T) {
 		{"-skipped", "", []string{"bravo", "delta", "alpha", "charlie", "echo"}},
 		{"", `{"property": "health", "op": "in", "values": ["", "gold"]}`, []string{"echo", "charlie", "alpha"}},
 		{"", `{"property": "health.checks.owner", "op": "eq", "value": "skipped"}`, []string{"bravo"}},
-		{"-tier", `{"property": "health.checks.owner", "op": "in", "values": ["failed", "errored"]}`, []string{"delta", "charlie"}},
+		{"-tier", `{"property": "health.checks.owner", "op": "in", "values": ["failed", "skipped"]}`, []string{"bravo", "delta", "charlie"}},
 		{"", `{"and": [{"property": "health.checks.stars", "op": "eq", "value": "passed"}, {"property": "identifier", "op": "ne", "value": "bravo"}]}`, []string{"charlie", "delta", "alpha"}},
 		{"", `{"property": "health.checks.stars", "op": "eq", "value": "failed"}`, []string{}},
 	}
@@ -177,7 +138,7 @@ func TestResultsSortAndFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantTiers := []TierCount{{"", 2}, {"bronze", 1}, {"silver", 1}, {"gold", 0}}
-	wantCriteria := []CriterionAt{{ID: "owner", Failed: 1, Skipped: 1, Errored: 1}, {ID: "stars", Passed: 3}}
+	wantCriteria := []CriterionAt{{ID: "owner", Failed: 2, Skipped: 1}, {ID: "stars", Passed: 3}}
 	if summary.Entities != 4 || !slices.Equal(summary.Tiers, wantTiers) || !slices.Equal(summary.Criteria, wantCriteria) {
 		t.Errorf("summary = %+v", summary)
 	}

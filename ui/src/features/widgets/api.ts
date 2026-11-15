@@ -162,8 +162,7 @@ export type GroupData = {
 export type TrendDay = Reading & { day: string; link?: LinkData };
 export type TrendData = { unit?: string; all: Reading; days: TrendDay[]; link?: LinkData };
 // TierData counts entities by the highest tier they reached, and their
-// checks by outcome; failed takes in those that errored. scorecard has
-// the tiers to show them by.
+// checks by outcome. scorecard has the tiers to show them by.
 export type TierData = {
   tiers: { name: string; count: number }[];
   checks: { passed: number; failed: number };

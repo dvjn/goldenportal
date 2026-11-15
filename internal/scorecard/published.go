@@ -28,8 +28,7 @@ func Published(ctx context.Context, db configdoc.DB) (map[string]Spec, error) {
 	return specs, nil
 }
 
-// Checks counts the outcomes of a scorecard's criteria across entities.
-// Failed takes in those that errored, since they didn't pass either, and
+// Checks counts the outcomes of a scorecard's criteria across entities;
 // skipped ones aren't counted.
 type Checks struct {
 	Passed int `json:"passed"`
@@ -50,7 +49,7 @@ func Tiers(ctx context.Context, db configdoc.DB, spec Spec, specs map[string]blu
 		return nil, checks, err
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT tier, count(*), sum(passed), sum(failed + errored) FROM scorecard_results
+		SELECT tier, count(*), sum(passed), sum(failed) FROM scorecard_results
 		WHERE scorecard_id = $1 AND entity_id IN (`+matching+`)
 		GROUP BY tier`, args...)
 	if err != nil {
