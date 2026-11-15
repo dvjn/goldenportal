@@ -79,6 +79,9 @@ export type Summary = {
   spec: ScorecardSpec;
   entities: number;
   evaluatedAt: string | null;
+  // evaluating is set while the results are for an older version than the
+  // published one, as they are just after a publish.
+  evaluating: boolean;
   // tiers counts entities by their highest tier; the first, named "", reached none.
   tiers: { name: string; count: number }[];
   criteria: {
@@ -153,10 +156,15 @@ export async function listEntityScorecards(
   ).data;
 }
 
+// evaluatingPoll is how often a summary is read again while its results
+// catch up with a publish.
+const evaluatingPoll = 2000;
+
 export const summaryQueryOptions = (identifier: string, filter?: Filter) =>
   queryOptions({
     queryKey: scorecardKeys.summary(identifier, filter),
     queryFn: () => getSummary(identifier, filter),
+    refetchInterval: (query) => (query.state.data?.evaluating ? evaluatingPoll : false),
   });
 
 export const resultsQueryOptions = (identifier: string, query: ResultQuery) =>

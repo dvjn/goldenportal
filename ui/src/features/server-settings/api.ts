@@ -39,6 +39,7 @@ export type ServerConfiguration = {
     metricsPort: string;
     logLevel: string;
     retentionSchedule: string;
+    scorecardSchedule: string;
   };
 };
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lib/pq"
+	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
@@ -44,8 +45,14 @@ var Kind = configdoc.Kind[Spec]{
 // and its retention against the connections that write it.
 type Checker func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error)
 
-func Register(app httpx.Routes, checkers ...Checker) {
+// Register serves blueprints, checked by checkers too. committed, if set,
+// follows up a blueprint's publish once it commits, with what this package
+// can't import, such as evaluating the scorecards that score it.
+func Register(app httpx.Routes, checkers []Checker, committed func(ctx *gofr.Context, identifier string)) {
 	kind := Kind
+	if committed != nil {
+		kind.Committed = func(ctx *gofr.Context, next Spec) { committed(ctx, next.Identifier) }
+	}
 	kind.Check = func(ctx context.Context, db configdoc.DB, spec Spec) ([]Issue, error) {
 		issues, err := Kind.Check(ctx, db, spec)
 		if err != nil {

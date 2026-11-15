@@ -384,7 +384,7 @@ var tools = []tool{
 		}
 		return nil, d.DiscardDraft(ctx, a.Identifier)
 	}),
-	author("publish_document", "Publish a saved draft as a numbered version. Preview impact first; explicitly acknowledge breaking changes when applicable.", true, func(b bridge, ctx *gofr.Context, a publishArgs) (any, error) {
+	author("publish_document", "Publish a saved draft as a numbered version. Preview impact first; explicitly acknowledge breaking changes when applicable. Publishing a scorecard, or a blueprint one scores, re-evaluates its results shortly after rather than with the publish: get_scorecard_summary says evaluating: true until a published scorecard's results are for its new version, and evaluatedAt when they were last evaluated.", true, func(b bridge, ctx *gofr.Context, a publishArgs) (any, error) {
 		d, err := b.document(documentArgs{a.Kind, a.Identifier})
 		if err != nil {
 			return nil, err
@@ -405,7 +405,7 @@ var tools = []tool{
 		}
 		return b.services.Apply(ctx, a.Source, dry)
 	}),
-	author("publish_documents", "Publish multiple saved drafts atomically in dependency order after reviewing their impacts.", true, func(b bridge, ctx *gofr.Context, a publishManyArgs) (any, error) {
+	author("publish_documents", "Publish multiple saved drafts atomically in dependency order after reviewing their impacts. Publishing a scorecard, or a blueprint one scores, re-evaluates its results shortly after rather than with the publish: get_scorecard_summary says evaluating: true until a published scorecard's results are for its new version, and evaluatedAt when they were last evaluated.", true, func(b bridge, ctx *gofr.Context, a publishManyArgs) (any, error) {
 		refs := make([]configdoc.DocumentRef, 0, len(a.Documents))
 		for _, d := range a.Documents {
 			refs = append(refs, configdoc.DocumentRef{Kind: d.Kind, Identifier: d.Identifier})
@@ -418,7 +418,7 @@ var tools = []tool{
 	author("check_connection", "Check a published connection's connector can reach its system with the current config and secrets, or the draft's when it isn't published.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
 		return b.services.CheckConnection(ctx, a.Identifier)
 	}),
-	author("evaluate_scorecard", "Evaluate a published scorecard now and store its current results.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
+	author("evaluate_scorecard", "Evaluate a published scorecard now and store its current results, after any evaluation of it already under way. Scorecards are otherwise evaluated on a schedule, hourly by default, and shortly after a publish.", false, func(b bridge, ctx *gofr.Context, a identifierArgs) (any, error) {
 		return b.services.EvaluateScorecard(ctx, a.Identifier)
 	}),
 	author("create_ingestion_token", "Create an ingestion token for a connection that takes pushes. Its secret is in this response only; hand it to the pushing system now.", false, func(b bridge, ctx *gofr.Context, a tokenArgs) (any, error) {

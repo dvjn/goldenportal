@@ -250,6 +250,7 @@ function PlatformCard({
           <Detail label="Metrics Port">{server.metricsPort}</Detail>
           <Detail label="Log Level">{server.logLevel}</Detail>
           <Detail label="Retention Schedule">{server.retentionSchedule}</Detail>
+          <Detail label="Scorecard Schedule">{server.scorecardSchedule}</Detail>
         </DetailList>
       </CardContent>
     </Card>

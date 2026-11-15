@@ -10,6 +10,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/scim"
+	"github.com/dvjn/goldenportal/internal/scorecard"
 )
 
 // The configuration page summarises how the portal is set up, from settings
@@ -75,6 +76,9 @@ type serverInfo struct {
 	// RetentionSchedule is when rows older than their blueprint keeps them
 	// are deleted, a cron expression.
 	RetentionSchedule string `json:"retentionSchedule"`
+	// ScorecardSchedule is when every scorecard is evaluated in full, a cron
+	// expression.
+	ScorecardSchedule string `json:"scorecardSchedule"`
 }
 
 func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server) serverConfig {
@@ -118,6 +122,7 @@ func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server)
 			MetricsPort:       cfg.GetOrDefault("METRICS_PORT", "2121"),
 			LogLevel:          cfg.GetOrDefault("LOG_LEVEL", "INFO"),
 			RetentionSchedule: cfg.GetOrDefault(entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule),
+			ScorecardSchedule: cfg.GetOrDefault(scorecard.EvaluationScheduleEnv, scorecard.DefaultEvaluationSchedule),
 		},
 	}
 }

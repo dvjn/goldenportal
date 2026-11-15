@@ -1,15 +1,24 @@
 import { cn } from "cn";
+import { Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { CardSection, CardTitleBar } from "@/components/card-sections";
 import { EmptyValue } from "@/components/catalog/property-value";
 import { Code } from "@/components/code";
 import { Detail, DetailList } from "@/components/detail-list";
+import { RunStatusMark, type StatusLook } from "@/components/run-status-mark";
 import { checkStatuses } from "@/components/scorecards/check-status";
 import { CriterionDetails } from "@/components/scorecards/criterion-details";
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ScorecardSpec, Status, Summary } from "@/features/scorecards";
 import { formatAbsolute, formatPercent, formatRelative, percentOf } from "@/lib/format";
+
+// evaluating looks as a running run does, for results catching up with a publish.
+const evaluating: StatusLook = {
+  label: "Evaluating",
+  icon: Loader2,
+  className: "animate-spin text-primary",
+};
 
 // AboutCard says what a scorecard grades and when it last did. children
 // are details that go first, and action sits in the title bar.
@@ -31,12 +40,18 @@ export function AboutCard({
               <span className="font-medium tabular-nums">{summary.entities}</span>
             </Detail>
           )}
-          {summary?.evaluatedAt && (
+          {summary?.evaluating ? (
             <Detail label="Evaluated">
-              <span title={formatAbsolute(summary.evaluatedAt)}>
-                {formatRelative(summary.evaluatedAt)}
-              </span>
+              <RunStatusMark look={evaluating} label />
             </Detail>
+          ) : (
+            summary?.evaluatedAt && (
+              <Detail label="Evaluated">
+                <span title={formatAbsolute(summary.evaluatedAt)}>
+                  {formatRelative(summary.evaluatedAt)}
+                </span>
+              </Detail>
+            )
           )}
           {spec.filter && (
             <Detail label="Only">

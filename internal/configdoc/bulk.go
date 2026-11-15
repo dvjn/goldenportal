@@ -22,7 +22,7 @@ type bulkKind interface {
 	publishDraft(ctx *gofr.Context, db DB, p auth.Principal, name string, acknowledgeBreaking bool) (Published, error)
 	publishedSources(ctx context.Context, db DB) (map[string]string, error)
 	draftSource(ctx context.Context, db DB, name string) (string, error)
-	recordPublish(ctx *gofr.Context, p auth.Principal, published Published)
+	afterPublish(ctx *gofr.Context, p auth.Principal, published Published)
 }
 
 // kinds are the registered kinds, in the order they're registered, which
@@ -266,6 +266,7 @@ type Published struct {
 	Breaking   bool   `json:"breaking"`
 	title      string
 	changes    int
+	committed  func(ctx *gofr.Context)
 }
 
 func publishMany(ctx *gofr.Context) (any, error) {
@@ -332,7 +333,7 @@ func PublishMany(ctx *gofr.Context, documents []DocumentRef, acknowledgeBreaking
 	}
 	for _, published := range out {
 		k, _ := kindFor(published.Kind)
-		k.recordPublish(ctx, p, published)
+		k.afterPublish(ctx, p, published)
 	}
 
 	return out, nil

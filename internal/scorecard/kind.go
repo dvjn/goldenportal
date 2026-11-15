@@ -1,30 +1,28 @@
 package scorecard
 
 import (
-	"context"
 	"fmt"
 	"reflect"
+
+	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/configdoc"
 )
 
 // Kind serves scorecards as configuration documents.
 var Kind = configdoc.Kind[Spec]{
-	Name:     Name,
-	Document: DocumentKind,
-	Plural:   "scorecards",
-	Parse:    Parse,
-	Check:    Check,
-	Diff:     Diff,
-	// Results follow straight away, rather than at the next scheduled run.
-	Published: func(ctx context.Context, tx configdoc.DB, _ *Spec, next Spec) error {
-		_, _, err := evaluateIn(ctx, tx, next)
-		return err
-	},
+	Name:      Name,
+	Document:  DocumentKind,
+	Plural:    "scorecards",
+	Parse:     Parse,
+	Check:     Check,
+	Diff:      Diff,
+	Committed: func(ctx *gofr.Context, next Spec) { evaluateSoon(ctx, ctx.SQL, next.Identifier) },
 }
 
-// Diff lists what publishing next over previous changes. Results are
-// re-evaluated on publish, so nothing is lost and nothing is breaking.
+// Diff lists what publishing next over previous changes. Nothing is
+// breaking, as results are derived: they're re-evaluated shortly after the
+// publish, or by the next scheduled run if that fails.
 func Diff(previous, next Spec) []configdoc.Change {
 	changes := []configdoc.Change{}
 	add := func(section, id, change, format string, args ...any) {

@@ -31,6 +31,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/dashboard"
+	"github.com/dvjn/goldenportal/internal/httpx/httpxtest"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
@@ -79,17 +80,8 @@ func TestSchema(t *testing.T) {
 	}
 }
 
-type routes map[string]gofr.Handler
-
-func (r routes) GET(path string, h gofr.Handler)        { r[path] = h }
-func (routes) POST(string, gofr.Handler)                {}
-func (routes) PUT(string, gofr.Handler)                 {}
-func (routes) DELETE(string, gofr.Handler)              {}
-func (routes) AddCronJob(string, string, gofr.CronFunc) {}
-func (routes) OnStart(func(*gofr.Context) error)        {}
-
 func TestSchemaHandlers(t *testing.T) {
-	r := routes{}
+	r := httpxtest.New()
 	configdoc.RegisterSchemas(r)
 	call := func(path string, vars map[string]string, signedIn bool) (any, error) {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -101,7 +93,7 @@ func TestSchemaHandlers(t *testing.T) {
 		if vars != nil {
 			route += "/{kind}"
 		}
-		return r[route](&gofr.Context{Context: req.Context(), Request: gofrHTTP.NewRequest(req)})
+		return r.Handlers["GET "+route](&gofr.Context{Context: req.Context(), Request: gofrHTTP.NewRequest(req)})
 	}
 
 	list, err := call("/api/web/schemas", nil, true)

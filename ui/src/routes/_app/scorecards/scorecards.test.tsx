@@ -71,6 +71,7 @@ const summary: Summary = {
   spec,
   entities: 3,
   evaluatedAt: "2026-10-24T10:00:00Z",
+  evaluating: false,
   tiers: [
     { name: "", count: 1 },
     { name: "bronze", count: 2 },
@@ -162,6 +163,30 @@ describe("a scorecard in the catalog", () => {
     // Building the scorecard happens elsewhere.
     expect(screen.queryByRole("button", { name: "Evaluate Now" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Definition" })).not.toBeInTheDocument();
+  });
+
+  it("says while its results catch up with a publish, then refreshes them", async () => {
+    const user = userEvent.setup();
+    let summaries = 0;
+    let results = 0;
+    stubApi({
+      ...catalogRoutes,
+      "GET scorecards/readiness/summary": () =>
+        Response.json({ data: { ...summary, evaluating: summaries++ === 0 } }),
+      "GET scorecards/readiness/results": () => {
+        results++;
+        return Response.json({ data: { items: [ledger], total: 1 } });
+      },
+    });
+    renderRoute("/catalog/service");
+
+    await user.click(await screen.findByRole("tab", { name: "Readiness" }));
+    expect(await screen.findByText("Evaluating")).toBeInTheDocument();
+    const before = results;
+    await waitFor(() => expect(screen.queryByText("Evaluating")).not.toBeInTheDocument(), {
+      timeout: 5000,
+    });
+    await waitFor(() => expect(results).toBeGreaterThan(before));
   });
 
   it("sorts its entities on the server, leaving the blueprint's entities unsorted", async () => {

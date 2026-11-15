@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/web"
 	"github.com/dvjn/goldenportal/migrations"
 	"gofr.dev/pkg/gofr"
+	"gofr.dev/pkg/gofr/config"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
 )
@@ -89,10 +91,10 @@ func New() *gofr.App {
 	oauthServer.Register(api)
 	access.Register(api)
 	connection.Register(api, app.Config.Get("GP_BASE_URL"), app.Config.Get(connection.WebhookKeyEnv))
-	blueprint.Register(api, dashboard.CheckPages, connection.CheckSources)
-	entity.Register(api, app.Config.GetOrDefault(entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule))
+	blueprint.Register(api, []blueprint.Checker{dashboard.CheckPages, connection.CheckSources}, scorecard.EvaluateScoring)
+	entity.Register(api, mustSchedule(app, entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule))
 	connection.RegisterIngest(app)
-	scorecard.Register(api)
+	scorecard.Register(api, mustSchedule(app, scorecard.EvaluationScheduleEnv, scorecard.DefaultEvaluationSchedule))
 	dashboard.Register(api)
 	action.Register(api, app.Config.Get("GP_BASE_URL"))
 	search.Register(api, searcher)
@@ -101,4 +103,26 @@ func New() *gofr.App {
 	registerSettings(api, describeConfig(app.Config, oidc, scimServer), oidc, scimServer)
 
 	return app
+}
+
+// mustSchedule reads a schedule setting and stops the server if gofr can't
+// run it, as gofr would only log that and drop the job.
+func mustSchedule(app *gofr.App, env, fallback string) string {
+	schedule, err := scheduleSetting(app.Config, env, fallback)
+	if err != nil {
+		app.Logger().Fatal(err)
+	}
+
+	return schedule
+}
+
+// scheduleSetting reads a cron expression setting, parsed the way gofr's
+// scheduler parses it.
+func scheduleSetting(cfg config.Config, env, fallback string) (string, error) {
+	schedule := cfg.GetOrDefault(env, fallback)
+	if err := new(gofr.Crontab).AddJob(schedule, env, nil); err != nil {
+		return "", fmt.Errorf("%s=%q isn't a schedule: %w", env, schedule, err)
+	}
+
+	return schedule, nil
 }

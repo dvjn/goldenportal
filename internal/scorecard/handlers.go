@@ -13,22 +13,19 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
-	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
-// EvaluateSchedule is how often every scorecard is re-evaluated, as a cron
-// expression, so results follow entity changes and time-based checks.
-const EvaluateSchedule = "* * * * *"
-
-// Register serves scorecards. The handlers read the request and call the
-// services below, which MCP calls too.
-func Register(app httpx.Routes) {
+// Register serves scorecards and evaluates every one of them at start and
+// on schedule, a cron expression. The handlers read the request and call
+// the services below, which MCP calls too.
+func Register(app httpx.Routes, schedule string) {
 	configdoc.Register(app, Kind)
 	app.GET("scorecards/{identifier}/summary", summary)
 	app.GET("scorecards/{identifier}/results", listResults)
 	app.POST("scorecards/{identifier}/evaluate", evaluateNow)
 	app.GET("catalog/{blueprint}/scorecards", forEntity)
-	app.AddCronJob(EvaluateSchedule, "evaluate-scorecards", evaluateAll)
+	app.AddCronJob(schedule, "evaluate-scorecards", func(ctx *gofr.Context) { evaluateAll(ctx, ctx.SQL) })
+	app.OnStart(evaluateAtStart)
 }
 
 // published returns a published scorecard's spec and row ID.
@@ -184,7 +181,8 @@ func evaluateNow(ctx *gofr.Context) (any, error) {
 	return httpx.Result(EvaluateNow(ctx, ctx.PathParam("identifier")))
 }
 
-// EvaluateNow evaluates a published scorecard and stores its results.
+// EvaluateNow evaluates a published scorecard and stores its results, after
+// any evaluation of it already under way.
 func EvaluateNow(ctx *gofr.Context, name string) (Evaluated, error) {
 	if _, err := auth.Require(ctx, auth.RoleBuilder); err != nil {
 		return Evaluated{}, err
@@ -193,7 +191,7 @@ func EvaluateNow(ctx *gofr.Context, name string) (Evaluated, error) {
 		return Evaluated{}, err
 	}
 
-	n, err := Evaluate(ctx, ctx.SQL, name)
+	n, err := evaluateInTurn(ctx, ctx.SQL, name)
 	if errors.Is(err, ErrEvaluating) {
 		return Evaluated{}, httpx.Conflict(err.Error())
 	}
@@ -218,20 +216,4 @@ func ForEntity(ctx *gofr.Context, blueprint, identifier string) ([]EntityScoreca
 	}
 
 	return entityResults(ctx, ctx.SQL, blueprint, identifier)
-}
-
-// evaluateAll re-evaluates every published scorecard.
-func evaluateAll(ctx *gofr.Context) {
-	records, err := configdoc.NewStore(ctx.SQL, Name).List(ctx)
-	if err != nil {
-		telemetry.Error(ctx, "list scorecards to evaluate", err)
-		return
-	}
-	for _, record := range records {
-		if !record.Published() {
-			continue
-		}
-		// Evaluate logs how it went.
-		_, _ = Evaluate(ctx, ctx.SQL, record.Identifier)
-	}
 }

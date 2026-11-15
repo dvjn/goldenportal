@@ -54,6 +54,7 @@ const configuration: ServerConfiguration = {
     metricsPort: "2121",
     logLevel: "INFO",
     retentionSchedule: "17 4 * * *",
+    scorecardSchedule: "0 * * * *",
   },
 };
 
@@ -144,6 +145,7 @@ describe("configuration", () => {
     expect(row("HTTP Port")).toHaveTextContent("8000");
     expect(row("Metrics Port")).toHaveTextContent("2121");
     expect(row("Log Level")).toHaveTextContent("INFO");
+    expect(row("Scorecard Schedule")).toHaveTextContent("0 * * * *");
   });
 
   it("copies the redirect URI", async () => {

@@ -405,7 +405,7 @@ func (h documents[S]) Publish(ctx *gofr.Context, identifier string, acknowledgeB
 	if err := tx.Commit(); err != nil {
 		return Published{}, err
 	}
-	h.recordPublish(ctx, p, out)
+	h.afterPublish(ctx, p, out)
 
 	return out, nil
 }
@@ -452,12 +452,18 @@ func (h documents[S]) publishDraft(ctx *gofr.Context, tx DB, p auth.Principal, i
 	return Published{
 		Kind: h.kind.Document, Identifier: identifier, Version: v, Breaking: view.Breaking,
 		title: h.target(identifier, spec).Label, changes: len(view.Changes),
+		committed: func(ctx *gofr.Context) {
+			if h.kind.Committed != nil {
+				h.kind.Committed(ctx, spec)
+			}
+		},
 	}, nil
 }
 
-func (h documents[S]) recordPublish(ctx *gofr.Context, p auth.Principal, out Published) {
+func (h documents[S]) afterPublish(ctx *gofr.Context, p auth.Principal, out Published) {
 	auth.Record(ctx, p, h.kind.Action(OpPublish), audit.Target{Type: h.kind.Name, ID: out.Identifier, Label: out.title},
 		map[string]any{"version": out.Version, "changes": out.changes, "breaking": out.Breaking})
+	out.committed(ctx)
 }
 
 func (h documents[S]) documentKind() string { return h.kind.Document }

@@ -13,7 +13,7 @@ import {
   evaluateScorecard,
   type ScorecardSpec,
   scorecards,
-  summaryQueryOptions,
+  useSummary,
 } from "@/features/scorecards";
 
 // ScorecardOverview shows a scorecard's definition to those who build it:
@@ -23,7 +23,7 @@ export function ScorecardOverview({
   spec,
   published,
 }: Readonly<{ spec: ScorecardSpec; published: boolean }>) {
-  const summary = useQuery({ ...summaryQueryOptions(spec.identifier), enabled: published });
+  const summary = useSummary(spec.identifier, undefined, { enabled: published });
   const { data: blueprint } = useQuery(blueprints.queries.detail(spec.blueprint));
   const property = blueprint?.published?.spec.properties.find(
     (p) => p.scorecard === spec.identifier,

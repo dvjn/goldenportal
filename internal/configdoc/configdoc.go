@@ -7,6 +7,8 @@ import (
 	"context"
 	"slices"
 
+	"gofr.dev/pkg/gofr"
+
 	"github.com/dvjn/goldenportal/internal/auth"
 )
 
@@ -97,6 +99,9 @@ type Kind[S Spec] struct {
 	Affected func(ctx context.Context, db DB, identifier string) (int, error)
 	// Published runs in the publish transaction, e.g. to drop data of removed fields.
 	Published func(ctx context.Context, tx DB, previous *S, next S) error
+	// Committed runs once the publish commits, for follow-up work that
+	// mustn't hold up or undo it.
+	Committed func(ctx *gofr.Context, next S)
 	// Deletable returns an error when the document can't be deleted yet.
 	Deletable func(ctx context.Context, db DB, identifier string) error
 }

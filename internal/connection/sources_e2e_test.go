@@ -8,11 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"gofr.dev/pkg/gofr"
-
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/httpx/httpxtest"
 	"github.com/dvjn/goldenportal/internal/pgtest"
 )
 
@@ -157,22 +156,11 @@ func TestConnectionKeepsSourcesReadable(t *testing.T) {
 	}
 }
 
-// noRoutes registers handlers nowhere, for registering kinds with bulk
-// apply.
-type noRoutes struct{}
-
-func (noRoutes) GET(string, gofr.Handler)                 {}
-func (noRoutes) POST(string, gofr.Handler)                {}
-func (noRoutes) PUT(string, gofr.Handler)                 {}
-func (noRoutes) DELETE(string, gofr.Handler)              {}
-func (noRoutes) AddCronJob(string, string, gofr.CronFunc) {}
-func (noRoutes) OnStart(func(*gofr.Context) error)        {}
-
 // TestApplyConnectionWithBlueprint checks a connection and a blueprint whose
 // sources read it apply together, each seeing the other as pending.
 func TestApplyConnectionWithBlueprint(t *testing.T) {
-	configdoc.Register(noRoutes{}, Kind)
-	blueprint.Register(noRoutes{}, CheckSources)
+	configdoc.Register(httpxtest.New(), Kind)
+	blueprint.Register(httpxtest.New(), []blueprint.Checker{CheckSources}, nil)
 	ctx, cancel := builderContext(pgtest.New(t))
 	defer cancel()
 

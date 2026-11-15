@@ -10,7 +10,7 @@ import { ScorecardEntities } from "@/components/scorecards/scorecard-entities";
 import { TierDistribution } from "@/components/scorecards/tier-distribution";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Filter } from "@/features/catalog";
-import { type ScorecardSpec, scorecards, summaryQueryOptions } from "@/features/scorecards";
+import { type ScorecardSpec, scorecards, useSummary } from "@/features/scorecards";
 
 type ResultsProps = {
   search: TableSearch;
@@ -44,10 +44,7 @@ function Results({
   property,
   catalogFilters,
 }: Readonly<ResultsProps & { spec: ScorecardSpec }>) {
-  const summary = useQuery({
-    ...summaryQueryOptions(spec.identifier, where),
-    placeholderData: keepPreviousData,
-  });
+  const summary = useSummary(spec.identifier, where, { placeholderData: keepPreviousData });
   const entities = useRef<HTMLDivElement>(null);
   const show = (path: string, value: string) => {
     catalogFilters.set(path, [value]);

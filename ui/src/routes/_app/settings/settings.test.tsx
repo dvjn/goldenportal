@@ -78,6 +78,7 @@ const serverConfiguration = {
     metricsPort: "2121",
     logLevel: "INFO",
     retentionSchedule: "17 4 * * *",
+    scorecardSchedule: "0 * * * *",
   },
 };
 

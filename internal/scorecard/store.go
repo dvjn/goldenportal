@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -38,11 +39,66 @@ const evaluationPage = 100
 
 // Evaluate scores every entity in a published scorecard's scope and stores
 // the results that changed, dropping those of entities no longer in scope.
+// It gives up with ErrEvaluating when the scorecard is already being
+// evaluated, as the scheduled runs do.
 func Evaluate(ctx context.Context, db TxDB, name string) (scored int, err error) {
+	return evaluateTraced(ctx, db, name, tryLock)
+}
+
+// evaluateInTurn is Evaluate after any evaluation already under way, for
+// when that one may have read an older version. It gives up with
+// ErrEvaluating after lockWait, and with the context after
+// evaluationTimeout.
+func evaluateInTurn(ctx context.Context, db TxDB, name string) (scored int, err error) {
+	ctx, cancel := context.WithTimeout(ctx, evaluationTimeout)
+	defer cancel()
+
+	return evaluateTraced(ctx, db, name, waitForLock)
+}
+
+const evaluationTimeout = 10 * time.Minute
+
+// lockWait bounds the wait for an evaluation under way; tests shorten it.
+var lockWait = time.Minute
+
+// lockFunc takes a scorecard's evaluation lock for tx, or says it's taken.
+type lockFunc func(ctx context.Context, tx *gofrSQL.Tx, name string) error
+
+const lockKey = `hashtext('scorecard-evaluate:' || $1)`
+
+func tryLock(ctx context.Context, tx *gofrSQL.Tx, name string) error {
+	var locked bool
+	if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(`+lockKey+`)`, name).Scan(&locked); err != nil {
+		return err
+	}
+	if !locked {
+		return ErrEvaluating
+	}
+
+	return nil
+}
+
+func waitForLock(ctx context.Context, tx *gofrSQL.Tx, name string) error {
+	if _, err := tx.ExecContext(ctx, `SELECT set_config('lock_timeout', $1, true)`,
+		strconv.FormatInt(lockWait.Milliseconds(), 10)); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+lockKey+`)`, name)
+	if pqErr, ok := errors.AsType[*pq.Error](err); ok && pqErr.Code == "55P03" {
+		return ErrEvaluating
+	}
+
+	return err
+}
+
+func evaluateTraced(ctx context.Context, db TxDB, name string, lock lockFunc) (scored int, err error) {
 	ctx, span := telemetry.Start(ctx, "evaluate scorecard", telemetry.Scorecard.String(name))
 	started := time.Now()
 	var written int
 	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("evaluation panicked: %v", r)
+		}
 		span.SetAttributes(telemetry.Items.Int(scored), telemetry.Written.Int(written), telemetry.Unchanged.Int(scored-written))
 		took := telemetry.Duration.Int64(time.Since(started).Milliseconds())
 		switch {
@@ -50,22 +106,36 @@ func Evaluate(ctx context.Context, db TxDB, name string) (scored int, err error)
 			telemetry.Debug(ctx, "scorecard already being evaluated")
 			span.End()
 			return
+		case errors.Is(err, configdoc.ErrNotFound):
+			telemetry.Debug(ctx, "scorecard deleted before it was evaluated")
+			span.End()
+			return
 		case err != nil:
 			telemetry.Error(ctx, "scorecard not evaluated", err, took)
 		default:
-			// Every scorecard is evaluated every minute, so this is routine.
-			telemetry.Debug(ctx, "scorecard evaluated", telemetry.Items.Int(scored), telemetry.Written.Int(written), took)
+			telemetry.Info(ctx, "scorecard evaluated", telemetry.Items.Int(scored), telemetry.Written.Int(written), took)
 		}
 		telemetry.End(span, err)
 	}()
 
-	scored, written, err = evaluate(ctx, db, name)
+	scored, written, err = evaluate(ctx, db, name, lock)
 
 	return scored, err
 }
 
-func evaluate(ctx context.Context, db TxDB, name string) (scored, written int, err error) {
-	record, err := configdoc.NewStore(db, Name).Get(ctx, name)
+func evaluate(ctx context.Context, db TxDB, name string, lock lockFunc) (scored, written int, err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lock(ctx, tx, name); err != nil {
+		return 0, 0, err
+	}
+
+	// Read under the lock, so an evaluation that waited scores the version
+	// published while it waited.
+	record, err := configdoc.NewStore(tx, Name).Get(ctx, name)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -74,38 +144,26 @@ func evaluate(ctx context.Context, db TxDB, name string) (scored, written int, e
 	}
 	spec, _ := Parse(record.PublishedSource)
 
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var locked bool
-	if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtext('scorecard-evaluate:' || $1))`,
-		name).Scan(&locked); err != nil {
-		return 0, 0, err
-	}
-	if !locked {
-		return 0, 0, ErrEvaluating
-	}
-
-	if scored, written, err = evaluateIn(ctx, tx, spec); err != nil {
+	if scored, written, err = evaluateIn(ctx, tx, spec, record.PublishedVersion); err != nil {
 		return 0, 0, err
 	}
 
 	return scored, written, tx.Commit()
 }
 
-// evaluateIn scores and stores within db, which callers make a transaction,
-// and says how many entities it scored and how many results it wrote.
-func evaluateIn(ctx context.Context, db configdoc.DB, spec Spec) (scored, written int, err error) {
+// evaluateIn scores version, spec, and stores the results within db, which
+// callers make a transaction. It says how many entities it scored and how
+// many results it wrote.
+func evaluateIn(ctx context.Context, db configdoc.DB, spec Spec, version int) (scored, written int, err error) {
 	scorecardID, err := configdoc.NewStore(db, Name).PublishedID(ctx, spec.Identifier)
 	if err != nil {
 		return 0, 0, err
 	}
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO scorecard_evaluations (scorecard_id, last_evaluated_at) VALUES ($1, now())
-		ON CONFLICT (scorecard_id) DO UPDATE SET last_evaluated_at = excluded.last_evaluated_at`, scorecardID); err != nil {
+		INSERT INTO scorecard_evaluations (scorecard_id, last_evaluated_at, evaluated_version) VALUES ($1, now(), $2)
+		ON CONFLICT (scorecard_id) DO UPDATE
+		SET last_evaluated_at = excluded.last_evaluated_at, evaluated_version = excluded.evaluated_version`,
+		scorecardID, version); err != nil {
 		return 0, 0, err
 	}
 	specs, err := blueprint.Published(ctx, db)
@@ -213,10 +271,13 @@ func saveResults(ctx context.Context, db configdoc.DB, scorecardID string, entit
 
 // Summary is how a scorecard's entities are doing overall.
 type Summary struct {
-	Entities    int           `json:"entities"`
-	EvaluatedAt *time.Time    `json:"evaluatedAt"`
-	Tiers       []TierCount   `json:"tiers"`
-	Criteria    []CriterionAt `json:"criteria"`
+	Entities    int        `json:"entities"`
+	EvaluatedAt *time.Time `json:"evaluatedAt"`
+	// Evaluating is set while the results are for an older version than
+	// the published one, as they are just after a publish.
+	Evaluating bool          `json:"evaluating"`
+	Tiers      []TierCount   `json:"tiers"`
+	Criteria   []CriterionAt `json:"criteria"`
 }
 
 // TierCount is how many entities reached a tier as their highest. Name is
@@ -266,8 +327,10 @@ func (s Scope) where(args []any) (string, []any, error) {
 func summarize(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec, scope Scope) (Summary, error) {
 	summary := Summary{Tiers: []TierCount{}, Criteria: []CriterionAt{}}
 	tiers := map[string]int{}
-	err := db.QueryRowContext(ctx, `SELECT last_evaluated_at FROM scorecard_evaluations WHERE scorecard_id = $1`,
-		scorecardID).Scan(&summary.EvaluatedAt)
+	err := db.QueryRowContext(ctx, `
+		SELECT v.last_evaluated_at, coalesce(v.evaluated_version, 0) < d.published_version
+		FROM config_documents d LEFT JOIN scorecard_evaluations v ON v.scorecard_id = d.id
+		WHERE d.id = $1`, scorecardID).Scan(&summary.EvaluatedAt, &summary.Evaluating)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Summary{}, err
 	}

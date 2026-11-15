@@ -2,13 +2,16 @@ package app
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"gofr.dev/pkg/gofr/config"
 	"gofr.dev/pkg/gofr/logging"
 
 	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/scim"
+	"github.com/dvjn/goldenportal/internal/scorecard"
 )
 
 func TestDescribeConfig(t *testing.T) {
@@ -51,5 +54,35 @@ func TestDescribeConfig(t *testing.T) {
 	}
 	if !got.Sessions.SecureCookies || got.Sessions.MaxAgeHours != 168 {
 		t.Errorf("sessions = %+v, want secure cookies and a 7-day maximum", got.Sessions)
+	}
+	if got.Server.ScorecardSchedule != "0 * * * *" {
+		t.Errorf("scorecard schedule = %q, want hourly by default", got.Server.ScorecardSchedule)
+	}
+}
+
+func TestDescribeConfigScorecardSchedule(t *testing.T) {
+	cfg := config.NewMockConfig(map[string]string{scorecard.EvaluationScheduleEnv: "30 2 * * *"})
+	oidc := auth.NewOIDC(auth.OIDCConfig{}, logging.NewMockLogger(logging.ERROR))
+	scimServer := scim.New("", "", logging.NewMockLogger(logging.ERROR))
+
+	if got := describeConfig(cfg, oidc, scimServer).Server.ScorecardSchedule; got != "30 2 * * *" {
+		t.Errorf("scorecard schedule = %q, want the configured one", got)
+	}
+}
+
+func TestScheduleSetting(t *testing.T) {
+	for _, env := range []string{scorecard.EvaluationScheduleEnv, entity.RetentionScheduleEnv} {
+		got, err := scheduleSetting(config.NewMockConfig(nil), env, "0 * * * *")
+		if err != nil || got != "0 * * * *" {
+			t.Errorf("%s unset = %q, %v; want the default", env, got, err)
+		}
+		got, err = scheduleSetting(config.NewMockConfig(map[string]string{env: "*/15 * * * *"}), env, "0 * * * *")
+		if err != nil || got != "*/15 * * * *" {
+			t.Errorf("%s set = %q, %v; want the setting", env, got, err)
+		}
+		_, err = scheduleSetting(config.NewMockConfig(map[string]string{env: "every hour"}), env, "0 * * * *")
+		if err == nil || !strings.Contains(err.Error(), env) {
+			t.Errorf("%s invalid: err = %v, want one naming the setting", env, err)
+		}
 	}
 }
