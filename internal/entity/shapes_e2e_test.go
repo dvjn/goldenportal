@@ -4,7 +4,9 @@ package entity
 
 import (
 	"database/sql"
+	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -190,5 +192,48 @@ func TestSearchMatchesAnywhereFromThreeCharacters(t *testing.T) {
 		if got := strings.Join(f.list(specs, Query{Search: text}), ","); got != want {
 			t.Errorf("catalog search %q = %s, want %s", text, got, want)
 		}
+	}
+}
+
+// TestWidgetReadsRunInTheDatabase checks the aggregates and the table page
+// widgets read without loading entities: distinct values, a date's newest
+// and oldest, and a condition column a page sorts by.
+func TestWidgetReadsRunInTheDatabase(t *testing.T) {
+	f, specs := shapesFixture(t)
+	m, err := NewMatch(Query{Blueprint: specs["service"], Blueprints: specs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := f.store.Aggregates(t.Context(), m, []Aggregate{
+		{Op: "distinct", Path: "parent"},
+		{Op: "max", Path: "deployedAt"},
+		{Op: "min", Path: "deployedAt"},
+		{Op: "distinct", Path: "score"},
+		{Op: "max", Path: "deployedAt", Age: true},
+		{Op: "min", Path: "bornOn"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deployed := time.Date(2026, 11, 2, 4, 30, 0, 0, time.UTC)
+	epoch := float64(deployed.Unix())
+	if !near(values[0], 1) || !near(values[1], epoch) || !near(values[2], epoch) || !near(values[3], 2) ||
+		values[4] == nil || math.Abs(*values[4]-time.Since(deployed).Seconds()) > 60 ||
+		!near(values[5], float64(time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC).Unix())) {
+		t.Errorf("aggregates = %v", values)
+	}
+
+	scored := &Filter{Property: "score", Op: OpGt, Value: float64(1)}
+	rows, total, err := f.store.Rows(t.Context(), m, Order{ByCondition: true, Column: 1, Descending: true}, 3,
+		[]Column{{Path: "score"}, {Condition: true, Filter: scored}, {Path: "parent"}, {Condition: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range rows {
+		got = append(got, r.Identifier+"="+fmt.Sprint(r.Values[1], r.Values[3]))
+	}
+	if total != 6 || strings.Join(got, " ") != "alpha=true true bravo=false true delta=false true" {
+		t.Errorf("rows = %v, total %d", got, total)
 	}
 }

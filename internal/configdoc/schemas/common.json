@@ -132,7 +132,11 @@
     },
     "template": {
       "type": "string",
-      "description": "A template whose {{ }} hold jq, run on the widget's or row's entity, with $me, $input.<id>, $today and on entity pages $entity. What each gives is URL-escaped."
+      "description": "A template whose {{ }} hold jq over $me, $input.<id>, $today and on entity pages $entity. What each gives is URL-escaped."
+    },
+    "rowTemplate": {
+      "type": "string",
+      "description": "A template whose {{ }} each start with a path of the row, such as {{ url }}, optionally piped through jq, such as {{ url | ascii_downcase }}, which can also read $me, $input.<id>, $today and on entity pages $entity. A path without a value fills in empty. What each gives is URL-escaped, except one starting a url, which is the row's own URL."
     },
     "link": {
       "type": "object",
@@ -153,7 +157,7 @@
         "url": {
           "allOf": [{ "$ref": "#/$defs/template" }],
           "pattern": "^https?://",
-          "description": "An http or https URL template, such as https://grafana.example.com/d/{{ .identifier }}."
+          "description": "An http or https URL template, such as https://grafana.example.com/d/teams?team={{ $input.team | join(\",\") }}."
         },
         "path": {
           "allOf": [{ "$ref": "#/$defs/template" }],
@@ -174,10 +178,18 @@
     },
     "rowLink": {
       "type": "object",
-      "description": "What each table row opens instead of its entity's page: one of url and path, templated on the row's entity.",
+      "description": "What each table row opens instead of its entity's page: one of url and path, templated on the row's paths.",
       "properties": {
-        "url": { "$ref": "#/$defs/link/properties/url" },
-        "path": { "$ref": "#/$defs/link/properties/path" }
+        "url": {
+          "allOf": [{ "$ref": "#/$defs/rowTemplate" }],
+          "pattern": "^(https?://|\\{\\{)",
+          "description": "An http or https URL template, such as https://grafana.example.com/d/{{ identifier }}, or one starting with a path of the row holding a URL, such as {{ url }}/-/pipelines; once filled in, it must be an http or https URL or the row opens its entity."
+        },
+        "path": {
+          "allOf": [{ "$ref": "#/$defs/rowTemplate" }],
+          "pattern": "^/[^/\\\\]",
+          "description": "A path in the portal template, starting with one /, such as /connections/{{ identifier }}."
+        }
       },
       "oneOf": [
         { "required": ["url"] },
@@ -187,14 +199,15 @@
     },
     "value": {
       "type": "object",
-      "description": "The number a stat shows, worked out from a query's entities: how many there are, unless it has one of sum, avg, min, max, p50, p90, p95, p99, share or jq.",
+      "description": "The number a stat shows, which the database works out from a query's entities: how many there are, unless it has one of distinct, sum, avg, min, max, p50, p90, p95, p99 or share.",
       "properties": {
         "query": { "$ref": "#/$defs/queryRef" },
         "unit": { "$ref": "#/$defs/summaryUnit" },
+        "distinct": { "$ref": "#/$defs/path", "description": "The path of a field holding one value to count the distinct values of, such as owner." },
         "sum": { "$ref": "#/$defs/path", "description": "The path of a number field to total." },
         "avg": { "$ref": "#/$defs/path", "description": "The path of a number field to average." },
-        "min": { "$ref": "#/$defs/path", "description": "The path of a number field to take the lowest of." },
-        "max": { "$ref": "#/$defs/path", "description": "The path of a number field to take the highest of." },
+        "min": { "$ref": "#/$defs/path", "description": "The path of a number or date field to take the lowest of. The oldest date shows as its age, such as 12d3h, or with unit: date as the date." },
+        "max": { "$ref": "#/$defs/path", "description": "The path of a number or date field to take the highest of. The newest date shows as its age, such as 12d3h, or with unit: date as the date." },
         "p50": { "$ref": "#/$defs/percentile", "description": "The path of a number field to take the median of." },
         "p90": { "$ref": "#/$defs/percentile", "description": "The path of a number field to take the 90th percentile of." },
         "p95": { "$ref": "#/$defs/percentile", "description": "The path of a number field to take the 95th percentile of, such as duration." },
@@ -202,10 +215,6 @@
         "share": {
           "$ref": "#/$defs/filter",
           "description": "Shows the percent of the query's entities matching this condition."
-        },
-        "jq": {
-          "$ref": "#/$defs/jq",
-          "description": "jq over the query's entities, as a list, that gives a number. Slower than the others, so prefer them."
         }
       },
       "dependentSchemas": {
@@ -215,7 +224,7 @@
     },
     "summaryUnit": {
       "type": "string",
-      "description": "Follows the number, such as ms. The ops on a field take its unit unless this says otherwise; share is always %, so takes none."
+      "description": "Follows the number, such as ms. The ops on a field take its unit unless this says otherwise; share is always %, so takes none. A date's min or max shows its age unless this is date, which shows the date; it takes no other."
     },
     "percentile": {
       "$ref": "#/$defs/path",
@@ -223,13 +232,14 @@
     },
     "measure": {
       "type": "object",
-      "description": "What a bar shows for each group, or a trend for each day: how many entities there are, unless it has one of sum, avg, min, max, p50, p90, p95, p99 or share.",
+      "description": "What a bar shows for each group, or a trend for each day: how many entities there are, unless it has one of distinct, sum, avg, min, max, p50, p90, p95, p99 or share.",
       "properties": {
         "filter": {
           "$ref": "#/$defs/filter",
           "description": "Narrows the entities the measure works on to those it applies to, such as finished jobs."
         },
         "unit": { "$ref": "#/$defs/summaryUnit" },
+        "distinct": { "$ref": "#/$defs/value/properties/distinct" },
         "sum": { "$ref": "#/$defs/value/properties/sum" },
         "avg": { "$ref": "#/$defs/value/properties/avg" },
         "min": { "$ref": "#/$defs/value/properties/min" },
@@ -246,17 +256,18 @@
       "additionalProperties": false
     },
     "column": {
-      "description": "A table column: a field's path, or a titled column with jq over the row's entity.",
+      "description": "A table column: a field's path, its value optionally formatted with jq, or a titled filter showing whether each row meets it.",
       "type": "object",
       "properties": {
-        "title": { "type": "string", "description": "The column's heading. A path column defaults to its field's title." },
+        "title": { "type": "string", "description": "The column's heading. A path column defaults to its field's title; a filter column's names it in the table's sort." },
         "path": { "$ref": "#/$defs/path" },
-        "jq": { "$ref": "#/$defs/jq", "description": "jq over the row's entity, giving the cell's value." },
+        "format": { "$ref": "#/$defs/jq", "description": "jq over the cell's value, as ., giving what the cell shows, such as . / 3600 | floor. An empty cell stays empty." },
+        "filter": { "$ref": "#/$defs/filter", "description": "Shows whether each row meets this condition, such as {property: pipelineJobs, op: contains, value: sbom_generate}." },
         "unit": { "type": "string", "description": "Follows numbers in the column, such as ms." }
       },
       "oneOf": [
         { "required": ["path"] },
-        { "required": ["jq", "title"] }
+        { "required": ["filter", "title"], "properties": { "format": false, "unit": false } }
       ],
       "additionalProperties": false
     },
@@ -382,6 +393,7 @@
         "title": { "type": "string", "pattern": "\\S" },
         "filter": { "$ref": "#/$defs/measure/properties/filter" },
         "unit": { "$ref": "#/$defs/summaryUnit" },
+        "distinct": { "$ref": "#/$defs/value/properties/distinct" },
         "sum": { "$ref": "#/$defs/value/properties/sum" },
         "avg": { "$ref": "#/$defs/value/properties/avg" },
         "min": { "$ref": "#/$defs/value/properties/min" },
@@ -438,7 +450,7 @@
         },
         "sort": {
           "type": "string",
-          "description": "The path of the field to sort by, with a leading - for descending, such as -updatedAt."
+          "description": "The path of the field to sort by, or a filter column's title, with a leading - for descending, such as -updatedAt. A filter column sorts rows that don't meet it first."
         },
         "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "How many rows to show. Default 10." },
         "link": { "$ref": "#/$defs/link" },

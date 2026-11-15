@@ -2,7 +2,7 @@ import { formatNumber } from "@/components/catalog/property-value";
 import type { Reading, Summary } from "@/features/widgets";
 import { formatPercent } from "@/lib/format";
 
-const ops = ["sum", "avg", "min", "max", "p50", "p90", "p95", "p99", "share"] as const;
+const ops = ["distinct", "sum", "avg", "min", "max", "p50", "p90", "p95", "p99", "share"] as const;
 
 // summaryOp is how a summary sums up its entities: count, unless it names
 // another way.

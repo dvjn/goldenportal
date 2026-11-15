@@ -2,11 +2,27 @@ import { describe, expect, it } from "vitest";
 import { formatPercent, formatSeconds, percentOf } from "./format";
 
 describe("formatPercent", () => {
-  it("rounds down, so 100% means everything", () => {
-    expect(formatPercent(2, 3)).toBe("66%");
-    expect(formatPercent(199, 200)).toBe("99%");
+  it("rounds to the nearest percent", () => {
+    expect(formatPercent(2, 3)).toBe("67%");
+    expect(formatPercent(24, 84)).toBe("29%");
+    expect(formatPercent(1, 8)).toBe("13%");
     expect(formatPercent(3, 3)).toBe("100%");
     expect(formatPercent(0, 5)).toBe("0%");
+  });
+
+  it("reads a share that isn't none or all as neither", () => {
+    expect(formatPercent(200, 51455)).toBe("<1%");
+    expect(formatPercent(307, 51455)).toBe("1%");
+    expect(formatPercent(1, 150)).toBe("1%");
+    expect(formatPercent(198, 200)).toBe("99%");
+    expect(formatPercent(199, 200)).toBe(">99%");
+    expect(formatPercent(995, 1000)).toBe(">99%");
+    expect(formatPercent(12.4, 100)).toBe("12%");
+  });
+
+  it("keeps a negative share's sign", () => {
+    expect(formatPercent(-0.4, 100)).toBe("-<1%");
+    expect(formatPercent(-12.6, 100)).toBe("-13%");
   });
 
   it("is not thrown off by float error", () => {

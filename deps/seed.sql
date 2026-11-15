@@ -2207,7 +2207,7 @@ spec:
       query: connections
       columns: [{path: connector}, {path: lastRunOutcome}, {path: entities}, {path: lastRunAt}]
       sort: -entities
-      rowLink: {path: '/connections/{{ .identifier }}'}
+      rowLink: {path: '/connections/{{ identifier }}'}
       link: {query: connections}
 $yaml$)
 ), created AS (

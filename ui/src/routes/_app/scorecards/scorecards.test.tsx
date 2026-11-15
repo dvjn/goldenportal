@@ -156,7 +156,7 @@ describe("a scorecard in the catalog", () => {
     );
     // 2 of the 5 checks that ran pass, and 2 of the 3 entities checked have an owner.
     expect(await screen.findByText("40%")).toBeInTheDocument();
-    expect(screen.getByText("66%")).toBeInTheDocument();
+    expect(screen.getByText("67%")).toBeInTheDocument();
     const row = await screen.findByRole("row", { name: /Ledger/ });
     expect(within(row).getByText("50%")).toBeInTheDocument();
     expect(within(row).getByText("Owner is on call")).toBeInTheDocument();
@@ -462,7 +462,7 @@ describe("building a scorecard", () => {
     expect(about.getByText("readiness")).toBeInTheDocument();
     expect(await about.findByText("Entities")).toBeInTheDocument();
     // How entities fare is the catalog's to show.
-    expect(screen.queryByText("66%")).not.toBeInTheDocument();
+    expect(screen.queryByText("67%")).not.toBeInTheDocument();
   });
 
   it("shows each criterion's check and when as the filters they are", async () => {

@@ -31,14 +31,21 @@ export type WidgetLink = {
   path?: string;
 };
 
-// Column is a table column: a field path, read in SQL, or a title and jq
-// the server works out for each row.
-export type Column = { path?: string; title?: string; jq?: string; unit?: string };
+// Column is a table column: a field path, its value through format's jq,
+// or a title and a filter, showing whether each row meets it.
+export type Column = {
+  path?: string;
+  title?: string;
+  format?: string;
+  filter?: Filter;
+  unit?: string;
+};
 
 // Summary is how a number sums up entities: their count, unless it names
-// a field to sum, average, take the least, most or an exact percentile of,
-// or a condition whose share of them it is.
+// a field to count the distinct values of, sum, average, take the least,
+// most or an exact percentile of, or a condition whose share of them it is.
 export type Summary = {
+  distinct?: string;
   sum?: string;
   avg?: string;
   min?: string;
@@ -55,9 +62,8 @@ export type Summary = {
 // narrows them to. A matrix's measures are its columns, each titled.
 export type Measure = Summary & { title?: string; filter?: Filter };
 
-// Value is the number a stat shows from a query's entities: a summary of
-// them, or jq over them.
-export type Value = Summary & { query: Query; jq?: string };
+// Value is the number a stat shows, a summary of a query's entities.
+export type Value = Summary & { query: Query };
 
 // Widget is one tile on a page: a dashboard on Home, or a tab a blueprint
 // gives its catalog or entity pages.
@@ -132,8 +138,9 @@ export type WidgetContext = {
 // path in the portal.
 export type LinkData = { blueprint?: string; filter?: Filter; sort?: string; href?: string };
 
-// unit is the stat's own, or % for a share, or else the unit of the field
-// it sums up.
+// unit is the stat's own, or % for a share, s for a date's age, date for
+// a day or date-time for an instant, or else the unit of the field it sums
+// up.
 // A share also has count of total, the entities matching it of those its
 // query finds.
 export type StatData = {
@@ -171,9 +178,11 @@ export type TierData = {
 };
 // TableColumn says how to show a table column: by the definition of the
 // property its path ends on, from whichever blueprint that is, as a
-// built-in field, or as a scorecard's tier, with the scorecard's tiers.
+// built-in field, as a scorecard's tier, with the scorecard's tiers, as
+// its format gave it, or as whether each row meets its condition.
 export type TableColumn = Column & {
   title: string;
+  condition?: boolean;
   property?: Property;
   builtIn?: string;
   scorecard?: { identifier: string; blueprint: string; tiers: Tier[] };

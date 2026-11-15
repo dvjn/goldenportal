@@ -451,6 +451,7 @@ spec:
     owner: {relation: team}
     ownerName: {lookup: owner.title}
     readiness: {type: scorecard, scorecard: readiness}
+    deployedAt: {type: string, format: date-time}
 `)
 	if configdoc.HasErrors(issues) {
 		t.Fatal(issues)
@@ -471,14 +472,28 @@ spec:
 		{"average of text", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Avg: "tier"})}, "error w.value.avg"},
 		{"share", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Share: &filter.Filter{Property: "tier", Op: "eq", Value: "a"}})}, ""},
 		{"share of nothing", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Share: bad})}, "error w.value.share"},
-		{"jq", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{JQ: "map(.coverage) | add"})}, ""},
+		{"distinct", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{Distinct: "owner"}})}, ""},
+		{"distinct of a list", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{Distinct: "tags"}})}, "error w.value.distinct"},
+		{"newest date", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{Max: "deployedAt"}})}, ""},
+		{"newest date as a date", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{Max: "deployedAt", Unit: widget.UnitDate}})}, ""},
+		{"date in days", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{Min: "deployedAt", Unit: "days"}})}, "error w.value.unit"},
+		{"a number as a date", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{Max: "coverage", Unit: widget.UnitDate}})}, "error w.value.unit"},
+		{"trend of ages", widget.Widget{Type: widget.TypeTrend, Query: services, Date: "createdAt", Measure: &widget.Measure{Summary: widget.Summary{Max: "deployedAt"}}}, "error w.measure.max"},
+		{"trend of dates", widget.Widget{Type: widget.TypeTrend, Query: services, Date: "createdAt", Measure: &widget.Measure{Summary: widget.Summary{Min: "deployedAt", Unit: widget.UnitDate}}}, "error w.measure.min"},
+		{"trend of distinct values", widget.Widget{Type: widget.TypeTrend, Query: services, Date: "createdAt", Measure: &widget.Measure{Summary: widget.Summary{Distinct: "owner"}}}, ""},
+		{"trend in dates", widget.Widget{Type: widget.TypeTrend, Query: services, Date: "createdAt", Measure: &widget.Measure{Summary: widget.Summary{Distinct: "owner", Unit: widget.UnitDate}}}, "error w.measure.unit"},
+		{"unset filter column sorted", widget.Widget{Type: widget.TypeTable, Query: services, Sort: "-Mine", Columns: []widget.Column{{Title: "Mine", Filter: &filter.Filter{Property: "owner", Op: "in", ValuesFrom: widget.ValueInput + "team"}}}}, ""},
+		{"bar of dates", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "tier", Measure: &widget.Measure{Summary: widget.Summary{Max: "createdAt", Unit: "h"}}}, "error w.measure.unit"},
 		{"unpublished", widget.Widget{Type: widget.TypeStat, Value: &widget.Value{Query: widget.Query{Blueprint: "nope"}}}, "warning w.value.query.blueprint"},
 		{"group by tags", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "tags"}, ""},
 		{"group by tier", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "readiness"}, ""},
 		{"group by title", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "title"}, "error w.groupBy"},
-		{"unknown column", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "title"}, {Path: "nope"}, {Title: "Age", JQ: ".x"}}}, "error w.columns"},
+		{"unknown column", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "title"}, {Path: "nope"}, {Path: "coverage", Format: "floor"}}}, "error w.columns[1].path"},
+		{"filter columns", widget.Widget{Type: widget.TypeTable, Query: services, Sort: "-Tagged", Columns: []widget.Column{{Title: "Tagged", Filter: &filter.Filter{Property: "tags", Op: "exists"}}, {Title: "Bad", Filter: bad}}}, "error w.columns[1].filter"},
+		{"sort by a column title that's no filter", widget.Widget{Type: widget.TypeTable, Query: services, Sort: "Tagged", Columns: []widget.Column{{Title: "Tagged", Path: "tags"}}}, "error w.sort"},
+		{"row link paths", widget.Widget{Type: widget.TypeTable, Query: services, RowLink: &widget.Link{Path: "/x/{{ owner.title }}/{{ nope | ascii_downcase }}"}}, "error w.rowLink"},
 		{"path columns", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "owner.title"}, {Path: "readiness"}, {Path: "readiness.failed"}, {Path: "readiness.checks.hasOwner"}, {Path: "ownerName"}}}, ""},
-		{"scorecard field", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "readiness.tier"}}}, "error w.columns"},
+		{"scorecard field", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "readiness.tier"}}}, "error w.columns[0].path"},
 		{"sort a list", widget.Widget{Type: widget.TypeTable, Query: services, Sort: "tags"}, "error w.sort"},
 		{"sort by tier", widget.Widget{Type: widget.TypeTable, Query: services, Sort: "-readiness"}, ""},
 		{"filter with me", widget.Widget{Type: widget.TypeTable, Query: &widget.Query{Blueprint: "service", Filter: &filter.Filter{Property: "owner", Op: "eq", Value: widget.ValueMe}}}, ""},

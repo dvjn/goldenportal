@@ -1,12 +1,12 @@
 package dashboard
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"net/url"
 	"reflect"
 	"slices"
@@ -25,11 +25,8 @@ import (
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
-// MaxJQEntities caps the entities a jq value loads to run over. A query
-// matching more fails rather than giving a number from some of them.
-const MaxJQEntities = 1000
-
-// tableTimeout bounds the jq a table runs for its rows, all together.
+// tableTimeout bounds the jq a table runs for its page, all together: its
+// columns' formats and its row links.
 const tableTimeout = time.Second
 
 // parallel caps the statements one page runs at once, so one dashboard
@@ -131,11 +128,13 @@ type (
 		Link      *linkData     `json:"link,omitempty"`
 	}
 	// tableColumn says how to show a column: as the property its path ends
-	// on, a built-in field or a scorecard's tier, or else as jq gave it.
+	// on, a built-in field or a scorecard's tier, as its format gave it, or
+	// for a condition, whether each row meets it.
 	tableColumn struct {
 		Title     string              `json:"title"`
 		Path      string              `json:"path,omitempty"`
-		JQ        string              `json:"jq,omitempty"`
+		Format    string              `json:"format,omitempty"`
+		Condition bool                `json:"condition,omitempty"`
 		Unit      string              `json:"unit,omitempty"`
 		Property  *blueprint.Property `json:"property,omitempty"`
 		BuiltIn   string              `json:"builtIn,omitempty"`
@@ -199,8 +198,7 @@ type loader struct {
 
 // plan is what a page's widgets need of one query's entities, gathered so
 // each kind of read is one statement: every aggregate together, each
-// grouping, each first page, each scorecard's tiers, and for jq, the
-// entities themselves.
+// grouping, each first page with its count, and each scorecard's tiers.
 type plan struct {
 	query      entity.Query
 	match      entity.Match
@@ -213,7 +211,6 @@ type plan struct {
 	trends     []*trendDays
 	pages      map[string]*page
 	tiers      map[string]*tiers
-	documents  *documents
 	// widgets are the widgets that read it, for its statements' spans.
 	widgets []string
 }
@@ -249,12 +246,12 @@ type trendDays struct {
 }
 
 type page struct {
-	sort  string
-	limit int
-	paths []string
-	rows  []entity.Row
-	total int
-	err   error
+	order   entity.Order
+	limit   int
+	columns []entity.Column
+	rows    []entity.Row
+	total   int
+	err     error
 }
 
 type tiers struct {
@@ -262,12 +259,6 @@ type tiers struct {
 	counts    []scorecard.TierCount
 	checks    scorecard.Checks
 	err       error
-}
-
-// documents are the entities jq values run over, as jq reads them.
-type documents struct {
-	list []any
-	err  error
 }
 
 // load works out what every widget on a page shows for whoever is
@@ -380,23 +371,8 @@ func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 	v := *w.Value
 	op, path := v.Op()
 	unit := l.unit(p.query.Blueprint, v.Summary)
-	if op == widget.OpJQ {
-		if p.documents == nil {
-			p.documents = &documents{}
-		}
-		return func() (any, error) {
-			if p.err != nil {
-				return nil, p.err
-			}
-			value, err := l.jqValue(p.documents, v.JQ)
-			if err != nil {
-				return nil, err
-			}
-			return statData{Value: value, Unit: unit, Link: l.link(w, nil)}, nil
-		}
-	}
 	i := len(p.aggregates)
-	p.aggregates = append(p.aggregates, entity.Aggregate{Op: op, Path: path, Share: l.bind(v.Share)})
+	p.aggregates = append(p.aggregates, entity.Aggregate{Op: op, Path: path, Share: l.bind(v.Share), Age: l.aged(p.query.Blueprint, v.Summary)})
 	total := -1
 	if op == widget.OpShare {
 		total = p.countIndex()
@@ -419,21 +395,46 @@ func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 	}
 }
 
-// unit is what follows a summary's number: % for a share, the summary's
-// own, or else the unit of the field it works on.
+// unit is what follows a summary's number: % for a share, a date's min or
+// max's, the summary's own, or else the unit of the field it works on.
 func (l loader) unit(bp blueprint.Spec, s widget.Summary) string {
 	op, path := s.Op()
+	info, err := entity.Describe(l.blueprints, bp, path)
 	switch {
 	case op == widget.OpShare:
 		return "%"
-	case s.Unit != "" || op == widget.OpCount:
+	case l.aged(bp, s):
+		return widget.UnitSeconds
+	case entity.Dated(l.blueprints, bp, op, path):
+		// A day reads the same anywhere; an instant shows in local time.
+		if info.Property != nil && info.Property.Format == "date" {
+			return widget.UnitDate
+		}
+		return widget.UnitDateTime
+	case s.Unit != "" || op == widget.OpCount || op == widget.OpDistinct:
 		return s.Unit
 	}
-	if info, err := entity.Describe(l.blueprints, bp, path); err == nil && info.Property != nil && info.Property.Display != nil {
+	if err == nil && info.Property != nil && info.Property.Display != nil {
 		return info.Property.Display.Unit
 	}
 
 	return ""
+}
+
+// aged reports whether a summary is a date's min or max shown as its age,
+// as it is unless its unit asks for the date.
+func (l loader) aged(bp blueprint.Spec, s widget.Summary) bool {
+	op, path := s.Op()
+	return s.Unit != widget.UnitDate && entity.Dated(l.blueprints, bp, op, path)
+}
+
+// clock is when the page loads.
+func (l loader) clock() time.Time {
+	if l.now.IsZero() {
+		return time.Now()
+	}
+
+	return l.now
 }
 
 // measurement is where a measure's aggregates are among those a statement
@@ -448,14 +449,14 @@ type measurement struct {
 
 // measurement adds what a measure reads to aggregates, its filters bound
 // for whoever is looking; nil counts.
-func (l loader) measurement(m *widget.Measure, aggregates *[]entity.Aggregate) measurement {
+func (l loader) measurement(bp blueprint.Spec, m *widget.Measure, aggregates *[]entity.Aggregate) measurement {
 	if m == nil {
 		return measurement{at: -1, count: true}
 	}
 	op, path := m.Op()
 	narrow := l.bind(m.Filter)
 	out := measurement{at: len(*aggregates), share: op == widget.OpShare, count: op == widget.OpCount}
-	*aggregates = append(*aggregates, entity.Aggregate{Op: op, Path: path, Share: l.bind(m.Share), Filter: narrow})
+	*aggregates = append(*aggregates, entity.Aggregate{Op: op, Path: path, Share: l.bind(m.Share), Filter: narrow, Age: l.aged(bp, m.Summary)})
 	if out.share {
 		*aggregates = append(*aggregates,
 			entity.Aggregate{Op: widget.OpCount, Filter: narrow},
@@ -556,19 +557,36 @@ func (p *plan) grouping(path string, limit int) *grouping {
 }
 
 func (l loader) table(w widget.Widget, p *plan) func() (any, error) {
-	var paths []string
-	jq := w.RowLink != nil
+	var columns []entity.Column
 	for _, c := range w.Columns {
-		if c.Path != "" {
-			paths = append(paths, c.Path)
-		}
-		jq = jq || c.JQ != ""
+		columns = append(columns, entity.Column{Path: c.Path, Condition: c.Filter != nil, Filter: l.bind(c.Filter)})
 	}
-	key := fmt.Sprintf("%s\x00%d\x00%s", w.Sort, w.Limit, strings.Join(paths, "\x00"))
-	pg, ok := p.pages[key]
+	// A row link reads a column's path where one does, or else its own.
+	links := map[string]int{}
+	if w.RowLink != nil {
+		for _, path := range widget.RowTemplatePaths(w.RowLink.URL + w.RowLink.Path) {
+			at := slices.IndexFunc(w.Columns, func(c widget.Column) bool { return c.Path == path && c.Format == "" })
+			if at < 0 {
+				at = len(columns)
+				columns = append(columns, entity.Column{Path: path})
+			}
+			links[path] = at
+		}
+	}
+	order := entity.Order{Sort: w.Sort}
+	at, byCondition, descending := w.SortCondition()
+	if byCondition {
+		order = entity.Order{ByCondition: true, Column: at, Descending: descending}
+	}
+	key, _ := json.Marshal(struct {
+		Order   entity.Order
+		Limit   int
+		Columns []entity.Column
+	}{order, w.Limit, columns})
+	pg, ok := p.pages[string(key)]
 	if !ok {
-		pg = &page{sort: w.Sort, limit: w.Limit, paths: paths}
-		p.pages[key] = pg
+		pg = &page{order: order, limit: w.Limit, columns: columns}
+		p.pages[string(key)] = pg
 	}
 
 	return func() (any, error) {
@@ -582,31 +600,23 @@ func (l loader) table(w widget.Widget, p *plan) func() (any, error) {
 			Blueprint: p.query.Blueprint.Identifier, Total: pg.total,
 			Columns: l.columns(w, p.query.Blueprint), Rows: make([]tableRow, len(pg.rows)), Link: l.link(w, nil),
 		}
-		if data.Link != nil && data.Link.Blueprint == p.query.Blueprint.Identifier {
+		// The catalog sorts by paths only, not by a table's conditions.
+		if data.Link != nil && data.Link.Blueprint == p.query.Blueprint.Identifier && !byCondition {
 			data.Link.Sort = w.Sort
 		}
+		// Widgets can share a page, so each formats a copy of its rows.
 		for i, r := range pg.rows {
-			data.Rows[i] = tableRow{Identifier: r.Identifier, Title: r.Title, Values: make([]any, len(w.Columns))}
-			if hasLinks(r.Links) {
-				data.Rows[i].Links = make([][]entity.Link, len(w.Columns))
-			}
-			at := 0
-			for j, c := range w.Columns {
-				if c.Path == "" {
-					continue
-				}
-				data.Rows[i].Values[j] = r.Values[at]
-				if data.Rows[i].Links != nil {
-					data.Rows[i].Links[j] = r.Links[at]
-				}
-				at++
+			data.Rows[i] = tableRow{Identifier: r.Identifier, Title: r.Title, Values: slices.Clone(r.Values[:len(w.Columns)])}
+			if links := r.Links[:len(w.Columns)]; hasLinks(links) {
+				data.Rows[i].Links = slices.Clone(links)
 			}
 		}
-		if jq && len(pg.rows) > 0 {
-			if err := l.tableJQ(w, p.query, pg.rows, data.Rows); err != nil {
-				return nil, err
-			}
+		ctx, cancel := context.WithTimeout(l.ctx, tableTimeout)
+		defer cancel()
+		if err := l.format(ctx, w, data.Rows); err != nil {
+			return nil, err
 		}
+		l.rowLinks(ctx, w, pg.rows, data.Rows, links)
 		return data, nil
 	}
 }
@@ -619,17 +629,19 @@ func hasLinks(links [][]entity.Link) bool {
 func (l loader) columns(w widget.Widget, bp blueprint.Spec) []tableColumn {
 	out := make([]tableColumn, len(w.Columns))
 	for i, c := range w.Columns {
-		col := tableColumn{Title: c.Title, Path: c.Path, JQ: c.JQ, Unit: c.Unit}
+		col := tableColumn{Title: c.Title, Path: c.Path, Format: c.Format, Condition: c.Filter != nil, Unit: c.Unit}
 		if c.Path != "" {
 			info, _ := entity.Describe(l.blueprints, bp, c.Path)
 			if col.Title == "" {
 				col.Title = info.Title
 			}
-			col.BuiltIn = info.BuiltIn
-			if sc, ok := l.scorecards[info.Scorecard]; ok {
-				col.Scorecard = &tableScorecard{Identifier: sc.Identifier, Blueprint: sc.Blueprint, Tiers: sc.Tiers}
-			} else {
-				col.Property = info.Property
+			if c.Format == "" {
+				col.BuiltIn = info.BuiltIn
+				if sc, ok := l.scorecards[info.Scorecard]; ok {
+					col.Scorecard = &tableScorecard{Identifier: sc.Identifier, Blueprint: sc.Blueprint, Tiers: sc.Tiers}
+				} else {
+					col.Property = info.Property
+				}
 			}
 		}
 		out[i] = col
@@ -638,45 +650,46 @@ func (l loader) columns(w widget.Widget, bp blueprint.Spec) []tableColumn {
 	return out
 }
 
-// tableJQ loads the shown rows' entities, which jq columns and row links
-// read whole, and fills in what they give.
-func (l loader) tableJQ(w widget.Widget, q entity.Query, rows []entity.Row, out []tableRow) error {
-	identifiers := make([]any, len(rows))
-	for i, r := range rows {
-		identifiers[i] = r.Identifier
-	}
-	q.Filter = &filter.Filter{Property: "identifier", Op: filter.OpIn, Values: identifiers}
-	q.Sort, q.Page, q.PageSize = "", 1, len(rows)
-	docs, err := l.documents(l.ctx, q)
-	if err != nil {
-		return err
-	}
-	byIdentifier := map[string]any{}
-	for _, doc := range docs {
-		byIdentifier[doc.(map[string]any)["identifier"].(string)] = doc
-	}
-	ctx, cancel := context.WithTimeout(l.ctx, tableTimeout)
-	defer cancel()
-	for i := range out {
-		input := byIdentifier[out[i].Identifier]
-		for j, c := range w.Columns {
-			if c.JQ == "" {
+// format runs each format column's jq over its cells. An empty cell stays
+// empty, so a format never has to handle nothing.
+func (l loader) format(ctx context.Context, w widget.Widget, rows []tableRow) error {
+	for j, c := range w.Columns {
+		if c.Format == "" {
+			continue
+		}
+		code, err := widget.CompileJQ(c.Format, widget.Scope{Entity: true})
+		if err != nil {
+			return httpx.BadRequest(fmt.Sprintf("column %s: %v", c.Title, err))
+		}
+		for i := range rows {
+			if rows[i].Values[j] == nil {
 				continue
 			}
-			code, err := widget.CompileJQ(c.JQ, widget.Scope{Entity: true})
-			if err == nil {
-				out[i].Values[j], err = widget.RunJQ(ctx, code, input, l.env)
+			if rows[i].Values[j], err = widget.RunJQ(ctx, code, rows[i].Values[j], l.env); err != nil {
+				return httpx.BadRequest(fmt.Sprintf("column %s, for %s: %v", cmp.Or(c.Title, c.Path), rows[i].Identifier, err))
 			}
-			if err != nil {
-				return httpx.BadRequest(fmt.Sprintf("column %s, for %s: %v", c.Title, out[i].Identifier, err))
+			if rows[i].Links != nil {
+				rows[i].Links[j] = nil
 			}
-		}
-		if w.RowLink != nil {
-			out[i].Link = l.template(ctx, w, w.RowLink, input)
 		}
 	}
 
 	return nil
+}
+
+// rowLinks fills in each row's link from the values of the paths it reads,
+// at the columns links names.
+func (l loader) rowLinks(ctx context.Context, w widget.Widget, rows []entity.Row, out []tableRow, links map[string]int) {
+	if w.RowLink == nil {
+		return
+	}
+	for i, r := range rows {
+		values := map[string]any{}
+		for path, at := range links {
+			values[path] = r.Values[at]
+		}
+		out[i].Link = l.template(w, w.RowLink, func(text string) (string, error) { return widget.RenderRowTemplate(ctx, text, values, l.env) })
+	}
 }
 
 // tasks lists the statements a plan runs, each filling in its own part.
@@ -720,7 +733,7 @@ func (l loader) tasks(p *plan) []func() {
 	}
 	for _, pg := range p.pages {
 		tasks = append(tasks, read("read rows", func(ctx context.Context) error {
-			pg.rows, pg.total, pg.err = l.store.Rows(ctx, p.match, pg.sort, pg.limit, pg.paths)
+			pg.rows, pg.total, pg.err = l.store.Rows(ctx, p.match, pg.order, pg.limit, pg.columns)
 			return pg.err
 		}))
 	}
@@ -730,15 +743,6 @@ func (l loader) tasks(p *plan) []func() {
 			return t.err
 		}, telemetry.Scorecard.String(t.scorecard.Identifier)))
 	}
-	if d := p.documents; d != nil {
-		tasks = append(tasks, read("read documents", func(ctx context.Context) error {
-			q := p.query
-			q.Page, q.PageSize = 1, MaxJQEntities+1
-			d.list, d.err = l.documents(ctx, q)
-			return d.err
-		}))
-	}
-
 	return tasks
 }
 
@@ -755,56 +759,6 @@ func run(tasks []func()) {
 		}()
 	}
 	wg.Wait()
-}
-
-// documents loads a page of q's entities as jq reads them, with their
-// relations' titles, lookups and scorecard results.
-func (l loader) documents(ctx context.Context, q entity.Query) ([]any, error) {
-	page, err := l.store.List(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	if err := l.store.Resolve(ctx, l.blueprints, q.Blueprint, page.Items); err != nil {
-		return nil, err
-	}
-	out := make([]any, len(page.Items))
-	for i, e := range page.Items {
-		out[i] = entity.Document(e)
-	}
-
-	return out, nil
-}
-
-// jqValue runs a stat's jq over the query's entities, as a list.
-func (l loader) jqValue(d *documents, expression string) (*float64, error) {
-	if d.err != nil {
-		return nil, d.err
-	}
-	code, err := widget.CompileJQ(expression, widget.Scope{Entity: true})
-	if err != nil {
-		return nil, httpx.BadRequest("jq doesn't compile: " + err.Error())
-	}
-	if len(d.list) > MaxJQEntities {
-		return nil, httpx.BadRequest(fmt.Sprintf("jq runs over at most %d entities, and the query matches more; narrow it, or use count, sum, avg, min, max or share", MaxJQEntities))
-	}
-	result, err := widget.RunJQ(l.ctx, code, d.list, l.env)
-	if err != nil {
-		return nil, httpx.BadRequest("jq: " + err.Error())
-	}
-	switch v := result.(type) {
-	case nil:
-		return nil, nil
-	case int:
-		n := float64(v)
-		return &n, nil
-	case float64:
-		return &v, nil
-	case *big.Int:
-		n, _ := new(big.Float).SetInt(v).Float64()
-		return &n, nil
-	}
-
-	return nil, httpx.BadRequest(fmt.Sprintf("jq gave %s, which isn't a number", describe(result)))
 }
 
 func (l loader) bind(f *filter.Filter) *filter.Filter {
@@ -844,7 +798,7 @@ func (l loader) link(w widget.Widget, extra *filter.Filter) *linkData {
 		return nil
 	}
 	if link.Query == nil {
-		return l.template(l.ctx, w, link, nil)
+		return l.template(w, link, func(text string) (string, error) { return widget.RenderTemplate(l.ctx, text, l.env) })
 	}
 	if _, ok := l.blueprints[link.Query.Blueprint]; !ok {
 		return nil
@@ -878,19 +832,18 @@ func (l loader) groupLink(w widget.Widget, single bool, condition *filter.Filter
 	return data
 }
 
-// template fills in a url or path link template for input, the row's
-// entity or nothing.
-func (l loader) template(ctx context.Context, w widget.Widget, link *widget.Link, input any) *linkData {
+// template fills in a url or path link template with render.
+func (l loader) template(w widget.Widget, link *widget.Link, render func(string) (string, error)) *linkData {
 	text := link.URL
 	if text == "" {
 		text = link.Path
 	}
-	href, err := widget.RenderTemplate(ctx, text, input, l.env)
+	href, err := render(text)
 	if err == nil {
 		err = checkHref(href, link.Path != "")
 	}
 	if err != nil {
-		l.log(ctx, "widget link not made", err, telemetry.Widget.String(w.ID))
+		l.log(l.ctx, "widget link not made", err, telemetry.Widget.String(w.ID))
 		return nil
 	}
 
@@ -917,18 +870,3 @@ func checkHref(href string, path bool) error {
 // entityVariable is the page entity as jq reads $entity: flat, as jq
 // reads every entity.
 func entityVariable(e *entity.Entity) map[string]any { return entity.Document(e) }
-
-func describe(value any) string {
-	switch value.(type) {
-	case string:
-		return "text"
-	case bool:
-		return "true or false"
-	case []any:
-		return "a list"
-	case map[string]any:
-		return "an object"
-	}
-
-	return fmt.Sprintf("%T", value)
-}

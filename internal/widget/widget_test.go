@@ -58,9 +58,9 @@ services:
   type: table
   title: Services
   query: ownedServices
-  columns: [{path: tier}, {title: Owner, path: owner.title}, {title: Age, jq: '.createdAt | fromdate', unit: d}]
-  sort: -lastDeployedAt
-  rowLink: {path: '/catalog/service/{{ .identifier }}'}
+  columns: [{path: tier}, {title: Owner, path: owner.title}, {title: Hours, path: uptime, format: . / 3600 | floor, unit: h}, {title: PCI, filter: {property: tags, op: contains, value: pci}}]
+  sort: -PCI
+  rowLink: {path: '/catalog/service/{{ identifier }}?team={{ owner.title | ascii_downcase }}'}
 byOwner:
   type: matrix
   title: By owner
@@ -104,8 +104,15 @@ deploys:
 	if services.Limit != 10 || services.Width != 12 || services.Query.Blueprint != "service" || services.Query.Filter.Value != ValueEntity {
 		t.Errorf("table = %+v", services)
 	}
-	if want := []Column{{Path: "tier"}, {Title: "Owner", Path: "owner.title"}, {Title: "Age", JQ: ".createdAt | fromdate", Unit: "d"}}; !reflect.DeepEqual(services.Columns, want) || services.RowLink.Path == "" {
+	pci := &filter.Filter{Property: "tags", Op: filter.OpContains, Value: "pci"}
+	if want := []Column{{Path: "tier"}, {Title: "Owner", Path: "owner.title"}, {Title: "Hours", Path: "uptime", Format: ". / 3600 | floor", Unit: "h"}, {Title: "PCI", Filter: pci}}; !reflect.DeepEqual(services.Columns, want) || services.RowLink.Path == "" {
 		t.Errorf("table columns = %+v, row link %+v", services.Columns, services.RowLink)
+	}
+	if got := RowTemplatePaths(services.RowLink.Path); !reflect.DeepEqual(got, []string{"identifier", "owner.title"}) {
+		t.Errorf("row link paths = %v", got)
+	}
+	if got := len(services.Filters()); got != 2 {
+		t.Errorf("table filters = %d, want the query's and the PCI column's", got)
 	}
 	if op, path := deploys.Value.Op(); op != "sum" || path != "cost" || deploys.Icon != "rocket" || deploys.Color != "red" || deploys.Value.Unit != "$" || deploys.Link.URL == "" {
 		t.Errorf("stat = %+v", deploys)
@@ -148,7 +155,7 @@ func TestValueOp(t *testing.T) {
 		{Value{Avg: "service.cost"}, "avg", "service.cost"},
 		{Value{Max: "readiness.score"}, "max", "readiness.score"},
 		{Value{Share: share}, OpShare, ""},
-		{Value{JQ: "length"}, OpJQ, ""},
+		{Value{Summary: Summary{Distinct: "owner"}}, OpDistinct, "owner"},
 		{Value{Summary: Summary{P95: "duration"}}, "p95", "duration"},
 	} {
 		if op, path := test.value.Op(); op != test.op || path != test.path {
@@ -235,8 +242,7 @@ func TestParseReportsProblems(t *testing.T) {
 		{"link query in place", "w: {type: bar, title: W, groupBy: a, link: {query: {blueprint: s}}}", catalog, "widgets.w.link.query", "name of a query declared in queries"},
 		{"unknown query", "w: {type: table, title: W, query: services}", home, "widgets.w.query", `no query "services"`},
 		{"unknown value field", "w: {type: stat, title: W, value: {calc: count}}", catalog, "widgets.w.value.calc", "unknown field"},
-		{"bad jq value", "w: {type: stat, title: W, value: {jq: 'map(.x'}}", catalog, "widgets.w.value.jq", "doesn't compile"},
-		{"jq value with entity off its page", "w: {type: stat, title: W, value: {jq: '$entity.x'}}", catalog, "widgets.w.value.jq", "$entity"},
+		{"jq value", "w: {type: stat, title: W, value: {jq: length}}", catalog, "widgets.w.value.jq", valueJQ},
 		{"two ops", "w: {type: stat, title: W, value: {sum: cost, avg: cost}}", catalog, "widgets.w.value.avg", "takes one of"},
 		{"sum takes a path", "w: {type: stat, title: W, value: {sum: 'cost * 2'}}", catalog, "widgets.w.value.sum", "path of a number field"},
 		{"share has no unit", "w: {type: stat, title: W, value: {share: {property: a, op: exists}, unit: h}}", catalog, "widgets.w.value.unit", "percent"},
@@ -249,7 +255,9 @@ func TestParseReportsProblems(t *testing.T) {
 		{"matrix measures", "w: {type: matrix, title: W, groupBy: owner}", catalog, "widgets.w.measures", "add the measures"},
 		{"measure ops", "w: {type: matrix, title: W, groupBy: owner, measures: [{title: M, p95: a, avg: a}]}", catalog, "widgets.w.measures[0].p95", "a measure takes one of"},
 		{"percentile takes a path", "w: {type: stat, title: W, value: {p95: 'a b'}}", catalog, "widgets.w.value.p95", "p95 takes the path of a number field"},
-		{"value ops", "w: {type: stat, title: W, value: {p99: a, jq: length}}", catalog, "widgets.w.value.jq", "a value takes one of sum, avg, min, max, p50, p90, p95, p99, share, jq"},
+		{"value ops", "w: {type: stat, title: W, value: {p99: a, distinct: a}}", catalog, "widgets.w.value.p99", "a value takes one of distinct, sum, avg, min, max, p50, p90, p95, p99, share"},
+		{"distinct takes a path", "w: {type: stat, title: W, value: {distinct: 'a b'}}", catalog, "widgets.w.value.distinct", "distinct takes the path of a field, such as owner"},
+		{"max takes a path", "w: {type: stat, title: W, value: {max: 'a b'}}", catalog, "widgets.w.value.max", "max takes the path of a number or date field"},
 		{"bar measure title", "w: {type: bar, title: W, groupBy: a, measure: {title: M}}", catalog, "widgets.w.measure.title", "unknown field"},
 		{"measure share unit", "w: {type: bar, title: W, groupBy: a, measure: {share: {property: a, op: exists}, unit: s}}", catalog, "widgets.w.measure.unit", "percent"},
 		{"bar sort", "w: {type: bar, title: W, groupBy: a, sort: -size}", catalog, "widgets.w.sort", "sort is count or group, with a leading - for descending"},
@@ -278,12 +286,24 @@ func TestParseReportsProblems(t *testing.T) {
 		{"group needs a query", "w: {type: bar, title: W, groupBy: a, link: {path: /x, group: true}}", catalog, "widgets.w.link.group", "goes with query"},
 		{"url scheme", "w: {type: table, title: W, link: {url: 'javascript:alert(1)'}}", catalog, "widgets.w.link.url", "https://"},
 		{"path leaves", "w: {type: table, title: W, link: {path: '//evil.example.com'}}", catalog, "widgets.w.link.path", "path in the portal"},
-		{"template jq", "w: {type: table, title: W, link: {path: '/x/{{ .a | }}'}}", catalog, "widgets.w.link.path", "doesn't compile"},
+		{"template jq", "w: {type: table, title: W, link: {path: '/x/{{ $me | }}'}}", catalog, "widgets.w.link.path", "doesn't compile"},
+		{"template over no input", "w: {type: table, title: W, link: {path: '/x/{{ .identifier }}'}}", catalog, "widgets.w.link.path", "{{ .identifier }} reads ., which a widget's link doesn't have"},
+		{"empty template", "w: {type: table, title: W, link: {path: '/x/{{ }}'}}", catalog, "widgets.w.link.path", "like {{ $me.email }}"},
+		{"widget link starting with a token", "w: {type: table, title: W, link: {url: '{{ $me.email }}'}}", catalog, "widgets.w.link.url", "url must start with https:// or http://"},
+		{"row link url without its scheme", "w: {type: table, title: W, rowLink: {url: 'gitlab.example.com/{{ path }}'}}", catalog, "widgets.w.rowLink.url", "url must start with https:// or http://, or in a row link"},
 		{"row link query", "w: {type: table, title: W, rowLink: {query: {}}}", catalog, "widgets.w.rowLink.query", "unknown field"},
-		{"column title", "w: {type: table, title: W, columns: [{jq: .x}]}", catalog, "widgets.w.columns[0].title", "add the column's title"},
-		{"column jq", "w: {type: table, title: W, columns: [{title: X, jq: '.x |'}]}", catalog, "widgets.w.columns[0].jq", "doesn't compile"},
+		{"column jq", "w: {type: table, title: W, columns: [{title: X, jq: .x}]}", catalog, "widgets.w.columns[0].jq", columnJQ},
+		{"column needs a path or a filter", "w: {type: table, title: W, columns: [{title: X}]}", catalog, "widgets.w.columns[0]", "a column has a path, or a title and a filter"},
+		{"filter column title", "w: {type: table, title: W, columns: [{filter: {property: a, op: exists}}]}", catalog, "widgets.w.columns[0].title", "add the column's title"},
+		{"filter column titles", "w: {type: table, title: W, columns: [{title: X, filter: {property: a, op: exists}}, {title: X, filter: {property: b, op: exists}}]}", catalog, "widgets.w.columns[1].title", "another filter column is titled X"},
+		{"filter column format", "w: {type: table, title: W, columns: [{title: X, filter: {property: a, op: exists}, format: .}]}", catalog, "widgets.w.columns[0]", "takes no format or unit"},
+		{"filter column entity off its page", "w: {type: table, title: W, columns: [{title: X, filter: {property: a, op: eq, value: $entity}}]}", catalog, "widgets.w.columns[0].filter", "only entity pages"},
+		{"column format", "w: {type: table, title: W, columns: [{path: x, format: '. |'}]}", catalog, "widgets.w.columns[0].format", "doesn't compile"},
 		{"unknown column field", "w: {type: table, title: W, columns: [{title: X, value: .x}]}", catalog, "widgets.w.columns[0].value", "unknown field"},
-		{"column path and jq", "w: {type: table, title: W, columns: [{title: X, path: x, jq: .x}]}", catalog, "widgets.w.columns[0]", "not both"},
+		{"column path and filter", "w: {type: table, title: W, columns: [{title: X, path: x, filter: {property: a, op: exists}}]}", catalog, "widgets.w.columns[0]", "not both"},
+		{"row link over the entity", "w: {type: table, title: W, rowLink: {path: '/x/{{ .identifier }}'}}", catalog, "widgets.w.rowLink.path", rowToken},
+		{"row link over a variable", "w: {type: table, title: W, rowLink: {url: 'https://x.example.com/{{ $me.name }}'}}", catalog, "widgets.w.rowLink.url", rowToken},
+		{"row link jq", "w: {type: table, title: W, rowLink: {path: '/x/{{ url | sub( }}'}}", catalog, "widgets.w.rowLink.path", "doesn't compile"},
 		{"scorecard query of nothing", "w: {type: scorecard, title: W, scorecard: s, query: nope}", catalog, "widgets.w.query", `no query "nope"`},
 	}
 	for _, test := range tests {
@@ -600,27 +620,50 @@ func TestRenderTemplate(t *testing.T) {
 		},
 		Entity: map[string]any{"identifier": "ledger", "tier": "critical"},
 	}
-	row := map[string]any{"identifier": "a b/c?d", "stars": float64(3)}
 	tests := []struct{ text, want string }{
 		{`https://status.example.com/?team={{ $input.team | join(",") }}`, "https://status.example.com/?team=payments,search"},
 		{`https://status.example.com/?team={{ $input.team }}&tier={{ $input.tier }}`, "https://status.example.com/?team=payments,search&tier="},
-		{`/catalog/service/{{ .identifier }}`, "/catalog/service/a%20b/c%3Fd"},
-		{`/x?stars={{ .stars }}&me={{ $me.email }}&on={{ $today }}&e={{ $entity.tier }}`, "/x?stars=3&me=ada%40example.com&on=2026-10-25&e=critical"},
+		{`/x?me={{ $me.email }}&on={{ $today }}&e={{ $entity.tier }}`, "/x?me=ada%40example.com&on=2026-10-25&e=critical"},
 		{`/x/{{ "&y=1#z" }}`, "/x/%26y%3D1%23z"},
 	}
 	for _, test := range tests {
-		got, err := RenderTemplate(t.Context(), test.text, row, env)
+		got, err := RenderTemplate(t.Context(), test.text, env)
 		if err != nil || got != test.want {
 			t.Errorf("RenderTemplate(%q) = %q, %v, want %q", test.text, got, err, test.want)
 		}
 	}
-	if _, err := RenderTemplate(t.Context(), "/x/{{ error(\"no\") }}", nil, env); err == nil {
+	if _, err := RenderTemplate(t.Context(), "/x/{{ error(\"no\") }}", env); err == nil {
 		t.Error("a failing template rendered")
+	}
+
+	row := map[string]any{"identifier": "a b/c?d", "stars": float64(3), "url": "https://GitLab.example.com/a"}
+	for _, test := range []struct{ text, want string }{
+		{`/catalog/service/{{ identifier }}`, "/catalog/service/a%20b/c%3Fd"},
+		{`/x?stars={{stars|. * 2}}&me={{ url | ascii_downcase | $me.email + . }}`, "/x?stars=6&me=ada%40example.comhttps://gitlab.example.com/a"},
+		{`/x?missing={{ owner.title | ascii_downcase }}`, "/x?missing="},
+		{`{{ url }}/-/pipelines?ref={{ identifier }}`, "https://GitLab.example.com/a/-/pipelines?ref=a%20b/c%3Fd"},
+	} {
+		got, err := RenderRowTemplate(t.Context(), test.text, row, env)
+		if err != nil || got != test.want {
+			t.Errorf("RenderRowTemplate(%q) = %q, %v, want %q", test.text, got, err, test.want)
+		}
+	}
+	if _, err := RenderRowTemplate(t.Context(), "/x/{{ .identifier }}", row, env); err == nil {
+		t.Error("a row link read beyond its row")
 	}
 	if err := CheckTemplate("/x/{{ $entity.identifier }}", Scope{}); err == nil {
 		t.Error("$entity compiled off entity pages")
 	}
 	if err := CheckTemplate("/x/{{ $entity.identifier }}", Scope{Entity: true}); err != nil {
 		t.Error(err)
+	}
+}
+
+// A row link can be the row's own URL, which the loader checks once it's
+// filled in.
+func TestRowLinkFromAStoredURL(t *testing.T) {
+	widgets, issues := parse(t, "w: {type: table, title: W, rowLink: {url: '{{ url }}'}}", Scope{Blueprint: "repository"})
+	if len(issues) > 0 || widgets[0].RowLink.URL != "{{ url }}" {
+		t.Fatalf("row link = %+v, issues %+v", widgets[0].RowLink, issues)
 	}
 }

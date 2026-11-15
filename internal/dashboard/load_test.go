@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -76,7 +77,7 @@ spec:
 	mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text FROM \(SELECT e\.properties -> 'tier' AS value.*`+where).
 		WithArgs(`{"tier":"critical"}`, 9).
 		WillReturnError(errors.New("connection reset"))
-	mock.ExpectQuery(`^SELECT e\.id, e\.identifier, e\.title, e\.properties -> 'tier', NULL::jsonb, to_jsonb\(\(SELECT h1\.title .*`+where+
+	mock.ExpectQuery(`^SELECT e\.id, e\.identifier, e\.title, e\.properties -> 'tier' AS k0, NULL::jsonb, to_jsonb\(\(SELECT h1\.title .*`+where+
 		`.*ORDER BY \(CASE WHEN jsonb_typeof\(e\.properties -> 'cost'\) = 'number' THEN \(e\.properties -> 'cost'\)::numeric END\) DESC NULLS LAST`).
 		WithArgs(`{"tier":"critical"}`, 5).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "identifier", "title", "v1", "l1", "v2", "l2"}).
@@ -125,6 +126,131 @@ spec:
 	}
 	if len(logged) != 1 {
 		t.Errorf("logged = %v, want the failed statement only", logged)
+	}
+}
+
+// A table reads its page and count, with its conditions, its formats'
+// values and its row link's paths, and a date's newest shows as its age:
+// nothing loads entities to work on. A condition whose variable is unset
+// falls away, as a query's does, so every row meets it.
+func TestTablesAndAgesReadNoDocuments(t *testing.T) {
+	spec := mustParse(t, `
+kind: Dashboard
+metadata: {identifier: plan, title: Plan}
+spec:
+  inputs:
+    team: {type: relation, relation: team, multiple: true}
+  queries:
+    services: {blueprint: service}
+  widgets:
+    deployed: {type: stat, title: Deployed, value: {query: services, max: deployedAt}}
+    first: {type: stat, title: First, value: {query: services, min: deployedAt, unit: date}}
+    owners: {type: stat, title: Owners, value: {query: services, distinct: owner}}
+    born: {type: stat, title: Born, value: {query: services, min: bornOn, unit: date}}
+    mine:
+      type: table
+      title: Mine
+      query: services
+      columns:
+        - {path: homepage}
+        - {title: Mine, filter: {property: owner, op: in, values: $input.team}}
+      sort: -Mine
+      rowLink: {url: '{{ homepage }}'}
+    list:
+      type: table
+      title: Services
+      query: services
+      columns:
+        - {title: Dollars, path: cost, format: . / 100}
+        - {title: Critical, filter: {property: tier, op: eq, value: critical}}
+      sort: -Critical
+      limit: 2
+      link: {query: services}
+      rowLink: {url: 'https://x.example.com/{{ identifier }}?team={{ owner.title | ascii_downcase }}'}
+`)
+	bp, issues := blueprint.Parse(`
+kind: Blueprint
+metadata: {identifier: service, title: Service}
+spec:
+  properties:
+    tier: {type: string}
+    cost: {type: number}
+    owner: {relation: team}
+    deployedAt: {type: string, format: date-time}
+    bornOn: {type: string, format: date}
+    homepage: {type: string}
+`)
+	if configdoc.HasErrors(issues) {
+		t.Fatal(issues)
+	}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.MatchExpectationsInOrder(false)
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	deployed := now.AddDate(0, 0, -12)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT (extract(epoch FROM now() - max(gp_time((e.properties -> 'deployedAt' #>> '{}')))))::float8, ` +
+		`(extract(epoch FROM min(gp_time((e.properties -> 'deployedAt' #>> '{}')))))::float8, ` +
+		`(count(DISTINCT nullif(e.relations -> 'owner', 'null'::jsonb)))::float8, ` +
+		`(extract(epoch FROM min(gp_time((e.properties -> 'bornOn' #>> '{}')))))::float8 FROM entities e`)).
+		WillReturnRows(sqlmock.NewRows([]string{"a", "b", "c", "d"}).AddRow(12*86400, float64(deployed.Unix()), 3, float64(time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC).Unix())))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT e.id, e.identifier, e.title, e.properties -> 'homepage' AS k0, NULL::jsonb, `+
+		`to_jsonb(coalesce(true, false)) AS k1, NULL::jsonb FROM entities e`) + `.*` + regexp.QuoteMeta(`ORDER BY k1 DESC, e.title, e.identifier
+	LIMIT $1`)).
+		WithArgs(10).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "identifier", "title", "v0", "l0", "v1", "l1"}).
+			AddRow("1", "ledger", "Ledger", []byte(`"https://ledger.example.com/a?b=c&d#e"`), nil, []byte(`true`), nil).
+			AddRow("2", "search", "Search", []byte(`"javascript:alert(1)"`), nil, []byte(`true`), nil))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT e.id, e.identifier, e.title, e.properties -> 'cost' AS k0, NULL::jsonb, `+
+		`to_jsonb(coalesce((e.properties @> $1::jsonb), false)) AS k1, NULL::jsonb, to_jsonb(e.identifier) AS k2, NULL::jsonb, `+
+		`to_jsonb((SELECT h1.title`)+`.*`+regexp.QuoteMeta(`ORDER BY k1 DESC, e.title, e.identifier
+	LIMIT $2`)).
+		WithArgs(`{"tier":"critical"}`, 2).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "identifier", "title", "v0", "l0", "v1", "l1", "v2", "l2", "v3", "l3"}).
+			AddRow("1", "ledger", "Ledger", []byte(`1250`), nil, []byte(`true`), nil, []byte(`"ledger"`), nil, []byte(`"Payments"`), nil).
+			AddRow("2", "search", "Search", nil, nil, []byte(`false`), nil, []byte(`"search"`), nil, nil, nil))
+	mock.ExpectQuery(`^SELECT count\(\*\) FROM entities e WHERE `).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(7))
+
+	var logged []string
+	l := loader{
+		ctx: t.Context(), db: db, store: entity.NewStore(db), now: now,
+		blueprints: map[string]blueprint.Spec{"service": bp, "team": {Identifier: "team"}},
+		// Cleared, the team input shows every team.
+		env: widget.Env{Values: widget.Values{widget.ValueInput + "team": nil}},
+		log: func(_ context.Context, msg string, err error, _ ...attribute.KeyValue) {
+			logged = append(logged, fmt.Sprint(msg, ": ", err))
+		},
+	}
+	data := l.load(spec.Widgets)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	encode := func(id string) string {
+		encoded, _ := json.Marshal(data.Widgets[id])
+		return string(encoded)
+	}
+	for id, want := range map[string]string{
+		"deployed": `{"data":{"value":1036800,"unit":"s"}}`,
+		"first":    fmt.Sprintf(`{"data":{"value":%d,"unit":"date-time"}}`, deployed.Unix()),
+		"owners":   `{"data":{"value":3}}`,
+		"born":     `{"data":{"value":1792886400,"unit":"date"}}`,
+		"mine": `{"data":{"blueprint":"service","total":2,"columns":[{"title":"homepage","path":"homepage","property":{"identifier":"homepage","title":"homepage","type":"string"}},{"title":"Mine","condition":true}],` +
+			`"rows":[{"identifier":"ledger","title":"Ledger","values":["https://ledger.example.com/a?b=c\u0026d#e",true],"link":{"href":"https://ledger.example.com/a?b=c\u0026d#e"}},` +
+			`{"identifier":"search","title":"Search","values":["javascript:alert(1)",true]}]}}`,
+		"list": `{"data":{"blueprint":"service","total":7,"columns":[{"title":"Dollars","path":"cost","format":". / 100"},{"title":"Critical","condition":true}],` +
+			`"rows":[{"identifier":"ledger","title":"Ledger","values":[12.5,true],"link":{"href":"https://x.example.com/ledger?team=payments"}},` +
+			`{"identifier":"search","title":"Search","values":[null,false],"link":{"href":"https://x.example.com/search?team="}}],"link":{"blueprint":"service"}}}`,
+	} {
+		if got := encode(id); got != want {
+			t.Errorf("%s = %s\nwant %s", id, got, want)
+		}
+	}
+	// A stored URL that isn't a web URL leaves its row to open its entity.
+	if len(logged) != 1 || !strings.Contains(logged[0], `"javascript:alert(1)" isn't a web URL`) {
+		t.Errorf("logged = %q", logged)
 	}
 }
 

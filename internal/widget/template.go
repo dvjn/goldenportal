@@ -3,15 +3,17 @@ package widget
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/dvjn/goldenportal/internal/jq"
 )
 
-// jqVariables are what jq can read wherever widgets run it, in values,
-// columns and link templates. $x.y means what it does in a filter: $me is
+// jqVariables are what jq can read wherever widgets run it, in column
+// formats and link templates. $x.y means what it does in a filter: $me is
 // whoever is looking, as email, name, role and groups; $input.<id> what a
 // dashboard input is set to, always a list; $today the date; and $entity
 // the entity whose page it is, flat, as jq reads every entity.
@@ -82,11 +84,16 @@ func RunJQ(ctx context.Context, code *jq.Code, input any, env Env) (any, error) 
 	return value, err
 }
 
-// CheckTemplate checks a template's {{ }} jq compiles.
+// CheckTemplate checks a widget link's {{ }} jq compiles and reads only
+// variables, since it runs over no input.
 func CheckTemplate(text string, scope Scope) error {
 	for _, match := range tokenPattern.FindAllStringSubmatch(text, -1) {
-		if strings.TrimSpace(match[1]) == "" {
-			return fmt.Errorf("%s must hold jq, like {{ .identifier }}", match[0])
+		expression := strings.TrimSpace(match[1])
+		switch {
+		case expression == "":
+			return fmt.Errorf("%s must hold jq, like {{ $me.email }}", match[0])
+		case strings.HasPrefix(expression, "."):
+			return fmt.Errorf("%s reads ., which a widget's link doesn't have; read a variable, such as {{ $me.email }}", strings.TrimSpace(match[0]))
 		}
 		if _, err := CompileJQ(match[1], scope); err != nil {
 			return fmt.Errorf("%s doesn't compile: %v", strings.TrimSpace(match[0]), err)
@@ -96,16 +103,105 @@ func CheckTemplate(text string, scope Scope) error {
 	return nil
 }
 
-// RenderTemplate fills in a link template, running the jq in each {{ }}
-// on input. What each gives is escaped for a URL, and a list joins with
-// commas, so a value can't change where the link goes.
-func RenderTemplate(ctx context.Context, text string, input any, env Env) (string, error) {
+// rowRef is a row link's {{ }}: a path of the row, and jq its value
+// goes through, if any.
+type rowRef struct {
+	Path string
+	JQ   string
+}
+
+// parseRowToken reads what a row link's {{ }} holds, without its braces.
+func parseRowToken(text string) (rowRef, bool) {
+	head, pipe, piped := strings.Cut(text, "|")
+	t := rowRef{Path: strings.TrimSpace(head)}
+	if piped {
+		t.JQ = strings.TrimSpace(pipe)
+	}
+
+	return t, validPath(t.Path) && (!piped || t.JQ != "")
+}
+
+// CheckRowTemplate checks each {{ }} of a row link reads a path of the row,
+// and the jq it pipes that through compiles.
+func CheckRowTemplate(text string, scope Scope) error {
+	for _, match := range tokenPattern.FindAllStringSubmatch(text, -1) {
+		t, ok := parseRowToken(match[1])
+		if !ok {
+			return errors.New(rowToken)
+		}
+		if t.JQ == "" {
+			continue
+		}
+		if _, err := CompileJQ(t.JQ, scope); err != nil {
+			return fmt.Errorf("%s doesn't compile: %v", strings.TrimSpace(match[0]), err)
+		}
+	}
+
+	return nil
+}
+
+// RowTemplatePaths lists the row paths a row link's {{ }} read, in order,
+// each once.
+func RowTemplatePaths(text string) []string {
+	var paths []string
+	for _, match := range tokenPattern.FindAllStringSubmatch(text, -1) {
+		if t, ok := parseRowToken(match[1]); ok && !slices.Contains(paths, t.Path) {
+			paths = append(paths, t.Path)
+		}
+	}
+
+	return paths
+}
+
+// RenderRowTemplate fills in a row link from the row's values by path,
+// each through its jq, escaped as RenderTemplate escapes them. A path
+// without a value fills in empty, without running its jq. A token starting
+// the link is the row's own URL, kept whole for the caller to check.
+func RenderRowTemplate(ctx context.Context, text string, values map[string]any, env Env) (string, error) {
+	var failed error
+	start := tokenPattern.FindStringIndex(text)
+	at := 0
+	rendered := tokenPattern.ReplaceAllStringFunc(text, func(token string) string {
+		leading := at == 0 && start != nil && start[0] == 0
+		at++
+		t, ok := parseRowToken(token[2 : len(token)-2])
+		var err error
+		if !ok {
+			err = errors.New(rowToken)
+		} else {
+			value := values[t.Path]
+			if t.JQ != "" && value != nil {
+				var code *jq.Code
+				if code, err = CompileJQ(t.JQ, Scope{Entity: true}); err == nil {
+					value, err = RunJQ(ctx, code, value, env)
+				}
+			}
+			if err == nil && leading {
+				return format(value)
+			}
+			if err == nil {
+				return escape(format(value))
+			}
+		}
+		if failed == nil {
+			failed = fmt.Errorf("%s: %w", strings.TrimSpace(token), err)
+		}
+		return ""
+	})
+
+	return rendered, failed
+}
+
+// RenderTemplate fills in a widget's link template, running the jq in each
+// {{ }} over its variables. What each gives is escaped for a URL, and a
+// list joins with commas, so a value can't change where the link goes.
+func RenderTemplate(ctx context.Context, text string, env Env) (string, error) {
 	var failed error
 	rendered := tokenPattern.ReplaceAllStringFunc(text, func(token string) string {
 		code, err := CompileJQ(token[2:len(token)-2], Scope{Entity: true})
 		if err == nil {
 			var value any
-			if value, err = RunJQ(ctx, code, input, env); err == nil {
+			if value, err = RunJQ(ctx, code, nil, env); err == nil {
 				return escape(format(value))
 			}
 		}

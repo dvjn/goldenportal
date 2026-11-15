@@ -243,7 +243,7 @@ func (c *widgetCheck) check(page string) {
 func (c *widgetCheck) value(v widget.Value) {
 	bp, ok := c.query(&v.Query, "value.query")
 	op, path := v.Op()
-	if !ok || op == widget.OpJQ || op == widget.OpCount {
+	if !ok || op == widget.OpCount {
 		return
 	}
 	a := entity.Aggregate{Op: op, Path: path}
@@ -253,7 +253,26 @@ func (c *widgetCheck) value(v widget.Value) {
 			return
 		}
 	}
-	c.fail("value."+op, entity.CheckAggregate(c.blueprints, bp, a))
+	if err := entity.CheckAggregate(c.blueprints, bp, a); err != nil {
+		c.fail("value."+op, err)
+		return
+	}
+	c.unit(bp, "value", v.Summary)
+}
+
+// unit checks a date's min or max shows as its age or the date, and only
+// such a summary takes unit: date. A trend shows a number for each day,
+// which neither is.
+func (c *widgetCheck) unit(bp blueprint.Spec, field string, s widget.Summary) {
+	op, path := s.Op()
+	switch date := entity.Dated(c.blueprints, bp, op, path); {
+	case date && c.w.Type == widget.TypeTrend:
+		c.report(configdoc.SeverityError, field+"."+op, "a trend shows a number for each day, so its measure can't be the %s of a date; count the entities, or take the %s of a number", op, op)
+	case date && s.Unit != "" && s.Unit != widget.UnitDate:
+		c.report(configdoc.SeverityError, field+".unit", "min or max of a date shows its age, or with unit: %s the date, so it takes no other unit", widget.UnitDate)
+	case !date && s.Unit == widget.UnitDate:
+		c.report(configdoc.SeverityError, field+".unit", "unit: %s shows the date a min or max of a date comes to, so it goes with min or max of a date", widget.UnitDate)
+	}
 }
 
 func (c *widgetCheck) scorecard() {
@@ -295,13 +314,22 @@ func (c *widgetCheck) entities(bp blueprint.Spec) {
 			c.measure(bp, "measure", *w.Measure)
 		}
 	case widget.TypeTable:
-		for _, column := range w.Columns {
-			if column.Path != "" {
-				c.fail("columns", entity.CheckColumn(c.blueprints, bp, column.Path))
+		for i, column := range w.Columns {
+			field := fmt.Sprintf("columns[%d]", i)
+			switch {
+			case column.Path != "":
+				c.fail(field+".path", entity.CheckColumn(c.blueprints, bp, column.Path))
+			case column.Filter != nil:
+				c.fail(field+".filter", checkFilter(c.blueprints, c.ladders, bp, column.Filter))
 			}
 		}
-		if w.Sort != "" {
+		if _, byCondition, _ := w.SortCondition(); w.Sort != "" && !byCondition {
 			c.fail("sort", entity.CheckSort(c.blueprints, bp, w.Sort))
+		}
+		if l := w.RowLink; l != nil {
+			for _, path := range widget.RowTemplatePaths(l.URL + l.Path) {
+				c.fail("rowLink", entity.CheckColumn(c.blueprints, bp, path))
+			}
 		}
 	}
 }
@@ -315,8 +343,12 @@ func (c *widgetCheck) measure(bp blueprint.Spec, field string, m widget.Measure)
 	case widget.OpShare:
 		c.fail(field+".share", checkFilter(c.blueprints, c.ladders, bp, m.Share))
 	default:
-		c.fail(field+"."+op, entity.CheckAggregate(c.blueprints, bp, entity.Aggregate{Op: op, Path: path}))
+		if err := entity.CheckAggregate(c.blueprints, bp, entity.Aggregate{Op: op, Path: path}); err != nil {
+			c.fail(field+"."+op, err)
+			return
+		}
 	}
+	c.unit(bp, field, m.Summary)
 }
 
 // link checks a query link's entities: its filter, and for a link to each

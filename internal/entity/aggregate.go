@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
+	"github.com/dvjn/goldenportal/internal/widget"
 )
 
 // Match is the condition a query's entities meet, compiled once, which
@@ -41,22 +42,24 @@ func NewMatch(q Query) (Match, error) {
 
 // compiler compiles more of a statement after the match's own arguments.
 func (m Match) compiler() *compiler {
-	return &compiler{spec: m.spec, specs: m.specs, args: slices.Clone(m.args)}
+	return &compiler{spec: m.spec, specs: m.specs, ladders: m.ladders, args: slices.Clone(m.args)}
 }
 
 // Aggregate is one way to sum up the entities a query matches: count them,
-// sum, avg, min, max or take an exact percentile of a number field, or
-// share, the percent of them that meet a condition. Filter narrows them to
-// those it applies to first.
+// count the distinct values of a field, sum, avg, min, max or take an exact
+// percentile of a number field, min or max of a date, or share, the percent
+// of them that meet a condition. Filter narrows them to those it applies to
+// first. Age gives a date's min or max as how many seconds ago it was.
 type Aggregate struct {
 	Op     string
 	Path   string
 	Share  *Filter
 	Filter *Filter
+	Age    bool
 }
 
 // Aggregates are the ops an Aggregate can be.
-var Aggregates = []string{"count", "sum", "avg", "min", "max", "p50", "p90", "p95", "p99", "share"}
+var Aggregates = []string{widget.OpCount, widget.OpDistinct, "sum", "avg", widget.OpMin, widget.OpMax, "p50", "p90", "p95", "p99", widget.OpShare}
 
 // percentiles are the fractions the percentile ops stand for.
 var percentiles = map[string]string{"p50": "0.5", "p90": "0.9", "p95": "0.95", "p99": "0.99"}
@@ -68,7 +71,8 @@ func CheckAggregate(specs map[string]blueprint.Spec, spec blueprint.Spec, a Aggr
 }
 
 // aggregateSQL is an aggregate as SQL over the rows of one group, which
-// for a narrowed one is only its filter's.
+// for a narrowed one is only its filter's. min or max of a date is in
+// seconds since the Unix epoch, or before now for its age.
 func aggregateSQL(c *compiler, a Aggregate) (string, error) {
 	var narrow string
 	if a.Filter != nil {
@@ -101,12 +105,29 @@ func aggregateSQL(c *compiler, a Aggregate) (string, error) {
 			return "", err
 		}
 		return "100.0 * " + of("count(*)", condition) + " / nullif(" + of("count(*)") + ", 0)", nil
-	case "sum", "avg", "min", "max", "p50", "p90", "p95", "p99":
+	case widget.OpDistinct:
 		fld, err := c.field(a.Path)
 		if err != nil {
 			return "", err
 		}
-		if fld.many || (fld.kind != "number" && fld.kind != "integer") {
+		if fld.many || fld.kind == "object" {
+			return "", fmt.Errorf("distinct counts the values of a field holding one, and %s holds a list or an object", a.Path)
+		}
+		return of("count(DISTINCT nullif(" + fld.json() + ", 'null'::jsonb))"), nil
+	case "sum", "avg", widget.OpMin, widget.OpMax, "p50", "p90", "p95", "p99":
+		fld, err := c.field(a.Path)
+		if err != nil {
+			return "", err
+		}
+		switch {
+		case dated(a.Op, fld) && a.Age:
+			return "extract(epoch FROM now() - " + of(a.Op+"("+fld.time()+")") + ")", nil
+		case dated(a.Op, fld):
+			return "extract(epoch FROM " + of(a.Op+"("+fld.time()+")") + ")", nil
+		case fld.many || (fld.kind != "number" && fld.kind != "integer"):
+			if a.Op == widget.OpMin || a.Op == widget.OpMax {
+				return "", fmt.Errorf("%s works on numbers and dates, and %s is neither", a.Op, a.Path)
+			}
 			return "", fmt.Errorf("%s works on numbers, and %s isn't one", a.Op, a.Path)
 		}
 		if fraction, ok := percentiles[a.Op]; ok {
@@ -116,6 +137,17 @@ func aggregateSQL(c *compiler, a Aggregate) (string, error) {
 	}
 
 	return "", fmt.Errorf("aggregate must be one of %s", strings.Join(Aggregates, ", "))
+}
+
+// Dated reports whether an aggregate of a blueprint's entities is the min
+// or max of a date, which comes in seconds rather than the date's own unit.
+func Dated(specs map[string]blueprint.Spec, spec blueprint.Spec, op, path string) bool {
+	fld, err := fieldFor(specs, spec, path)
+	return err == nil && dated(op, fld)
+}
+
+func dated(op string, fld field) bool {
+	return (op == widget.OpMin || op == widget.OpMax) && !fld.many && fld.kind == kindDate
 }
 
 // aggregateColumns are aggregates as SQL columns, each a float8.
@@ -439,30 +471,45 @@ type Row struct {
 	Links      [][]Link `json:"links,omitempty"`
 }
 
-// Rows reads the first limit of m's entities in sort's order, with the
-// value of each path, and how many match in all.
-func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths []string) ([]Row, int, error) {
+// Column is what a table reads of each row: the value at Path, or with
+// Condition, whether the row meets Filter. A condition without a filter, as
+// one whose variables are all unset, is met by every row, as a query's is.
+type Column struct {
+	Path      string
+	Condition bool
+	Filter    *Filter
+}
+
+// Order is the order Rows reads rows in: Sort, a path with a leading - for
+// descending, as the catalog writes sorts, or with ByCondition, whether
+// each row meets the condition column at Column, false first unless
+// Descending.
+type Order struct {
+	Sort        string
+	ByCondition bool
+	Column      int
+	Descending  bool
+}
+
+// Rows reads the first limit of m's entities in order, with each column's
+// value, and how many match in all.
+func (s Store) Rows(ctx context.Context, m Match, order Order, limit int, columns []Column) ([]Row, int, error) {
 	c := m.compiler()
-	order, err := c.orderBy(sort, m.ladders)
+	orderBy, err := rowOrder(c, m, order, columns)
 	if err != nil {
 		return nil, 0, FilterError{err}
 	}
-	var columns []string
-	for _, path := range paths {
-		fld, err := c.field(path)
+	var selects []string
+	for i, column := range columns {
+		value, links, err := rowColumn(c, column)
 		if err != nil {
 			return nil, 0, FilterError{err}
 		}
-		columns = append(columns, ", "+rowValue(fld))
-		links, err := rowLinks(c, fld, path)
-		if err != nil {
-			return nil, 0, FilterError{err}
-		}
-		columns = append(columns, ", "+links)
+		selects = append(selects, ", "+value+" AS k"+strconv.Itoa(i), ", "+links)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.identifier, e.title`+strings.Join(columns, "")+` FROM entities e
+	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.identifier, e.title`+strings.Join(selects, "")+` FROM entities e
 	WHERE `+m.where+`
-	ORDER BY `+order+`
+	ORDER BY `+orderBy+`
 	LIMIT `+c.arg(limit), c.args...)
 	if err != nil {
 		return nil, 0, err
@@ -471,8 +518,8 @@ func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths 
 
 	out := []Row{}
 	for rows.Next() {
-		r := Row{Values: make([]any, len(paths)), Links: make([][]Link, len(paths))}
-		raws := make([][]byte, 2*len(paths))
+		r := Row{Values: make([]any, len(columns)), Links: make([][]Link, len(columns))}
+		raws := make([][]byte, 2*len(columns))
 		targets := []any{&r.ID, &r.Identifier, &r.Title}
 		for i := range raws {
 			targets = append(targets, &raws[i])
@@ -480,7 +527,7 @@ func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths 
 		if err := rows.Scan(targets...); err != nil {
 			return nil, 0, err
 		}
-		for i := range paths {
+		for i := range columns {
 			if raws[2*i] != nil {
 				if err := json.Unmarshal(raws[2*i], &r.Values[i]); err != nil {
 					return nil, 0, err
@@ -500,6 +547,44 @@ func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths 
 	total, err := s.total(ctx, m.where, m.args, 0, len(out), limit)
 
 	return out, total, err
+}
+
+// rowOrder is SQL ordering rows as order says. A condition column sorts
+// false first ascending, as a boolean property does.
+func rowOrder(c *compiler, m Match, order Order, columns []Column) (string, error) {
+	if !order.ByCondition {
+		return c.orderBy(order.Sort, m.ladders)
+	}
+	if order.Column < 0 || order.Column >= len(columns) || !columns[order.Column].Condition {
+		return "", fmt.Errorf("column %d isn't a condition to sort by", order.Column)
+	}
+	direction := " ASC"
+	if order.Descending {
+		direction = " DESC"
+	}
+
+	return "k" + strconv.Itoa(order.Column) + direction + ", e.title, e.identifier", nil
+}
+
+// rowColumn is SQL for a column's value as jsonb and what it links to. A
+// condition that comes out null, as one on a missing value does, is false.
+func rowColumn(c *compiler, column Column) (value, links string, err error) {
+	if column.Condition {
+		condition := "true"
+		if column.Filter != nil {
+			if condition, err = c.compile(*column.Filter, 1); err != nil {
+				return "", "", err
+			}
+		}
+		return "to_jsonb(coalesce(" + condition + ", false))", "NULL::jsonb", nil
+	}
+	fld, err := c.field(column.Path)
+	if err != nil {
+		return "", "", err
+	}
+	links, err = rowLinks(c, fld, column.Path)
+
+	return rowValue(fld), links, err
 }
 
 // rowValue is a column's value as jsonb. A tier keeps "" for none apart

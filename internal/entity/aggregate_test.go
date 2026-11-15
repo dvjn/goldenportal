@@ -74,6 +74,11 @@ func TestNarrowedAggregatesFilterTheirRows(t *testing.T) {
 		want string
 	}{
 		{Aggregate{Op: "count", Filter: critical}, `count(*) FILTER (WHERE (e.properties @> $1::jsonb))`},
+		{Aggregate{Op: "distinct", Path: "tier"}, `count(DISTINCT nullif(e.properties -> 'tier', 'null'::jsonb))`},
+		{Aggregate{Op: "distinct", Path: "owner.title", Filter: critical}, `count(DISTINCT nullif(to_jsonb((SELECT h1.title FROM entities h1 WHERE h1.blueprint_id = (SELECT id FROM config_documents WHERE kind = 'blueprint' AND identifier = 'team') AND h1.identifier = e.relations ->> 'owner')), 'null'::jsonb)) FILTER (WHERE (e.properties @> $1::jsonb))`},
+		{Aggregate{Op: "max", Path: "lastDeployedAt"}, `extract(epoch FROM max(gp_time((e.properties -> 'lastDeployedAt' #>> '{}'))))`},
+		{Aggregate{Op: "max", Path: "lastDeployedAt", Age: true, Filter: critical}, `extract(epoch FROM now() - max(gp_time((e.properties -> 'lastDeployedAt' #>> '{}'))) FILTER (WHERE (e.properties @> $1::jsonb)))`},
+		{Aggregate{Op: "min", Path: "createdAt"}, `extract(epoch FROM min(e.created_at))`},
 		{Aggregate{Op: "p95", Path: "stars"}, `percentile_cont(0.95) WITHIN GROUP (ORDER BY (CASE WHEN jsonb_typeof(e.properties -> 'stars') = 'number' THEN (e.properties -> 'stars')::numeric END))`},
 		{
 			Aggregate{Op: "share", Filter: critical, Share: &Filter{Property: "critical", Op: OpEq, Value: true}},
@@ -101,6 +106,12 @@ func TestCheckAggregate(t *testing.T) {
 		{Aggregate{Op: "share"}, "needs the condition"},
 		{Aggregate{Op: "p95", Path: "stars"}, ""},
 		{Aggregate{Op: "p99", Path: "tier"}, "p99 works on numbers, and tier isn't one"},
+		{Aggregate{Op: "max", Path: "lastDeployedAt"}, ""},
+		{Aggregate{Op: "min", Path: "tier"}, "min works on numbers and dates, and tier is neither"},
+		{Aggregate{Op: "avg", Path: "lastDeployedAt"}, "avg works on numbers"},
+		{Aggregate{Op: "distinct", Path: "owner"}, ""},
+		{Aggregate{Op: "distinct", Path: "tags"}, "holds a list"},
+		{Aggregate{Op: "distinct", Path: "dependsOn"}, "holds a list"},
 		{Aggregate{Op: "count", Filter: &Filter{Property: "nope", Op: OpExists}}, `no property "nope"`},
 	} {
 		err := CheckAggregate(specs, service(t), test.a)
@@ -156,9 +167,9 @@ func TestGroupByListAndTier(t *testing.T) {
 func TestRowsReadOnlyTheirPaths(t *testing.T) {
 	store, mock := mockStore(t)
 	m := match(t, "")
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT e.id, e.identifier, e.title, e.properties -> 'tier', NULL::jsonb, `+
-		`to_jsonb((SELECT h1.title FROM entities h1 WHERE h1.blueprint_id = '`+teamID+`' AND h1.identifier = e.relations ->> 'owner')), NULL::jsonb, `+
-		`e.relations -> 'owner', (SELECT jsonb_agg(jsonb_build_object('identifier', x.id, 'title', t.title) ORDER BY x.n)`) + `.*` +
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT e.id, e.identifier, e.title, e.properties -> 'tier' AS k0, NULL::jsonb, `+
+		`to_jsonb((SELECT h1.title FROM entities h1 WHERE h1.blueprint_id = '`+teamID+`' AND h1.identifier = e.relations ->> 'owner')) AS k1, NULL::jsonb, `+
+		`e.relations -> 'owner' AS k2, (SELECT jsonb_agg(jsonb_build_object('identifier', x.id, 'title', t.title) ORDER BY x.n)`) + `.*` +
 		regexp.QuoteMeta(`to_jsonb((SELECT r.tier FROM scorecard_results r WHERE r.entity_id = e.id`) + `.*` +
 		regexp.QuoteMeta(`jsonb_build_array(jsonb_build_object('identifier', e.identifier))`) + `.*` +
 		regexp.QuoteMeta(`FROM entities e
@@ -172,7 +183,7 @@ func TestRowsReadOnlyTheirPaths(t *testing.T) {
 	mock.ExpectQuery(`^SELECT count\(\*\) FROM entities e WHERE e.blueprint_id = '` + serviceID + `'$`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(7))
 
-	rows, total, err := store.Rows(t.Context(), m, "-lastDeployedAt", 1, []string{"tier", "owner.title", "owner", "readiness"})
+	rows, total, err := store.Rows(t.Context(), m, Order{Sort: "-lastDeployedAt"}, 1, []Column{{Path: "tier"}, {Path: "owner.title"}, {Path: "owner"}, {Path: "readiness"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +196,46 @@ func TestRowsReadOnlyTheirPaths(t *testing.T) {
 	}
 }
 
+// A condition column is a boolean the statement works out for each row,
+// false when it comes out null, which a page can sort by. One without a
+// filter is met by every row.
+func TestRowsShowAndSortByConditions(t *testing.T) {
+	store, mock := mockStore(t)
+	m := match(t, `{"property":"owner","op":"eq","value":"payments"}`)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT e.id, e.identifier, e.title, e.properties -> 'tier' AS k0, NULL::jsonb, `+
+		`to_jsonb(coalesce((e.properties @> $2::jsonb), false)) AS k1, NULL::jsonb FROM entities e
+	WHERE e.blueprint_id = '`+serviceID+`' AND (e.relations @> $1::jsonb)
+	ORDER BY k1 DESC, e.title, e.identifier
+	LIMIT $3`)).
+		WithArgs(`{"owner":"payments"}`, `{"tags":["pci"]}`, 5).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "identifier", "title", "v1", "l1", "v2", "l2"}).
+			AddRow("1", "ledger", "Ledger", []byte(`"critical"`), nil, []byte(`true`), nil).
+			AddRow("2", "search", "Search", nil, nil, []byte(`false`), nil))
+
+	pci := &Filter{Property: "tags", Op: OpContains, Value: "pci"}
+	rows, total, err := store.Rows(t.Context(), m, Order{ByCondition: true, Column: 1, Descending: true}, 5,
+		[]Column{{Path: "tier"}, {Condition: true, Filter: pci}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 || rows[0].Values[1] != true || rows[1].Values[1] != false || rows[1].Values[0] != nil {
+		t.Fatalf("rows = %+v, total %d", rows, total)
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT e.id, e.identifier, e.title, to_jsonb(coalesce(true, false)) AS k0, NULL::jsonb FROM entities e
+	WHERE e.blueprint_id = '`+serviceID+`' AND (e.relations @> $1::jsonb)
+	ORDER BY k0 ASC, e.title, e.identifier
+	LIMIT $2`)).
+		WithArgs(`{"owner":"payments"}`, 5).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "identifier", "title", "v1", "l1"}).AddRow("1", "ledger", "Ledger", []byte(`true`), nil))
+	if rows, _, err = store.Rows(t.Context(), m, Order{ByCondition: true}, 5, []Column{{Condition: true}}); err != nil || rows[0].Values[0] != true {
+		t.Fatalf("rows = %+v, %v", rows, err)
+	}
+	if _, _, err := store.Rows(t.Context(), m, Order{ByCondition: true}, 5, []Column{{Path: "tier"}}); err == nil {
+		t.Error("sorted by a column that isn't a condition")
+	}
+}
+
 func TestRowsRejectWhatTheyCantRead(t *testing.T) {
 	store, _ := mockStore(t)
 	m := match(t, "")
@@ -193,7 +244,7 @@ func TestRowsRejectWhatTheyCantRead(t *testing.T) {
 		"nope":            `no property "nope"`,
 		"$title":          `no property "$title"`,
 	} {
-		if _, _, err := store.Rows(t.Context(), m, "", 5, []string{path}); err == nil || !strings.Contains(err.Error(), want) {
+		if _, _, err := store.Rows(t.Context(), m, Order{}, 5, []Column{{Path: path}}); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", path, err, want)
 		}
 	}

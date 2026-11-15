@@ -10,7 +10,7 @@ import { CriterionDetails, FilterSummary } from "@/components/scorecards/criteri
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ScorecardSpec, Status, Summary } from "@/features/scorecards";
-import { formatAbsolute, formatPercent, formatRelative, percentOf } from "@/lib/format";
+import { formatAbsolute, formatPercent, formatRelative } from "@/lib/format";
 
 // evaluating looks as a running run does, for results catching up with a publish.
 const evaluating: StatusLook = {
@@ -90,7 +90,7 @@ export function CriteriaCard({
               {tier.criteria.map((criterion) => {
                 const c = counts.get(criterion.identifier);
                 const applicable = c ? c.passed + c.failed : 0;
-                const rate = applicable > 0 && c ? percentOf(c.passed, applicable) : null;
+                const share = applicable > 0 && c ? (c.passed / applicable) * 100 : null;
                 return (
                   <li
                     key={criterion.identifier}
@@ -117,11 +117,11 @@ export function CriteriaCard({
                         <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
                           <div
                             className="h-full rounded-full bg-emerald-500"
-                            style={{ width: `${rate ?? 0}%` }}
+                            style={{ width: `${share ?? 0}%` }}
                           />
                         </div>
                         <span className="text-xs text-muted-foreground tabular-nums md:text-right">
-                          {c && rate !== null ? (
+                          {c && share !== null ? (
                             formatPercent(c.passed, applicable)
                           ) : (
                             <EmptyValue title="No entity has been checked" />

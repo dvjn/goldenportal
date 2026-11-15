@@ -24,6 +24,13 @@ export function formatAbsolute(value: string | Date) {
   return absolute.format(new Date(value));
 }
 
+const localDates = new Intl.DateTimeFormat("en", { dateStyle: "medium" });
+
+// formatLocalDate writes an instant's day where the viewer is.
+export function formatLocalDate(value: string | Date) {
+  return localDates.format(new Date(value));
+}
+
 // Dates have no time, so they're read and written in UTC to stay on their day.
 const dates = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
 
@@ -68,13 +75,19 @@ export function formatSeconds(value: number): string {
   return small > 0 ? `${big}${bigSuffix}${small}${smallSuffix}` : `${big}${bigSuffix}`;
 }
 
-// percentOf rounds down, so 100 means everything: a share can't read full
-// while one is missing. It works on whole counts to dodge float error, which
-// would turn 29 of 100 into 28.
+// percentOf rounds a share to the nearest percent, half up. It works on
+// whole counts to dodge float error, which would turn 29 of 100 into 28.
 export function percentOf(count: number, total: number) {
-  return Math.floor((count * 100) / total);
+  return Math.floor((count * 200 + total) / (total * 2));
 }
 
-export function formatPercent(count: number, total: number) {
-  return `${percentOf(count, total)}%`;
+// formatPercent writes a share to the nearest percent, except that a share
+// that isn't none never reads 0%, nor one that isn't all 100%. A negative
+// one, such as a change, reads as its size with a minus.
+export function formatPercent(count: number, total: number): string {
+  if (count < 0) return `-${formatPercent(-count, total)}`;
+  const percent = percentOf(count, total);
+  if (percent === 0 && count > 0) return "<1%";
+  if (percent === 100 && count < total) return ">99%";
+  return `${percent}%`;
 }

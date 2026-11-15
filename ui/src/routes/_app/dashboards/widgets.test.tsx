@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Blueprint, BlueprintSpec } from "@/features/blueprints";
 import type { EntityDetail, Filter } from "@/features/catalog";
 import type { Dashboard, HomeDashboard } from "@/features/dashboards";
+import { formatAbsolute, formatLocalDate } from "@/lib/format";
 import { acmeConfig, ada, ok, stubApi } from "@/test/api";
 import { renderRoute } from "@/test/render";
 
@@ -356,7 +357,7 @@ describe("dashboards and page tabs", () => {
     await stat(/^Critical Services$/, "3");
   });
 
-  it("shows jq columns and opens rows where their row link goes", async () => {
+  it("shows formatted and filter columns and opens rows where their row link goes", async () => {
     stubApi({
       ...signedInMember,
       "GET home": ok([
@@ -370,11 +371,12 @@ describe("dashboards and page tabs", () => {
               query: services,
               width: 12,
               columns: [
-                { title: "Failing Checks", jq: ".readiness.failing | length" },
+                { title: "Failing Checks", path: "readiness.failing", format: "length" },
                 { path: "tier" },
-                { title: "Since Deploy", jq: ".x", unit: "h" },
+                { title: "Since Deploy", path: "deployedSeconds", format: ". / 3600", unit: "h" },
+                { title: "PCI", filter: { property: "tags", op: "contains", value: "pci" } },
               ],
-              rowLink: { path: "/connections/{{ .identifier }}" },
+              rowLink: { path: "/connections/{{ identifier }}" },
               link: { query: services },
             },
           ],
@@ -385,21 +387,22 @@ describe("dashboards and page tabs", () => {
           blueprint: "service",
           total: 40,
           columns: [
-            { title: "Failing Checks", jq: ".readiness.failing | length" },
+            { title: "Failing Checks", path: "readiness.failing", format: "length" },
             { title: "Tier", path: "tier", property: tierProperty },
-            { title: "Since Deploy", jq: ".x", unit: "h" },
+            { title: "Since Deploy", path: "deployedSeconds", format: ". / 3600", unit: "h" },
+            { title: "PCI", condition: true },
           ],
           rows: [
             {
               identifier: "ledger",
               title: "Ledger",
-              values: [2, "critical", 5],
+              values: [2, "critical", 5, true],
               link: { href: "/connections/ledger" },
             },
             {
               identifier: "search",
               title: "Search",
-              values: [0, "standard", null],
+              values: [0, "standard", null, false],
               link: { href: "//elsewhere.example" },
             },
           ],
@@ -414,6 +417,9 @@ describe("dashboards and page tabs", () => {
     expect(within(ledgerRow).getByText("2")).toBeInTheDocument();
     expect(within(ledgerRow).getByText("5 h")).toBeInTheDocument();
     expect(within(ledgerRow).getByText("Critical")).toBeInTheDocument();
+    expect(within(ledgerRow).getByTitle("Yes")).toBeInTheDocument();
+    const searchRow = screen.getByRole("link", { name: "Search" }).closest("tr") as HTMLElement;
+    expect(within(searchRow).getByTitle("No")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ledger" })).toHaveAttribute(
       "href",
       "/connections/ledger",
@@ -468,6 +474,36 @@ describe("dashboards and page tabs", () => {
     expect(await screen.findByText("25%")).toBeInTheDocument();
     // A share says what it's a share of.
     expect(screen.getByText("1 of 4")).toBeInTheDocument();
+  });
+
+  it("shows a date's newest as its age, a day as itself, and an instant where the viewer is", async () => {
+    // Late in the UTC day, which is the next day east of it.
+    const deployed = new Date(Date.UTC(2026, 9, 26, 23, 30));
+    stubApi({
+      ...signedInMember,
+      "GET home": ok([
+        {
+          ...overview,
+          widgets: [
+            { ...overview.widgets[0], identifier: "age", title: "Oldest Critical" },
+            { ...overview.widgets[0], identifier: "since", title: "Tracked Since" },
+            { ...overview.widgets[0], identifier: "last", title: "Last Deploy" },
+          ],
+        },
+      ]),
+      "GET dashboards/overview/data": loaded({
+        age: { value: 12 * 86400 + 3 * 3600, unit: "s" },
+        since: { value: Date.UTC(2026, 9, 25) / 1000, unit: "date" },
+        last: { value: deployed.getTime() / 1000, unit: "date-time" },
+      }),
+    });
+    renderRoute("/");
+    expect(await screen.findByText("12d3h")).toBeInTheDocument();
+    expect(screen.getByText("Oct 25, 2026")).not.toHaveAttribute("title");
+    expect(screen.getByText(formatLocalDate(deployed))).toHaveAttribute(
+      "title",
+      formatAbsolute(deployed),
+    );
   });
 
   it("shows a split as shares of one bar, in the order the server gives, each opening its group", async () => {
@@ -579,7 +615,7 @@ describe("dashboards and page tabs", () => {
       .getByText("P95 Coverage by Tier")
       .closest("[data-slot=card]") as HTMLElement;
     const items = within(slowest).getAllByRole("listitem");
-    expect(items[0]).toHaveTextContent("92%");
+    expect(items[0]).toHaveTextContent("93%");
     expect(within(items[1]).getByTitle("Nothing to measure")).toBeInTheDocument();
   });
 

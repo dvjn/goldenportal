@@ -160,6 +160,48 @@ spec:
 	wantIn(t, "stages", got["stages"], `"groups":[{"value":"build","count":5,"link":{"blueprint":"job","filter":{"property":"stage","op":"eq","value":"build"}}},{"value":"test"`)
 }
 
+// A date's newest shows as its age, which the database works out, so the
+// groups sort by the ages they show, without one sorting lowest.
+func TestBarsShowDatesAsTheirAge(t *testing.T) {
+	got := loadMocked(t, `
+kind: Dashboard
+metadata: {identifier: ci, title: CI}
+spec:
+  queries:
+    jobs: {blueprint: job}
+  widgets:
+    stale:
+      type: bar
+      title: Since Each Stage Last Finished
+      query: jobs
+      groupBy: stage
+      measure: {max: finishedAt}
+    stages:
+      type: matrix
+      title: Stages
+      query: jobs
+      groupBy: stage
+      sort: Last
+      measures:
+        - {title: Last, max: finishedAt}
+        - {title: Statuses, distinct: status}
+`, jobYAML, func(mock sqlmock.Sqlmock) {
+		last := `\(extract\(epoch FROM now\(\) - max\(gp_time\(\(e\.properties -> 'finishedAt' #>> '\{\}'\)\)\)\)\)::float8`
+		mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text, g\.v0 FROM \(SELECT e\.properties -> 'stage' AS value, count\(\*\) AS count, ` + last +
+			`.*ORDER BY g\.value IS NULL DESC, g\.v0 DESC NULLS LAST`).
+			WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title", "v0"}).
+				AddRow([]byte(`"deploy"`), 2, nil, 3*86400).
+				AddRow([]byte(`"build"`), 5, nil, 3600).
+				AddRow([]byte(`"test"`), 1, nil, nil))
+		mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text, g\.v0, g\.v1 FROM .*` + last + ` AS v0, \(count\(DISTINCT nullif\(e\.properties -> 'status', 'null'::jsonb\)\)\)::float8 AS v1` +
+			`.*ORDER BY g\.value IS NULL DESC, g\.v0 ASC NULLS FIRST`).
+			WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title", "v0", "v1"}).
+				AddRow([]byte(`"build"`), 5, nil, 3600, 2))
+	})
+	wantIn(t, "stale", got["stale"], `"groups":[{"value":"deploy","count":2,"measure":{"value":259200}},{"value":"build","count":5,"measure":{"value":3600}},{"value":"test","count":1,"measure":{"value":null}}]`, `"unit":"s"`)
+	wantIn(t, "stages", got["stages"], `"measures":[{"title":"Last","unit":"s"},{"title":"Statuses"}]`, `"cells":[{"value":3600,`, `{"value":2,`)
+}
+
 func TestTrendsFillEveryDayOfTheirRange(t *testing.T) {
 	got := loadMocked(t, `
 kind: Dashboard
@@ -203,4 +245,33 @@ spec:
 			`{"day":"2026-11-08","value":0},{"day":"2026-11-09","value":5,"link":`)
 	wantIn(t, "p95", got["p95"],
 		`{"data":{"unit":"s","all":{"value":300},"days":[{"day":"2026-11-07","value":null},{"day":"2026-11-08","value":null},{"day":"2026-11-09","value":300}],"link":{"blueprint":"job"}}}`)
+}
+
+// A trend can count each day's distinct values, which don't add up across
+// days, so the range's count is the statement's own.
+func TestTrendsCountDistinctValues(t *testing.T) {
+	got := loadMocked(t, `
+kind: Dashboard
+metadata: {identifier: ci, title: CI}
+spec:
+  queries:
+    jobs: {blueprint: job}
+  widgets:
+    stages:
+      type: trend
+      title: Stages Run per Day
+      query: jobs
+      date: finishedAt
+      range: 2d
+      measure: {distinct: stage}
+`, jobYAML, func(mock sqlmock.Sqlmock) {
+		from, to := time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+		mock.ExpectQuery(`, count\(\*\), \(count\(DISTINCT nullif\(e\.properties -> 'stage', 'null'::jsonb\)\)\)::float8\s+FROM .*GROUP BY GROUPING SETS`).
+			WithArgs(from, to).
+			WillReturnRows(sqlmock.NewRows([]string{"day", "count", "stages"}).
+				AddRow(time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC), 4, 2).
+				AddRow(time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), 6, 3).
+				AddRow(nil, 10, 3))
+	})
+	wantIn(t, "stages", got["stages"], `{"data":{"all":{"value":3},"days":[{"day":"2026-11-08","value":2},{"day":"2026-11-09","value":3}]}}`)
 }

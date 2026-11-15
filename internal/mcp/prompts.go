@@ -121,6 +121,9 @@ var authoringPrompts = []prompt{
 		func(a args) string {
 			return "Build a dashboard that shows " + a["goal"] + ".\n\n" +
 				"See which blueprints and scorecards hold the data with list_blueprints and search. " +
+				"Widgets never load entities to work on: every number is one the database works out, a count, distinct, sum, avg, min, max, percentile or share, and min or max of a date shows its age. " +
+				"A table column shows a path, formats its value with jq in format, or shows whether each row meets a filter; a row link reads the row's paths, such as {{ url }}. " +
+				"Logic a filter can't express belongs in a computed property on the blueprint. " +
 				"Before publishing, check it with preview_dashboard."
 		}),
 }

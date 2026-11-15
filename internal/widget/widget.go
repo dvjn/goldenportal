@@ -85,45 +85,68 @@ type Query struct {
 // Summary is how a number sums up entities: how many there are, unless it
 // names one way to. The database works out each of them.
 type Summary struct {
-	// Sum, Avg, Min, Max and the percentiles name a number field's path.
-	// Percentiles are exact, interpolated between the two nearest values.
-	Sum string `json:"sum,omitempty"`
-	Avg string `json:"avg,omitempty"`
-	Min string `json:"min,omitempty"`
-	Max string `json:"max,omitempty"`
-	P50 string `json:"p50,omitempty"`
-	P90 string `json:"p90,omitempty"`
-	P95 string `json:"p95,omitempty"`
-	P99 string `json:"p99,omitempty"`
+	// Distinct counts a field's values. Sum, Avg, Min, Max and the
+	// percentiles name a number field's path, and Min and Max also a
+	// date's, which shows as its age. Percentiles are exact, interpolated
+	// between the two nearest values.
+	Distinct string `json:"distinct,omitempty"`
+	Sum      string `json:"sum,omitempty"`
+	Avg      string `json:"avg,omitempty"`
+	Min      string `json:"min,omitempty"`
+	Max      string `json:"max,omitempty"`
+	P50      string `json:"p50,omitempty"`
+	P90      string `json:"p90,omitempty"`
+	P95      string `json:"p95,omitempty"`
+	P99      string `json:"p99,omitempty"`
 	// Share is the percent of the entities matching a condition.
 	Share *filter.Filter `json:"share,omitempty"`
 	// Unit follows the number. Share is always %, and the ops on a field
-	// take its unit unless this says otherwise.
+	// take its unit unless this says otherwise. A date's min or max takes
+	// UnitDate, to show the date rather than its age.
 	Unit string `json:"unit,omitempty"`
 }
 
-// Value is a number worked out from a query's entities: a summary of them,
-// or jq, which runs over the matching entities, loaded and capped.
+// Value is a number the database works out from a query's entities.
 type Value struct {
 	Query Query `json:"query"`
 	Summary
-	JQ string `json:"jq,omitempty"`
 }
+
+// What publishing says replaced jq over a query's entities, a row's entity
+// and a row link's.
+const (
+	valueJQ = "a value can't run jq over entities, since that loads them; sum them up with count, share, sum, avg, min, max, " +
+		"p50, p90, p95, p99 or distinct, which the database works out. min or max of a date shows its age."
+	columnJQ = "a column can't run jq over its row's entity; show a path, format the path's value with format, " +
+		"or show whether the row meets a condition with filter."
+	rowToken = "{{ }} in a row link starts with a path of the row, such as {{ url }}, and can pipe it through jq: {{ url | ascii_downcase }}."
+)
 
 // Ops beside those on a field's path.
 const (
-	OpCount = "count"
-	OpShare = "share"
-	OpJQ    = "jq"
+	OpCount    = "count"
+	OpShare    = "share"
+	OpDistinct = "distinct"
+	OpMin      = "min"
+	OpMax      = "max"
 )
 
-// PathOps are the ops on a number field's path, in the order they're read.
-var PathOps = []string{"sum", "avg", "min", "max", "p50", "p90", "p95", "p99"}
+// Units a date's min or max shows in. A builder writes UnitDate to show the
+// date rather than its age, in UnitSeconds; the page reads UnitDate for a
+// day and UnitDateTime for an instant, which it shows in local time.
+const (
+	UnitDate     = "date"
+	UnitDateTime = "date-time"
+	UnitSeconds  = "s"
+)
+
+// PathOps are the ops on a field's path, in the order they're read.
+var PathOps = []string{OpDistinct, "sum", "avg", OpMin, OpMax, "p50", "p90", "p95", "p99"}
 
 // paths is where the summary keeps each op on a field's path.
 func (s *Summary) paths() map[string]*string {
 	return map[string]*string{
-		"sum": &s.Sum, "avg": &s.Avg, "min": &s.Min, "max": &s.Max,
+		OpDistinct: &s.Distinct, "sum": &s.Sum, "avg": &s.Avg, OpMin: &s.Min, OpMax: &s.Max,
 		"p50": &s.P50, "p90": &s.P90, "p95": &s.P95, "p99": &s.P99,
 	}
 }
@@ -143,18 +166,10 @@ func (s Summary) Op() (op, path string) {
 	return OpCount, ""
 }
 
-// Op is how the value sums up its entities, with the path it works on.
-func (v Value) Op() (op, path string) {
-	if v.JQ != "" {
-		return OpJQ, ""
-	}
-
-	return v.Summary.Op()
-}
-
 // Link is what a widget, or each of its groups or rows, opens: the catalog
 // showing a query's entities, a URL, or a path in the portal. URLs and
-// paths are templates, with jq in {{ }}.
+// paths are templates: a widget's {{ }} hold jq over its variables, and a
+// row's a path of the row, optionally piped through jq.
 type Link struct {
 	Query *Query `json:"query,omitempty"`
 	// Filter narrows the query's entities for the link only.
@@ -165,14 +180,15 @@ type Link struct {
 	Path  string `json:"path,omitempty"`
 }
 
-// Column is a table column: a field's path, which the database reads, or
-// jq worked out from each row's entity. A path's title defaults to its
-// field's.
+// Column is a table column: a field's path, which the database reads, and
+// Format, jq over its value; or whether each row meets Filter, which the
+// database works out too. A path's title defaults to its field's.
 type Column struct {
-	Path  string `json:"path,omitempty"`
-	Title string `json:"title,omitempty"`
-	JQ    string `json:"jq,omitempty"`
-	Unit  string `json:"unit,omitempty"`
+	Path   string         `json:"path,omitempty"`
+	Title  string         `json:"title,omitempty"`
+	Format string         `json:"format,omitempty"`
+	Filter *filter.Filter `json:"filter,omitempty"`
+	Unit   string         `json:"unit,omitempty"`
 }
 
 // Measure is a number worked out for each group or day of a widget's
@@ -205,11 +221,12 @@ var (
 	TabFields    = []string{"title", "icon", "when", "widgets"}
 	QueryFields  = []string{"blueprint", "filter"}
 	WidgetFields = []string{"type", "title", "description", "width"}
-	ValueFields  = slices.Concat([]string{"query", "unit"}, valueOps)
+	// ValueFields and ColumnFields take jq only to say what replaced it.
+	ValueFields = slices.Concat([]string{"query", "unit"}, summaryOps, []string{"jq"})
 	// RowLinkFields leave out what needs a query, since rows have none.
 	RowLinkFields = []string{"url", "path"}
 	LinkFields    = slices.Concat(RowLinkFields, []string{"query", "filter", "group"})
-	ColumnFields  = []string{"title", "path", "jq", "unit"}
+	ColumnFields  = []string{"title", "path", "format", "filter", "unit", "jq"}
 	// MeasureFields are a bar's or a trend's measure's; a matrix's measures
 	// also take a title.
 	MeasureFields       = slices.Concat([]string{"filter", "unit"}, summaryOps)
@@ -540,11 +557,8 @@ func identifiers(r *configdoc.Reader, n *yaml.Node, path, whose string) []string
 }
 
 // summaryOps are the ways a summary can sum up its entities besides
-// counting them, of which it takes at most one; a value can also take jq.
-var (
-	summaryOps = slices.Concat(PathOps, []string{OpShare})
-	valueOps   = slices.Concat(summaryOps, []string{OpJQ})
-)
+// counting them, of which it takes at most one.
+var summaryOps = slices.Concat(PathOps, []string{OpShare})
 
 // Sort keys for a bar's or a matrix's groups, besides a matrix measure's
 // title: how many entities each has, its value in the order its property
@@ -598,18 +612,14 @@ func parseValue(r *configdoc.Reader, key, node *yaml.Node, path string, scope Sc
 	if q := queryRef(r, node, fields["query"], path+".query", scope); q != nil {
 		v.Query = *q
 	}
-	if !oneOp(r, fields, path, "a value", valueOps) {
+	if n := fields["jq"]; n != nil {
+		r.Errorf(n, path+".jq", "%s", valueJQ)
+		return v
+	}
+	if !oneOp(r, fields, path, "a value", summaryOps) {
 		return v
 	}
 	v.Summary = parseSummary(r, fields, path, scope)
-	if n := fields[OpJQ]; n != nil {
-		v.JQ = strings.TrimSpace(r.Text(n, path+".jq"))
-		if v.JQ == "" {
-			r.Errorf(n, path+".jq", "add jq over the query's entities, as a list, that gives a number")
-		} else if _, err := CompileJQ(v.JQ, scope); err != nil {
-			r.Errorf(n, path+".jq", "jq doesn't compile: %v", err)
-		}
-	}
 
 	return v
 }
@@ -640,7 +650,7 @@ func parseSummary(r *configdoc.Reader, fields map[string]*yaml.Node, path string
 		if n := fields[op]; n != nil {
 			*paths[op] = r.Text(n, path+"."+op)
 			if !validPath(*paths[op]) {
-				r.Errorf(n, path+"."+op, "%s takes the path of a number field, such as cost or service.cost", op)
+				r.Errorf(n, path+"."+op, "%s takes the path of %s", op, fieldOf(op))
 			}
 		}
 	}
@@ -670,6 +680,18 @@ func parseMeasure(r *configdoc.Reader, node *yaml.Node, path string, allowed []s
 	}
 
 	return m
+}
+
+// fieldOf says what field an op on a path takes, with an example.
+func fieldOf(op string) string {
+	switch op {
+	case OpDistinct:
+		return "a field, such as owner or service.owner"
+	case OpMin, OpMax:
+		return "a number or date field, such as cost or createdAt"
+	}
+
+	return "a number field, such as cost or service.cost"
 }
 
 var pathPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*(\.[a-zA-Z][a-zA-Z0-9_-]*)*$`)
@@ -728,17 +750,23 @@ func parseLink(r *configdoc.Reader, node *yaml.Node, path, widgetType string, sc
 			r.Errorf(n, path+".group", "group adds each group's value to a query, so it goes with query")
 		}
 	}
+	check := CheckTemplate
+	if row {
+		check = CheckRowTemplate
+	}
+	// A row's own URL can start a row link, which is checked once filled in.
+	stored := row && strings.HasPrefix(l.URL, "{{")
 	if n := fields["url"]; n != nil {
-		if !strings.HasPrefix(l.URL, "https://") && !strings.HasPrefix(l.URL, "http://") {
-			r.Errorf(n, path+".url", "url must start with https:// or http://")
-		} else if err := CheckTemplate(l.URL, scope); err != nil {
+		if !stored && !strings.HasPrefix(l.URL, "https://") && !strings.HasPrefix(l.URL, "http://") {
+			r.Errorf(n, path+".url", "url must start with https:// or http://, or in a row link with a path of the row holding one, such as {{ url }}")
+		} else if err := check(l.URL, scope); err != nil {
 			r.Errorf(n, path+".url", "%v", err)
 		}
 	}
 	if n := fields["path"]; n != nil {
 		if !portalPath(l.Path) {
 			r.Errorf(n, path+".path", "path must be a path in the portal, starting with /")
-		} else if err := CheckTemplate(l.Path, scope); err != nil {
+		} else if err := check(l.Path, scope); err != nil {
 			r.Errorf(n, path+".path", "%v", err)
 		}
 	}
@@ -752,8 +780,9 @@ func portalPath(path string) bool {
 	return strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "/\\")
 }
 
-// parseColumns reads a table's columns: each a mapping of a field's path,
-// or a title with jq worked out from the row's entity.
+// parseColumns reads a table's columns: each a field's path, formatted
+// with jq over its value or not, or a title and a filter, showing whether
+// each row meets it.
 func parseColumns(r *configdoc.Reader, node *yaml.Node, path string, scope Scope) []Column {
 	var columns []Column
 	r.List(node, path, func(i int, item *yaml.Node) {
@@ -763,23 +792,36 @@ func parseColumns(r *configdoc.Reader, node *yaml.Node, path string, scope Scope
 			return
 		}
 		c := Column{
-			Title: r.Text(fields["title"], itemPath+".title"),
-			Path:  r.Text(fields["path"], itemPath+".path"),
-			JQ:    r.Text(fields["jq"], itemPath+".jq"),
-			Unit:  r.Text(fields["unit"], itemPath+".unit"),
+			Title:  r.Text(fields["title"], itemPath+".title"),
+			Path:   r.Text(fields["path"], itemPath+".path"),
+			Format: strings.TrimSpace(r.Text(fields["format"], itemPath+".format")),
+			Unit:   r.Text(fields["unit"], itemPath+".unit"),
 		}
 		switch {
-		case (fields["path"] == nil) == (fields["jq"] == nil):
-			r.Errorf(item, itemPath, "a column has a path or jq, not both")
-		case fields["path"] != nil:
-			checkPath(r, fields["path"], itemPath+".path", c.Path)
-		case c.Title == "":
-			r.Errorf(item, itemPath+".title", "add the column's title")
-		case strings.TrimSpace(c.JQ) == "":
-			r.Errorf(item, itemPath+".jq", "add jq over the row's entity")
+		case fields["jq"] != nil:
+			r.Errorf(fields["jq"], itemPath+".jq", "%s", columnJQ)
+		case fields["path"] != nil && fields["filter"] != nil:
+			r.Errorf(item, itemPath, "a column has a path or a filter, not both")
+		case fields["filter"] != nil:
+			c.Filter = parseFilter(r, fields["filter"], itemPath+".filter", scope)
+			switch {
+			case c.Title == "":
+				r.Errorf(item, itemPath+".title", "add the column's title")
+			case fields["format"] != nil || fields["unit"] != nil:
+				r.Errorf(item, itemPath, "a filter column shows whether each row meets it, so it takes no format or unit")
+			case slices.ContainsFunc(columns, func(other Column) bool { return other.Filter != nil && other.Title == c.Title }):
+				r.Errorf(item, itemPath+".title", "another filter column is titled %s; a sort names one by its title, so each needs its own", c.Title)
+			}
+		case fields["path"] == nil:
+			r.Errorf(item, itemPath, "a column has a path, or a title and a filter")
 		default:
-			if _, err := CompileJQ(c.JQ, scope); err != nil {
-				r.Errorf(fields["jq"], itemPath+".jq", "jq doesn't compile: %v", err)
+			checkPath(r, fields["path"], itemPath+".path", c.Path)
+			if n := fields["format"]; n != nil {
+				if c.Format == "" {
+					r.Errorf(n, itemPath+".format", "add jq over the column's value, such as . / 3600 | floor")
+				} else if _, err := CompileJQ(c.Format, scope); err != nil {
+					r.Errorf(n, itemPath+".format", "jq doesn't compile: %v", err)
+				}
 			}
 		}
 		columns = append(columns, c)
@@ -818,8 +860,18 @@ func checkPath(r *configdoc.Reader, node *yaml.Node, path, text string) {
 	}
 }
 
+// SortCondition is the index of the filter column a table's sort names by
+// its title, and whether it names one rather than a path, and whether it's
+// descending.
+func (w Widget) SortCondition() (at int, ok, descending bool) {
+	key, descending := strings.CutPrefix(w.Sort, "-")
+	at = slices.IndexFunc(w.Columns, func(c Column) bool { return c.Filter != nil && c.Title == key })
+
+	return at, at >= 0, descending
+}
+
 // Filters lists every filter a widget compares with, in its queries, its
-// value's share and its link.
+// value's share, its link, its measures and its filter columns.
 func (w Widget) Filters() []*filter.Filter {
 	var filters []*filter.Filter
 	for _, q := range []*Query{w.Query, w.valueQuery(), w.linkQuery()} {
@@ -838,6 +890,11 @@ func (w Widget) Filters() []*filter.Filter {
 			if f != nil {
 				filters = append(filters, f)
 			}
+		}
+	}
+	for _, c := range w.Columns {
+		if c.Filter != nil {
+			filters = append(filters, c.Filter)
 		}
 	}
 
@@ -905,6 +962,15 @@ func (w Widget) MapFilters(fn func(*filter.Filter) *filter.Filter) Widget {
 	if w.Measure != nil {
 		measure := mapMeasure(*w.Measure)
 		w.Measure = &measure
+	}
+	if w.Columns != nil {
+		columns := slices.Clone(w.Columns)
+		for i, c := range columns {
+			if c.Filter != nil {
+				columns[i].Filter = fn(c.Filter)
+			}
+		}
+		w.Columns = columns
 	}
 
 	return w

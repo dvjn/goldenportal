@@ -49,7 +49,7 @@ func (l loader) measuredBars(w widget.Widget, p *plan) func() (any, error) {
 	var m *measurement
 	unit := ""
 	if w.Measure != nil {
-		measured := l.measurement(w.Measure, &aggregates)
+		measured := l.measurement(p.query.Blueprint, w.Measure, &aggregates)
 		m = &measured
 		sort.By = m.at
 		unit = l.unit(p.query.Blueprint, w.Measure.Summary)
@@ -142,7 +142,7 @@ func (l loader) matrix(w widget.Widget, p *plan) func() (any, error) {
 	named := map[string]measurement{}
 	data := matrixData{Measures: make([]matrixMeasure, len(w.Measures))}
 	for i, m := range w.Measures {
-		measurements[i] = l.measurement(&m, &aggregates)
+		measurements[i] = l.measurement(p.query.Blueprint, &m, &aggregates)
 		named[m.Title] = measurements[i]
 		data.Measures[i] = matrixMeasure{Title: m.Title, Unit: l.unit(p.query.Blueprint, m.Summary)}
 	}
@@ -220,13 +220,9 @@ func (l loader) cell(w widget.Widget, m widget.Measure, r reading, group *filter
 // ends today, and over the whole range, in one statement.
 func (l loader) trend(w widget.Widget, p *plan) func() (any, error) {
 	days, _ := widget.TrendDays(w.Range)
-	now := l.now
-	if now.IsZero() {
-		now = time.Now()
-	}
-	to := now.UTC().Truncate(24*time.Hour).AddDate(0, 0, 1)
+	to := l.clock().UTC().Truncate(24*time.Hour).AddDate(0, 0, 1)
 	t := &trendDays{path: w.Date, from: to.AddDate(0, 0, -days), to: to}
-	m := l.measurement(w.Measure, &t.aggregates)
+	m := l.measurement(p.query.Blueprint, w.Measure, &t.aggregates)
 	unit := ""
 	if w.Measure != nil {
 		unit = l.unit(p.query.Blueprint, w.Measure.Summary)

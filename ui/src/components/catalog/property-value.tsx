@@ -14,6 +14,7 @@ import { swatch } from "@/lib/colors";
 import {
   formatAbsolute,
   formatDate,
+  formatLocalDate,
   formatPercent,
   formatRelative,
   formatSeconds,
@@ -76,9 +77,12 @@ export function isWebUrl(text: string) {
 }
 
 export function formatNumber(value: number, unit?: string) {
-  // Percents are whole and round down, as every percent is, so 100% means all.
-  if (unit === "%") return formatPercent(Math.floor(value + 1e-9), 100);
+  if (unit === "%") return formatPercent(value, 100);
   if (unit === "s") return formatSeconds(value);
+  // A date's min or max comes in seconds since the epoch: a day as UTC
+  // midnight, and an instant, shown where the viewer is.
+  if (unit === "date") return formatDate(new Date(value * 1000));
+  if (unit === "date-time") return formatLocalDate(new Date(value * 1000));
   return formatExact(value, unit);
 }
 
@@ -91,7 +95,10 @@ export function formatExact(value: number, unit?: string) {
 // exactTitle is the hover text for a number formatNumber shortened, so the
 // exact value stays within reach.
 export function exactTitle(value: number | null | undefined, unit?: string) {
-  return unit === "s" && typeof value === "number" ? formatExact(value, unit) : undefined;
+  if (typeof value !== "number") return undefined;
+  if (unit === "date-time") return formatAbsolute(new Date(value * 1000));
+  if (unit === "%") return `${numbers.format(value)}%`;
+  return unit === "s" ? formatExact(value, unit) : undefined;
 }
 
 // PropertyValue shows one value the way its property's display says.

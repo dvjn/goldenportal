@@ -5,9 +5,9 @@ import { type DashboardSpec, dashboards } from "@/features/dashboards";
 // Widgets lay out on 12 columns, in order, and share the queries named
 // above them, by name. $ marks a variable, such as an input's $input.team,
 // and fields are plain paths, such as owner.title; in takes values, a list
-// or a variable. A stat counts its query unless it names a field to sum,
-// avg, min or max, or a share; columns are {path} or {title, jq}, where jq
-// reads a flat entity: .tier.
+// or a variable. A stat counts its query unless it names a field to count
+// the distinct values of, sum, avg, min or max, or a share; columns are
+// {path}, with format, jq over the path's value, or {title, filter}.
 const template = `kind: Dashboard
 metadata:
   identifier: example
@@ -51,7 +51,7 @@ spec:
       type: table
       title: Recently Updated
       query: updatedThisWeek
-      columns: [{path: tier}, {path: owner.title}, {title: Tags, jq: '.tags | length'}]
+      columns: [{path: tier}, {path: owner.title}, {title: Critical, filter: {property: tier, op: eq, value: critical}}]
       sort: -updatedAt
 `;
 

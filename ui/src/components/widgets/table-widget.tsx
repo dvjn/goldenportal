@@ -122,6 +122,10 @@ function Cell({
   // links name a relation's entities, or the entity a tier was scored for.
   links?: Link[];
 }>) {
+  if (column.condition) {
+    return typeof value === "boolean" ? <BooleanValue value={value} compact /> : <EmptyValue />;
+  }
+  if (column.format) return <Computed value={value} unit={column.unit} />;
   if (column.scorecard) {
     const scored = links?.[0];
     return (
@@ -172,8 +176,8 @@ function RowTitle({ title }: Readonly<{ title: string }>) {
   );
 }
 
-// Computed shows what a jq column worked out: numbers in its unit, and
-// lists as their items.
+// Computed shows what a column's format worked out: numbers in its unit,
+// and lists as their items.
 function Computed({ value, unit }: Readonly<{ value: unknown; unit?: string }>) {
   if (value === null || value === undefined || value === "") {
     return <EmptyValue />;
