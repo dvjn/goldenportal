@@ -34,15 +34,17 @@ func seconds(d time.Duration) string { return strconv.FormatInt(int64(d/time.Sec
 // older than its retention keeps them, and says how many it deleted.
 // specs are the published blueprints, which rule filters may name.
 func (s Store) Expire(ctx context.Context, specs map[string]blueprint.Spec, spec blueprint.Spec, limit int) (int, error) {
-	c := &compiler{spec: spec, specs: specs, args: []any{spec.Identifier}}
+	c := &compiler{spec: spec, specs: specs}
 	expired, err := c.expired(spec)
 	if err != nil {
 		return 0, err
 	}
+	// The order is the retention index's read backwards, and an array of
+	// IDs deletes through the primary key rather than scanning the table.
 	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM entities WHERE id IN (
-			SELECT e.id FROM entities e WHERE e.blueprint_id = `+blueprintIDArg+` AND e.occurred_at IS NOT NULL AND `+expired+`
-			ORDER BY e.occurred_at LIMIT `+c.arg(limit)+`)`, c.args...)
+		DELETE FROM entities WHERE id = ANY(ARRAY(
+			SELECT e.id FROM entities e WHERE e.blueprint_id = `+BlueprintID(spec)+` AND e.occurred_at IS NOT NULL AND `+expired+`
+			ORDER BY e.occurred_at ASC NULLS FIRST LIMIT `+c.arg(limit)+`))`, c.args...)
 	if err != nil {
 		return 0, err
 	}
@@ -50,6 +52,3 @@ func (s Store) Expire(ctx context.Context, specs map[string]blueprint.Spec, spec
 
 	return int(n), err
 }
-
-// blueprintIDArg is the published blueprint the first argument names.
-const blueprintIDArg = `(SELECT id FROM config_documents WHERE kind = 'blueprint' AND identifier = $1)`

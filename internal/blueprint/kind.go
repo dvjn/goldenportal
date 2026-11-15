@@ -104,9 +104,16 @@ func References(published map[string]Spec, identifier string) []Reference {
 // that ctx has pending in their place, so documents applied or published
 // together see each other. Sources that don't parse are left out.
 func Published(ctx context.Context, db configdoc.DB) (map[string]Spec, error) {
-	sources, err := configdoc.NewStore(db, Name).PublishedSources(ctx)
+	records, err := configdoc.NewStore(db, Name).List(ctx)
 	if err != nil {
 		return nil, err
+	}
+	sources, ids := map[string]string{}, map[string]string{}
+	for _, record := range records {
+		ids[record.Identifier] = record.ID
+		if record.Published() {
+			sources[record.Identifier] = record.PublishedSource
+		}
 	}
 	for name, source := range configdoc.PendingSources(ctx, DocumentKind) {
 		sources[name] = source
@@ -114,6 +121,7 @@ func Published(ctx context.Context, db configdoc.DB) (map[string]Spec, error) {
 	specs := map[string]Spec{}
 	for identifier, source := range sources {
 		if spec, issues := Parse(source); !HasErrors(issues) {
+			spec.ID = ids[identifier]
 			specs[identifier] = spec
 		}
 	}

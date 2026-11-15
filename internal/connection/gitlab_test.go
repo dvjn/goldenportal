@@ -1391,7 +1391,7 @@ func TestGitLabReceivesRealPayloads(t *testing.T) {
 				}
 				for _, entry := range entries {
 					if bp, ok := blueprints[entry.Blueprint]; ok && c.seed && !entry.Deleted {
-						if _, problems := bp.ValidateEntity(entry.Entity); len(problems) > 0 {
+						if _, _, problems := bp.ValidateEntity(entry.Entity); len(problems) > 0 {
 							t.Errorf("%s %s: %v", entry.Blueprint, entry.Entity.Identifier, problems)
 						}
 					}

@@ -97,14 +97,14 @@ spec:
     docs: {type: boolean}
     cost: {type: number, display: {unit: USD}}
 `, func(mock sqlmock.Sqlmock) {
-		measures := `\(100\.0 \* count\(\*\) FILTER \(WHERE \(e\.properties @> \$2::jsonb\)\) / nullif\(count\(\*\), 0\)\)::float8, ` +
-			`\(count\(\*\)\)::float8, \(count\(\*\) FILTER \(WHERE \(e\.properties @> \$3::jsonb\)\)\)::float8, ` +
+		measures := `\(100\.0 \* count\(\*\) FILTER \(WHERE \(e\.properties @> \$1::jsonb\)\) / nullif\(count\(\*\), 0\)\)::float8, ` +
+			`\(count\(\*\)\)::float8, \(count\(\*\) FILTER \(WHERE \(e\.properties @> \$2::jsonb\)\)\)::float8, ` +
 			`\(percentile_cont\(0\.95\) WITHIN GROUP \(ORDER BY \(CASE WHEN jsonb_typeof\(e\.properties -> 'cost'\)`
-		mock.ExpectQuery(`^SELECT `+measures).WithArgs("service", `{"docs":true}`, `{"docs":true}`).
+		mock.ExpectQuery(`^SELECT `+measures).WithArgs(`{"docs":true}`, `{"docs":true}`).
 			WillReturnRows(sqlmock.NewRows([]string{"share", "total", "count", "p95"}).AddRow(50, 4, 2, 110))
 		mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text, g\.v0, g\.v1, g\.v2, g\.v3 FROM \(SELECT e\.properties -> 'team' AS value, count\(\*\) AS count, \(100\.0 .* AS v0, .* AS v3\s+FROM`+
 			`.*ORDER BY g\.value IS NULL DESC, g\.count DESC, g\.value`).
-			WithArgs("service", `{"docs":true}`, `{"docs":true}`, 11).
+			WithArgs(`{"docs":true}`, `{"docs":true}`, 11).
 			WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title", "v0", "v1", "v2", "v3"}).
 				AddRow([]byte(`"payments"`), 3, nil, 66.66666666666667, 3, 2, 120).
 				AddRow([]byte(`"search"`), 1, nil, 0, 1, 0, 40))
@@ -143,15 +143,15 @@ spec:
       link: {query: jobs, group: true}
 `, jobYAML, func(mock sqlmock.Sqlmock) {
 		mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text, g\.v0, g\.v1, g\.v2 FROM \(SELECT e\.properties -> 'stage' AS value, count\(\*\) AS count, `+
-			`\(100\.0 \* count\(\*\) FILTER \(WHERE NOT coalesce\(\(e\.properties @> \$2::jsonb\), false\) AND \(e\.properties @> \$3::jsonb\)\) / nullif\(count\(\*\) FILTER \(WHERE NOT coalesce`+
-			`.*ORDER BY g\.value IS NULL DESC, g\.v0 DESC NULLS LAST, g\.count DESC, g\.value\s+LIMIT \$7$`).
-			WithArgs("job", `{"status":"skipped"}`, `{"status":"failed"}`, `{"status":"skipped"}`, `{"status":"skipped"}`, `{"status":"failed"}`, 9).
+			`\(100\.0 \* count\(\*\) FILTER \(WHERE NOT coalesce\(\(e\.properties @> \$1::jsonb\), false\) AND \(e\.properties @> \$2::jsonb\)\) / nullif\(count\(\*\) FILTER \(WHERE NOT coalesce`+
+			`.*ORDER BY g\.value IS NULL DESC, g\.v0 DESC NULLS LAST, g\.count DESC, g\.value\s+LIMIT \$6$`).
+			WithArgs(`{"status":"skipped"}`, `{"status":"failed"}`, `{"status":"skipped"}`, `{"status":"skipped"}`, `{"status":"failed"}`, 9).
 			WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title", "v0", "v1", "v2"}).
 				AddRow(nil, 1, nil, 100, 1, 1).
 				AddRow([]byte(`"test"`), 4, nil, 50, 4, 2).
 				AddRow([]byte(`"build"`), 5, nil, 20, 5, 1))
-		mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text FROM .*ORDER BY g\.value IS NULL DESC, array_position\(\$2::text\[\], g\.value #>> '\{\}'\) ASC NULLS LAST, g\.value ASC\s+LIMIT \$3$`).
-			WithArgs("job", sqlmock.AnyArg(), 9).
+		mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text FROM .*ORDER BY g\.value IS NULL DESC, array_position\(\$1::text\[\], g\.value #>> '\{\}'\) ASC NULLS FIRST, g\.value ASC\s+LIMIT \$2$`).
+			WithArgs(sqlmock.AnyArg(), 9).
 			WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title"}).
 				AddRow([]byte(`"build"`), 5, nil).AddRow([]byte(`"test"`), 4, nil))
 	})
@@ -184,16 +184,16 @@ spec:
       measure: {p95: duration}
       link: {query: jobs}
 `, jobYAML, func(mock sqlmock.Sqlmock) {
-		day := `\(\(\(e\.properties -> 'finishedAt' #>> '\{\}'\)\)::timestamptz AT TIME ZONE 'UTC'\)::date`
+		day := `\(gp_time\(\(e\.properties -> 'finishedAt' #>> '\{\}'\)\) AT TIME ZONE 'UTC'\)::date`
 		from, to := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
-		mock.ExpectQuery(`^SELECT `+day+`, count\(\*\)\s+FROM .* >= \$2 AND .* < \$3\s+GROUP BY GROUPING SETS \(\(`+day+`\), \(\)\)$`).
-			WithArgs("job", from, to).
+		mock.ExpectQuery(`^SELECT `+day+`, count\(\*\)\s+FROM .* >= \$1 AND .* < \$2\s+GROUP BY GROUPING SETS \(\(`+day+`\), \(\)\)$`).
+			WithArgs(from, to).
 			WillReturnRows(sqlmock.NewRows([]string{"day", "count"}).
 				AddRow(time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC), 2).
 				AddRow(time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), 5).
 				AddRow(nil, 7))
 		mock.ExpectQuery(`^SELECT `+day+`, count\(\*\), \(percentile_cont\(0\.95\) WITHIN GROUP`).
-			WithArgs("job", from, to).
+			WithArgs(from, to).
 			WillReturnRows(sqlmock.NewRows([]string{"day", "count", "p95"}).
 				AddRow(time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), 5, 300).
 				AddRow(nil, 5, 300))

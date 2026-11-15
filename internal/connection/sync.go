@@ -317,7 +317,14 @@ func (s *syncing) pull(ctx context.Context) error {
 	// The lock holds a connection while fetching, so bound the fetch to keep
 	// a slow provider from holding it indefinitely.
 	pullCtx, cancel := context.WithTimeout(ctx, s.timeout)
-	var warnings []string
+	var (
+		warnings []string
+		lasting  string
+	)
+	// Batches written before a failure stay written, so their warnings count.
+	defer func() {
+		run.Warning = strings.Join(slices.DeleteFunc(append(warnings, lasting, run.cutTitlesWarning()), func(w string) bool { return w == "" }), " ")
+	}()
 	request := s.request
 	request.Warn = func(warning string) { warnings = append(warnings, warning) }
 	report, err := s.puller.Pull(pullCtx, s.db, request, emit)
@@ -346,9 +353,7 @@ func (s *syncing) pull(ctx context.Context) error {
 	}
 	markLasting(&report, earlier)
 	run.failedScopes = failedScopes(report)
-	var lasting string
 	run.Error, lasting = failureText(report)
-	run.Warning = strings.Join(slices.DeleteFunc(append(warnings, lasting), func(w string) bool { return w == "" }), " ")
 	if len(report.Failed) == len(request.Resources) {
 		return fmt.Errorf("pull %s: %s", s.identifier, run.Error)
 	}

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestValidateEntity(t *testing.T) {
@@ -17,7 +18,7 @@ func TestValidateEntity(t *testing.T) {
 			"owner": "payments", "dependsOn": []any{"ledger", "ledger", ""},
 		},
 	}
-	out, problems := spec.ValidateEntity(valid)
+	out, _, problems := spec.ValidateEntity(valid)
 	if len(problems) != 0 {
 		t.Fatalf("problems = %v", problems)
 	}
@@ -53,7 +54,7 @@ func TestValidateEntity(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, problems := spec.ValidateEntity(test.entity)
+			_, _, problems := spec.ValidateEntity(test.entity)
 			if !strings.Contains(strings.Join(problems, "\n"), test.want) {
 				t.Fatalf("problems = %v, want %q", problems, test.want)
 			}
@@ -71,13 +72,35 @@ spec:
     born: {type: string, format: date}
     code: {type: string, pattern: '^[A-Z]{3}$', maxLength: 3}
 `)
-	_, problems := spec.ValidateEntity(Entity{Identifier: "a", Properties: map[string]any{
+	_, _, problems := spec.ValidateEntity(Entity{Identifier: "a", Properties: map[string]any{
 		"site": "example.com", "born": "25/10/2026", "code": "abcd",
 	}})
 	got := strings.Join(problems, "\n")
 	for _, want := range []string{"site must be an absolute URI", "born must be a date", "code doesn't match", "code is longer than 3"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("problems = %v, want %q", problems, want)
+		}
+	}
+}
+
+func TestValidateEntityTruncatesLongTitles(t *testing.T) {
+	spec := mustParse(t, `
+kind: Blueprint
+metadata: {identifier: thing, title: Thing}
+spec: {properties: {}}
+`)
+	// Spaces trimmed off don't count against the title.
+	atLimit := strings.Repeat("x", MaxEntityTitle)
+	if out, cut, problems := spec.ValidateEntity(Entity{Identifier: "a", Title: atLimit + "  "}); len(problems) > 0 || cut || out.Title != atLimit {
+		t.Errorf("at the limit: %d bytes, cut %t, problems %v", len(out.Title), cut, problems)
+	}
+	// Three bytes a character, so the cut falls inside one.
+	for _, long := range []string{strings.Repeat("x", MaxEntityTitle+1), strings.Repeat("€", MaxEntityTitle)} {
+		out, cut, problems := spec.ValidateEntity(Entity{Identifier: "a", Title: long})
+		body, ok := strings.CutSuffix(out.Title, "…")
+		if len(problems) > 0 || !cut || !ok || len(out.Title) > MaxEntityTitle || len(out.Title) < MaxEntityTitle-6 ||
+			!utf8.ValidString(out.Title) || !strings.HasPrefix(long, body) {
+			t.Errorf("%d bytes became %d, cut %t, valid %t, problems %v", len(long), len(out.Title), cut, utf8.ValidString(out.Title), problems)
 		}
 	}
 }

@@ -157,19 +157,23 @@ func TestResultsNarrowByFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := Spec{Tiers: []Tier{{Name: "bronze"}, {Name: "silver"}}}
-	// The filter's values follow the query's own, before the paging.
+	spec := Spec{Blueprint: "service", Tiers: []Tier{{Name: "bronze"}, {Name: "silver"}}}
+	// The filter's values follow the query's own, before the rest.
 	mock.ExpectQuery(regexp.QuoteMeta(`'hasOwner'`)).
-		WithArgs("sc", "", pq.Array([]string{"", "bronze", "silver"}), "failed", "skipped", 10, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "c", "total"}).
-			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, []byte(`{}`), 1))
+		WithArgs("sc", "%led%", "failed", "skipped", "service", pq.Array([]string{"", "bronze", "silver"}), 1, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "c"}).
+			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, []byte(`{}`)))
+	mock.ExpectQuery(`^SELECT count\(\*\)\s+FROM scorecard_results r\s+JOIN entities e ON e.id = r.entity_id\s+WHERE r.scorecard_id = \$1\s+`+
+		regexp.QuoteMeta(`AND ($2 = '' OR lower(e.title) LIKE lower($2) OR lower(e.identifier) LIKE lower($2))`)+`.*'hasOwner'`).
+		WithArgs("sc", "%led%", "failed", "skipped").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
 
 	scope := Scope{Blueprints: map[string]blueprint.Spec{"service": graded}, Blueprint: graded, Filter: f}
-	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Page: 1, PageSize: 10})
+	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Search: "led", Page: 1, PageSize: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 1 || page.Items[0].Identifier != "ledger" {
+	if page.Total != 3 || page.Items[0].Identifier != "ledger" {
 		t.Errorf("page = %+v", page)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

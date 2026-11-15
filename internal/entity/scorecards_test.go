@@ -77,11 +77,11 @@ func TestScorecardSort(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		order := "ASC"
+		order := "ASC NULLS FIRST"
 		if direction == "-" {
-			order = "DESC"
+			order = "DESC NULLS LAST"
 		}
-		if !strings.HasPrefix(sql, "array_position($2::text[], coalesce((SELECT r.tier") || !strings.HasSuffix(sql, order+" NULLS LAST, e.title, e.identifier") {
+		if !strings.HasPrefix(sql, "array_position($2::text[], coalesce((SELECT r.tier") || !strings.HasSuffix(sql, order+", e.title, e.identifier") {
 			t.Fatalf("wrong ladder ordering: %s", sql)
 		}
 		value, err := c.args[1].(interface{ Value() (driver.Value, error) }).Value()

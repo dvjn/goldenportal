@@ -205,3 +205,34 @@ func TestWriteRetriesADeadlock(t *testing.T) {
 		t.Errorf("titles = %v", titles)
 	}
 }
+
+func TestWriteCutsLongTitles(t *testing.T) {
+	f := newScopedFixture(t)
+	long := entry("pipeline", "long", "pipelines", "")
+	long.Entity.Title = strings.Repeat("€", blueprint.MaxEntityTitle)
+	run := &Run{Errors: []RunError{}}
+	for range 2 {
+		if err := writeBatched(t.Context(), f.db, f.id, []Entry{long, entry("pipeline", "short", "pipelines", ""), long}, run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if run.Created != 2 || run.Failed != 0 || run.cutTitlesWarning() != "Titles too long to index were cut short: pipeline/long." {
+		t.Fatalf("created %d, failed %d, warning %q", run.Created, run.Failed, run.cutTitlesWarning())
+	}
+	var title string
+	if err := f.db.QueryRowContext(t.Context(), `SELECT title FROM entities WHERE identifier = 'long'`).Scan(&title); err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := blueprint.TruncateTitle(long.Entity.Title); title != want {
+		t.Errorf("title is %d bytes, want %d", len(title), len(want))
+	}
+
+	// Unchanged, so nothing is cut again.
+	again := &Run{Errors: []RunError{}}
+	if err := writeBatched(t.Context(), f.db, f.id, []Entry{long}, again); err != nil {
+		t.Fatal(err)
+	}
+	if again.Unchanged != 1 || again.cutTitlesWarning() != "" {
+		t.Errorf("unchanged %d, warning %q", again.Unchanged, again.cutTitlesWarning())
+	}
+}

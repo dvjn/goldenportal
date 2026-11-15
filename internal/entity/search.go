@@ -23,7 +23,7 @@ func Search(ctx *gofr.Context, _ auth.Principal, text string) ([]search.Result, 
 	if err != nil {
 		return nil, err
 	}
-	found, err := NewStore(ctx.SQL).Search(ctx, slices.Collect(maps.Keys(specs)), text, 2*search.Limit)
+	found, err := NewStore(ctx.SQL).Search(ctx, slices.Collect(maps.Values(specs)), text, 2*search.Limit)
 	if err != nil {
 		return nil, err
 	}

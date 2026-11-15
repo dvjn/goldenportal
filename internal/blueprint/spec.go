@@ -21,6 +21,8 @@ import (
 // Spec is a parsed blueprint. Its lists keep the order they were written in,
 // which is the order the catalog shows them.
 type Spec struct {
+	// ID is its document's row, which entities reference; empty until stored.
+	ID          string     `json:"-"`
 	Identifier  string     `json:"identifier"`
 	Title       string     `json:"title"`
 	Description string     `json:"description,omitempty"`

@@ -156,6 +156,15 @@ type Page = httpx.Page[Event]
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
+// matching is the condition List's events meet, on arguments $1 to $4.
+const matching = `
+	FROM audit_events a
+	LEFT JOIN users u ON u.id = a.actor_id
+	WHERE ($1 = '' OR actor_label ILIKE $1 OR u.display_name ILIKE $1 OR target_label ILIKE $1 OR action ILIKE $1)
+		AND (coalesce(cardinality($2::text[]), 0) = 0 OR action = ANY($2))
+		AND ($3::timestamptz IS NULL OR at >= $3)
+		AND ($4::timestamptz IS NULL OR at < $4)`
+
 // List returns the page of events that match q.
 func List(ctx context.Context, db DB, q Query) (Page, error) {
 	var from, to any
@@ -165,19 +174,14 @@ func List(ctx context.Context, db DB, q Query) (Page, error) {
 	if !q.To.IsZero() {
 		to = q.To
 	}
+	args := []any{search(q.Search), pq.Array(q.Actions), from, to}
 
+	offset := (q.Page - 1) * q.PageSize
 	rows, err := db.QueryContext(ctx, `
 		SELECT a.id, a.at, coalesce(a.actor_id::text, ''), a.actor_label, coalesce(u.display_name, ''),
-			a.action, a.target_type, a.target_id, a.target_label, a.details, count(*) OVER ()
-		FROM audit_events a
-		LEFT JOIN users u ON u.id = a.actor_id
-		WHERE ($1 = '' OR actor_label ILIKE $1 OR u.display_name ILIKE $1 OR target_label ILIKE $1 OR action ILIKE $1)
-			AND (coalesce(cardinality($2::text[]), 0) = 0 OR action = ANY($2))
-			AND ($3::timestamptz IS NULL OR at >= $3)
-			AND ($4::timestamptz IS NULL OR at < $4)
+			a.action, a.target_type, a.target_id, a.target_label, a.details`+matching+`
 		ORDER BY a.id DESC
-		LIMIT $5 OFFSET $6`,
-		search(q.Search), pq.Array(q.Actions), from, to, q.PageSize, (q.Page-1)*q.PageSize)
+		LIMIT $5 OFFSET $6`, append(args, q.PageSize, offset)...)
 	if err != nil {
 		return Page{}, err
 	}
@@ -190,7 +194,7 @@ func List(ctx context.Context, db DB, q Query) (Page, error) {
 			details []byte
 		)
 		if err := rows.Scan(&e.ID, &e.OccurredAt, &e.Actor.ID, &e.Actor.Label, &e.Actor.Name, &e.Action,
-			&e.Target.Type, &e.Target.ID, &e.Target.Label, &details, &page.Total); err != nil {
+			&e.Target.Type, &e.Target.ID, &e.Target.Label, &details); err != nil {
 			return Page{}, err
 		}
 		if err := json.Unmarshal(details, &e.Details); err != nil {
@@ -201,45 +205,28 @@ func List(ctx context.Context, db DB, q Query) (Page, error) {
 	if err := rows.Err(); err != nil {
 		return Page{}, err
 	}
-
-	// A page past the end has no rows to carry the total, so count separately.
-	if len(page.Items) == 0 && q.Page > 1 {
-		return countOnly(ctx, db, q)
+	var known bool
+	if page.Total, known = httpx.PageTotal(offset, len(page.Items), q.PageSize); !known {
+		page.Total, err = count(ctx, db, args)
 	}
 
-	return page, nil
+	return page, err
 }
 
-func countOnly(ctx context.Context, db DB, q Query) (Page, error) {
-	var from, to any
-	if !q.From.IsZero() {
-		from = q.From
-	}
-	if !q.To.IsZero() {
-		to = q.To
-	}
-
-	rows, err := db.QueryContext(ctx, `
-		SELECT count(*) FROM audit_events a
-		LEFT JOIN users u ON u.id = a.actor_id
-		WHERE ($1 = '' OR actor_label ILIKE $1 OR u.display_name ILIKE $1 OR target_label ILIKE $1 OR action ILIKE $1)
-			AND (coalesce(cardinality($2::text[]), 0) = 0 OR action = ANY($2))
-			AND ($3::timestamptz IS NULL OR at >= $3)
-			AND ($4::timestamptz IS NULL OR at < $4)`,
-		search(q.Search), pq.Array(q.Actions), from, to)
+func count(ctx context.Context, db DB, args []any) (int, error) {
+	rows, err := db.QueryContext(ctx, `SELECT count(*)`+matching, args...)
 	if err != nil {
-		return Page{}, err
+		return 0, err
 	}
 	defer rows.Close()
-
-	page := Page{Items: []Event{}}
+	var n int
 	if rows.Next() {
-		if err := rows.Scan(&page.Total); err != nil {
-			return Page{}, err
+		if err := rows.Scan(&n); err != nil {
+			return 0, err
 		}
 	}
 
-	return page, rows.Err()
+	return n, rows.Err()
 }
 
 // search turns free text into an ILIKE pattern, treating % and _ literally.

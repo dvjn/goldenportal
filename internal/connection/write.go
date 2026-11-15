@@ -57,23 +57,23 @@ func WriteEntity(ctx context.Context, db configdoc.DB, actionRun, connection, bl
 	if err != nil {
 		return "", err
 	}
-	outcome, err := writeEntity(ctx, db, connectionID, blueprintName, e, merge)
+	w, err := writeEntity(ctx, db, connectionID, blueprintName, e, merge)
 
-	return outcome, recordAction(ctx, db, connectionID, actionRun, started, blueprintName, e.Identifier, outcome, err)
+	return w.outcome, recordAction(ctx, db, connectionID, actionRun, started, blueprintName, e.Identifier, w, err)
 }
 
-func writeEntity(ctx context.Context, db configdoc.DB, connectionID, blueprintName string, e blueprint.Entity, merge bool) (string, error) {
+func writeEntity(ctx context.Context, db configdoc.DB, connectionID, blueprintName string, e blueprint.Entity, merge bool) (written, error) {
 	published, err := blueprint.Published(ctx, db)
 	if err != nil {
-		return "", err
+		return written{}, err
 	}
 	spec, ok := published[blueprintName]
 	if !ok {
-		return "", EntityError{[]string{"no blueprint " + blueprintName + " is published"}}
+		return written{}, EntityError{[]string{"no blueprint " + blueprintName + " is published"}}
 	}
 	blueprintID, err := configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, blueprintName)
 	if err != nil {
-		return "", err
+		return written{}, err
 	}
 
 	store := entity.NewStore(db)
@@ -82,7 +82,7 @@ func writeEntity(ctx context.Context, db configdoc.DB, connectionID, blueprintNa
 		switch {
 		case errors.Is(err, entity.ErrNotFound):
 		case err != nil:
-			return "", err
+			return written{}, err
 		default:
 			properties := map[string]any{}
 			for _, prop := range spec.Properties {
@@ -100,19 +100,25 @@ func writeEntity(ctx context.Context, db configdoc.DB, connectionID, blueprintNa
 		}
 	}
 
-	clean, problems := spec.ValidateEntity(e)
+	clean, titleCut, problems := spec.ValidateEntity(e)
 	if len(problems) > 0 {
-		return "", EntityError{problems}
+		return written{}, EntityError{problems}
 	}
 	computed, _ := spec.Compute(ctx, clean)
 	w := entity.Write{BlueprintID: blueprintID, Entity: clean, Computed: computed, OccurredAt: spec.RetainedAt(clean)}
 	outcome, err := store.Upsert(ctx, connectionID, w)
 	var owned entity.OwnedError
 	if errors.As(err, &owned) {
-		return "", EntityError{[]string{owned.Error()}}
+		return written{}, EntityError{[]string{owned.Error()}}
 	}
 
-	return outcome, err
+	return written{outcome: outcome, titleCut: titleCut}, err
+}
+
+// written is what an action's write did to its entity.
+type written struct {
+	outcome  string
+	titleCut bool
 }
 
 // RemoveEntity deletes an entity a connection wrote, for the action run
@@ -125,7 +131,7 @@ func RemoveEntity(ctx context.Context, db configdoc.DB, actionRun, connection, b
 	}
 	err = removeEntity(ctx, db, connectionID, blueprintName, identifier)
 
-	return recordAction(ctx, db, connectionID, actionRun, started, blueprintName, identifier, deleted, err)
+	return recordAction(ctx, db, connectionID, actionRun, started, blueprintName, identifier, written{outcome: deleted}, err)
 }
 
 // deleted is RemoveEntity's outcome when it records the run.
@@ -155,7 +161,7 @@ func removeEntity(ctx context.Context, db configdoc.DB, connectionID, blueprintN
 // history shows what actions changed. A write the entity's problems stopped is
 // a run with one failed item; any other error is returned without a run.
 func recordAction(ctx context.Context, db configdoc.DB, connectionID, actionRun string, started time.Time,
-	blueprintName, identifier, outcome string, err error,
+	blueprintName, identifier string, w written, err error,
 ) error {
 	var entityErr EntityError
 	if err != nil && !errors.As(err, &entityErr) {
@@ -166,11 +172,17 @@ func recordAction(ctx context.Context, db configdoc.DB, connectionID, actionRun 
 	case err != nil:
 		run.Failed = 1
 		run.Errors = []RunError{{Blueprint: blueprintName, Identifier: identifier, Problems: entityErr.Problems}}
-	case outcome == entity.Created:
-		run.Created = 1
-	case outcome == entity.Updated:
-		run.Updated = 1
-	case outcome == deleted:
+	case w.outcome == entity.Created, w.outcome == entity.Updated:
+		if w.outcome == entity.Created {
+			run.Created = 1
+		} else {
+			run.Updated = 1
+		}
+		if w.titleCut {
+			run.cutTitle(blueprintName, identifier)
+			run.Warning = run.cutTitlesWarning()
+		}
+	case w.outcome == deleted:
 		run.Deleted = 1
 	default:
 		run.Unchanged = 1

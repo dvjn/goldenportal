@@ -11,14 +11,13 @@ import (
 )
 
 // fetch loads entities of a blueprint by identifier.
-func (s Store) fetch(ctx context.Context, blueprintIdentifier string, identifiers []string) (map[string]*Entity, error) {
+func (s Store) fetch(ctx context.Context, spec blueprint.Spec, identifiers []string) (map[string]*Entity, error) {
 	found := map[string]*Entity{}
 	if len(identifiers) == 0 {
 		return found, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns+entityFrom+`
-		WHERE b.kind = 'blueprint' AND b.identifier = $1 AND e.identifier = ANY($2)`,
-		blueprintIdentifier, pq.Array(identifiers))
+	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns(quoteLiteral(spec.Identifier))+` FROM entities e
+		WHERE e.blueprint_id = `+BlueprintID(spec)+` AND e.identifier = ANY($1)`, pq.Array(identifiers))
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +36,7 @@ func (s Store) fetch(ctx context.Context, blueprintIdentifier string, identifier
 // Links names entities of a blueprint by identifier, in the order given.
 // One that doesn't exist keeps its identifier and no title.
 func (s Store) Links(ctx context.Context, blueprintIdentifier string, identifiers []string) ([]Link, error) {
-	found, err := s.fetch(ctx, blueprintIdentifier, identifiers)
+	found, err := s.fetch(ctx, blueprint.Spec{Identifier: blueprintIdentifier}, identifiers)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +85,7 @@ func (s Store) Resolve(ctx context.Context, specs map[string]blueprint.Spec, spe
 		for _, e := range entities {
 			ids = append(ids, targets(e.relations[prop.ID])...)
 		}
-		found, err := s.fetch(ctx, prop.Relation, ids)
+		found, err := s.fetch(ctx, specNamed(specs, prop.Relation), ids)
 		if err != nil {
 			return err
 		}
@@ -138,7 +137,7 @@ func (s Store) lookup(ctx context.Context, specs map[string]blueprint.Spec, spec
 				ids = append(ids, id)
 			}
 		}
-		found, err := s.fetch(ctx, rel.Relation, ids)
+		found, err := s.fetch(ctx, specNamed(specs, rel.Relation), ids)
 		if err != nil {
 			return err
 		}
@@ -200,31 +199,8 @@ const MaxIncoming = 50
 func (s Store) Incoming(ctx context.Context, specs map[string]blueprint.Spec, blueprintIdentifier, identifier string) ([]Incoming, error) {
 	out := []Incoming{}
 	for _, ref := range blueprint.References(specs, blueprintIdentifier) {
-		target, _ := json.Marshal(identifier)
-		rows, err := s.db.QueryContext(ctx, `
-			SELECT e.identifier, e.title, count(*) OVER ()
-			FROM entities e JOIN config_documents b ON b.id = e.blueprint_id
-			WHERE b.kind = 'blueprint' AND b.identifier = $1
-				AND (e.relations -> $2 = $3::jsonb OR e.relations -> $2 @> jsonb_build_array($3::jsonb))
-			ORDER BY e.title, e.identifier
-			LIMIT $4`, ref.Blueprint, ref.Property, string(target), MaxIncoming)
+		incoming, err := s.incoming(ctx, specs[ref.Blueprint], ref, identifier)
 		if err != nil {
-			return nil, err
-		}
-		incoming := Incoming{
-			Blueprint: ref.Blueprint, BlueprintTitle: ref.Title, Property: ref.Property,
-			PropertyTitle: ref.PropertyTitle, Entities: []Link{},
-		}
-		for rows.Next() {
-			var link Link
-			if err := rows.Scan(&link.Identifier, &link.Title, &incoming.Total); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			incoming.Entities = append(incoming.Entities, link)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return nil, err
 		}
 		if incoming.Total > 0 {
@@ -233,4 +209,39 @@ func (s Store) Incoming(ctx context.Context, specs map[string]blueprint.Spec, bl
 	}
 
 	return out, nil
+}
+
+// incoming lists the entities of spec whose relation ref names identifier.
+// Containment is what the relations index answers; a relation holds one
+// identifier or a list of them.
+func (s Store) incoming(ctx context.Context, spec blueprint.Spec, ref blueprint.Reference, identifier string) (Incoming, error) {
+	one, _ := json.Marshal(map[string]any{ref.Property: identifier})
+	many, _ := json.Marshal(map[string]any{ref.Property: []string{identifier}})
+	where := "e.blueprint_id = " + BlueprintID(spec) + " AND (e.relations @> $1::jsonb OR e.relations @> $2::jsonb)"
+	args := []any{string(one), string(many)}
+	rows, err := s.db.QueryContext(ctx, `SELECT e.identifier, e.title FROM entities e
+		WHERE `+where+`
+		ORDER BY e.title, e.identifier
+		LIMIT $3`, append(args, MaxIncoming)...)
+	if err != nil {
+		return Incoming{}, err
+	}
+	defer rows.Close()
+	incoming := Incoming{
+		Blueprint: ref.Blueprint, BlueprintTitle: ref.Title, Property: ref.Property,
+		PropertyTitle: ref.PropertyTitle, Entities: []Link{},
+	}
+	for rows.Next() {
+		var link Link
+		if err := rows.Scan(&link.Identifier, &link.Title); err != nil {
+			return Incoming{}, err
+		}
+		incoming.Entities = append(incoming.Entities, link)
+	}
+	if err := rows.Err(); err != nil {
+		return Incoming{}, err
+	}
+	incoming.Total, err = s.total(ctx, where, args, 0, len(incoming.Entities), MaxIncoming)
+
+	return incoming, err
 }

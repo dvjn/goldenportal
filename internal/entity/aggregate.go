@@ -29,14 +29,11 @@ type Match struct {
 // filters like false, so it isn't coalesced, which would hide it from the
 // indexes.
 func NewMatch(q Query) (Match, error) {
-	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, args: []any{q.Blueprint.Identifier}}
-	where := "b.kind = 'blueprint' AND b.identifier = $1"
-	if q.Filter != nil {
-		sql, err := c.compile(*q.Filter, 1)
-		if err != nil {
-			return Match{}, FilterError{err}
-		}
-		where += " AND " + sql
+	c := &compiler{spec: q.Blueprint, specs: q.Blueprints}
+	q.Search = ""
+	where, err := q.where(c)
+	if err != nil {
+		return Match{}, err
 	}
 
 	return Match{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders, where: where, args: c.args}, nil
@@ -161,7 +158,7 @@ func (s Store) Aggregates(ctx context.Context, m Match, aggregates []Aggregate) 
 	for i := range values {
 		targets[i] = &values[i]
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT `+strings.Join(columns, ", ")+entityFrom+`
+	if err := s.db.QueryRowContext(ctx, `SELECT `+strings.Join(columns, ", ")+` FROM entities e
 	WHERE `+m.where, c.args...).Scan(targets...); err != nil {
 		return nil, err
 	}
@@ -269,27 +266,36 @@ func (s Store) GroupBy(ctx context.Context, m Match, path string, aggregates []A
 	if err != nil {
 		return nil, nil, err
 	}
-	var inner, outer string
+	var inner, outer, named string
 	for i, column := range columns {
 		inner += ", " + column + " AS v" + strconv.Itoa(i)
 		outer += ", g.v" + strconv.Itoa(i)
+		named += ", k.v" + strconv.Itoa(i)
 	}
-	value, from := fld.json(), entityFrom
+	value, from := fld.json(), " FROM entities e"
 	if fld.many {
 		from += `
 	LEFT JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(` + fld.value + `) = 'array' THEN ` + fld.value + ` END) item ON true`
 		value = "item"
 	}
+	if fld.connection != "" {
+		value = fld.connection
+	}
+	grouped := `SELECT ` + value + ` AS value, count(*) AS count` + inner + from + `
+	WHERE ` + m.where + `
+	GROUP BY 1`
+	// Groups are named after counting, once each, rather than per row.
+	if fld.connection != "" {
+		grouped = `SELECT to_jsonb(` + connectionOf("k.value") + `) AS value, k.count` + named + ` FROM (` + grouped + `) k`
+	}
 	title, join := "NULL::text", ""
 	if fld.relation != "" {
 		title = "t.title"
 		join = `
-	LEFT JOIN entities t ON t.blueprint_id = ` + blueprintID(fld.relation) + ` AND t.identifier = g.value #>> '{}'`
+	LEFT JOIN entities t ON t.blueprint_id = ` + BlueprintID(specNamed(c.specs, fld.relation)) + ` AND t.identifier = g.value #>> '{}'`
 	}
 	// The group without a value comes first, so the limit never cuts it.
-	rows, err := s.db.QueryContext(ctx, `SELECT g.value, g.count, `+title+outer+` FROM (SELECT `+value+` AS value, count(*) AS count`+inner+from+`
-	WHERE `+m.where+`
-	GROUP BY 1) g`+join+`
+	rows, err := s.db.QueryContext(ctx, `SELECT g.value, g.count, `+title+outer+` FROM (`+grouped+`) g`+join+`
 	ORDER BY g.value IS NULL DESC, `+groupOrder(c, fld, m.ladders, sort)+`
 	LIMIT `+c.arg(limit+1), c.args...)
 	if err != nil {
@@ -342,25 +348,26 @@ func (s Store) GroupBy(ctx context.Context, m Match, path string, aggregates []A
 	return groups, none, nil
 }
 
-// groupOrder is SQL ordering groups by sort. Ties go to the larger group,
-// then the value, so the groups a limit keeps are always the same.
+// groupOrder is SQL ordering groups by sort. Empty keys sort lowest, as
+// entities do. Ties go to the larger group, then the value, so the groups a
+// limit keeps are always the same.
 func groupOrder(c *compiler, fld field, ladders map[string]blueprint.Ladder, sort GroupSort) string {
-	direction := " ASC"
+	direction, empty := " ASC", " ASC NULLS FIRST"
 	if sort.Descending {
-		direction = " DESC"
+		direction, empty = " DESC", " DESC NULLS LAST"
 	}
 	switch {
 	case sort.By == SortCount:
 		return "g.count" + direction + ", g.value"
 	case sort.By >= 0:
-		return "g.v" + strconv.Itoa(sort.By) + direction + " NULLS LAST, g.count DESC, g.value"
+		return "g.v" + strconv.Itoa(sort.By) + empty + ", g.count DESC, g.value"
 	}
 	var keys []string
 	if listed := listedValues(fld, ladders); len(listed) > 0 {
-		keys = append(keys, "array_position("+c.arg(pq.Array(listed))+"::text[], g.value #>> '{}')"+direction+" NULLS LAST")
+		keys = append(keys, "array_position("+c.arg(pq.Array(listed))+"::text[], g.value #>> '{}')"+empty)
 	}
 	if fld.relation != "" {
-		keys = append(keys, "t.title"+direction+" NULLS LAST")
+		keys = append(keys, "t.title"+empty)
 	}
 
 	return strings.Join(append(keys, "g.value"+direction), ", ")
@@ -433,7 +440,7 @@ type Row struct {
 }
 
 // Rows reads the first limit of m's entities in sort's order, with the
-// value of each path, in one statement, and how many match in all.
+// value of each path, and how many match in all.
 func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths []string) ([]Row, int, error) {
 	c := m.compiler()
 	order, err := c.orderBy(sort, m.ladders)
@@ -453,7 +460,7 @@ func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths 
 		}
 		columns = append(columns, ", "+links)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.identifier, e.title, count(*) OVER ()`+strings.Join(columns, "")+entityFrom+`
+	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.identifier, e.title`+strings.Join(columns, "")+` FROM entities e
 	WHERE `+m.where+`
 	ORDER BY `+order+`
 	LIMIT `+c.arg(limit), c.args...)
@@ -463,11 +470,10 @@ func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths 
 	defer rows.Close()
 
 	out := []Row{}
-	total := 0
 	for rows.Next() {
 		r := Row{Values: make([]any, len(paths)), Links: make([][]Link, len(paths))}
 		raws := make([][]byte, 2*len(paths))
-		targets := []any{&r.ID, &r.Identifier, &r.Title, &total}
+		targets := []any{&r.ID, &r.Identifier, &r.Title}
 		for i := range raws {
 			targets = append(targets, &raws[i])
 		}
@@ -488,8 +494,12 @@ func (s Store) Rows(ctx context.Context, m Match, sort string, limit int, paths 
 		}
 		out = append(out, r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	total, err := s.total(ctx, m.where, m.args, 0, len(out), limit)
 
-	return out, total, rows.Err()
+	return out, total, err
 }
 
 // rowValue is a column's value as jsonb. A tier keeps "" for none apart
@@ -511,7 +521,7 @@ func rowLinks(c *compiler, fld field, path string) (string, error) {
 		value := fld.value
 		return `(SELECT jsonb_agg(jsonb_build_object('identifier', x.id, 'title', t.title) ORDER BY x.n)
 	FROM jsonb_array_elements_text(CASE jsonb_typeof(` + value + `) WHEN 'array' THEN ` + value + ` WHEN 'string' THEN jsonb_build_array(` + value + `) END) WITH ORDINALITY x(id, n)
-	LEFT JOIN entities t ON t.blueprint_id = ` + blueprintID(fld.relation) + ` AND t.identifier = x.id)`, nil
+	LEFT JOIN entities t ON t.blueprint_id = ` + BlueprintID(specNamed(c.specs, fld.relation)) + ` AND t.identifier = x.id)`, nil
 	case fld.kind == kindTier:
 		scored := "identifier"
 		if at := strings.LastIndex(path, "."); at >= 0 {
@@ -531,15 +541,11 @@ func rowLinks(c *compiler, fld field, path string) (string, error) {
 // filter, with its arguments numbered after args. specs are the blueprints
 // its relations lead to.
 func Matching(specs map[string]blueprint.Spec, spec blueprint.Spec, filter *Filter, args []any) (string, []any, error) {
-	c := &compiler{spec: spec, specs: specs, args: append(args, spec.Identifier)}
-	where := "b.kind = 'blueprint' AND b.identifier = $" + fmt.Sprint(len(c.args))
-	if filter != nil {
-		sql, err := c.compile(*filter, 1)
-		if err != nil {
-			return "", nil, FilterError{err}
-		}
-		where += " AND " + sql
+	c := &compiler{spec: spec, specs: specs, args: args}
+	where, err := Query{Blueprint: spec, Filter: filter}.where(c)
+	if err != nil {
+		return "", nil, err
 	}
 
-	return `SELECT e.id` + entityFrom + ` WHERE ` + where, c.args, nil
+	return `SELECT e.id FROM entities e WHERE ` + where, c.args, nil
 }

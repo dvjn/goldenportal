@@ -106,11 +106,15 @@ func TestMeasuresAtVolume(t *testing.T) {
 	if _, err := f.db.ExecContext(t.Context(), `ANALYZE entities`); err != nil {
 		t.Fatal(err)
 	}
-	spec, issues := blueprint.Parse(jobsYAML)
-	if blueprint.HasErrors(issues) {
-		t.Fatal(issues)
+	// Published specs carry their row's ID, which statements name.
+	specs, err := blueprint.Published(t.Context(), f.db)
+	if err != nil {
+		t.Fatal(err)
 	}
-	specs := map[string]blueprint.Spec{"service": spec}
+	spec := specs["service"]
+	if spec.ID != f.blueprint {
+		t.Fatalf("spec ID = %q, want %q", spec.ID, f.blueprint)
+	}
 	from, to := today.AddDate(0, 0, -29), today.AddDate(0, 0, 1)
 	recent := &filter.Filter{And: []filter.Filter{
 		{Property: "finishedAt", Op: filter.OpGte, Value: from.Format(time.RFC3339)},
@@ -209,8 +213,8 @@ func TestMeasuresAtVolume(t *testing.T) {
 	c := unfiltered.compiler()
 	fld, _ := trendField(c, "finishedAt")
 	var plan []string
-	rows, err := f.db.QueryContext(t.Context(), `EXPLAIN SELECT count(*)`+entityFrom+` WHERE `+unfiltered.where+` AND `+dateOf(fld)+` >= $2 AND `+dateOf(fld)+` < $3`,
-		append(c.args, today.AddDate(0, 0, -6), to)...)
+	rows, err := f.db.QueryContext(t.Context(), `EXPLAIN SELECT count(*) FROM entities e WHERE `+unfiltered.where+
+		` AND `+fld.time()+` >= `+c.arg(today.AddDate(0, 0, -6))+` AND `+fld.time()+` < `+c.arg(to), c.args...)
 	if err != nil {
 		t.Fatal(err)
 	}

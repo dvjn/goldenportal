@@ -293,13 +293,13 @@ func TestReconcilable(t *testing.T) {
 	}
 }
 
-const recordColumnsSQL = `b.identifier, coalesce(b.published_version, 0), coalesce(v.source, ''), coalesce(v.published_at, b.created_at),
+const recordColumnsSQL = `b.id, b.identifier, coalesce(b.published_version, 0), coalesce(v.source, ''), coalesce(v.published_at, b.created_at),
 		coalesce(pu.email, ''), coalesce(b.draft_source, ''), coalesce(b.draft_updated_at, b.created_at), coalesce(du.email, ''), b.created_at
 		FROM config_documents b LEFT JOIN config_versions v ON v.document_id = b.id AND v.version = b.published_version
 		LEFT JOIN users pu ON pu.id = v.published_by LEFT JOIN users du ON du.id = b.draft_updated_by`
 
 var recordColumnNames = []string{
-	"identifier", "published_version", "source", "published_at", "published_by", "draft_source", "draft_updated_at", "draft_updated_by", "created_at",
+	"id", "identifier", "published_version", "source", "published_at", "published_by", "draft_source", "draft_updated_at", "draft_updated_by", "created_at",
 }
 
 // mockSyncStart expects a sync of the published http connection "source",
@@ -319,9 +319,9 @@ func expectSyncStart(mock sqlmock.Sqlmock, url string, locked bool) {
 	source := strings.Replace(httpYAML(url), "name: tracker", "name: source", 1)
 	now := time.Now()
 	mock.ExpectQuery(`SELECT `+recordColumnsSQL+` WHERE b.kind = $1 AND b.identifier = $2`).WithArgs(Name, "source").
-		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("source", 1, source, now, "", "", now, "", now))
+		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("source-id", "source", 1, source, now, "", "", now, "", now))
 	mock.ExpectQuery(`SELECT ` + recordColumnsSQL + ` WHERE b.kind = $1 ORDER BY b.identifier`).
-		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("deployment", 1, deploymentYAML("tracker"), now, "", "", now, "", now))
+		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("deployment-id", "deployment", 1, deploymentYAML("tracker"), now, "", "", now, "", now))
 	mock.ExpectQuery(`SELECT id FROM config_documents WHERE kind = $1 AND identifier = $2 AND published_version IS NOT NULL`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("connection-id"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT pg_try_advisory_xact_lock(hashtext('connection-sync:' || $1))`).WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(locked))
@@ -374,7 +374,7 @@ func TestSyncNowReadingNothing(t *testing.T) {
 	now := time.Now()
 	source := strings.Replace(sourcedYAML, "identifier: tracker", "identifier: source", 1)
 	mock.ExpectQuery(`SELECT `+recordColumnsSQL+` WHERE b.kind = $1 AND b.identifier = $2`).WithArgs(Name, "source").
-		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("source", 1, source, now, "", "", now, "", now))
+		WillReturnRows(sqlmock.NewRows(recordColumnNames).AddRow("source-id", "source", 1, source, now, "", "", now, "", now))
 	mock.ExpectQuery(`SELECT ` + recordColumnsSQL + ` WHERE b.kind = $1 ORDER BY b.identifier`).
 		WillReturnRows(sqlmock.NewRows(recordColumnNames))
 

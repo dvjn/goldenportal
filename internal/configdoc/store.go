@@ -30,6 +30,7 @@ func NewStore(db DB, kind string) Store { return Store{db: db, kind: kind} }
 // Record is a document as stored: its latest published version, if any,
 // and its draft, if any.
 type Record struct {
+	ID               string
 	Identifier       string
 	PublishedVersion int
 	PublishedSource  string
@@ -45,7 +46,7 @@ func (r Record) Published() bool { return r.PublishedVersion > 0 }
 func (r Record) HasDraft() bool  { return r.DraftSource != "" }
 
 const recordColumns = `
-	b.identifier, coalesce(b.published_version, 0), coalesce(v.source, ''), coalesce(v.published_at, b.created_at),
+	b.id, b.identifier, coalesce(b.published_version, 0), coalesce(v.source, ''), coalesce(v.published_at, b.created_at),
 	coalesce(pu.email, ''), coalesce(b.draft_source, ''), coalesce(b.draft_updated_at, b.created_at),
 	coalesce(du.email, ''), b.created_at
 	FROM config_documents b
@@ -55,7 +56,7 @@ const recordColumns = `
 
 func scanRecord(scan func(...any) error) (Record, error) {
 	var r Record
-	err := scan(&r.Identifier, &r.PublishedVersion, &r.PublishedSource, &r.PublishedAt, &r.PublishedBy,
+	err := scan(&r.ID, &r.Identifier, &r.PublishedVersion, &r.PublishedSource, &r.PublishedAt, &r.PublishedBy,
 		&r.DraftSource, &r.DraftUpdatedAt, &r.DraftUpdatedBy, &r.CreatedAt)
 
 	return r, err

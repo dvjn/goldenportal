@@ -14,6 +14,17 @@ type Page[T any] struct {
 	Total int `json:"total"`
 }
 
+// PageTotal is how many items match in all when a page of size from
+// offset, holding got of them, shows it: it has room to spare, or the list
+// is empty. A full page, or one past the end, needs a count.
+func PageTotal(offset, got, size int) (total int, known bool) {
+	if got < size && (got > 0 || offset == 0) {
+		return offset + got, true
+	}
+
+	return 0, false
+}
+
 // Paging reads the page and size parameters of a list request. Absent
 // ones mean the first page of the smallest size; anything else that isn't a
 // page from 1 or an allowed size is a 400.

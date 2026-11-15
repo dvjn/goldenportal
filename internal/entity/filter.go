@@ -51,8 +51,7 @@ func CheckFilter(specs map[string]blueprint.Spec, ladders map[string]blueprint.L
 	return err
 }
 
-// Where compiles a filter for a query of spec's entities as e, joined to
-// their blueprint's document as b and their connection's as i, checking the
+// Where compiles a filter for a query of spec's entities as e, checking the
 // tiers and checks it names against ladders. The filter's values number
 // after args, and come back added to them.
 func Where(specs map[string]blueprint.Spec, ladders map[string]blueprint.Ladder, spec blueprint.Spec, f Filter, args []any) (string, []any, error) {
@@ -256,19 +255,7 @@ func (c *compiler) within(fld field, f Filter) (string, error) {
 		return "", fmt.Errorf("within on %s only compares dates", f.Property)
 	}
 
-	return "(" + dateOf(fld) + " >= now() - " + c.arg(strconv.FormatInt(int64(duration/time.Second), 10)+" seconds") + "::interval)", nil
-}
-
-// dateOf is a date field's value as a timestamp.
-func dateOf(fld field) string {
-	if fld.timestamp != "" {
-		return fld.timestamp
-	}
-	if fld.column {
-		return fld.value
-	}
-
-	return "(" + textOf(fld) + ")::timestamptz"
+	return "(" + fld.time() + " >= now() - " + c.arg(strconv.FormatInt(int64(duration/time.Second), 10)+" seconds") + "::interval)", nil
 }
 
 // follow matches entities whose relation name points at an entity matching
@@ -300,8 +287,7 @@ func (c *compiler) follow(f Filter, name, rest string) (string, error) {
 
 	// Postgres hashes the matching identifiers once, rather than comparing
 	// each entity's relation with all of them.
-	matching := "(SELECT e.identifier" + entityFrom + " WHERE b.kind = 'blueprint' AND b.identifier = " +
-		c.arg(target.Identifier) + " AND " + sql + ")"
+	matching := "(SELECT e.identifier FROM entities e WHERE e.blueprint_id = " + BlueprintID(target) + " AND " + sql + ")"
 	relation := "e.relations -> " + quoteLiteral(prop.ID)
 	if !prop.Many {
 		return "((e.relations ->> " + quoteLiteral(prop.ID) + ") IN " + matching + ")", nil
@@ -316,6 +302,13 @@ func (c *compiler) follow(f Filter, name, rest string) (string, error) {
 func (c *compiler) equals(fld field, property string, value any) (string, error) {
 	if value == nil {
 		return "", fmt.Errorf("compare %s with a value, or use exists", property)
+	}
+	if fld.connection != "" {
+		text, ok := value.(string)
+		if !ok {
+			return "", fmt.Errorf("%s is text", property)
+		}
+		return "(" + fld.connection + " = (SELECT id FROM config_documents WHERE kind = 'connection' AND identifier = " + c.arg(text) + "))", nil
 	}
 	if fld.column && (fld.kind == "integer" || fld.kind == "number") {
 		number, ok := value.(float64)
@@ -367,13 +360,13 @@ func (c *compiler) compare(fld field, f Filter) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("%s on %s needs a number", f.Op, f.Property)
 		}
-		return "((" + fld.value + ")::numeric " + operator + " " + c.arg(number) + ")", nil
+		return "(" + fld.number() + " " + operator + " " + c.arg(number) + ")", nil
 	case fld.kind == kindDate:
 		text, ok := f.Value.(string)
 		if !ok {
 			return "", fmt.Errorf("%s on %s needs a date", f.Op, f.Property)
 		}
-		return "(" + dateOf(fld) + " " + operator + " " + c.arg(text) + "::timestamptz)", nil
+		return "(" + fld.time() + " " + operator + " " + c.arg(text) + "::timestamptz)", nil
 	}
 
 	return "", fmt.Errorf("%s only compares numbers and dates", f.Property)
@@ -388,16 +381,18 @@ func textOf(fld field) string {
 	return "(" + fld.value + " #>> '{}')"
 }
 
-// orderBy sorts by a path, ascending unless it starts with "-". Ties fall
-// back to the title, then the identifier, so pages are stable. Tiers sort
-// up their scorecard's ladder, lowest first, as ladders say.
+// orderBy sorts by a path, ascending unless it starts with "-". Empty
+// values sort lowest, first going up and last coming down, so one index
+// serves both. Ties fall back to the title, then the identifier, so pages
+// are stable. Tiers sort up their scorecard's ladder, lowest first, as
+// ladders say.
 func (c *compiler) orderBy(sort string, ladders map[string]blueprint.Ladder) (string, error) {
 	if sort == "" {
 		return "e.title, e.identifier", nil
 	}
-	direction := "ASC"
+	direction := "ASC NULLS FIRST"
 	if path, ok := strings.CutPrefix(sort, "-"); ok {
-		sort, direction = path, "DESC"
+		sort, direction = path, "DESC NULLS LAST"
 	}
 	fld, err := c.field(sort)
 	if err != nil {
@@ -406,15 +401,12 @@ func (c *compiler) orderBy(sort string, ladders map[string]blueprint.Ladder) (st
 	if fld.many || fld.kind == "object" {
 		return "", fmt.Errorf("%s holds a list or an object, which can't be sorted", sort)
 	}
-	value := fld.value
-	if fld.timestamp != "" {
-		value = fld.timestamp
-	}
+	value := fld.sortKey()
 	if ladder, ok := ladders[fld.scorecard]; ok && fld.kind == kindTier {
 		value = "array_position(" + c.arg(pq.Array(ladder.Names())) + "::text[], coalesce(" + value + ", ''))"
 	}
 
-	return value + " " + direction + " NULLS LAST, e.title, e.identifier", nil
+	return value + " " + direction + ", e.title, e.identifier", nil
 }
 
 // quoteLiteral quotes a property name for SQL. Names are validated as

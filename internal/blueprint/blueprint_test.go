@@ -403,7 +403,7 @@ func TestParseSymbols(t *testing.T) {
 	if !prop.IsScorecard() || !prop.Derived() || prop.Type != "scorecard" || prop.Scorecard != "service-readiness" {
 		t.Fatalf("readiness = %+v", prop)
 	}
-	if _, problems := spec.ValidateEntity(Entity{Identifier: "a", Properties: map[string]any{"readiness": "gold"}}); len(problems) == 0 {
+	if _, _, problems := spec.ValidateEntity(Entity{Identifier: "a", Properties: map[string]any{"readiness": "gold"}}); len(problems) == 0 {
 		t.Fatal("a connection wrote a scorecard's result")
 	}
 }

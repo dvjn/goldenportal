@@ -54,23 +54,20 @@ func Catalog(ctx *gofr.Context) ([]CatalogEntry, error) {
 	}
 
 	counts := map[string]int{}
-	rows, err := ctx.SQL.QueryContext(ctx, `
-		SELECT b.identifier, count(*) FROM entities e
-		JOIN config_documents b ON b.id = e.blueprint_id
-		GROUP BY b.identifier`)
+	rows, err := ctx.SQL.QueryContext(ctx, `SELECT blueprint_id, count(*) FROM entities GROUP BY blueprint_id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var (
-			identifier string
-			count      int
+			id    string
+			count int
 		)
-		if err := rows.Scan(&identifier, &count); err != nil {
+		if err := rows.Scan(&id, &count); err != nil {
 			return nil, err
 		}
-		counts[identifier] = count
+		counts[id] = count
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -80,7 +77,7 @@ func Catalog(ctx *gofr.Context) ([]CatalogEntry, error) {
 	for _, spec := range specs {
 		entries = append(entries, CatalogEntry{
 			Identifier: spec.Identifier, Title: spec.Title,
-			Description: spec.Description, Icon: spec.Icon, Color: spec.Color, Entities: counts[spec.Identifier],
+			Description: spec.Description, Icon: spec.Icon, Color: spec.Color, Entities: counts[spec.ID],
 		})
 	}
 	slices.SortFunc(entries, func(a, b CatalogEntry) int {

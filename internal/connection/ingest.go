@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -230,6 +231,7 @@ func receive(ctx *gofr.Context) (*Run, error) {
 		}
 	}
 
+	run.Warning = run.cutTitlesWarning()
 	if err := NewStore(ctx.SQL).RecordRun(ctx, w.id, w.tokenID, run); err != nil {
 		return nil, err
 	}
@@ -290,6 +292,8 @@ func writeBatched(ctx context.Context, db TxDB, connectionID string, entries []E
 	for attempt := 0; ; attempt++ {
 		before := *run
 		before.Errors = slices.Clone(run.Errors)
+		before.cutTitleEntities = maps.Clone(run.cutTitleEntities)
+		before.firstCutTitleNames = slices.Clone(run.firstCutTitleNames)
 		err := writeInTx(ctx, db, connectionID, entries, run)
 		if !isDeadlock(err) {
 			return err
@@ -367,16 +371,16 @@ func writeEntries(ctx context.Context, db configdoc.DB, connectionID string, ent
 		return err
 	}
 	now := time.Now()
-	blueprintIDs := map[string]string{}
 	entities := entity.NewStore(db)
 
 	// op is an entry that reached the store: its index in the run, and the
 	// write or delete it makes.
 	type op struct {
-		index int
-		entry Entry
-		key   entity.Key
-		write entity.Write
+		index    int
+		entry    Entry
+		key      entity.Key
+		write    entity.Write
+		titleCut bool
 	}
 	var (
 		ops     []op
@@ -408,12 +412,7 @@ func writeEntries(ctx context.Context, db configdoc.DB, connectionID string, ent
 			fail(index, e, append(e.Problems, "no blueprint "+e.Blueprint+" is published")...)
 			continue
 		}
-		if _, ok := blueprintIDs[e.Blueprint]; !ok {
-			if blueprintIDs[e.Blueprint], err = configdoc.NewStore(db, blueprint.Name).PublishedID(ctx, e.Blueprint); err != nil {
-				return err
-			}
-		}
-		key := entity.Key{BlueprintID: blueprintIDs[e.Blueprint], Identifier: e.Entity.Identifier}
+		key := entity.Key{BlueprintID: spec.ID, Identifier: e.Entity.Identifier}
 		// An item that can't be written is still a sighting, so a bad value
 		// never deletes the entity it would have updated.
 		failSeen := func(problems ...string) {
@@ -430,7 +429,7 @@ func writeEntries(ctx context.Context, db configdoc.DB, connectionID string, ent
 			ops = append(ops, op{index: index, entry: e, key: key})
 			continue
 		}
-		clean, problems := spec.ValidateEntity(e.Entity)
+		clean, titleCut, problems := spec.ValidateEntity(e.Entity)
 		if len(problems) > 0 {
 			failSeen(problems...)
 			continue
@@ -445,7 +444,7 @@ func writeEntries(ctx context.Context, db configdoc.DB, connectionID string, ent
 			sighted = append(sighted, key)
 			continue
 		}
-		ops = append(ops, op{index: index, entry: e, key: key, write: entity.Write{
+		ops = append(ops, op{index: index, entry: e, key: key, titleCut: titleCut, write: entity.Write{
 			BlueprintID: key.BlueprintID, Entity: clean, Computed: computed, Scope: e.Scope, SourceAt: e.SourceAt,
 			OccurredAt: occurredAt,
 		}})
@@ -486,13 +485,19 @@ func writeEntries(ctx context.Context, db configdoc.DB, connectionID string, ent
 		return err
 	}
 	for i, w := range written {
+		o := writeOf[i]
 		switch {
 		case w.Owner != "":
-			fail(writeOf[i].index, writeOf[i].entry, entity.OwnedError{Connection: w.Owner}.Error())
-		case w.Outcome == entity.Created:
-			run.Created++
-		case w.Outcome == entity.Updated:
-			run.Updated++
+			fail(o.index, o.entry, entity.OwnedError{Connection: w.Owner}.Error())
+		case w.Outcome == entity.Created, w.Outcome == entity.Updated:
+			if w.Outcome == entity.Created {
+				run.Created++
+			} else {
+				run.Updated++
+			}
+			if o.titleCut {
+				run.cutTitle(o.entry.Blueprint, o.key.Identifier)
+			}
 		case w.Outcome == entity.Older:
 			run.Unchanged++
 			run.older++

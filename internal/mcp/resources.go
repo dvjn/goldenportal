@@ -174,8 +174,9 @@ func (b bridge) suggest(ctx context.Context, argument, typed string, known map[s
 			candidates = b.identifiers(ctx, kind)
 			break
 		}
-		// Entity search matches anywhere in a title or identifier, which is
-		// what someone typing part of a name wants, so its results stand.
+		// Entity search matches anywhere in a title or identifier from three
+		// characters, and the start before that, which is what someone typing
+		// part of a name wants, so its results stand.
 		page, _ := quietly(b, ctx, func(g *gofr.Context) (entity.Page, error) {
 			return b.services.Entities(g, known["blueprint"], entity.ListRequest{Search: typed, Size: 20})
 		})

@@ -57,7 +57,7 @@ func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, s
 			ids = append(ids, c.ID)
 		}
 	}
-	args := []any{scorecardID, bp.Identifier, pq.Array(ids)}
+	args := []any{scorecardID, pq.Array(ids)}
 	arg := func(value any) string {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
@@ -106,15 +106,13 @@ func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, s
 		WITH checked AS (
 			SELECT e.id, ARRAY[` + strings.Join(statuses, ", ") + `]::text[] AS statuses
 			FROM entities e
-			JOIN config_documents b ON b.id = e.blueprint_id
-			JOIN config_documents i ON i.id = e.connection_id
-			WHERE b.kind = 'blueprint' AND b.identifier = $2 AND ` + scope + `
+			WHERE e.blueprint_id = ` + entity.BlueprintID(bp) + ` AND ` + scope + `
 		), counted AS (
 			SELECT id AS entity_id, CASE ` + strings.Join(reached, " ") + ` ELSE '' END AS tier,
 				cardinality(array_positions(statuses, ` + passedSQL + `)) AS passed,
 				cardinality(array_positions(statuses, ` + failedSQL + `)) AS failed,
 				cardinality(array_positions(statuses, ` + skippedSQL + `)) AS skipped,
-				(SELECT jsonb_object_agg(k, jsonb_build_object('status', v)) FROM unnest($3::text[], statuses) AS c (k, v)) AS criteria
+				(SELECT jsonb_object_agg(k, jsonb_build_object('status', v)) FROM unnest($2::text[], statuses) AS c (k, v)) AS criteria
 			FROM checked
 		), scored AS (
 			SELECT *, CASE WHEN passed + failed > 0 THEN 100 * passed / (passed + failed) END AS score FROM counted

@@ -37,6 +37,9 @@ type field struct {
 	// index ranges over and sorts by: occurred_at, for the property its
 	// blueprint's retention keeps rows by.
 	timestamp string
+	// connection is the column holding the connection's row, which
+	// conditions and groups read rather than looking up each row's name.
+	connection string
 }
 
 // Kinds beside a property's type.
@@ -110,7 +113,7 @@ func (r reader) read(spec blueprint.Spec, alias, path string, hops int) (field, 
 		return field{}, err
 	}
 	fld.value = "(SELECT " + fld.value + " FROM entities " + inner + " WHERE " + inner + ".blueprint_id = " +
-		blueprintID(target.Identifier) + " AND " + inner + ".identifier = " + alias + ".relations ->> " + quoteLiteral(prop.ID) + ")"
+		BlueprintID(target) + " AND " + inner + ".identifier = " + alias + ".relations ->> " + quoteLiteral(prop.ID) + ")"
 	fld.nullable = true
 	// A related entity's name is best headed by the relation that leads there.
 	if fld.builtIn == "title" || fld.builtIn == "identifier" {
@@ -120,20 +123,40 @@ func (r reader) read(spec blueprint.Spec, alias, path string, hops int) (field, 
 	return fld, nil
 }
 
-// blueprintID is SQL for a published blueprint's row, which the planner
-// works out once per statement.
-func blueprintID(identifier string) string {
-	return "(SELECT id FROM config_documents WHERE kind = 'blueprint' AND identifier = " + quoteLiteral(identifier) + ")"
+// BlueprintID is SQL for a blueprint's document row: its ID written out,
+// since the planner only matches a partial index's predicate to a
+// constant, or looked up by identifier for a spec that isn't stored yet.
+func BlueprintID(spec blueprint.Spec) string {
+	if spec.ID != "" {
+		return quoteLiteral(spec.ID)
+	}
+
+	return "(SELECT id FROM config_documents WHERE kind = 'blueprint' AND identifier = " + quoteLiteral(spec.Identifier) + ")"
 }
 
-// builtInField reads a field every entity has. At the top of a query the
-// blueprint and connection are joined in; further along they're looked up.
+// specNamed is the blueprint specs has by identifier, or one known only by
+// it when it isn't published.
+func specNamed(specs map[string]blueprint.Spec, identifier string) blueprint.Spec {
+	if spec, ok := specs[identifier]; ok {
+		return spec
+	}
+
+	return blueprint.Spec{Identifier: identifier}
+}
+
+// connectionOf is SQL for the identifier of the connection whose row
+// column holds, looked up only for the rows that read it.
+func connectionOf(column string) string {
+	return "(SELECT identifier FROM config_documents WHERE id = " + column + ")"
+}
+
 // builtInTitles head built-in fields' columns.
 var builtInTitles = map[string]string{
 	"identifier": "Identifier", "title": "Title", "blueprint": "Blueprint",
 	"connection": "Connection", "createdAt": "Created", "updatedAt": "Updated",
 }
 
+// builtInField reads a field every entity has.
 func builtInField(spec blueprint.Spec, alias, name string) field {
 	fld := field{column: true, kind: "string", builtIn: name, title: builtInTitles[name]}
 	switch name {
@@ -143,14 +166,9 @@ func builtInField(spec blueprint.Spec, alias, name string) field {
 		fld.value = alias + ".title"
 	case "blueprint":
 		fld.value = quoteLiteral(spec.Identifier)
-		if alias == "e" {
-			fld.value = "b.identifier"
-		}
 	case "connection":
-		fld.value = "(SELECT identifier FROM config_documents WHERE id = " + alias + ".connection_id)"
-		if alias == "e" {
-			fld.value = "i.identifier"
-		}
+		fld.connection = alias + ".connection_id"
+		fld.value = connectionOf(fld.connection)
 	case "createdAt":
 		fld.value, fld.kind = alias+".created_at", kindDate
 	case "updatedAt":
@@ -228,10 +246,37 @@ func (f field) json() string {
 }
 
 // number is the field's value as a number, or null when it isn't one.
+// Filters, sorts and aggregates all read numbers this way, so one
+// expression index serves them all.
 func (f field) number() string {
 	if f.column {
 		return "(" + f.value + ")::numeric"
 	}
 
 	return "(CASE WHEN jsonb_typeof(" + f.value + ") = 'number' THEN (" + f.value + ")::numeric END)"
+}
+
+// time is a date field's value as a timestamp, or null when it isn't one.
+// gp_time is immutable, unlike a cast, so it can be indexed.
+func (f field) time() string {
+	switch {
+	case f.timestamp != "":
+		return f.timestamp
+	case f.column:
+		return f.value
+	}
+
+	return "gp_time(" + textOf(f) + ")"
+}
+
+// sortKey is the field's value as sorts compare it.
+func (f field) sortKey() string {
+	switch {
+	case f.kind == kindDate:
+		return f.time()
+	case !f.column && (f.kind == "number" || f.kind == "integer"):
+		return f.number()
+	}
+
+	return f.value
 }

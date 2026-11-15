@@ -46,7 +46,7 @@ func ParseInputs(r *configdoc.Reader, node *yaml.Node, path string) []Property {
 // that aren't about one input are under "".
 func ValidateInputs(inputs []Property, values map[string]any) (map[string]any, map[string][]string) {
 	spec := Spec{Identifier: "inputs", Properties: inputs}
-	clean, problems := spec.ValidateEntity(Entity{Identifier: "inputs", Properties: values})
+	clean, _, problems := spec.ValidateEntity(Entity{Identifier: "inputs", Properties: values})
 	out := clean.Properties
 	for key, value := range clean.Relations {
 		out[key] = value

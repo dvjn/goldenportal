@@ -60,3 +60,21 @@ func TestCheckPaging(t *testing.T) {
 		t.Error("CheckPaging(-1, 0) accepted a negative page")
 	}
 }
+
+func TestPageTotal(t *testing.T) {
+	for _, test := range []struct {
+		offset, got, size, total int
+		known                    bool
+	}{
+		{0, 3, 10, 3, true},
+		{20, 5, 10, 25, true},
+		{0, 0, 10, 0, true},
+		{0, 10, 10, 0, false},
+		{30, 0, 10, 0, false},
+		{0, 0, 0, 0, false},
+	} {
+		if total, known := PageTotal(test.offset, test.got, test.size); total != test.total || known != test.known {
+			t.Errorf("PageTotal(%d, %d, %d) = %d, %t", test.offset, test.got, test.size, total, known)
+		}
+	}
+}

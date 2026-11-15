@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -132,6 +133,39 @@ type Run struct {
 	older, expired, retried int
 	// failedScopes are what a sync couldn't read, by resource and scope.
 	failedScopes []failedScope
+
+	cutTitleEntities   map[string]bool
+	firstCutTitleNames []string
+}
+
+const maxNamedCuts = 10
+
+// cutTitle names entities as run errors do, so blueprints sharing an
+// identifier stay apart.
+func (r *Run) cutTitle(blueprint, identifier string) {
+	name := blueprint + "/" + identifier
+	if r.cutTitleEntities[name] {
+		return
+	}
+	if r.cutTitleEntities == nil {
+		r.cutTitleEntities = map[string]bool{}
+	}
+	r.cutTitleEntities[name] = true
+	if len(r.firstCutTitleNames) < maxNamedCuts {
+		r.firstCutTitleNames = append(r.firstCutTitleNames, name)
+	}
+}
+
+func (r *Run) cutTitlesWarning() string {
+	if len(r.cutTitleEntities) == 0 {
+		return ""
+	}
+	text := "Titles too long to index were cut short: " + strings.Join(r.firstCutTitleNames, ", ")
+	if more := len(r.cutTitleEntities) - len(r.firstCutTitleNames); more > 0 {
+		text += fmt.Sprintf(", and %d more", more)
+	}
+
+	return text + "."
 }
 
 // RunError is why an item wasn't written.

@@ -7,8 +7,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 
@@ -84,24 +86,20 @@ type Link struct {
 	Title      string `json:"title,omitempty"`
 }
 
-const (
-	entityColumns = `
-	e.id, b.identifier, e.identifier, e.title, e.properties, e.relations, e.computed, i.identifier, e.created_at, e.updated_at`
-	entityFrom = `
-	FROM entities e
-	JOIN config_documents b ON b.id = e.blueprint_id
-	JOIN config_documents i ON i.id = e.connection_id`
-)
+// entityColumns are what scanEntity reads, with blueprint SQL for the
+// blueprint's identifier.
+func entityColumns(blueprint string) string {
+	return `e.id, ` + blueprint + `, e.identifier, e.title, e.properties, e.relations, e.computed, ` +
+		connectionOf("e.connection_id") + `, e.created_at, e.updated_at`
+}
 
-func scanEntity(scan func(...any) error, extra ...any) (*Entity, error) {
+func scanEntity(scan func(...any) error) (*Entity, error) {
 	var (
 		e                               Entity
 		properties, relations, computed []byte
 	)
-	err := scan(append([]any{
-		&e.ID, &e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
-		&e.Connection, &e.CreatedAt, &e.UpdatedAt,
-	}, extra...)...)
+	err := scan(&e.ID, &e.Blueprint, &e.Identifier, &e.Title, &properties, &relations, &computed,
+		&e.Connection, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -125,8 +123,9 @@ func scanEntity(scan func(...any) error, extra ...any) (*Entity, error) {
 }
 
 func (s Store) Get(ctx context.Context, blueprintIdentifier, identifier string) (*Entity, error) {
-	e, err := scanEntity(s.db.QueryRowContext(ctx, `SELECT `+entityColumns+entityFrom+`
-		WHERE b.identifier = $1 AND b.kind = 'blueprint' AND e.identifier = $2`, blueprintIdentifier, identifier).Scan)
+	spec := blueprint.Spec{Identifier: blueprintIdentifier}
+	e, err := scanEntity(s.db.QueryRowContext(ctx, `SELECT `+entityColumns(quoteLiteral(spec.Identifier))+` FROM entities e
+		WHERE e.blueprint_id = `+BlueprintID(spec)+` AND e.identifier = $1`, identifier).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -154,6 +153,29 @@ type Page = httpx.Page[*Entity]
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
+// minContains is how long search text must be to match anywhere in a
+// title or identifier: trigram indexes find shorter text only at the start.
+const minContains = 3
+
+// TextPattern is a LIKE pattern for text in a title or identifier: anywhere
+// in it, or at its start for text shorter than minContains. LIKE wildcards
+// in text match themselves.
+func TextPattern(text string) string {
+	pattern := likeEscaper.Replace(text) + "%"
+	if utf8.RuneCountInString(text) >= minContains {
+		pattern = "%" + pattern
+	}
+
+	return pattern
+}
+
+// matchText is SQL for whether e's title or identifier holds text, as
+// TextPattern says, which the trigram indexes on both answer.
+func (c *compiler) matchText(text string) string {
+	pattern := c.arg(TextPattern(text))
+	return "(lower(e.title) LIKE lower(" + pattern + ") OR lower(e.identifier) LIKE lower(" + pattern + "))"
+}
+
 // SearchResult is an entity a search found.
 type SearchResult struct {
 	Blueprint  string `json:"blueprint"`
@@ -162,21 +184,26 @@ type SearchResult struct {
 }
 
 // Search finds up to limit entities of blueprints whose title or
-// identifier contains text, ignoring case: exact matches first, then those
-// starting with it, then by title.
-func (s Store) Search(ctx context.Context, blueprints []string, text string, limit int) ([]SearchResult, error) {
-	escaped := likeEscaper.Replace(text)
+// identifier holds text, ignoring case, as TextPattern says: exact matches
+// first, then those starting with it, then by title.
+func (s Store) Search(ctx context.Context, blueprints []blueprint.Spec, text string, limit int) ([]SearchResult, error) {
+	ids, identifiers := make([]string, 0, len(blueprints)), map[string]string{}
+	byName := func(a, b blueprint.Spec) int { return strings.Compare(a.Identifier, b.Identifier) }
+	for _, spec := range slices.SortedFunc(slices.Values(blueprints), byName) {
+		if spec.ID != "" {
+			ids, identifiers[spec.ID] = append(ids, spec.ID), spec.Identifier
+		}
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT b.identifier, e.identifier, e.title
+		SELECT e.blueprint_id, e.identifier, e.title
 		FROM entities e
-		JOIN config_documents b ON b.id = e.blueprint_id
-		WHERE b.kind = 'blueprint' AND b.identifier = ANY($1)
-			AND (e.title ILIKE $2 OR e.identifier ILIKE $2)
+		WHERE e.blueprint_id = ANY($1::uuid[])
+			AND (lower(e.title) LIKE lower($2) OR lower(e.identifier) LIKE lower($2))
 		ORDER BY lower(e.title) = lower($3) OR lower(e.identifier) = lower($3) DESC,
-			e.title ILIKE $4 OR e.identifier ILIKE $4 DESC,
-			e.title, b.identifier, e.identifier
+			lower(e.title) LIKE lower($4) OR lower(e.identifier) LIKE lower($4) DESC,
+			e.title, array_position($1::uuid[], e.blueprint_id), e.identifier
 		LIMIT $5`,
-		pq.Array(blueprints), "%"+escaped+"%", text, escaped+"%", limit)
+		pq.Array(ids), TextPattern(text), text, likeEscaper.Replace(text)+"%", limit)
 	if err != nil {
 		return nil, err
 	}
@@ -188,38 +215,48 @@ func (s Store) Search(ctx context.Context, blueprints []string, text string, lim
 		if err := rows.Scan(&r.Blueprint, &r.Identifier, &r.Title); err != nil {
 			return nil, err
 		}
+		r.Blueprint = identifiers[r.Blueprint]
 		found = append(found, r)
 	}
 
 	return found, rows.Err()
 }
 
-// List returns a page of entities. Filter and sort problems come back as a
-// FilterError, since they're the caller's to fix.
-func (s Store) List(ctx context.Context, q Query) (Page, error) {
-	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders, args: []any{q.Blueprint.Identifier}}
-	where := "b.kind = 'blueprint' AND b.identifier = $1"
+func (q Query) where(c *compiler) (string, error) {
+	where := "e.blueprint_id = " + BlueprintID(q.Blueprint)
 	if q.Search != "" {
-		search := c.arg("%" + likeEscaper.Replace(q.Search) + "%")
-		where += " AND (e.identifier ILIKE " + search + " OR e.title ILIKE " + search + ")"
+		where += " AND " + c.matchText(q.Search)
 	}
 	if q.Filter != nil {
 		sql, err := c.compile(*q.Filter, 1)
 		if err != nil {
-			return Page{}, FilterError{err}
+			return "", FilterError{err}
 		}
 		where += " AND " + sql
 	}
+
+	return where, nil
+}
+
+// List returns a page of entities. Filter and sort problems come back as a
+// FilterError, since they're the caller's to fix.
+func (s Store) List(ctx context.Context, q Query) (Page, error) {
+	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders}
+	where, err := q.where(c)
+	if err != nil {
+		return Page{}, err
+	}
+	matchArgs := slices.Clone(c.args)
 	order, err := c.orderBy(q.Sort, q.Ladders)
 	if err != nil {
 		return Page{}, FilterError{err}
 	}
 
-	limit, offset := c.arg(q.PageSize), c.arg((q.Page-1)*q.PageSize)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns+`, count(*) OVER ()`+entityFrom+`
+	offset := (q.Page - 1) * q.PageSize
+	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns(quoteLiteral(q.Blueprint.Identifier))+` FROM entities e
 		WHERE `+where+`
 		ORDER BY `+order+`
-		LIMIT `+limit+` OFFSET `+offset, c.args...)
+		LIMIT `+c.arg(q.PageSize)+` OFFSET `+c.arg(offset), c.args...)
 	if err != nil {
 		return Page{}, err
 	}
@@ -227,30 +264,71 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 
 	page := Page{Items: []*Entity{}}
 	for rows.Next() {
-		e, err := scanEntity(rows.Scan, &page.Total)
+		e, err := scanEntity(rows.Scan)
 		if err != nil {
 			return Page{}, err
 		}
 		page.Items = append(page.Items, e)
 	}
+	if err := rows.Err(); err != nil {
+		return Page{}, err
+	}
+	page.Total, err = s.total(ctx, where, matchArgs, offset, len(page.Items), q.PageSize)
 
-	return page, rows.Err()
+	return page, err
+}
+
+// total is how many entities match where, for a page of size from offset
+// that holds got of them.
+func (s Store) total(ctx context.Context, where string, args []any, offset, got, size int) (int, error) {
+	if total, known := httpx.PageTotal(offset, got, size); known {
+		return total, nil
+	}
+
+	return s.count(ctx, where, args)
+}
+
+func (s Store) count(ctx context.Context, where string, args []any) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM entities e WHERE `+where, args...).Scan(&n)
+
+	return n, err
+}
+
+// Count is how many entities q's search and filter match.
+func (s Store) Count(ctx context.Context, q Query) (int, error) {
+	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders}
+	where, err := q.where(c)
+	if err != nil {
+		return 0, err
+	}
+
+	return s.count(ctx, where, c.args)
+}
+
+// Exists reports whether any entity matches q's search and filter.
+func (s Store) Exists(ctx context.Context, q Query) (bool, error) {
+	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders}
+	where, err := q.where(c)
+	if err != nil {
+		return false, err
+	}
+	var exists bool
+	err = s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM entities e WHERE `+where+`)`, c.args...).Scan(&exists)
+
+	return exists, err
 }
 
 // Identifiers lists the entities matching a filter, by identifier, in the
 // catalog's order. At most limit come back. specs are the blueprints the
 // filter's relations lead to.
 func (s Store) Identifiers(ctx context.Context, specs map[string]blueprint.Spec, spec blueprint.Spec, filter *Filter, limit int) ([]string, error) {
-	c := &compiler{spec: spec, specs: specs, args: []any{spec.Identifier}}
-	where := "b.kind = 'blueprint' AND b.identifier = $1"
-	if filter != nil {
-		sql, err := c.compile(*filter, 1)
-		if err != nil {
-			return nil, FilterError{err}
-		}
-		where += " AND " + sql
+	c := &compiler{spec: spec, specs: specs}
+	where, err := Query{Blueprint: spec, Filter: filter}.where(c)
+	if err != nil {
+		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT e.identifier`+entityFrom+`
+	rows, err := s.db.QueryContext(ctx, `SELECT e.identifier FROM entities e
 		WHERE `+where+`
 		ORDER BY e.title, e.identifier
 		LIMIT `+c.arg(limit), c.args...)

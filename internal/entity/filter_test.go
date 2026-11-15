@@ -26,6 +26,12 @@ spec:
     readiness: {type: scorecard, scorecard: service-readiness}
 `
 
+// IDs of the blueprints' documents, which statements name.
+const (
+	serviceID = "0b6c51d6-61b6-4a50-9f35-1d2c3e8a7f01"
+	teamID    = "6f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0"
+)
+
 func service(t *testing.T) blueprint.Spec {
 	t.Helper()
 	spec, issues := blueprint.Parse(serviceYAML)
@@ -63,12 +69,12 @@ func TestCompileFilter(t *testing.T) {
 		},
 		{
 			"number", `{"property":"stars","op":"gte","value":10}`,
-			`((e.properties -> 'stars')::numeric >= $1)`,
+			`((CASE WHEN jsonb_typeof(e.properties -> 'stars') = 'number' THEN (e.properties -> 'stars')::numeric END) >= $1)`,
 			[]any{float64(10)},
 		},
 		{
 			"date", `{"property":"lastDeployedAt","op":"lt","value":"2026-10-01T00:00:00Z"}`,
-			`(((e.properties -> 'lastDeployedAt' #>> '{}'))::timestamptz < $1::timestamptz)`,
+			`(gp_time((e.properties -> 'lastDeployedAt' #>> '{}')) < $1::timestamptz)`,
 			[]any{"2026-10-01T00:00:00Z"},
 		},
 		{
@@ -89,11 +95,11 @@ func TestCompileFilter(t *testing.T) {
 		{"in no values", `{"property":"tier","op":"in","values":[]}`, `false`, nil},
 		{
 			"within", `{"property":"lastDeployedAt","op":"within","value":"7d"}`,
-			`(((e.properties -> 'lastDeployedAt' #>> '{}'))::timestamptz >= now() - $1::interval)`,
+			`(gp_time((e.properties -> 'lastDeployedAt' #>> '{}')) >= now() - $1::interval)`,
 			[]any{"604800 seconds"},
 		},
 		{"within a built-in", `{"property":"updatedAt","op":"within","value":"12h"}`, `(e.updated_at >= now() - $1::interval)`, []any{"43200 seconds"}},
-		{"connection", `{"property":"connection","op":"eq","value":"registry"}`, `(i.identifier = $1)`, []any{"registry"}},
+		{"connection", `{"property":"connection","op":"eq","value":"registry"}`, `(e.connection_id = (SELECT id FROM config_documents WHERE kind = 'connection' AND identifier = $1))`, []any{"registry"}},
 		{
 			"not exists", `{"not":{"property":"owner","op":"exists"}}`,
 			`NOT coalesce((e.relations -> 'owner' IS NOT NULL AND e.relations -> 'owner' <> 'null'::jsonb), false)`, nil,
@@ -165,28 +171,31 @@ func TestCompileFilterRejects(t *testing.T) {
 }
 
 func TestCompileFollowsRelations(t *testing.T) {
-	team := blueprint.Spec{Identifier: "team", Properties: []blueprint.Property{{ID: "slackChannel", Type: "string"}}}
-	specs := map[string]blueprint.Spec{"service": service(t), "team": team}
+	team := blueprint.Spec{ID: teamID, Identifier: "team", Properties: []blueprint.Property{{ID: "slackChannel", Type: "string"}}}
+	svc := service(t)
+	svc.ID = serviceID
+	specs := map[string]blueprint.Spec{"service": svc, "team": team}
 	deployment := blueprint.Spec{Identifier: "deployment", Properties: []blueprint.Property{
 		{ID: "service", Type: "relation", Relation: "service"},
 		{ID: "ownerSlack", Lookup: "service.ownerSlack"},
 	}}
-	subquery := func(relation, arg, condition string) string {
-		return "((e.relations ->> '" + relation + "') IN (SELECT e.identifier" + entityFrom +
-			" WHERE b.kind = 'blueprint' AND b.identifier = " + arg + " AND " + condition + "))"
+	// Each hop names its blueprint's row, as partial indexes need.
+	subquery := func(relation, id, condition string) string {
+		return "((e.relations ->> '" + relation + "') IN (SELECT e.identifier FROM entities e WHERE e.blueprint_id = '" +
+			id + "' AND " + condition + "))"
 	}
 	tests := []struct {
 		name, property, sql string
 		args                []any
 	}{
-		{"one hop", "service.owner", subquery("service", "$2", "(e.relations @> $1::jsonb)"), []any{`{"owner":"payments"}`, "service"}},
-		{"two hops", "service.owner.slackChannel", subquery("service", "$3", subquery("owner", "$2", "(e.properties @> $1::jsonb)")), []any{`{"slackChannel":"payments"}`, "team", "service"}},
-		{"through a lookup", "ownerSlack", subquery("service", "$3", subquery("owner", "$2", "(e.properties @> $1::jsonb)")), []any{`{"slackChannel":"payments"}`, "team", "service"}},
+		{"one hop", "service.owner", subquery("service", serviceID, "(e.relations @> $1::jsonb)"), []any{`{"owner":"payments"}`}},
+		{"two hops", "service.owner.slackChannel", subquery("service", serviceID, subquery("owner", teamID, "(e.properties @> $1::jsonb)")), []any{`{"slackChannel":"payments"}`}},
+		{"through a lookup", "ownerSlack", subquery("service", serviceID, subquery("owner", teamID, "(e.properties @> $1::jsonb)")), []any{`{"slackChannel":"payments"}`}},
 		{
 			"through many", "service.dependsOn.owner",
-			subquery("service", "$3", "EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.relations -> 'dependsOn') = 'array' THEN e.relations -> 'dependsOn' END) target(identifier) WHERE target.identifier IN (SELECT e.identifier"+entityFrom+
-				" WHERE b.kind = 'blueprint' AND b.identifier = $2 AND (e.relations @> $1::jsonb)))"),
-			[]any{`{"owner":"payments"}`, "service", "service"},
+			subquery("service", serviceID, "EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.relations -> 'dependsOn') = 'array' THEN e.relations -> 'dependsOn' END) target(identifier) WHERE target.identifier IN (SELECT e.identifier FROM entities e WHERE e.blueprint_id = '"+
+				serviceID+"' AND (e.relations @> $1::jsonb)))"),
+			[]any{`{"owner":"payments"}`},
 		},
 	}
 	for _, test := range tests {
@@ -212,13 +221,27 @@ func TestCompileFollowsRelations(t *testing.T) {
 }
 
 func TestOrderBy(t *testing.T) {
+	retained := service(t)
+	retained.Retention = &blueprint.Retention{By: "lastDeployedAt"}
+	// Empty values sort lowest: first going up, last coming down.
+	tests := []struct {
+		spec       blueprint.Spec
+		sort, want string
+	}{
+		{service(t), "", "e.title, e.identifier"},
+		{service(t), "-stars", "(CASE WHEN jsonb_typeof(e.properties -> 'stars') = 'number' THEN (e.properties -> 'stars')::numeric END) DESC NULLS LAST, e.title, e.identifier"},
+		{service(t), "updatedAt", "e.updated_at ASC NULLS FIRST, e.title, e.identifier"},
+		{service(t), "lastDeployedAt", "gp_time((e.properties -> 'lastDeployedAt' #>> '{}')) ASC NULLS FIRST, e.title, e.identifier"},
+		{service(t), "tier", "e.properties -> 'tier' ASC NULLS FIRST, e.title, e.identifier"},
+		{retained, "-lastDeployedAt", "e.occurred_at DESC NULLS LAST, e.title, e.identifier"},
+		{retained, "lastDeployedAt", "e.occurred_at ASC NULLS FIRST, e.title, e.identifier"},
+	}
+	for _, test := range tests {
+		if got, err := (&compiler{spec: test.spec}).orderBy(test.sort, nil); err != nil || got != test.want {
+			t.Errorf("orderBy(%q) = %s, %v, want %s", test.sort, got, err, test.want)
+		}
+	}
 	c := &compiler{spec: service(t)}
-	if got, _ := c.orderBy("-stars", nil); got != "e.properties -> 'stars' DESC NULLS LAST, e.title, e.identifier" {
-		t.Errorf("orderBy = %s", got)
-	}
-	if got, _ := c.orderBy("updatedAt", nil); got != "e.updated_at ASC NULLS LAST, e.title, e.identifier" {
-		t.Errorf("orderBy = %s", got)
-	}
 	if _, err := c.orderBy("tags", nil); err == nil {
 		t.Error("sorting by a list should fail")
 	}

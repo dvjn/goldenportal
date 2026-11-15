@@ -124,15 +124,10 @@ func (t target) matches(ctx context.Context, db configdoc.DB, f *entity.Filter, 
 		return true, nil
 	}
 	bound := meScope(p).ResolveFilter(f)
-	page, err := entity.NewStore(db).List(ctx, entity.Query{
-		Blueprint: t.spec, Blueprints: t.specs, Page: 1, PageSize: 1,
+	return entity.NewStore(db).Exists(ctx, entity.Query{
+		Blueprint: t.spec, Blueprints: t.specs,
 		Filter: &entity.Filter{And: []filter.Filter{*bound, {Property: "identifier", Op: filter.OpEq, Value: t.entity.Identifier}}},
 	})
-	if err != nil {
-		return false, err
-	}
-
-	return page.Total > 0, nil
 }
 
 func meScope(p auth.Principal) Scope {

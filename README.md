@@ -2,6 +2,14 @@
 
 Golden Portal is a developer portal. It brings dashboards, scorecards, and golden paths to developers in one place.
 
+## Requirements
+
+- PostgreSQL 16 or later.
+- The `pg_trgm` extension, which search uses. It's a trusted extension, so the portal creates it when its database user has `CREATE` on the database; otherwise create it once beforehand with `CREATE EXTENSION pg_trgm`.
+- Recommended: `pg_stat_statements` and `auto_explain`, which show which statements are slow and why. Load both with `shared_preload_libraries = 'pg_stat_statements,auto_explain'`, log the plans of slow statements with `auto_explain.log_min_duration = '300ms'`, and run `CREATE EXTENSION pg_stat_statements` once as a superuser to read its view. The development database has them on.
+
+The portal migrates its database when it starts. Some migrations build indexes on `entities`, which blocks writes to it until they finish, so a large catalog may take a while to start after an upgrade.
+
 ## Agents
 
 AI assistants connect to the portal over MCP, signing in with the portal's own OAuth. There are two servers, at the portal's public URL (`GP_BASE_URL`):

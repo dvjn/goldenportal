@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -202,15 +203,15 @@ const runFrom = ` FROM runs r
 	JOIN config_documents d ON d.id = r.document_id
 	LEFT JOIN users u ON u.id = r.resolved_by`
 
-func scanRun(scan func(...any) error, extra ...any) (Run, error) {
+func scanRun(scan func(...any) error) (Run, error) {
 	var r Run
 	var requester, inputs, links, outputs []byte
-	err := scan(append([]any{
+	err := scan(
 		&r.ID, &r.Action, &r.Title, &r.Version, &r.Entity.Blueprint, &r.Entity.Identifier, &r.Entity.Title,
 		&requester, &r.Via, &inputs, &r.Status, &r.Summary, &links, &outputs, &r.Error,
 		&r.CreatedAt, &r.StartedAt, &r.FinishedAt, &r.ResolvedBy, &r.Resolution,
 		&r.documentID, &r.requesterID, &r.Kind, &r.Parent, &r.parentPosition,
-	}, extra...)...)
+	)
 	if err != nil {
 		return r, err
 	}
@@ -351,9 +352,11 @@ func (s Store) List(ctx context.Context, q RunsQuery) (RunPage, error) {
 	if q.Status != "" {
 		add("r.status = ANY($%d)", pq.Array(strings.Split(q.Status, ",")))
 	}
-	args = append(args, q.Size, (q.Page-1)*q.Size)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+runColumns+`, count(*) OVER ()`+runFrom+`
-		WHERE `+strings.Join(where, " AND ")+`
+	matching, matchArgs := strings.Join(where, " AND "), slices.Clone(args)
+	offset := (q.Page - 1) * q.Size
+	args = append(args, q.Size, offset)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+runColumns+runFrom+`
+		WHERE `+matching+`
 		ORDER BY r.created_at DESC
 		LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 	if err != nil {
@@ -363,14 +366,21 @@ func (s Store) List(ctx context.Context, q RunsQuery) (RunPage, error) {
 
 	page := RunPage{Items: []Run{}}
 	for rows.Next() {
-		r, err := scanRun(rows.Scan, &page.Total)
+		r, err := scanRun(rows.Scan)
 		if err != nil {
 			return RunPage{}, err
 		}
 		page.Items = append(page.Items, r)
 	}
+	if err := rows.Err(); err != nil {
+		return RunPage{}, err
+	}
+	var known bool
+	if page.Total, known = httpx.PageTotal(offset, len(page.Items), q.Size); !known {
+		err = s.db.QueryRowContext(ctx, `SELECT count(*)`+runFrom+` WHERE `+matching, matchArgs...).Scan(&page.Total)
+	}
 
-	return page, rows.Err()
+	return page, err
 }
 
 // claim takes on a run for lease: one that's queued, or running on an

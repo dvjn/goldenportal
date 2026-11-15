@@ -11,6 +11,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
+	"github.com/dvjn/goldenportal/internal/entity"
 )
 
 // Writer is a connection that writes a blueprint's entities: one whose
@@ -77,13 +78,13 @@ func BlueprintUsage(ctx *gofr.Context, identifier string) (Usage, error) {
 		}
 	}
 
+	spec, ok := published[identifier]
+	if !ok {
+		spec = blueprint.Spec{Identifier: identifier}
+	}
 	rows, err := ctx.SQL.QueryContext(ctx, `
-		SELECT i.identifier, count(*)
-		FROM entities e
-		JOIN config_documents b ON b.id = e.blueprint_id
-		JOIN config_documents i ON i.id = e.connection_id
-		WHERE b.kind = $1 AND b.identifier = $2
-		GROUP BY i.id, i.identifier`, blueprint.Name, identifier)
+		SELECT (SELECT identifier FROM config_documents WHERE id = g.connection_id), g.count
+		FROM (SELECT connection_id, count(*) FROM entities e WHERE e.blueprint_id = `+entity.BlueprintID(spec)+` GROUP BY connection_id) g`)
 	if err != nil {
 		return Usage{}, err
 	}

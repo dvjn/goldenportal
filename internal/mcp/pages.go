@@ -304,9 +304,9 @@ type catalogPage struct {
 // tableArgs are what a catalog table is searched, filtered, sorted and
 // paged by.
 type tableArgs struct {
-	Search string `json:"search,omitempty" jsonschema:"Words in an entity's title or identifier"`
+	Search string `json:"search,omitempty" jsonschema:"Text in an entity's title or identifier, ignoring case: anywhere from three characters, at the start before that"`
 	Filter string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the blueprint's properties. A property of type scorecard reaches its result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed or skipped)"`
-	Sort   string `json:"sort,omitempty" jsonschema:"A property, title, createdAt or updatedAt, with a leading - for descending; on a scorecard's results: tier, score, passed, failed or skipped, worst tier first when omitted"`
+	Sort   string `json:"sort,omitempty" jsonschema:"A property, title, createdAt or updatedAt, with a leading - for descending, empty values first ascending and last descending; on a scorecard's results: tier, score, passed, failed or skipped, worst tier first when omitted"`
 	Page   int    `json:"page,omitempty"`
 	Size   int    `json:"size,omitempty" jsonschema:"Page size: 10, 20, 50 or 100; omit for the default"`
 }

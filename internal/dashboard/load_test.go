@@ -64,21 +64,23 @@ spec:
 	defer db.Close()
 	// Statements run in parallel, so they may arrive in any order.
 	mock.MatchExpectationsInOrder(false)
-	where := regexp.QuoteMeta(`WHERE b.kind = 'blueprint' AND b.identifier = $1 AND ((e.properties @> $2::jsonb))`)
+	bp.ID = "5a0c1f3e-2b4d-4e6f-8a9b-0c1d2e3f4a5b"
+	where := regexp.QuoteMeta(`WHERE e.blueprint_id = '` + bp.ID + `' AND ((e.properties @> $1::jsonb))`)
 	mock.ExpectQuery(`^SELECT \(count\(\*\)\)::float8, \(100\.0 \* count\(\*\) FILTER .*\(sum\(.*`+where+`$`).
-		WithArgs("service", `{"tier":"critical"}`, `{"tier":"critical"}`).
+		WithArgs(`{"tier":"critical"}`, `{"tier":"critical"}`).
 		WillReturnRows(sqlmock.NewRows([]string{"count", "share", "sum"}).AddRow(4, 50, 1200))
-	mock.ExpectQuery(`^SELECT g\.value, g\.count, t\.title FROM \(SELECT e\.relations -> 'owner' AS value.*`+where+`.*LIMIT \$3$`).
-		WithArgs("service", `{"tier":"critical"}`, 6).
+	mock.ExpectQuery(`^SELECT g\.value, g\.count, t\.title FROM \(SELECT e\.relations -> 'owner' AS value.*`+where+`.*LIMIT \$2$`).
+		WithArgs(`{"tier":"critical"}`, 6).
 		WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title"}).
 			AddRow(nil, 1, nil).AddRow([]byte(`"payments"`), 2, "Payments").AddRow([]byte(`"search"`), 1, "Search"))
 	mock.ExpectQuery(`^SELECT g\.value, g\.count, NULL::text FROM \(SELECT e\.properties -> 'tier' AS value.*`+where).
-		WithArgs("service", `{"tier":"critical"}`, 9).
+		WithArgs(`{"tier":"critical"}`, 9).
 		WillReturnError(errors.New("connection reset"))
-	mock.ExpectQuery(`^SELECT e\.id, e\.identifier, e\.title, count\(\*\) OVER \(\), e\.properties -> 'tier', NULL::jsonb, to_jsonb\(\(SELECT h1\.title .*`+where+`.*ORDER BY e\.properties -> 'cost' DESC`).
-		WithArgs("service", `{"tier":"critical"}`, 5).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "identifier", "title", "total", "v1", "l1", "v2", "l2"}).
-			AddRow("1", "ledger", "Ledger", 4, []byte(`"critical"`), nil, []byte(`"Payments"`), nil))
+	mock.ExpectQuery(`^SELECT e\.id, e\.identifier, e\.title, e\.properties -> 'tier', NULL::jsonb, to_jsonb\(\(SELECT h1\.title .*`+where+
+		`.*ORDER BY \(CASE WHEN jsonb_typeof\(e\.properties -> 'cost'\) = 'number' THEN \(e\.properties -> 'cost'\)::numeric END\) DESC NULLS LAST`).
+		WithArgs(`{"tier":"critical"}`, 5).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "identifier", "title", "v1", "l1", "v2", "l2"}).
+			AddRow("1", "ledger", "Ledger", []byte(`"critical"`), nil, []byte(`"Payments"`), nil))
 
 	var logged []string
 	l := loader{
@@ -112,7 +114,7 @@ spec:
 	}
 	list := encode("list")
 	for _, want := range []string{
-		`"blueprint":"service","total":4`,
+		`"blueprint":"service","total":1`,
 		`"columns":[{"title":"tier","path":"tier","property":{"identifier":"tier"`,
 		`{"title":"Team","path":"owner.title","builtIn":"title"}`,
 		`"rows":[{"identifier":"ledger","title":"Ledger","values":["critical","Payments"]}]`,
@@ -217,8 +219,8 @@ spec:
 		t.Fatal(err)
 	}
 	defer db.Close()
-	mock.ExpectQuery(`AND e\.identifier = ANY\(\$2\)`).
-		WithArgs("team", sqlmock.AnyArg()).
+	mock.ExpectQuery(`AND e\.identifier = ANY\(\$1\)`).
+		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "blueprint", "identifier", "title", "properties", "relations", "computed", "connection", "created", "updated"}).
 			AddRow("1", "team", "payments", "Payments", []byte(`{}`), []byte(`{}`), []byte(`{}`), "registry", time.Time{}, time.Time{}))
 

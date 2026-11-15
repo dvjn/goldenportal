@@ -50,13 +50,13 @@ func (s Store) Trend(ctx context.Context, m Match, path string, from, to time.Ti
 	if err != nil {
 		return nil, Day{}, err
 	}
-	date := dateOf(fld)
+	date := fld.time()
 	day := "(" + date + " AT TIME ZONE 'UTC')::date"
 	var extra string
 	if len(columns) > 0 {
 		extra = ", " + strings.Join(columns, ", ")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+day+`, count(*)`+extra+entityFrom+`
+	rows, err := s.db.QueryContext(ctx, `SELECT `+day+`, count(*)`+extra+` FROM entities e
 	WHERE `+m.where+` AND `+date+` >= `+c.arg(from)+` AND `+date+` < `+c.arg(to)+`
 	GROUP BY GROUPING SETS ((`+day+`), ())`, c.args...)
 	if err != nil {

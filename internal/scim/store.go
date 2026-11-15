@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 var (
@@ -48,7 +50,7 @@ type group struct {
 // for people who only ever signed in.
 const selectUsers = `
 	SELECT u.id, coalesce(u.username, u.email), coalesce(u.external_id, ''), u.display_name, u.email,
-		u.status = 'active', u.created_at, u.updated_at, count(*) OVER ()
+		u.status = 'active', u.created_at, u.updated_at
 	FROM users u`
 
 var userColumns = map[string]string{
@@ -74,14 +76,11 @@ func (s store) listUsers(ctx context.Context, f *filter, start, count int) ([]us
 	}
 	defer rows.Close()
 
-	var (
-		users []user
-		total int
-	)
+	var users []user
 	for rows.Next() {
 		var u user
 		if err := rows.Scan(&u.ID, &u.UserName, &u.ExternalID, &u.DisplayName, &u.Email,
-			&u.Active, &u.Created, &u.Updated, &total); err != nil {
+			&u.Active, &u.Created, &u.Updated); err != nil {
 			return nil, 0, err
 		}
 		users = append(users, u)
@@ -89,8 +88,11 @@ func (s store) listUsers(ctx context.Context, f *filter, start, count int) ([]us
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
-	if total == 0 && start > 1 {
-		return nil, s.countUsers(ctx, f), nil
+	total, known := httpx.PageTotal(start-1, len(users), count)
+	if !known {
+		if total, err = s.count(ctx, `SELECT count(*) FROM users u`, userColumns, f); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	for i := range users {
@@ -102,16 +104,16 @@ func (s store) listUsers(ctx context.Context, f *filter, start, count int) ([]us
 	return users, total, nil
 }
 
-func (s store) countUsers(ctx context.Context, f *filter) int {
-	where, args := "", []any{}
+func (s store) count(ctx context.Context, query string, columns map[string]string, f *filter) (int, error) {
+	var args []any
 	if f != nil {
-		where = " WHERE " + userColumns[f.attribute]
+		query += " WHERE " + columns[f.attribute]
 		args = append(args, f.value)
 	}
 	var total int
-	_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM users u`+where, args...).Scan(&total)
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&total)
 
-	return total
+	return total, err
 }
 
 func (s store) getUser(ctx context.Context, id string) (user, error) {
@@ -206,7 +208,7 @@ func (s store) cutOff(ctx context.Context, userID string) error {
 }
 
 const selectGroups = `
-	SELECT g.id, g.name, coalesce(g.external_id, ''), g.created_at, g.updated_at, count(*) OVER ()
+	SELECT g.id, g.name, coalesce(g.external_id, ''), g.created_at, g.updated_at
 	FROM groups g`
 
 var groupColumns = map[string]string{
@@ -231,19 +233,22 @@ func (s store) listGroups(ctx context.Context, f *filter, start, count int, with
 	}
 	defer rows.Close()
 
-	var (
-		groups []group
-		total  int
-	)
+	var groups []group
 	for rows.Next() {
 		var g group
-		if err := rows.Scan(&g.ID, &g.Name, &g.ExternalID, &g.Created, &g.Updated, &total); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.ExternalID, &g.Created, &g.Updated); err != nil {
 			return nil, 0, err
 		}
 		groups = append(groups, g)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
+	}
+	total, known := httpx.PageTotal(start-1, len(groups), count)
+	if !known {
+		if total, err = s.count(ctx, `SELECT count(*) FROM groups g`, groupColumns, f); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	if withMembers {

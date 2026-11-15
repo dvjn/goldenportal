@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,10 +24,7 @@ import (
 // Name is the configdoc kind scorecards are stored as.
 const Name = "scorecard"
 
-var (
-	ErrEvaluating = errors.New("this scorecard is already being evaluated")
-	likeEscaper   = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-)
+var ErrEvaluating = errors.New("this scorecard is already being evaluated")
 
 // TxDB is a database that can start transactions.
 type TxDB interface {
@@ -207,13 +205,11 @@ type CriterionAt struct {
 	Skipped int    `json:"skipped"`
 }
 
-// resultFrom joins results to their entities as e, with the documents a
-// compiled filter reads, the blueprint as b and the connection as i.
+// resultFrom joins results to their entities as e, which a compiled filter
+// reads.
 const resultFrom = `
 	FROM scorecard_results r
-	JOIN entities e ON e.id = r.entity_id
-	JOIN config_documents b ON b.id = e.blueprint_id
-	JOIN config_documents i ON i.id = e.connection_id`
+	JOIN entities e ON e.id = r.entity_id`
 
 // Scope narrows a scorecard's results to the entities Filter matches, a
 // filter on Blueprint, the blueprint the scorecard grades. Blueprints are
@@ -358,24 +354,29 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 	}
 	search := ""
 	if q.Search != "" {
-		search = "%" + likeEscaper.Replace(q.Search) + "%"
+		search = entity.TextPattern(q.Search)
 	}
-	where, args, err := q.where([]any{scorecardID, search, pq.Array(tierOrder)})
+	where, args, err := q.where([]any{scorecardID, search})
 	if err != nil {
 		return ResultPage{}, err
 	}
-	limit := "$" + strconv.Itoa(len(args)+1)
-	offset := "$" + strconv.Itoa(len(args)+2)
-	args = append(args, q.PageSize, (q.Page-1)*q.PageSize)
+	matching := `
+		WHERE r.scorecard_id = $1
+			AND ($2 = '' OR lower(e.title) LIKE lower($2) OR lower(e.identifier) LIKE lower($2))
+			AND ` + where
+	matchArgs := slices.Clone(args)
+	graded := "$" + strconv.Itoa(len(args)+1)
+	tiers := "$" + strconv.Itoa(len(args)+2)
+	limit := "$" + strconv.Itoa(len(args)+3)
+	offset := "$" + strconv.Itoa(len(args)+4)
+	skip := (q.Page - 1) * q.PageSize
+	args = append(args, spec.Blueprint, pq.Array(tierOrder), q.PageSize, skip)
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT b.identifier, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
-			r.passed, r.failed, r.skipped, r.criteria, count(*) OVER ()`+resultFrom+`
-		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id
-		WHERE r.scorecard_id = $1
-			AND ($2 = '' OR e.identifier ILIKE $2 OR e.title ILIKE $2)
-			AND `+where+`
-		ORDER BY `+resultOrder(q.Sort, "array_position($3::text[], r.tier)")+`
+		SELECT `+graded+`::text, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
+			r.passed, r.failed, r.skipped, r.criteria`+resultFrom+`
+		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id`+matching+`
+		ORDER BY `+resultOrder(q.Sort, "array_position("+tiers+"::text[], r.tier)")+`
 		LIMIT `+limit+` OFFSET `+offset, args...)
 	if err != nil {
 		return ResultPage{}, err
@@ -384,14 +385,22 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 
 	page := ResultPage{Items: []EntityResult{}}
 	for rows.Next() {
-		r, err := scanResult(rows.Scan, &page.Total)
+		r, err := scanResult(rows.Scan)
 		if err != nil {
 			return ResultPage{}, err
 		}
 		page.Items = append(page.Items, r)
 	}
+	if err := rows.Err(); err != nil {
+		return ResultPage{}, err
+	}
+	var known bool
+	if page.Total, known = httpx.PageTotal(skip, len(page.Items), q.PageSize); !known {
+		err = db.QueryRowContext(ctx, `SELECT count(*)`+resultFrom+matching,
+			matchArgs...).Scan(&page.Total)
+	}
 
-	return page, rows.Err()
+	return page, err
 }
 
 // resultOrder is the ORDER BY for a ResultQuery's Sort, with tier the
@@ -419,15 +428,15 @@ func resultOrder(sort, tier string) string {
 	return strings.Join(append(by, "e.title", "e.identifier"), ", ")
 }
 
-func scanResult(scan func(...any) error, extra ...any) (EntityResult, error) {
+func scanResult(scan func(...any) error) (EntityResult, error) {
 	var (
 		r        EntityResult
 		criteria []byte
 	)
-	if err := scan(append([]any{
+	if err := scan(
 		&r.Blueprint, &r.Identifier, &r.Title, &r.ChangedAt, &r.EvaluatedAt, &r.Tier, &r.Score,
 		&r.Passed, &r.Failed, &r.Skipped, &criteria,
-	}, extra...)...); err != nil {
+	); err != nil {
 		return EntityResult{}, err
 	}
 	err := json.Unmarshal(criteria, &r.Criteria)
@@ -444,14 +453,13 @@ type EntityScorecard struct {
 
 func entityResults(ctx context.Context, db configdoc.DB, blueprintIdentifier, identifier string) ([]EntityScorecard, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT s.identifier, b.identifier, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
+		SELECT s.identifier, $1::text, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
 			r.passed, r.failed, r.skipped, r.criteria
 		FROM scorecard_results r
 		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id
 		JOIN config_documents s ON s.id = r.scorecard_id
 		JOIN entities e ON e.id = r.entity_id
-		JOIN config_documents b ON b.id = e.blueprint_id
-		WHERE b.kind = 'blueprint' AND b.identifier = $1 AND e.identifier = $2
+		WHERE e.blueprint_id = `+entity.BlueprintID(blueprint.Spec{Identifier: blueprintIdentifier})+` AND e.identifier = $2
 		ORDER BY s.identifier`, blueprintIdentifier, identifier)
 	if err != nil {
 		return nil, err

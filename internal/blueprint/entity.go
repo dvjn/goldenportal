@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvjn/goldenportal/internal/jq"
 )
@@ -29,10 +30,32 @@ type Entity struct {
 // MaxEntityIdentifier caps entity identifiers, which come from other systems.
 const MaxEntityIdentifier = 255
 
+// MaxEntityTitle caps entity titles, in bytes: an index sorts by them, and
+// an index entry can't exceed a few kilobytes.
+const MaxEntityTitle = 1000
+
+const ellipsis = "…"
+
+// TruncateTitle cuts a title longer than MaxEntityTitle on a character
+// boundary, ending it with an ellipsis, so it fits. It reports whether it
+// cut the title.
+func TruncateTitle(title string) (string, bool) {
+	if len(title) <= MaxEntityTitle {
+		return title, false
+	}
+	cut := MaxEntityTitle - len(ellipsis)
+	for cut > 0 && !utf8.RuneStart(title[cut]) {
+		cut--
+	}
+
+	return strings.TrimRightFunc(title[:cut], unicode.IsSpace) + ellipsis, true
+}
+
 // ValidateEntity checks an entity against the blueprint and returns it
-// cleaned up: nulls dropped, the title defaulted and relations moved to
-// Relations as a string or a list of strings. It returns every problem it finds.
-func (s Spec) ValidateEntity(in Entity) (Entity, []string) {
+// cleaned up: nulls dropped, the title defaulted and cut to fit and
+// relations moved to Relations as a string or a list of strings. It reports
+// whether it cut the title, and returns every problem it finds.
+func (s Spec) ValidateEntity(in Entity) (_ Entity, titleCut bool, _ []string) {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
@@ -51,6 +74,7 @@ func (s Spec) ValidateEntity(in Entity) (Entity, []string) {
 	if out.Title == "" {
 		out.Title = in.Identifier
 	}
+	out.Title, titleCut = TruncateTitle(out.Title)
 
 	for key, value := range in.Properties {
 		if value == nil {
@@ -115,7 +139,7 @@ func (s Spec) ValidateEntity(in Entity) (Entity, []string) {
 
 	slices.Sort(problems)
 
-	return out, problems
+	return out, titleCut, problems
 }
 
 // Compute evaluates the computed properties against an entity, flat as

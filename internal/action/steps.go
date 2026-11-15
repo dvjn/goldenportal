@@ -312,8 +312,8 @@ func (rn Runner) checkStep(ctx context.Context, c *CheckStep, scope Scope) (any,
 	if !ok {
 		return nil, failed(nil, "no blueprint %s is published", c.Blueprint)
 	}
-	page, err := entity.NewStore(rn.db).List(ctx, entity.Query{
-		Blueprint: spec, Blueprints: published, Filter: scope.ResolveFilter(c.Filter), Page: 1, PageSize: 1,
+	count, err := entity.NewStore(rn.db).Count(ctx, entity.Query{
+		Blueprint: spec, Blueprints: published, Filter: scope.ResolveFilter(c.Filter),
 	})
 	var filterErr entity.FilterError
 	if errors.As(err, &filterErr) {
@@ -322,7 +322,6 @@ func (rn Runner) checkStep(ctx context.Context, c *CheckStep, scope Scope) (any,
 	if err != nil {
 		return nil, err
 	}
-	count := page.Total
 	ok = (c.Count == nil || count == *c.Count) && (c.Min == nil || count >= *c.Min) && (c.Max == nil || count <= *c.Max)
 	if !ok {
 		return nil, failed(map[string]any{"count": count}, "%s", scope.Text(c.Message))
