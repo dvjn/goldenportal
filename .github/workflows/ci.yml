@@ -13,6 +13,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+  MISE_VERSION: 2026.11.8
+
+# Caches are saved only from main: PR caches can't be read by other PRs and
+# would push main's out of the size-capped cache.
 jobs:
   check:
     name: 🔍 Run Checks
@@ -22,8 +28,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 🧰 Install Tools
         uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
-      - name: 📦 Cache Go and pnpm
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: 📦 Restore Go and pnpm Cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -36,6 +46,15 @@ jobs:
         run: mise run lint
       - name: ✅ Run Tests
         run: mise run test
+      - name: 💾 Save Go and pnpm Cache
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.local/share/pnpm/store
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   e2e:
     name: 🐘 Run End-to-End Tests
@@ -61,8 +80,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 🧰 Install Tools
         uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
-      - name: 📦 Cache Go
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: 📦 Restore Go Cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -72,6 +95,14 @@ jobs:
             e2e-${{ runner.os }}-
       - name: ✅ Run End-to-End Tests
         run: mise run test:e2e
+      - name: 💾 Save Go Cache
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   image:
     # Builds the same multi-arch image as the release and pushes it only for
@@ -88,8 +119,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 🧰 Install Tools
         uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
-      - name: 📦 Cache Go and pnpm
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+      - name: 📦 Restore Go and pnpm Cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -100,6 +135,15 @@ jobs:
             dist-${{ runner.os }}-
       - name: 🏗️ Build Binaries
         run: mise run dist
+      - name: 💾 Save Go and pnpm Cache
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.local/share/pnpm/store
+          key: ${{ steps.cache.outputs.cache-primary-key }}
       - name: 🏷️ Generate Image Tags
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0

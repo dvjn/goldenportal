@@ -5,9 +5,11 @@
     "docker:pinDigests",
     "helpers:pinGitHubActionDigests",
     "security:minimumReleaseAgeNpm",
-    ":disableRateLimiting"
+    ":disableRateLimiting",
+    "customManagers:githubActionsVersions"
   ],
   "dependencyDashboard": true,
+  "osvVulnerabilityAlerts": true,
   "postUpdateOptions": [
     "gomodTidy"
   ],
@@ -30,11 +32,18 @@
       ]
     },
     {
-      "groupName": "go tools",
+      "groupName": "mise tools",
       "matchDepNames": [
         "go:github.com/air-verse/air",
         "go:mvdan.cc/gofumpt"
       ]
+    },
+    {
+      "description": "The mise version pinned in CI updates with the other dev tools",
+      "matchPackageNames": [
+        "jdx/mise"
+      ],
+      "groupName": "mise tools"
     },
     {
       "groupName": "node toolchain",
@@ -89,6 +98,56 @@
       "matchPackageNames": [
         "@fontsource-variable/**"
       ]
+    },
+    {
+      "description": "What ships in the binary gets the deps type, which release-please lists under Dependencies: the Go modules it links",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "go.mod"
+      ],
+      "semanticCommitType": "deps",
+      "semanticCommitScope": null
+    },
+    {
+      "description": "The Go toolchain the binary is built with ships too",
+      "matchDepNames": [
+        "go"
+      ],
+      "semanticCommitType": "deps",
+      "semanticCommitScope": null
+    },
+    {
+      "description": "So do the UI's runtime packages, which the binary embeds; build and test tools stay chore",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchDepTypes": [
+        "dependencies"
+      ],
+      "semanticCommitType": "deps",
+      "semanticCommitScope": null
+    },
+    {
+      "description": "Build-time packages grouped with runtime ones get deps too, since a group with any chore update is committed as chore",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "@types/react",
+        "@types/react-dom",
+        "@tanstack/router-plugin",
+        "tailwindcss",
+        "@tailwindcss/**"
+      ],
+      "semanticCommitType": "deps",
+      "semanticCommitScope": null
     }
-  ]
+  ],
+  "vulnerabilityAlerts": {
+    "description": "Security updates are listed under Bug Fixes",
+    "semanticCommitType": "fix",
+    "semanticCommitScope": "deps"
+  }
 }
