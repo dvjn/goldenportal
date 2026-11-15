@@ -9,11 +9,76 @@ permissions:
   contents: read
 
 env:
+  # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+  MISE_VERSION: 2026.11.8
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/goldenportal
 
+# Publishing jobs restore no caches, so a poisoned cache can't reach a release.
 jobs:
+  dist:
+    name: 🏗️ Build Binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 🧰 Install Tools
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: ${{ env.MISE_VERSION }}
+          cache: false
+      - name: 🏗️ Build Binaries
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: VERSION="${TAG#v}" mise run dist
+      - name: ⬆️ Upload Binaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  assets:
+    name: 📦 Attach Release Binaries
+    needs: dist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: ⬇️ Download Binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: 📦 Package Binaries
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -eu
+          version="${TAG#v}"
+          mkdir -p release
+          for arch in amd64 arm64; do
+            name="goldenportal_${version}_linux_${arch}"
+            mkdir -p "release/$name"
+            # Artifacts drop file modes, so the binary gets its own back.
+            install -m 0755 "dist/$arch/goldenportal" "release/$name/goldenportal"
+            cp LICENSE README.md "release/$name/"
+            tar -C "release/$name" --owner=0 --group=0 --numeric-owner -czf "release/$name.tar.gz" goldenportal LICENSE README.md
+          done
+          cd release
+          sha256sum -- *.tar.gz > checksums.txt
+          cat checksums.txt
+      - name: ⬆️ Upload Release Binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" release/*.tar.gz release/checksums.txt --clobber
+
   image:
     name: 🐳 Publish Container Image
+    needs: dist
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,29 +86,22 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: 🧰 Install Tools
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
-      - name: 📦 Cache Go and pnpm
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: ⬇️ Download Binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-            ~/.local/share/pnpm/store
-          key: dist-${{ runner.os }}-${{ hashFiles('go.sum', 'ui/pnpm-lock.yaml') }}
-          restore-keys: |
-            dist-${{ runner.os }}-
-      - name: 🏗️ Build Binaries
-        run: mise run dist
+          name: dist
+          path: dist
       - name: 🏷️ Generate Image Tags
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !github.event.release.prerelease && !contains(github.event.release.tag_name, '-') }}
       - name: 🐳 Build Image
         id: build
         uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3.1.0

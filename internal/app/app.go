@@ -32,6 +32,7 @@ import (
 
 func New() *gofr.App {
 	telemetry.InstallSQL()
+	useBuildVersion()
 	app := gofr.New()
 	telemetry.SetLogger(app.Logger())
 	api := webRoutes{app}

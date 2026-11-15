@@ -47,19 +47,19 @@ env = { _.file = ["configs/.dev.env", "configs/.dev.local.env"] }
 run = "air --build.cmd 'go build -o .local/tmp/goldenportal ./cmd/goldenportal' --build.bin .local/tmp/goldenportal -tmp_dir .local/tmp --build.exclude_dir 'assets,tmp,vendor,testdata,ui,deps,.local' --misc.clean_on_exit true"
 
 [tasks.build]
-description = "Build the UI, then the goldenportal binary that embeds it"
+description = "Build the UI, then the goldenportal binary that embeds it, stamped with $VERSION (default dev)"
 depends = ["ui:build"]
-run = "go build ./cmd/goldenportal"
+run = 'go build -ldflags "-X github.com/dvjn/goldenportal/internal/app.version=${VERSION:-dev}" ./cmd/goldenportal'
 
 [tasks.dist]
-description = "Build the UI, then cross-compile the release binaries into dist/<arch>/goldenportal"
+description = "Build the UI, then cross-compile the release binaries into dist/<arch>/goldenportal, stamped with $VERSION (default dev)"
 depends = ["ui:build"]
 env = { CGO_ENABLED = "0", GOOS = "linux" }
 run = '''
 set -eu
 rm -rf dist
 for arch in amd64 arm64; do
-  GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/$arch/goldenportal" ./cmd/goldenportal
+  GOARCH="$arch" go build -trimpath -ldflags "-s -w -X github.com/dvjn/goldenportal/internal/app.version=${VERSION:-dev}" -o "dist/$arch/goldenportal" ./cmd/goldenportal
 done
 '''
 
