@@ -1,7 +1,9 @@
-// Package mcp serves the portal's MCP server at /mcp. Clients sign in with
-// the portal's own OAuth (see package oauth), and each tool calls the
-// portal's services as the signed-in user, as the web API does, so their
-// permission checks apply.
+// Package mcp serves the portal's MCP servers: the user's at /api/mcp, which
+// reads the portal's pages and runs actions, and the builder's at
+// /api/mcp/builder, which changes configuration. Clients sign in with the
+// portal's own OAuth (see package oauth), and each tool calls the portal's
+// services as the signed-in user, as the web API does, so their permission
+// checks apply.
 package mcp
 
 import (
@@ -30,42 +32,52 @@ const (
 	maxRequestBytes  = 2 << 20
 )
 
-// Instructions tell the agent how to use the portal. Everyone reads the
-// catalog; authoring is added only for callers who may author.
-const (
-	readingInstructions = `Golden Portal is the organization's software catalog. Blueprints define kinds of things, such as services, teams or repositories; entities are the things themselves, kept up to date by connections. Scorecards grade entities against standards in tiers, and dashboards summarize them.
-
-To answer a question, find what it's about with search, then read it: get_entity for one entity with its relations, query_entities to filter, sort and page a blueprint's entities, get_entity_scorecards for how one entity fares, get_scorecard_summary and list_scorecard_results for a scorecard across entities, and get_dashboard_data for a dashboard's numbers. Use get_home for the dashboards the user sees first. Answer from the portal's data, name the entities you mean by title and identifier, and say when the catalog doesn't hold something rather than guessing.
-
-Actions do things to one entity, such as restarting a service. list_entity_actions shows what the user can run on an entity and the inputs each takes. Run one with run_action only when the user asks, then follow it with get_run until it finishes and report what it gave. list_self_service shows the Self-Service catalog, whose workflows run_workflow starts the same way. A failed run can be retried with retry_run when the user asks. list_approvals shows runs waiting on the user's approval; tell them, since only they can approve, in the portal.`
-	authoringInstructions = `
-
-You may also change configuration. Read portal://guide/authoring and the kind's schema before writing documents, and list_connectors for what connections can read. Configure connections first, then blueprints and their sources, then scorecards and dashboards, and never invent blueprints that don't exist. Validate, save drafts and preview impact, then publish only when the user agrees. Bulk apply saves drafts; publish_documents publishes them in dependency order.`
-)
-
-// instructions are what the caller's role and token let them do.
-func instructions(c caller) string {
-	for _, t := range tools {
-		if t.scope == oauth.ScopeAuthor && c.allows(t) {
-			return readingInstructions + authoringInstructions
-		}
-	}
-	return readingInstructions
+// server is one of the portal's MCP servers: the endpoint it answers at,
+// what it tells agents it's for, and what it offers them.
+type server struct {
+	endpoint    oauth.Endpoint
+	name, title string
+	// documents is whether it serves configuration documents, which its
+	// completions then suggest.
+	documents    bool
+	instructions string
+	tools        []tool
+	prompts      []prompt
+	resources    func(*mcp.Server, bridge)
 }
+
+var servers = []server{userServer, builderServer}
 
 // Tokens finds who an access token signs in, with the scopes it carries.
 type Tokens interface {
 	AccessPrincipal(ctx context.Context, token, resource string) (auth.Principal, []string, error)
 }
 
-// Middleware serves the MCP endpoint. A request needs an access token the
-// portal issued for /mcp: anything else is told where to get one. Tools call
-// services as the token's user, in contexts newContext makes; version is the
-// release clients see.
-func Middleware(services Services, newContext func(context.Context) *gofr.Context, tokens Tokens, server oauth.Server, version string, limits *Limiter) func(http.Handler) http.Handler {
+// Middleware serves the MCP endpoints. A request needs an access token the
+// portal issued for the endpoint: anything else is told where to get one.
+// Tools call services as the token's user, in contexts newContext makes;
+// version is the release clients see.
+func Middleware(services Services, newContext func(context.Context) *gofr.Context, tokens Tokens, issuer oauth.Server, version string, limits *Limiter) func(http.Handler) http.Handler {
+	handlers := map[string]http.Handler{}
+	for _, s := range servers {
+		handlers[s.endpoint.Path] = s.handler(services, newContext, tokens, issuer, version, limits)
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if h, ok := handlers[r.URL.Path]; ok {
+				h.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func (s server) handler(services Services, newContext func(context.Context) *gofr.Context, tokens Tokens, issuer oauth.Server, version string, limits *Limiter) http.Handler {
 	transport := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		c, _ := callerFrom(r.Context())
-		return newServer(bridge{services: services, newContext: newContext, caller: c}, c, version)
+		return s.newServer(bridge{services: services, newContext: newContext, caller: c}, c, version)
 	}, &mcp.StreamableHTTPOptions{
 		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: maxRequestBytes,
 		// The SDK's DNS-rebinding guard rejects a public Host arriving on
@@ -75,57 +87,80 @@ func Middleware(services Services, newContext func(context.Context) *gofr.Contex
 		DisableLocalhostProtection: true,
 	})
 
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != oauth.MCPPath {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if !allowedOrigin(r, server.Issuer()) {
-				httpx.WriteError(w, http.StatusForbidden, "MCP origin is not allowed")
-				return
-			}
-			token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !ok || token == "" {
-				challenge(w, server, http.StatusUnauthorized, "", "sign in to continue")
-				return
-			}
-			p, scopes, err := tokens.AccessPrincipal(r.Context(), token, server.Resource())
-			if errors.Is(err, oauth.ErrInvalidToken) {
-				challenge(w, server, http.StatusUnauthorized, "invalid_token", err.Error())
-				return
-			}
-			if err != nil {
-				httpx.WriteError(w, http.StatusInternalServerError, "could not check the access token")
-				return
-			}
-			if ok, wait := limits.allow(p.ID); !ok {
-				tooManyRequests(w, wait)
-				return
-			}
-			c := caller{principal: p, scopes: scopes}
-			if need := c.missingScope(r); need != "" {
-				// The role allows the tool but the token wasn't granted it, so
-				// the client can ask the user for more, as step-up authorization
-				// in the MCP spec describes.
-				w.Header().Set("WWW-Authenticate", fmt.Sprintf(
-					`Bearer error="insufficient_scope", scope=%q, resource_metadata=%q, error_description=%q`,
-					strings.Join(append(slices.Clone(scopes), need), " "), server.ResourceMetadataURL(),
-					"this tool needs "+need))
-				httpx.WriteError(w, http.StatusForbidden, "this tool needs the "+need+" scope")
-				return
-			}
-			transport.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, c)))
-		})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !allowedOrigin(r, issuer.Issuer()) {
+			httpx.WriteError(w, http.StatusForbidden, "MCP origin is not allowed")
+			return
+		}
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || token == "" {
+			s.challenge(w, issuer, http.StatusUnauthorized, "", "sign in to continue")
+			return
+		}
+		p, scopes, err := tokens.AccessPrincipal(r.Context(), token, issuer.Resource(s.endpoint))
+		if errors.Is(err, oauth.ErrInvalidToken) {
+			s.challenge(w, issuer, http.StatusUnauthorized, "invalid_token", err.Error())
+			return
+		}
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "could not check the access token")
+			return
+		}
+		// The role is the user's now, so one who has lost it since consenting
+		// is refused here too.
+		if !p.Can(s.endpoint.Role) {
+			httpx.WriteError(w, http.StatusForbidden, issuer.Refusal(s.endpoint))
+			return
+		}
+		if ok, wait := limits.allow(p.ID); !ok {
+			tooManyRequests(w, wait)
+			return
+		}
+		c := caller{principal: p, scopes: scopes}
+		if need := s.missingScope(c, r); need != "" {
+			// The token wasn't granted what the tool needs, so the client can
+			// ask the user for more, as step-up authorization in the MCP spec
+			// describes.
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+				`Bearer error="insufficient_scope", scope=%q, resource_metadata=%q, error_description=%q`,
+				strings.Join(append(slices.Clone(scopes), need), " "), issuer.ResourceMetadataURL(s.endpoint),
+				"this tool needs "+need))
+			httpx.WriteError(w, http.StatusForbidden, "this tool needs the "+need+" scope")
+			return
+		}
+		transport.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, c)))
+	})
+}
+
+// newServer offers the caller what their token lets them use, as of this
+// request.
+func (s server) newServer(b bridge, c caller, version string) *mcp.Server {
+	m := mcp.NewServer(&mcp.Implementation{Name: s.name, Title: s.title, Version: version}, &mcp.ServerOptions{
+		Instructions: s.instructions, CompletionHandler: complete(b, c, s.documents),
+	})
+	if c.granted(oauth.ScopeRead) {
+		s.resources(m, b)
 	}
+	for _, p := range s.prompts {
+		if c.granted(p.scope) {
+			m.AddPrompt(p.prompt, p.handler(b))
+		}
+	}
+	for _, t := range s.tools {
+		if c.granted(t.scope) {
+			t.register(m, b, t)
+		}
+	}
+
+	return m
 }
 
 // challenge answers a request without a usable token with where to get
-// one, and the scopes the server offers.
-func challenge(w http.ResponseWriter, server oauth.Server, status int, code, message string) {
+// one, and the scopes the endpoint offers.
+func (s server) challenge(w http.ResponseWriter, issuer oauth.Server, status int, code, message string) {
 	params := []string{
-		fmt.Sprintf("resource_metadata=%q", server.ResourceMetadataURL()),
-		fmt.Sprintf("scope=%q", strings.Join(oauth.Scopes, " ")),
+		fmt.Sprintf("resource_metadata=%q", issuer.ResourceMetadataURL(s.endpoint)),
+		fmt.Sprintf("scope=%q", strings.Join(s.endpoint.Scopes, " ")),
 	}
 	if code != "" {
 		params = append(params, fmt.Sprintf("error=%q", code), fmt.Sprintf("error_description=%q", message))
@@ -166,17 +201,12 @@ func callerFrom(ctx context.Context) (caller, bool) {
 	return c, ok
 }
 
-// allows reports whether the caller may use t: their role now includes
-// the tool's, and their token was granted its scope.
-func (c caller) allows(t tool) bool {
-	return c.principal.Can(t.role) && slices.Contains(c.scopes, t.scope)
-}
+func (c caller) granted(scope string) bool { return slices.Contains(c.scopes, scope) }
 
 // missingScope is the scope a tools/call request needs that the token
-// lacks, when the caller's role would allow the tool. Anything else, a
-// tool their role doesn't allow included, goes to the server, which
-// doesn't offer it.
-func (c caller) missingScope(r *http.Request) string {
+// lacks. Anything else, a tool the server doesn't have included, goes to
+// the server, which answers it.
+func (s server) missingScope(c caller, r *http.Request) string {
 	if r.Method != http.MethodPost || r.Body == nil {
 		return ""
 	}
@@ -194,8 +224,8 @@ func (c caller) missingScope(r *http.Request) string {
 	if json.Unmarshal(body, &message) != nil || message.Method != "tools/call" {
 		return ""
 	}
-	for _, t := range tools {
-		if t.name == message.Params.Name && c.principal.Can(t.role) && !slices.Contains(c.scopes, t.scope) {
+	for _, t := range s.tools {
+		if t.name == message.Params.Name && !c.granted(t.scope) {
 			return t.scope
 		}
 	}
@@ -242,12 +272,8 @@ func (b bridge) run(ctx context.Context, do func(*gofr.Context) (any, error)) Ou
 	gctx := b.context(ctx)
 	v, err := do(gctx)
 	if err != nil {
-		var status interface{ StatusCode() int }
-		if errors.As(err, &status) {
-			return Output{Status: status.StatusCode(), Error: map[string]any{"message": err.Error()}}
-		}
-		gctx.Errorf("MCP call failed: %v", err)
-		return Output{Status: http.StatusInternalServerError, Error: map[string]any{"message": "something went wrong in the portal"}}
+		status, message := failure(gctx, err)
+		return Output{Status: status, Error: map[string]any{"message": message}}
 	}
 	out := Output{Status: http.StatusOK}
 	if source, ok := v.(yaml); ok {
@@ -259,6 +285,17 @@ func (b bridge) run(ctx context.Context, do func(*gofr.Context) (any, error)) Ou
 		return Output{Status: http.StatusRequestEntityTooLarge, Error: map[string]any{"message": "response exceeds 10 MB; use a smaller page or a single-document export"}}
 	}
 	return out
+}
+
+// failure is how a call failed, as far as the caller should know: a
+// refusal they can act on, or else that the portal failed, which is logged.
+func failure(ctx *gofr.Context, err error) (int, string) {
+	var status interface{ StatusCode() int }
+	if errors.As(err, &status) {
+		return status.StatusCode(), err.Error()
+	}
+	ctx.Errorf("MCP call failed: %v", err)
+	return http.StatusInternalServerError, "something went wrong in the portal"
 }
 
 // documents is the service for a kind of document, by its plural name.

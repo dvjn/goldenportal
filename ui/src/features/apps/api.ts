@@ -18,13 +18,12 @@ export type Consent = {
   clientHost?: string;
   // logo is the app's logo from its metadata, as a PNG data URL.
   logo?: string;
+  server: string;
   redirectUri: string;
   redirectHost: string;
   // local is a redirect to this machine, which any app on it could claim.
   local: boolean;
   scopes: string[];
-  // withheld are scopes the app asked for that the user's role can't allow.
-  withheld?: string[];
   problem?: string;
   redirect?: string;
 };
@@ -54,6 +53,9 @@ export type AppGrant = {
   id: string;
   client: string;
   logo?: string;
+  // server is the MCP server the app connects to; an app connected to both
+  // is listed once for each.
+  server: string;
   scopes: string[];
   createdAt: string;
   lastUsedAt: string | null;

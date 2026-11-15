@@ -4,6 +4,7 @@ import { AppWindow, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppLogo } from "@/components/app-logo";
 import { EmptyValue } from "@/components/catalog/property-value";
+import { Code } from "@/components/code";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -26,6 +27,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { useConfig } from "@/features/app-config";
 import {
   type AppGrant,
   appKeys,
@@ -34,6 +36,7 @@ import {
   scopeLabels,
   useApps,
 } from "@/features/apps";
+import { hasRole, useMe } from "@/features/auth";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/account/apps")({
@@ -60,6 +63,10 @@ const columns = [
         {getValue()}
       </span>
     ),
+  }),
+  column.accessor("server", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Server" />,
+    cell: ({ getValue }) => <span className="text-muted-foreground">{getValue()}</span>,
   }),
   column.accessor((app) => app.scopes.join(" "), {
     id: "access",
@@ -151,14 +158,18 @@ function RevokeAppButton({ app }: Readonly<{ app: AppGrant }>) {
   );
 }
 
-// AppsPage lists the apps, such as MCP clients, the user let act as them.
+// AppsPage lists the apps, such as MCP clients, the user let act as them,
+// and where to connect one.
 function AppsPage() {
   const apps = useApps();
   const search = Route.useSearch();
+  const { mcp } = useConfig();
+  const builder = hasRole(useMe().role, "builder");
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Connected Apps" icon={<PageIcon page="apps" />} />
+      {mcp && <McpServers user={mcp.user} builder={builder ? mcp.builder : undefined} />}
       <DataTable
         noun="apps"
         data={apps}
@@ -174,6 +185,24 @@ function AppsPage() {
           />
         }
       />
+    </div>
+  );
+}
+
+// McpServers says where an AI assistant connects: the user's server, and
+// for builders, the one that changes configuration.
+function McpServers({ user, builder }: Readonly<{ user: string; builder?: string }>) {
+  return (
+    <div className="grid gap-1 text-sm text-muted-foreground">
+      <p>
+        Connect an AI assistant over MCP at <Code>{user}</Code> to read the portal and run actions
+        as you.
+      </p>
+      {builder && (
+        <p>
+          Connect it at <Code>{builder}</Code> to change the portal's configuration.
+        </p>
+      )}
     </div>
   );
 }

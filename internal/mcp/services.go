@@ -1,21 +1,27 @@
 package mcp
 
 import (
+	"cmp"
 	"encoding/json"
+	"slices"
 
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dvjn/goldenportal/internal/action"
+	"github.com/dvjn/goldenportal/internal/auth"
+	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/connection"
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/httpx"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/search"
 )
 
 // Services are what tools, resources and prompts call: the services the
-// web API calls too, which check the caller's role themselves.
+// web API, and so the portal's pages, call too, which check the caller's
+// role themselves.
 type Services interface {
 	Search(ctx *gofr.Context, text string) ([]search.Result, error)
 
@@ -26,14 +32,18 @@ type Services interface {
 	Schema(ctx *gofr.Context, kind string) (json.RawMessage, error)
 
 	Catalog(ctx *gofr.Context) ([]entity.CatalogEntry, error)
+	Blueprint(ctx *gofr.Context, identifier string) (blueprint.Spec, error)
+	PageTab(ctx *gofr.Context, req dashboard.PageRequest) (dashboard.PageData, error)
+	EntityTab(ctx *gofr.Context, spec blueprint.Spec, current *entity.Entity, tab string) (dashboard.PageData, error)
 	Entities(ctx *gofr.Context, blueprint string, req entity.ListRequest) (entity.Page, error)
 	Entity(ctx *gofr.Context, blueprint, identifier string) (entity.Detail, error)
 	BlueprintUsage(ctx *gofr.Context, blueprint string) (connection.Usage, error)
 
 	Home(ctx *gofr.Context) ([]dashboard.HomeDashboard, error)
 	ViewDashboard(ctx *gofr.Context, name string, draft bool) (dashboard.HomeDashboard, error)
-	DashboardData(ctx *gofr.Context, name string, inputs map[string][]string) (dashboard.PageData, error)
+	DashboardData(ctx *gofr.Context, name string, inputs map[string][]string, draft bool) (dashboard.PageData, error)
 
+	GradingScorecards(ctx *gofr.Context, blueprint string) ([]scorecard.Spec, error)
 	EntityScorecards(ctx *gofr.Context, blueprint, identifier string) ([]scorecard.EntityScorecard, error)
 	ScorecardSummary(ctx *gofr.Context, name string, req scorecard.SummaryRequest) (scorecard.SummaryView, error)
 	ScorecardResults(ctx *gofr.Context, name string, req scorecard.ResultsRequest) (scorecard.ResultPage, error)
@@ -48,6 +58,7 @@ type Services interface {
 	RevokeIngestionToken(ctx *gofr.Context, name, id string) error
 
 	EntityActions(ctx *gofr.Context, blueprint, identifier string) ([]action.Available, error)
+	RowActions(ctx *gofr.Context, blueprint string, identifiers []string) (action.RowActions, error)
 	RunAction(ctx *gofr.Context, name string, req action.RunRequest) (action.Run, error)
 	Run(ctx *gofr.Context, id string) (action.Run, error)
 	Runs(ctx *gofr.Context, req action.RunsRequest) (action.RunPage, error)
@@ -85,6 +96,31 @@ func (portal) Schema(ctx *gofr.Context, kind string) (json.RawMessage, error) {
 
 func (portal) Catalog(ctx *gofr.Context) ([]entity.CatalogEntry, error) { return entity.Catalog(ctx) }
 
+// Blueprint is a published blueprint, as its catalog and entity pages
+// read it.
+func (portal) Blueprint(ctx *gofr.Context, identifier string) (blueprint.Spec, error) {
+	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+		return blueprint.Spec{}, err
+	}
+	specs, err := blueprint.Published(ctx, ctx.SQL)
+	if err != nil {
+		return blueprint.Spec{}, err
+	}
+	spec, ok := specs[identifier]
+	if !ok {
+		return blueprint.Spec{}, httpx.NotFound("no published blueprint " + identifier)
+	}
+	return spec, nil
+}
+
+func (portal) PageTab(ctx *gofr.Context, req dashboard.PageRequest) (dashboard.PageData, error) {
+	return dashboard.PageTab(ctx, req)
+}
+
+func (portal) EntityTab(ctx *gofr.Context, spec blueprint.Spec, current *entity.Entity, tab string) (dashboard.PageData, error) {
+	return dashboard.EntityTab(ctx, spec, current, tab)
+}
+
 func (portal) Entities(ctx *gofr.Context, blueprint string, req entity.ListRequest) (entity.Page, error) {
 	return entity.List(ctx, blueprint, req)
 }
@@ -103,8 +139,30 @@ func (portal) ViewDashboard(ctx *gofr.Context, name string, draft bool) (dashboa
 	return dashboard.View(ctx, name, draft)
 }
 
-func (portal) DashboardData(ctx *gofr.Context, name string, inputs map[string][]string) (dashboard.PageData, error) {
-	return dashboard.Data(ctx, name, inputs, false)
+func (portal) DashboardData(ctx *gofr.Context, name string, inputs map[string][]string, draft bool) (dashboard.PageData, error) {
+	return dashboard.Data(ctx, name, inputs, draft)
+}
+
+// GradingScorecards are the published scorecards that grade a blueprint's
+// entities, which its catalog page shows the results of, by title.
+func (portal) GradingScorecards(ctx *gofr.Context, blueprint string) ([]scorecard.Spec, error) {
+	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
+		return nil, err
+	}
+	published, err := scorecard.Published(ctx, ctx.SQL)
+	if err != nil {
+		return nil, err
+	}
+	var grading []scorecard.Spec
+	for _, spec := range published {
+		if spec.Blueprint == blueprint {
+			grading = append(grading, spec)
+		}
+	}
+	slices.SortFunc(grading, func(a, b scorecard.Spec) int {
+		return cmp.Or(cmp.Compare(a.Title, b.Title), cmp.Compare(a.Identifier, b.Identifier))
+	})
+	return grading, nil
 }
 
 func (portal) EntityScorecards(ctx *gofr.Context, blueprint, identifier string) ([]scorecard.EntityScorecard, error) {
@@ -153,6 +211,10 @@ func (portal) RevokeIngestionToken(ctx *gofr.Context, name, id string) error {
 
 func (portal) EntityActions(ctx *gofr.Context, blueprint, identifier string) ([]action.Available, error) {
 	return action.ForEntity(ctx, blueprint, identifier)
+}
+
+func (portal) RowActions(ctx *gofr.Context, blueprint string, identifiers []string) (action.RowActions, error) {
+	return action.ForEntities(ctx, blueprint, identifiers)
 }
 
 func (portal) RunAction(ctx *gofr.Context, name string, req action.RunRequest) (action.Run, error) {

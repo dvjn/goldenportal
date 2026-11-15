@@ -58,12 +58,24 @@ func TestMetadataPointsAtThePortal(t *testing.T) {
 		t.Error("metadata must be readable from any origin")
 	}
 
-	for _, path := range []string{"/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-protected-resource"} {
+	// Each endpoint is a resource of its own, with the scopes it takes.
+	for path, want := range map[string]struct {
+		resource string
+		scopes   []any
+	}{
+		"/.well-known/oauth-protected-resource/api/mcp":         {base + "/api/mcp", []any{ScopeRead, ScopeRun}},
+		"/.well-known/oauth-protected-resource":                 {base + "/api/mcp", []any{ScopeRead, ScopeRun}},
+		"/.well-known/oauth-protected-resource/api/mcp/builder": {base + "/api/mcp/builder", []any{ScopeRead, ScopeAuthor}},
+	} {
 		w, _ = serve(t, http.MethodGet, path, "", "")
 		resource := decode(t, w)
-		if resource["resource"] != base+"/mcp" || resource["authorization_servers"].([]any)[0] != base {
+		if resource["resource"] != want.resource || resource["authorization_servers"].([]any)[0] != base ||
+			!slices.Equal(resource["scopes_supported"].([]any), want.scopes) {
 			t.Errorf("%s = %v", path, resource)
 		}
+	}
+	if scopes, _ := server["scopes_supported"].([]any); len(scopes) != len(Scopes) {
+		t.Errorf("the server issues %v", scopes)
 	}
 }
 
@@ -131,7 +143,8 @@ func TestTokenRefusesBadRequests(t *testing.T) {
 		form, code string
 	}{
 		{"grant_type=password&username=a", "unsupported_grant_type"},
-		{"grant_type=authorization_code&code=x&resource=https://elsewhere.example/mcp", "invalid_target"},
+		{"grant_type=authorization_code&code=x&resource=https://elsewhere.example/api/mcp", "invalid_target"},
+		{"grant_type=authorization_code&code=x&resource=" + base + "/api/mcp/other", "invalid_target"},
 	} {
 		w, _ := serve(t, http.MethodPost, "/oauth/token", "application/x-www-form-urlencoded", test.form)
 		if out := decode(t, w); w.Code != http.StatusBadRequest || out["error"] != test.code {
@@ -146,6 +159,7 @@ func TestTokenRefusesBadRequests(t *testing.T) {
 	}
 	defer db.Close()
 	mock.ExpectQuery(`DELETE FROM oauth_codes`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT cl.client_id, t.resource FROM oauth_codes`).WillReturnRows(sqlmock.NewRows([]string{"client_id", "resource"}))
 	r := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("grant_type=authorization_code&code=gpk_used&client_id=c"))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -164,25 +178,20 @@ func TestPKCEAndResources(t *testing.T) {
 	}
 
 	s := NewServer(base, "Acme")
-	for resource, same := range map[string]bool{
-		base + "/mcp":                         true,
-		base + "/mcp/":                        true,
-		"HTTPS://Portal.Example.com/mcp":      true,
-		base:                                  false,
-		"https://portal.example.com.evil/mcp": false,
+	for resource, want := range map[string]string{
+		base + "/api/mcp":                    UserMCP.Path,
+		base + "/api/mcp/":                   UserMCP.Path,
+		"HTTPS://Portal.Example.com/api/mcp": UserMCP.Path,
+		"":                                   UserMCP.Path,
+		base + "/api/mcp/builder":            BuilderMCP.Path,
+		base + "/MCP/builder":                "",
+		base:                                 "",
+		"https://portal.example.com.evil/api/mcp": "",
 	} {
-		if s.sameResource(resource) != same {
-			t.Errorf("sameResource(%q) = %v", resource, !same)
+		e, ok := s.endpointFor(resource)
+		if ok != (want != "") || e.Path != want {
+			t.Errorf("endpointFor(%q) = %q, %v", resource, e.Path, ok)
 		}
-	}
-}
-
-func TestRolesCapScopes(t *testing.T) {
-	if got := RoleScopes(auth.RoleMember); !slices.Equal(got, []string{ScopeRead, ScopeRun}) {
-		t.Errorf("member can grant %v", got)
-	}
-	if got := RoleScopes(auth.RoleAdmin); !slices.Equal(got, Scopes) {
-		t.Errorf("admin can grant %v", got)
 	}
 }
 
@@ -195,3 +204,72 @@ func TestAnswerKeepsTheClientsQuery(t *testing.T) {
 }
 
 func mustTime() time.Time { return time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC) }
+
+func TestConsentFollowsTheEndpoint(t *testing.T) {
+	s := NewServer(base, "Acme")
+	member := auth.Principal{ID: "m", Role: auth.RoleMember}
+	builder := auth.Principal{ID: "b", Role: auth.RoleBuilder}
+	for _, test := range []struct {
+		name            string
+		who             auth.Principal
+		resource, scope string
+		endpoint        string
+		scopes          []string
+		problem         string
+	}{
+		{name: "user server by default", who: member, endpoint: "/api/mcp", scopes: []string{ScopeRead, ScopeRun}},
+		{name: "builder server", who: builder, resource: base + "/api/mcp/builder", endpoint: "/api/mcp/builder", scopes: []string{ScopeRead, ScopeAuthor}},
+		{name: "member refused the builder server", who: member, resource: base + "/api/mcp/builder", problem: "access_denied"},
+		{
+			name: "scopes of the other server left out", who: builder, resource: base + "/api/mcp",
+			scope: "portal:read portal:run portal:author", endpoint: "/api/mcp", scopes: []string{ScopeRead, ScopeRun},
+		},
+		{name: "nothing grantable here", who: builder, resource: base + "/api/mcp", scope: ScopeAuthor, problem: "invalid_scope"},
+		{name: "authoring without naming the builder server", who: builder, scope: "portal:read portal:author", problem: "invalid_target"},
+		{name: "unknown resource", who: builder, resource: base + "/api/mcp/admin", problem: "invalid_target"},
+		{name: "unknown scope", who: builder, scope: "portal:everything", problem: "invalid_scope"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			e, scopes, p := s.grantable(test.who, test.resource, test.scope)
+			switch {
+			case test.problem != "":
+				if p == nil || p.code != test.problem {
+					t.Errorf("problem = %+v, want %s", p, test.problem)
+				}
+			case p != nil || e.Path != test.endpoint || !slices.Equal(scopes, test.scopes):
+				t.Errorf("grantable = %s %v %+v", e.Path, scopes, p)
+			}
+		})
+	}
+}
+
+// A refresh token or code asked for by another client, or for another
+// resource, isn't taken, so the right request can still use it.
+func TestTokensAreTakenOnlyAsIssued(t *testing.T) {
+	for _, test := range []struct {
+		form, table, client, code string
+	}{
+		{"grant_type=refresh_token&refresh_token=gpr_x&client_id=c&resource=" + url.QueryEscape(base+"/api/mcp/builder"), "oauth_tokens", "c", "invalid_target"},
+		{"grant_type=refresh_token&refresh_token=gpr_x&client_id=other", "oauth_tokens", "c", "invalid_grant"},
+		{"grant_type=authorization_code&code=gpk_x&client_id=c&resource=" + url.QueryEscape(base+"/api/mcp/builder"), "oauth_codes", "c", "invalid_target"},
+	} {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mock.ExpectQuery(`DELETE FROM ` + test.table).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+		mock.ExpectQuery(`SELECT cl.client_id, t.resource FROM ` + test.table).
+			WillReturnRows(sqlmock.NewRows([]string{"client_id", "resource"}).AddRow(test.client, base+"/api/mcp"))
+		r := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(test.form))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		NewServer(base, "Acme").Routes(db)(http.NotFoundHandler()).ServeHTTP(w, r)
+		if out := decode(t, w); w.Code != http.StatusBadRequest || out["error"] != test.code {
+			t.Errorf("%s: %d %v", test.form, w.Code, out)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("%s: %v", test.form, err)
+		}
+		_ = db.Close()
+	}
+}

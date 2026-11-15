@@ -78,11 +78,15 @@ func New() *gofr.App {
 		newContext := func(ctx context.Context) *gofr.Context {
 			return &gofr.Context{Context: ctx, Container: c, ContextLogger: logging.ContextLoggerFor(ctx, c.Logger)}
 		}
+		// MCP answers its paths under /api before the web API's sign-in, which refuses tokens.
 		mcp := portalmcp.Middleware(portalmcp.NewServices(searcher), newContext, oauth.NewStore(c.SQL), oauthServer, app.Config.Get("APP_VERSION"), mcpLimits)(backend)
 		return scimServer.Routes(c.SQL)(oauthServer.Routes(c.SQL)(mcp))
 	})
 
 	config := Config{Name: name, LogoURL: app.Config.Get("GP_LOGO_URL")}
+	if app.Config.Get("GP_BASE_URL") != "" {
+		config.MCP = &MCPConfig{User: oauthServer.Resource(oauth.UserMCP), Builder: oauthServer.Resource(oauth.BuilderMCP)}
+	}
 	if relay != nil {
 		config.Tracing = &TracingConfig{SampleRatio: relay.SampleRatio}
 	}

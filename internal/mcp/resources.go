@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -17,9 +16,9 @@ import (
 	"github.com/dvjn/goldenportal/internal/oauth"
 )
 
-// Resources are what a user attaches to a conversation, such as a
-// document's YAML. They only read, so they need portal:read, and every
-// read calls services as the caller, like a tool.
+// Resources are what a user attaches to a conversation, such as an entity
+// or, for builders, a document's YAML. They only read, so they need
+// portal:read, and every read calls services as the caller, like a tool.
 const (
 	guideURI            = "portal://guide/authoring"
 	documentTemplate    = "portal://documents/{kind}/{identifier}"
@@ -39,7 +38,9 @@ func entityURI(blueprint, identifier string) string {
 	return entityURIPrefix + blueprint + "/" + identifier
 }
 
-func addResources(s *mcp.Server, b bridge) {
+// addBuilderResources offers builders the authoring guide, each kind's
+// schema and documents, beside entities.
+func addBuilderResources(s *mcp.Server, b bridge) {
 	s.AddResource(&mcp.Resource{
 		URI: guideURI, Name: "authoring", Title: "Authoring guide", MIMEType: "text/plain",
 		Description: "How configuration documents fit together and the steps to change them safely",
@@ -75,6 +76,10 @@ func addResources(s *mcp.Server, b bridge) {
 		}
 		return textResult(uri, "application/yaml", out.Source), nil
 	})
+	addEntityResources(s, b)
+}
+
+func addEntityResources(s *mcp.Server, b bridge) {
 	s.AddResourceTemplate(&mcp.ResourceTemplate{
 		URITemplate: entityTemplate, Name: "entity", Title: "Entity", MIMEType: "application/json",
 		Description: "A catalog entity with its resolved properties and relations",
@@ -124,15 +129,15 @@ func apiMessage(out Output) string {
 
 // complete suggests values for resource and prompt arguments from what the
 // caller can see, so a client can offer them as the user types.
-func complete(b bridge, c caller) func(context.Context, *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
+func complete(b bridge, c caller, documents bool) func(context.Context, *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 	return func(ctx context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 		values := []string{}
-		if slices.Contains(c.scopes, oauth.ScopeRead) {
+		if c.granted(oauth.ScopeRead) {
 			var known map[string]string
 			if req.Params.Context != nil {
 				known = req.Params.Context.Arguments
 			}
-			values = b.suggest(ctx, req.Params.Argument.Name, req.Params.Argument.Value, known)
+			values = b.suggest(ctx, req.Params.Argument.Name, req.Params.Argument.Value, known, documents)
 		}
 		more := len(values) > maxCompletionValues
 		if more {
@@ -143,8 +148,13 @@ func complete(b bridge, c caller) func(context.Context, *mcp.CompleteRequest) (*
 }
 
 // suggest lists values for an argument, by its name, that start with
-// typed. Arguments mean the same in every resource and prompt.
-func (b bridge) suggest(ctx context.Context, argument, typed string, known map[string]string) []string {
+// typed. Arguments mean the same in every resource and prompt; those only
+// documents take are suggested only where documents are served.
+func (b bridge) suggest(ctx context.Context, argument, typed string, known map[string]string, documents bool) []string {
+	_, byKind := known["kind"]
+	if !documents && (argument == "kind" || argument == "connector" || (argument == "identifier" && byKind)) {
+		return nil
+	}
 	var candidates []string
 	switch argument {
 	case "kind":

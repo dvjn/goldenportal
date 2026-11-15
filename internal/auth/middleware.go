@@ -86,7 +86,7 @@ func Middleware(resolver principalResolver, secureCookies bool) func(http.Handle
 			case r.Header.Get("Authorization") != "":
 				// Only the portal's own pages call the web API. Agents connect
 				// over MCP, which has its own sign-in.
-				httpx.WriteError(w, http.StatusUnauthorized, "the web API takes a browser session, not a token; connect agents over MCP at /mcp")
+				httpx.WriteError(w, http.StatusUnauthorized, "the web API takes a browser session, not a token; connect agents over MCP at /api/mcp, or /api/mcp/builder for builders")
 				return
 			}
 

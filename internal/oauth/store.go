@@ -85,15 +85,15 @@ func (s Store) SaveMetadataClient(ctx context.Context, c Client, expires time.Ti
 	return c, err
 }
 
-// Authorize records a user's consent for a client and returns a code for
-// it. Consenting again replaces the scopes, so they're always what the
-// user last agreed to.
-func (s Store) Authorize(ctx context.Context, userID string, client Client, code Code, codeHash []byte) (string, error) {
+// Authorize records a user's consent for a client at an endpoint and
+// returns a code for it. Consenting again replaces the scopes, so they're
+// always what the user last agreed to there.
+func (s Store) Authorize(ctx context.Context, userID string, client Client, e Endpoint, code Code, codeHash []byte) (string, error) {
 	var grantID string
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO oauth_grants (user_id, client_id, scopes) VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, client_id) DO UPDATE SET scopes = EXCLUDED.scopes
-		RETURNING id`, userID, client.ID, pq.Array(code.Scopes)).Scan(&grantID)
+		INSERT INTO oauth_grants (user_id, client_id, endpoint, scopes) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, client_id, endpoint) DO UPDATE SET scopes = EXCLUDED.scopes
+		RETURNING id`, userID, client.ID, e.Path, pq.Array(code.Scopes)).Scan(&grantID)
 	if err != nil {
 		return "", err
 	}
@@ -106,44 +106,77 @@ func (s Store) Authorize(ctx context.Context, userID string, client Client, code
 	return grantID, err
 }
 
-// TakeCode redeems an authorization code, which works once.
-func (s Store) TakeCode(ctx context.Context, codeHash []byte) (Code, error) {
+var (
+	errOtherClient   = errors.New("issued to another client")
+	errOtherResource = errors.New("issued for another resource")
+)
+
+// TakeCode redeems an authorization code, which works once. It's taken
+// only by the client it was issued to, for its resource, or any when
+// resource is empty, so a mistaken request leaves it usable.
+func (s Store) TakeCode(ctx context.Context, codeHash []byte, clientID, resource string) (Code, error) {
 	var c Code
 	err := s.db.QueryRowContext(ctx, `
 		WITH taken AS (
-			DELETE FROM oauth_codes WHERE code_hash = $1 RETURNING *
+			DELETE FROM oauth_codes t USING oauth_grants g, oauth_clients cl
+			WHERE t.code_hash = $1 AND g.id = t.grant_id AND cl.id = g.client_id
+				AND cl.client_id = $2 AND ($3::text = '' OR t.resource = $3)
+			RETURNING g.id AS grant_id, g.user_id, cl.client_id, t.redirect_uri, t.code_challenge, t.resource, t.scopes, t.expires_at
 		)
-		SELECT g.id, g.user_id, cl.client_id, t.redirect_uri, t.code_challenge, t.resource, t.scopes
-		FROM taken t
-		JOIN oauth_grants g ON g.id = t.grant_id
-		JOIN oauth_clients cl ON cl.id = g.client_id
-		WHERE t.expires_at > now()`, codeHash).
+		SELECT grant_id, user_id, client_id, redirect_uri, code_challenge, resource, scopes FROM taken
+		WHERE expires_at > now()`, codeHash, clientID, resource).
 		Scan(&c.Grant.ID, &c.Grant.UserID, &c.Grant.ClientID, &c.RedirectURI, &c.Challenge, &c.Resource, pq.Array(&c.Scopes))
 	if errors.Is(err, sql.ErrNoRows) {
-		return Code{}, errNotFound
+		return Code{}, s.notTaken(ctx, `
+			SELECT cl.client_id, t.resource FROM oauth_codes t
+			JOIN oauth_grants g ON g.id = t.grant_id
+			JOIN oauth_clients cl ON cl.id = g.client_id
+			WHERE t.code_hash = $1 AND t.expires_at > now()`, codeHash, clientID)
 	}
 
 	return c, err
 }
 
-// TakeRefresh redeems a refresh token, which works once.
-func (s Store) TakeRefresh(ctx context.Context, tokenHash []byte) (Grant, error) {
+// TakeRefresh redeems a refresh token, which works once, as TakeCode does
+// a code, returning its grant and the resource it's for.
+func (s Store) TakeRefresh(ctx context.Context, tokenHash []byte, clientID, resource string) (Grant, string, error) {
 	var g Grant
 	err := s.db.QueryRowContext(ctx, `
 		WITH taken AS (
-			DELETE FROM oauth_tokens WHERE token_hash = $1 AND kind = 'refresh' RETURNING *
+			DELETE FROM oauth_tokens t USING oauth_grants g, oauth_clients cl
+			WHERE t.token_hash = $1 AND t.kind = 'refresh' AND g.id = t.grant_id AND cl.id = g.client_id
+				AND cl.client_id = $2 AND ($3::text = '' OR t.resource = $3)
+			RETURNING g.id AS grant_id, g.user_id, cl.client_id, t.scopes, t.resource, t.expires_at
 		)
-		SELECT g.id, g.user_id, cl.client_id, t.scopes
-		FROM taken t
-		JOIN oauth_grants g ON g.id = t.grant_id
-		JOIN oauth_clients cl ON cl.id = g.client_id
-		WHERE t.expires_at > now()`, tokenHash).
-		Scan(&g.ID, &g.UserID, &g.ClientID, pq.Array(&g.Scopes))
+		SELECT grant_id, user_id, client_id, scopes, resource FROM taken
+		WHERE expires_at > now()`, tokenHash, clientID, resource).
+		Scan(&g.ID, &g.UserID, &g.ClientID, pq.Array(&g.Scopes), &resource)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Grant{}, errNotFound
+		return Grant{}, "", s.notTaken(ctx, `
+			SELECT cl.client_id, t.resource FROM oauth_tokens t
+			JOIN oauth_grants g ON g.id = t.grant_id
+			JOIN oauth_clients cl ON cl.id = g.client_id
+			WHERE t.token_hash = $1 AND t.kind = 'refresh' AND t.expires_at > now()`, tokenHash, clientID)
 	}
 
-	return g, err
+	return g, resource, err
+}
+
+// notTaken says why a code or refresh token wasn't taken: there's none
+// live, or it's another client's, or else for another resource.
+func (s Store) notTaken(ctx context.Context, query string, hash []byte, clientID string) error {
+	var owner, resource string
+	err := s.db.QueryRowContext(ctx, query, hash).Scan(&owner, &resource)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return errNotFound
+	case err != nil:
+		return err
+	case owner != clientID:
+		return errOtherClient
+	default:
+		return errOtherResource
+	}
 }
 
 // IssueTokens stores a new access and refresh token for a grant, unless
@@ -237,6 +270,7 @@ type AppGrant struct {
 	ID         string     `json:"id"`
 	Client     string     `json:"client"`
 	Logo       string     `json:"logo,omitempty"`
+	Server     string     `json:"server"`
 	Scopes     []string   `json:"scopes"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastUsedAt *time.Time `json:"lastUsedAt"`
@@ -244,7 +278,7 @@ type AppGrant struct {
 
 func (s Store) Grants(ctx context.Context, userID string) ([]AppGrant, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT g.id, cl.name, cl.logo, g.scopes, g.created_at, g.last_used_at
+		SELECT g.id, cl.name, cl.logo, g.endpoint, g.scopes, g.created_at, g.last_used_at
 		FROM oauth_grants g JOIN oauth_clients cl ON cl.id = g.client_id
 		WHERE g.user_id = $1
 		ORDER BY g.created_at DESC`, userID)
@@ -255,8 +289,13 @@ func (s Store) Grants(ctx context.Context, userID string) ([]AppGrant, error) {
 	grants := []AppGrant{}
 	for rows.Next() {
 		var g AppGrant
-		if err := rows.Scan(&g.ID, &g.Client, &g.Logo, pq.Array(&g.Scopes), &g.CreatedAt, &g.LastUsedAt); err != nil {
+		var path string
+		if err := rows.Scan(&g.ID, &g.Client, &g.Logo, &path, pq.Array(&g.Scopes), &g.CreatedAt, &g.LastUsedAt); err != nil {
 			return nil, err
+		}
+		g.Server = path
+		if e, ok := EndpointAt(path); ok {
+			g.Server = e.Title
 		}
 		grants = append(grants, g)
 	}

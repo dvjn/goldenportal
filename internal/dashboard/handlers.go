@@ -432,14 +432,48 @@ func PageTab(ctx *gofr.Context, req PageRequest) (_ PageData, err error) {
 		if err := l.store.Resolve(ctx, l.blueprints, spec, []*entity.Entity{current}); err != nil {
 			return PageData{}, err
 		}
-		names := make([]string, 0, len(spec.Properties))
-		for _, property := range spec.Properties {
-			names = append(names, property.ID)
-		}
-		l.env.Data = widget.EntityValues(current.Identifier, current.Title, current.Blueprint, current.Properties, names)
-		maps.Copy(values, widget.TextValues(l.env.Data))
-		l.env.Entity = entityVariable(current)
+		l.onEntity(spec, current)
 	}
 
 	return l.load(tab.Widgets), nil
+}
+
+// EntityTab loads every widget on one tab of an entity's page, for a page
+// that has read its published blueprint and resolved entity already.
+func EntityTab(ctx *gofr.Context, spec blueprint.Spec, current *entity.Entity, tab string) (_ PageData, err error) {
+	end := telemetry.Within(ctx, "load tab", telemetry.Blueprint.String(spec.Identifier), attribute.String("gp.page", "entity"),
+		attribute.String("gp.tab", tab))
+	defer func() { end(err) }()
+	p, err := auth.Require(ctx, auth.RoleMember)
+	if err != nil {
+		return PageData{}, err
+	}
+	if spec.Entity == nil {
+		return PageData{}, httpx.NotFound("no tab " + tab)
+	}
+	t, ok := widget.FindTab(spec.Entity.Tabs, tab)
+	if !ok {
+		return PageData{}, httpx.NotFound("no tab " + tab)
+	}
+	values := widget.MeValues(p)
+	widget.SetToday(values, time.Now())
+	values[widget.ValueEntity] = []string{current.Identifier}
+	l, err := newLoader(ctx, widget.Env{Values: values}, nil)
+	if err != nil {
+		return PageData{}, err
+	}
+	l.onEntity(spec, current)
+
+	return l.load(t.Widgets), nil
+}
+
+// onEntity points the loader's widgets at the entity whose page they're on.
+func (l *loader) onEntity(spec blueprint.Spec, current *entity.Entity) {
+	names := make([]string, 0, len(spec.Properties))
+	for _, property := range spec.Properties {
+		names = append(names, property.ID)
+	}
+	l.env.Data = widget.EntityValues(current.Identifier, current.Title, current.Blueprint, current.Properties, names)
+	maps.Copy(l.env.Values, widget.TextValues(l.env.Data))
+	l.env.Entity = entityVariable(current)
 }

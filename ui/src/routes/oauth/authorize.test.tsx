@@ -20,11 +20,11 @@ const request =
 
 const consent = {
   client: "Claude Code",
+  server: "User MCP",
   redirectUri: "http://localhost:3000/cb",
   redirectHost: "localhost:3000",
   local: true,
   scopes: ["portal:read"],
-  withheld: ["portal:author"],
 };
 
 describe("authorizing an app", () => {
@@ -47,8 +47,7 @@ describe("authorizing an app", () => {
     expect(
       within(screen.getByRole("list", { name: "Allowed" })).getAllByRole("listitem"),
     ).toHaveLength(1);
-    // A member can't hand over authoring, and is told so.
-    expect(screen.getByText(/Your role can't allow/)).toHaveTextContent("Change, publish");
+    expect(screen.getByText("User MCP")).toBeInTheDocument();
     // A redirect to this machine is flagged.
     expect(screen.getByText("localhost:3000")).toBeInTheDocument();
     expect(screen.getByText("This device")).toBeInTheDocument();
@@ -86,7 +85,6 @@ describe("authorizing an app", () => {
       "GET oauth/authorize": ok({
         ...consent,
         scopes: [],
-        withheld: [],
         problem: "PKCE with code_challenge_method=S256 is required",
         redirect: "http://localhost:3000/cb?error=invalid_request",
       }),

@@ -1,7 +1,8 @@
 // Package oauth makes the portal an OAuth 2.1 authorization server for its
-// own MCP server, as the MCP authorization spec asks: clients register
+// own MCP servers, as the MCP authorization spec asks: clients register
 // themselves, people sign in through the portal's usual sign-in and consent
-// in the browser, and the tokens issued work only at the MCP endpoint.
+// in the browser, and each token works only at the MCP endpoint it was
+// issued for.
 package oauth
 
 import (
@@ -21,8 +22,7 @@ import (
 )
 
 // Scopes split what a client may do: read the catalog and configuration,
-// run actions as the user, or author configuration, which also needs the
-// builder role.
+// run actions as the user, or author configuration.
 const (
 	ScopeRead   = "portal:read"
 	ScopeRun    = "portal:run"
@@ -32,19 +32,35 @@ const (
 // Scopes are every scope the portal issues, least first.
 var Scopes = []string{ScopeRead, ScopeRun, ScopeAuthor}
 
-// RoleScopes are the scopes a role can grant: a member can't hand a client
-// more than they could do themselves.
-func RoleScopes(role auth.Role) []string {
-	if (auth.Principal{Role: role}).Can(auth.RoleBuilder) {
-		return Scopes
+// Endpoint is an MCP server the portal issues tokens for: a resource of
+// its own, with the scopes it takes and the role a user needs to connect.
+// Anyone with the role can grant all of its scopes, so a user never hands
+// a client more than they could do themselves.
+type Endpoint struct {
+	Path   string
+	Title  string
+	Scopes []string
+	Role   auth.Role
+}
+
+// UserMCP serves members what the portal's pages show them, and runs
+// actions as them; BuilderMCP serves builders changing configuration.
+var (
+	UserMCP    = Endpoint{Path: "/api/mcp", Title: "User MCP", Scopes: []string{ScopeRead, ScopeRun}, Role: auth.RoleMember}
+	BuilderMCP = Endpoint{Path: "/api/mcp/builder", Title: "Builder MCP", Scopes: []string{ScopeRead, ScopeAuthor}, Role: auth.RoleBuilder}
+	Endpoints  = []Endpoint{UserMCP, BuilderMCP}
+)
+
+func EndpointAt(path string) (Endpoint, bool) {
+	for _, e := range Endpoints {
+		if e.Path == path {
+			return e, true
+		}
 	}
-	return []string{ScopeRead, ScopeRun}
+	return Endpoint{}, false
 }
 
 const (
-	// MCPPath is the one resource the portal issues tokens for.
-	MCPPath = "/mcp"
-
 	authorizePath = "/oauth/authorize"
 	tokenPath     = "/oauth/token"
 	registerPath  = "/oauth/register"
@@ -87,11 +103,13 @@ func NewServer(baseURL, name string) Server {
 // Issuer is the portal's public URL, as clients see it.
 func (s Server) Issuer() string { return s.baseURL }
 
-// Resource is the MCP endpoint's canonical URL, which tokens are bound to.
-func (s Server) Resource() string { return s.baseURL + MCPPath }
+// Resource is an endpoint's canonical URL, which its tokens are bound to.
+func (s Server) Resource(e Endpoint) string { return s.baseURL + e.Path }
 
-// ResourceMetadataURL is where clients find how to get a token for /mcp.
-func (s Server) ResourceMetadataURL() string { return s.baseURL + resourceMetadataPath + MCPPath }
+// ResourceMetadataURL is where clients find how to get a token for e.
+func (s Server) ResourceMetadataURL(e Endpoint) string {
+	return s.baseURL + resourceMetadataPath + e.Path
+}
 
 // Routes serves the OAuth protocol endpoints and metadata, which answer in
 // OAuth's own JSON rather than the API's envelope. Each is public and
@@ -101,11 +119,15 @@ func (s Server) Routes(db auth.DB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var serve func(http.ResponseWriter, *http.Request, Store)
-			switch r.URL.Path {
+			switch path := r.URL.Path; path {
 			case serverMetadataPath:
 				serve = s.serverMetadata
-			case resourceMetadataPath, resourceMetadataPath + MCPPath:
-				serve = s.resourceMetadata
+			case resourceMetadataPath:
+				// Clients that don't name the resource find the user's server.
+				serve = s.resourceMetadata(UserMCP)
+			case resourceMetadataPath + UserMCP.Path, resourceMetadataPath + BuilderMCP.Path:
+				e, _ := EndpointAt(strings.TrimPrefix(path, resourceMetadataPath))
+				serve = s.resourceMetadata(e)
 			case registerPath:
 				serve = s.register
 			case tokenPath:
@@ -155,18 +177,20 @@ func (s Server) serverMetadata(w http.ResponseWriter, r *http.Request, _ Store) 
 	})
 }
 
-func (s Server) resourceMetadata(w http.ResponseWriter, r *http.Request, _ Store) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "invalid_request", "use GET")
-		return
+func (s Server) resourceMetadata(e Endpoint) func(http.ResponseWriter, *http.Request, Store) {
+	return func(w http.ResponseWriter, r *http.Request, _ Store) {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "invalid_request", "use GET")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"resource":                 s.Resource(e),
+			"resource_name":            s.name + " " + e.Title,
+			"authorization_servers":    []string{s.baseURL},
+			"scopes_supported":         e.Scopes,
+			"bearer_methods_supported": []string{"header"},
+		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"resource":                 s.Resource(),
-		"resource_name":            s.name,
-		"authorization_servers":    []string{s.baseURL},
-		"scopes_supported":         Scopes,
-		"bearer_methods_supported": []string{"header"},
-	})
 }
 
 // register signs up a client, as dynamic client registration (RFC 7591)
@@ -271,28 +295,33 @@ func (s Server) token(w http.ResponseWriter, r *http.Request, store Store) {
 	}
 	form := r.PostForm
 	clientID := form.Get("client_id")
-	if resource := form.Get("resource"); resource != "" && !s.sameResource(resource) {
-		writeError(w, http.StatusBadRequest, "invalid_target", "tokens are only issued for "+s.Resource())
+	asked, ok := s.endpointFor(form.Get("resource"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid_target", s.onlyFor())
 		return
 	}
 
 	var (
-		grant Grant
-		err   error
+		grant    Grant
+		resource string
+		err      error
 	)
 	switch form.Get("grant_type") {
 	case "authorization_code":
 		var code Code
-		code, err = store.TakeCode(r.Context(), hashSecret(form.Get("code")))
+		code, err = store.TakeCode(r.Context(), hashSecret(form.Get("code")), clientID, s.named(asked, form))
 		switch {
 		case errors.Is(err, errNotFound):
 			writeError(w, http.StatusBadRequest, "invalid_grant", "the code is invalid, expired or already used")
 			return
+		case errors.Is(err, errOtherClient):
+			writeError(w, http.StatusBadRequest, "invalid_grant", "the code was issued to another client")
+			return
+		case errors.Is(err, errOtherResource):
+			writeError(w, http.StatusBadRequest, "invalid_target", "the code is for another resource")
+			return
 		case err != nil:
 			writeError(w, http.StatusInternalServerError, "server_error", "the code couldn't be checked")
-			return
-		case code.Grant.ClientID != clientID:
-			writeError(w, http.StatusBadRequest, "invalid_grant", "the code was issued to another client")
 			return
 		case code.RedirectURI != form.Get("redirect_uri"):
 			writeError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri doesn't match the authorization request")
@@ -301,19 +330,22 @@ func (s Server) token(w http.ResponseWriter, r *http.Request, store Store) {
 			writeError(w, http.StatusBadRequest, "invalid_grant", "code_verifier doesn't match the code_challenge")
 			return
 		}
-		grant = code.Grant
+		grant, resource = code.Grant, code.Resource
 		grant.Scopes = code.Scopes
 	case "refresh_token":
-		grant, err = store.TakeRefresh(r.Context(), hashSecret(form.Get("refresh_token")))
+		grant, resource, err = store.TakeRefresh(r.Context(), hashSecret(form.Get("refresh_token")), clientID, s.named(asked, form))
 		switch {
 		case errors.Is(err, errNotFound):
 			writeError(w, http.StatusBadRequest, "invalid_grant", "the refresh token is invalid, expired or already used")
 			return
+		case errors.Is(err, errOtherClient):
+			writeError(w, http.StatusBadRequest, "invalid_grant", "the refresh token was issued to another client")
+			return
+		case errors.Is(err, errOtherResource):
+			writeError(w, http.StatusBadRequest, "invalid_target", "the refresh token is for another resource")
+			return
 		case err != nil:
 			writeError(w, http.StatusInternalServerError, "server_error", "the refresh token couldn't be checked")
-			return
-		case grant.ClientID != clientID:
-			writeError(w, http.StatusBadRequest, "invalid_grant", "the refresh token was issued to another client")
 			return
 		}
 		// A client may ask for fewer scopes than it was granted, never more.
@@ -330,9 +362,8 @@ func (s Server) token(w http.ResponseWriter, r *http.Request, store Store) {
 		writeError(w, http.StatusBadRequest, "unsupported_grant_type", "use authorization_code or refresh_token")
 		return
 	}
-
 	access, refresh := accessPrefix+newSecret(), refreshPrefix+newSecret()
-	err = store.IssueTokens(r.Context(), grant, s.Resource(), hashSecret(access), hashSecret(refresh))
+	err = store.IssueTokens(r.Context(), grant, resource, hashSecret(access), hashSecret(refresh))
 	if errors.Is(err, errNotFound) {
 		writeError(w, http.StatusBadRequest, "invalid_grant", "the user who granted access can't sign in anymore")
 		return
@@ -370,9 +401,22 @@ func (s Server) revoke(w http.ResponseWriter, r *http.Request, store Store) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// sameResource compares resource URIs as RFC 8707 asks: the scheme and host
-// ignore case, and a trailing slash makes no difference.
-func (s Server) sameResource(resource string) bool {
+// named is the resource a token request binds its code or refresh token
+// to, or empty when it names none and takes the one they're for.
+func (s Server) named(e Endpoint, form url.Values) string {
+	if form.Get("resource") == "" {
+		return ""
+	}
+	return s.Resource(e)
+}
+
+// endpointFor finds the endpoint a resource URI names, comparing as RFC
+// 8707 asks: the scheme and host ignore case, and a trailing slash makes no
+// difference. A request that names none is for the user's server.
+func (s Server) endpointFor(resource string) (Endpoint, bool) {
+	if resource == "" {
+		return UserMCP, true
+	}
 	canonical := func(raw string) string {
 		u, err := url.Parse(raw)
 		if err != nil {
@@ -380,7 +424,21 @@ func (s Server) sameResource(resource string) bool {
 		}
 		return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimSuffix(u.Path, "/")
 	}
-	return canonical(resource) != "" && canonical(resource) == canonical(s.Resource())
+	for _, e := range Endpoints {
+		if c := canonical(resource); c != "" && c == canonical(s.Resource(e)) {
+			return e, true
+		}
+	}
+	return Endpoint{}, false
+}
+
+// Refusal tells a user whose role can't connect to e where to connect instead.
+func (s Server) Refusal(e Endpoint) string {
+	return "the " + e.Title + " server is for " + string(e.Role) + "s; connect to " + s.Resource(UserMCP) + " instead"
+}
+
+func (s Server) onlyFor() string {
+	return "tokens are only issued for " + s.Resource(UserMCP) + " and " + s.Resource(BuilderMCP)
 }
 
 func verifyPKCE(verifier, challenge string) bool {

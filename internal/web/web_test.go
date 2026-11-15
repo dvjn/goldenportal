@@ -152,10 +152,12 @@ func TestSPALeavesMCPToTheServer(t *testing.T) {
 	handler := SPA(files)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/mcp", nil))
-	if w.Code != http.StatusTeapot {
-		t.Errorf("GET /mcp got the app shell: %d", w.Code)
+	for _, path := range []string{"/api/mcp", "/api/mcp/builder"} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusTeapot {
+			t.Errorf("GET %s got the app shell: %d", path, w.Code)
+		}
 	}
 }
 

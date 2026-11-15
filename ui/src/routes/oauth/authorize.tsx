@@ -103,10 +103,10 @@ function AuthorizePage() {
     client,
     clientHost,
     logo,
+    server,
     redirectHost,
     local,
     scopes,
-    withheld,
     problem,
     redirect: back,
   } = consent.data;
@@ -128,23 +128,19 @@ function AuthorizePage() {
               <AlertDescription>{problem}</AlertDescription>
             </Alert>
           ) : (
-            <>
-              <ul className="grid gap-2" aria-label="Allowed">
-                {scopes.map((scope) => (
-                  <li key={scope} className="flex items-start gap-2">
-                    <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-                    {scopeLabels[scope] ?? scope}
-                  </li>
-                ))}
-              </ul>
-              {withheld && withheld.length > 0 && (
-                <p className="text-muted-foreground">
-                  Your role can't allow:{" "}
-                  {withheld.map((scope) => scopeLabels[scope] ?? scope).join("; ")}
-                </p>
-              )}
-            </>
+            <ul className="grid gap-2" aria-label="Allowed">
+              {scopes.map((scope) => (
+                <li key={scope} className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+                  {scopeLabels[scope] ?? scope}
+                </li>
+              ))}
+            </ul>
           )}
+          <div className="grid gap-1.5">
+            <span className="text-muted-foreground">Connects to</span>
+            <span>{server}</span>
+          </div>
           <div className="grid gap-1.5">
             <span className="text-muted-foreground">Published by</span>
             <span className="flex flex-wrap items-center gap-2">

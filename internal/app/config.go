@@ -16,6 +16,16 @@ type Config struct {
 	// Tracing is set when the server takes the UI's spans, which the UI
 	// otherwise neither records nor loads the code for.
 	Tracing *TracingConfig `json:"tracing,omitempty"`
+	// MCP is where agents connect, once the portal knows its public URL.
+	MCP *MCPConfig `json:"mcp,omitempty"`
+}
+
+// MCPConfig names the MCP servers' URLs: the user's, which reads the
+// portal's pages and runs actions, and the builder's, which changes
+// configuration.
+type MCPConfig struct {
+	User    string `json:"user"`
+	Builder string `json:"builder"`
 }
 
 type TracingConfig struct {

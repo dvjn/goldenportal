@@ -42,10 +42,8 @@ type authorizeRequest struct {
 type checked struct {
 	client      Client
 	redirectURI string
+	endpoint    Endpoint
 	scopes      []string
-	// withheld are scopes the client asked for that the user's role can't
-	// grant.
-	withheld []string
 	// problem, when set, is why the request can't be granted, sent back to
 	// the client at redirectURI, since that's known to be the client's.
 	problem *problem
@@ -79,36 +77,48 @@ func (s Server) check(ctx *gofr.Context, p auth.Principal, req authorizeRequest)
 		c.problem = &problem{"unsupported_response_type", "only response_type=code is supported"}
 	case req.CodeChallenge == "" || req.CodeChallengeMethod != "S256":
 		c.problem = &problem{"invalid_request", "PKCE with code_challenge_method=S256 is required"}
-	case req.Resource != "" && !s.sameResource(req.Resource):
-		c.problem = &problem{"invalid_target", "tokens are only issued for " + s.Resource()}
-	}
-	if c.problem != nil {
-		return c, nil
-	}
-
-	// Without a scope, the client asks for all it can have, which the
-	// user's role then narrows.
-	requested := strings.Fields(req.Scope)
-	if len(requested) == 0 {
-		requested = Scopes
-	}
-	allowed := RoleScopes(p.Role)
-	for _, scope := range requested {
-		switch {
-		case !slices.Contains(Scopes, scope):
-			c.problem = &problem{"invalid_scope", "unknown scope " + scope}
-			return c, nil
-		case slices.Contains(allowed, scope):
-			c.scopes = append(c.scopes, scope)
-		default:
-			c.withheld = append(c.withheld, scope)
-		}
-	}
-	if len(c.scopes) == 0 {
-		c.problem = &problem{"invalid_scope", "the user's role can't grant any of the scopes asked for"}
+	default:
+		c.endpoint, c.scopes, c.problem = s.grantable(p, req.Resource, req.Scope)
 	}
 
 	return c, nil
+}
+
+// grantable is the endpoint a request names and the scopes it asks for
+// there, or why the user can't grant them.
+func (s Server) grantable(p auth.Principal, resource, scope string) (Endpoint, []string, *problem) {
+	e, known := s.endpointFor(resource)
+	requested := strings.Fields(scope)
+	switch {
+	case !known:
+		return e, nil, &problem{"invalid_target", s.onlyFor()}
+	case resource == "" && slices.Contains(requested, ScopeAuthor):
+		// Issuing for the user's server would quietly drop what was asked for.
+		return e, nil, &problem{"invalid_target", ScopeAuthor + " is offered at " + s.Resource(BuilderMCP) + "; ask for that resource"}
+	case !p.Can(e.Role):
+		return e, nil, &problem{"access_denied", s.Refusal(e)}
+	}
+
+	// Without a scope, the client asks for all the endpoint offers. Scopes
+	// another endpoint takes are left out, since a client may ask for every
+	// scope the portal issues.
+	if len(requested) == 0 {
+		requested = e.Scopes
+	}
+	var scopes []string
+	for _, scope := range requested {
+		switch {
+		case !slices.Contains(Scopes, scope):
+			return e, nil, &problem{"invalid_scope", "unknown scope " + scope}
+		case slices.Contains(e.Scopes, scope):
+			scopes = append(scopes, scope)
+		}
+	}
+	if len(scopes) == 0 {
+		return e, nil, &problem{"invalid_scope", "none of the scopes asked for are offered at " + s.Resource(e)}
+	}
+
+	return e, scopes, nil
 }
 
 // consentView is what the authorize page shows: the app, where it sends
@@ -121,11 +131,11 @@ type consentView struct {
 	ClientHost string `json:"clientHost,omitempty"`
 	// Logo is the app's logo, from its metadata, as a PNG data URL.
 	Logo         string   `json:"logo,omitempty"`
+	Server       string   `json:"server"`
 	RedirectURI  string   `json:"redirectUri"`
 	RedirectHost string   `json:"redirectHost"`
 	Local        bool     `json:"local"`
 	Scopes       []string `json:"scopes"`
-	Withheld     []string `json:"withheld,omitempty"`
 	Problem      string   `json:"problem,omitempty"`
 	Redirect     string   `json:"redirect,omitempty"`
 }
@@ -147,8 +157,9 @@ func (s Server) describe(ctx *gofr.Context) (any, error) {
 	}
 	u, _ := url.Parse(c.redirectURI)
 	view := consentView{
-		Client: c.client.Name, Logo: c.client.Logo, RedirectURI: c.redirectURI, RedirectHost: u.Host, Local: isLoopback(u.Hostname()),
-		Scopes: c.scopes, Withheld: c.withheld,
+		Client: c.client.Name, Logo: c.client.Logo, Server: c.endpoint.Title,
+		RedirectURI: c.redirectURI, RedirectHost: u.Host, Local: isLoopback(u.Hostname()),
+		Scopes: c.scopes,
 	}
 	if isMetadataClient(c.client.ClientID) {
 		clientURL, _ := url.Parse(c.client.ClientID)
@@ -198,17 +209,17 @@ func (s Server) decide(ctx *gofr.Context) (any, error) {
 		})}, nil
 	}
 
-	// The only resource there is, so the code is bound to its canonical URL
-	// however the client spelled it.
+	// The code is bound to the endpoint's canonical URL however the client
+	// spelled it.
 	code := codePrefix + newSecret()
-	grantID, err := NewStore(ctx.SQL).Authorize(ctx, p.ID, c.client, Code{
-		RedirectURI: c.redirectURI, Challenge: body.CodeChallenge, Resource: s.Resource(), Scopes: c.scopes,
+	grantID, err := NewStore(ctx.SQL).Authorize(ctx, p.ID, c.client, c.endpoint, Code{
+		RedirectURI: c.redirectURI, Challenge: body.CodeChallenge, Resource: s.Resource(c.endpoint), Scopes: c.scopes,
 	}, hashSecret(code))
 	if err != nil {
 		return nil, err
 	}
 	auth.Record(ctx, p, audit.AppAuthorize, audit.Target{Type: "app", ID: grantID, Label: c.client.Name},
-		map[string]any{"scopes": c.scopes, "redirectUri": c.redirectURI})
+		map[string]any{"scopes": c.scopes, "redirectUri": c.redirectURI, "endpoint": c.endpoint.Path})
 
 	return map[string]string{"redirect": s.answer(c.redirectURI, body.State, map[string]string{"code": code})}, nil
 }
