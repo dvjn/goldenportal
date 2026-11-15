@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/lib/pq"
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
@@ -159,13 +158,14 @@ func TestResultsNarrowByFilter(t *testing.T) {
 	}
 	spec := Spec{Blueprint: "service", Tiers: []Tier{{Name: "bronze"}, {Name: "silver"}}}
 	// The filter's values follow the query's own, before the rest.
-	mock.ExpectQuery(regexp.QuoteMeta(`'hasOwner'`)).
-		WithArgs("sc", "%led%", "failed", "skipped", "service", pq.Array([]string{"", "bronze", "silver"}), 1, 0).
+	hasOwner := func(status string) string { return `{"hasOwner":{"status":"` + status + `"}}` }
+	mock.ExpectQuery(regexp.QuoteMeta(`(sr.criteria @> $3::jsonb OR sr.criteria @> $4::jsonb)`)+`.*`+regexp.QuoteMeta(`ORDER BY r.tier_rank ASC`)).
+		WithArgs("sc", "%led%", hasOwner("failed"), hasOwner("skipped"), "service", 1, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "c"}).
 			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, []byte(`{}`)))
 	mock.ExpectQuery(`^SELECT count\(\*\)\s+FROM scorecard_results r\s+JOIN entities e ON e.id = r.entity_id\s+WHERE r.scorecard_id = \$1\s+`+
-		regexp.QuoteMeta(`AND ($2 = '' OR lower(e.title) LIKE lower($2) OR lower(e.identifier) LIKE lower($2))`)+`.*'hasOwner'`).
-		WithArgs("sc", "%led%", "failed", "skipped").
+		regexp.QuoteMeta(`AND ($2 = '' OR lower(e.title) LIKE lower($2) OR lower(e.identifier) LIKE lower($2))`)+`.*sr.criteria @>`).
+		WithArgs("sc", "%led%", hasOwner("failed"), hasOwner("skipped")).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
 
 	scope := Scope{Blueprints: map[string]blueprint.Spec{"service": graded}, Blueprint: graded, Filter: f}
@@ -218,14 +218,14 @@ func TestResultsRequestChecksSortAndPaging(t *testing.T) {
 
 func TestResultOrder(t *testing.T) {
 	tests := []struct{ sort, want string }{
-		{"", "tier ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
-		{"-tier", "tier DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
-		{"score", "r.score ASC NULLS FIRST, tier ASC, e.title, e.identifier"},
-		{"-failed", "r.failed DESC, tier DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
-		{"skipped", "r.skipped ASC, tier ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
+		{"", "r.tier_rank ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
+		{"-tier", "r.tier_rank DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
+		{"score", "r.score ASC NULLS FIRST, r.tier_rank ASC, e.title, e.identifier"},
+		{"-failed", "r.failed DESC, r.tier_rank DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
+		{"skipped", "r.skipped ASC, r.tier_rank ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
 	}
 	for _, test := range tests {
-		if got := resultOrder(test.sort, "tier"); got != test.want {
+		if got := resultOrder(test.sort); got != test.want {
 			t.Errorf("resultOrder(%q) = %q, want %q", test.sort, got, test.want)
 		}
 	}
@@ -249,7 +249,7 @@ func TestNoErroredStatus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := entity.CheckFilter(specs, ladders, graded, *f); err == nil || !strings.Contains(err.Error(), want) {
+		if err := entity.CheckFilter(entity.Schema{Blueprint: graded, Blueprints: specs, Ladders: ladders}, *f); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", raw, err, want)
 		}
 	}

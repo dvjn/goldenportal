@@ -16,6 +16,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/httpx"
 )
 
 // DocumentKind is how scorecard documents name their kind.
@@ -35,6 +36,9 @@ type Spec struct {
 	// meeting it and every tier below.
 	Tiers []Tier `json:"tiers"`
 	line  int
+	// source is the document the spec was read from, for checking what
+	// publishing it would break.
+	source string
 }
 
 type Tier struct {
@@ -87,7 +91,7 @@ func (s Spec) Stats() map[string]int {
 func Ladders(specs map[string]Spec) map[string]blueprint.Ladder {
 	ladders := make(map[string]blueprint.Ladder, len(specs))
 	for identifier, spec := range specs {
-		ladder := blueprint.Ladder{Blueprint: spec.Blueprint}
+		ladder := blueprint.Ladder{Title: spec.Title, Blueprint: spec.Blueprint}
 		for _, tier := range spec.Tiers {
 			rung := blueprint.Rung{Name: tier.Name, Title: tier.Title, Color: tier.Color, Criteria: map[string]any{}}
 			for _, criterion := range tier.Criteria {
@@ -112,7 +116,7 @@ func Parse(source string) (Spec, []configdoc.Issue) {
 	doc := configdoc.ReadDocument(r, source, DocumentKind)
 	spec := Spec{
 		Identifier: doc.Identifier, Title: doc.Meta.Title, Description: doc.Meta.Description,
-		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Tiers: []Tier{},
+		Icon: doc.Meta.Icon, Color: doc.Meta.Color, Tiers: []Tier{}, source: source,
 	}
 	if doc.Spec == nil {
 		return spec, r.Issues
@@ -280,8 +284,33 @@ func (s Spec) conditions() []condition {
 	return out
 }
 
+// readers are the kinds of document whose paths and filters can read a
+// scorecard's results.
+var readers = []string{blueprint.DocumentKind, "Dashboard", "Action", "Workflow", DocumentKind}
+
+// breaking says what publishing source as the scorecard identifier, or
+// deleting it with configdoc.DeletedSource, would break in the published
+// documents that read its results: a path or filter on a check, tier or
+// scorecard that would no longer be there, or on a blueprint it no longer
+// grades.
+func breaking(ctx context.Context, db configdoc.DB, identifier, source string) ([]string, error) {
+	return configdoc.BreakingReaders(ctx, db, DocumentKind, identifier, source, readers...)
+}
+
+// deletable refuses to delete a scorecard whose results published
+// documents read.
+func deletable(ctx context.Context, db configdoc.DB, identifier string) error {
+	broken, err := breaking(ctx, db, identifier, configdoc.DeletedSource)
+	if err != nil || len(broken) == 0 {
+		return err
+	}
+
+	return httpx.Conflict("these read its results, so change them first: " + strings.Join(broken, "; "))
+}
+
 // Check checks the scorecard against its blueprint: an unpublished one is
-// a warning. A filter, check or when it can't answer is an error.
+// a warning. A filter, check or when it can't answer is an error, as is
+// what publishing it would break in the documents that read its results.
 func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, error) {
 	published, err := blueprint.Published(ctx, db)
 	if err != nil {
@@ -300,9 +329,22 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 	}
 	var issues []configdoc.Issue
 	for _, c := range spec.conditions() {
-		if err := entity.CheckFilter(published, ladders, bp, c.filter); err != nil {
+		if err := entity.CheckFilter(entity.Schema{Blueprint: bp, Blueprints: published, Ladders: ladders}, c.filter); err != nil {
 			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: c.path, Line: c.line, Message: err.Error()})
 		}
+	}
+	if configdoc.Rechecking(ctx) || spec.source == "" {
+		return issues, nil
+	}
+	broken, err := breaking(ctx, db, spec.Identifier, spec.source)
+	if err != nil {
+		return nil, err
+	}
+	for _, problem := range broken {
+		issues = append(issues, configdoc.Issue{
+			Severity: configdoc.SeverityError, Path: "spec", Line: spec.line,
+			Message: "this change breaks " + problem + "; change it first",
+		})
 	}
 
 	return issues, nil
@@ -333,11 +375,11 @@ func CheckGraders(ctx context.Context, db configdoc.DB, next blueprint.Spec) ([]
 			continue
 		}
 		for _, c := range spec.conditions() {
-			err := entity.CheckFilter(after, ladders, graded, c.filter)
+			err := entity.CheckFilter(entity.Schema{Blueprint: graded, Blueprints: after, Ladders: ladders}, c.filter)
 			if err == nil {
 				continue
 			}
-			if was, ok := before[spec.Blueprint]; ok && entity.CheckFilter(before, ladders, was, c.filter) != nil {
+			if was, ok := before[spec.Blueprint]; ok && entity.CheckFilter(entity.Schema{Blueprint: was, Blueprints: before, Ladders: ladders}, c.filter) != nil {
 				continue
 			}
 			issues = append(issues, configdoc.Issue{

@@ -24,8 +24,8 @@
     },
     "path": {
       "type": "string",
-      "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*(\\.[a-zA-Z][a-zA-Z0-9_-]*)*$",
-      "description": "A field's path: a property or built-in field (identifier, title, blueprint, connection, createdAt, updatedAt), followed through relations with dots, such as owner.title. A scorecard property alone is the tier reached; after a dot it reads score, passed, failed, skipped, failing or checks.<id>, a check's status (passed, failed or skipped), such as readiness.checks.hasOwner. No $."
+      "pattern": "^([a-zA-Z][a-zA-Z0-9_-]*|_scorecards)(\\.([a-zA-Z][a-zA-Z0-9_-]*|_scorecards))*$",
+      "description": "A field's path: a property or built-in field (identifier, title, blueprint, connection, createdAt, updatedAt), followed through relations with dots, such as owner.title. _scorecards.<scorecard> reads the result on any scorecard that grades the blueprint, as does a scorecard property naming it: alone it is the tier reached; after a dot it reads score, passed, failed, skipped, failing or checks.<id>, a check's status (passed, failed or skipped), such as readiness.checks.hasOwner or _scorecards.service-readiness.checks.hasOwner. No $."
     },
     "metadata": {
       "type": "object",

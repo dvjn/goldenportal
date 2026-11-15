@@ -34,11 +34,12 @@ type IndexKey struct {
 var alias = regexp.MustCompile(`\be\.`)
 
 // indexKey is a key on fld, or false when no index on entities can hold
-// it: a value read through a subquery, or a column an index of the
-// table's own already leads with.
+// it: a value read through a subquery, such as a scorecard result, whose
+// indexes are scorecard_results' own, or a column an index of the table's
+// own already leads with.
 func indexKey(spec blueprint.Spec, fld field, expression, use string) (IndexKey, bool) {
 	switch {
-	case strings.Contains(expression, "SELECT"), fld.timestamp != "", fld.kind == kindTier:
+	case strings.Contains(expression, "SELECT"), fld.result != nil, fld.timestamp != "", fld.kind == kindTier:
 		return IndexKey{}, false
 	case fld.builtIn == "title", fld.builtIn == "identifier", fld.builtIn == "blueprint", fld.builtIn == "connection":
 		return IndexKey{}, false
@@ -51,7 +52,7 @@ func indexKey(spec blueprint.Spec, fld field, expression, use string) (IndexKey,
 // orders them by.
 func SortKey(specs map[string]blueprint.Spec, spec blueprint.Spec, sort string) (IndexKey, bool) {
 	path, descending := strings.CutPrefix(sort, "-")
-	fld, err := fieldFor(specs, spec, path)
+	fld, err := fieldFor(Schema{Blueprint: spec, Blueprints: specs}, false, path)
 	if err != nil || fld.many || fld.kind == "object" {
 		return IndexKey{}, false
 	}
@@ -64,7 +65,7 @@ func SortKey(specs map[string]blueprint.Spec, spec blueprint.Spec, sort string) 
 // DateKey is what a trend ranges over to put spec's entities on the day of
 // the date at path.
 func DateKey(specs map[string]blueprint.Spec, spec blueprint.Spec, path string) (IndexKey, bool) {
-	fld, err := trendField(&compiler{spec: spec, specs: specs}, path)
+	fld, err := trendField(Schema{Blueprint: spec, Blueprints: specs}.compiler(false), path)
 	if err != nil {
 		return IndexKey{}, false
 	}

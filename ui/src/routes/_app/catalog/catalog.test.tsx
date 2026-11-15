@@ -135,6 +135,136 @@ describe("catalog", () => {
     expect(await screen.findByRole("columnheader", { name: /Readiness/ })).toBeInTheDocument();
   });
 
+  it("filters by a scorecard's tier and checks with no property naming it", async () => {
+    const user = userEvent.setup();
+    const unnamed: Blueprint = {
+      ...service,
+      published: service.published && {
+        ...service.published,
+        spec: {
+          ...service.published.spec,
+          properties: service.published.spec.properties.filter((p) => !p.scorecard),
+        },
+      },
+    };
+    const security = {
+      ...readiness,
+      identifier: "security",
+      title: "Security",
+      published: {
+        ...readiness.published,
+        spec: {
+          ...readiness.published.spec,
+          identifier: "security",
+          title: "Security",
+          tiers: [
+            {
+              name: "gold",
+              title: "Gold",
+              color: "amber",
+              criteria: [{ identifier: "hasSast", title: "Has SAST", check: {} }],
+            },
+          ],
+        },
+      },
+    };
+    const requests = stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(unnamed),
+      "GET scorecards": ok([
+        {
+          identifier: "security",
+          title: "Security",
+          publishedVersion: 1,
+          hasDraft: false,
+          stats: {},
+          facts: { blueprint: "service" },
+          publishedFacts: { blueprint: "service" },
+          updatedAt: "2026-10-24T10:00:00Z",
+        },
+        // A draft that would grade service isn't offered until it's published.
+        {
+          identifier: "drafted",
+          title: "Drafted",
+          publishedVersion: 1,
+          hasDraft: true,
+          stats: {},
+          facts: { blueprint: "service" },
+          publishedFacts: { blueprint: "team" },
+          updatedAt: "2026-10-24T10:00:00Z",
+        },
+      ]),
+      "GET catalog/service": ok(page),
+      "GET scorecards/security": ok(security),
+      "GET catalog/service/facets": ok([]),
+    });
+    renderRoute("/catalog/service?view=entities");
+    await screen.findByRole("link", { name: /Ledger/ });
+    const filtered = () =>
+      JSON.parse(new URL(requests["GET catalog/service"].url).searchParams.get("filter") ?? "null");
+
+    expect(screen.queryByRole("tab", { name: /Drafted/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    expect(await screen.findByRole("option", { name: "Security" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Drafted" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("option", { name: "Security" }));
+    await user.click(await screen.findByRole("option", { name: "Gold" }));
+    await vi.waitFor(() =>
+      expect(filtered()).toEqual({
+        and: [{ property: "_scorecards.security", op: "eq", value: "gold" }],
+      }),
+    );
+    await user.keyboard("{Escape}");
+    expect(await screen.findByRole("button", { name: "Security: Gold" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("option", { name: "Security › Has SAST" }));
+    await user.click(await screen.findByRole("option", { name: "Failed" }));
+    await vi.waitFor(() =>
+      expect(filtered()).toEqual({
+        and: [
+          { property: "_scorecards.security", op: "eq", value: "gold" },
+          { property: "_scorecards.security.checks.hasSast", op: "eq", value: "failed" },
+        ],
+      }),
+    );
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByRole("button", { name: "Security › Has SAST: Failed" }),
+    ).toBeInTheDocument();
+  });
+
+  it("names a fixed chip on a scorecard's results path by the scorecard", async () => {
+    const security = {
+      ...readiness,
+      identifier: "security",
+      published: {
+        ...readiness.published,
+        spec: { ...readiness.published.spec, identifier: "security", title: "Security" },
+      },
+    };
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": ok(page),
+      "GET scorecards/security": ok(security),
+      "GET scorecards/readiness": ok(readiness),
+    });
+    const filter = [
+      { property: "_scorecards.security.score", op: "gte", value: 50 },
+      { property: "_scorecards.readiness.passed", op: "gte", value: 2 },
+    ];
+    renderRoute(`/catalog/service?filter=${encodeURIComponent(JSON.stringify(filter))}`);
+    // A property naming the scorecard names its path too.
+    expect(
+      await screen.findByRole("button", { name: "Remove Security › Score filter" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("At Least 50")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove Readiness › Passed filter" }),
+    ).toBeInTheDocument();
+  });
+
   it("offers no columns to choose while a blueprint has no entities", async () => {
     stubApi({
       ...signedInMember,

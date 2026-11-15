@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import type { Property } from "@/features/blueprints";
 import type { Filter } from "@/features/catalog";
 import { type ConfigDoc, configDocs, type DocSummary } from "@/features/config-docs";
 import { type ApiDataResponse, api, type Page } from "@/lib/api";
@@ -27,12 +28,23 @@ export type ScorecardSpec = {
 };
 
 export type Scorecard = ConfigDoc<ScorecardSpec>;
-// ScorecardSummary is a scorecard as listed, with the blueprint it grades.
-export type ScorecardSummary = DocSummary & { facts?: { blueprint: string } };
+// ScorecardSummary is a scorecard as listed, with the blueprint it grades,
+// as its draft does if it has one, and as its published version does.
+export type ScorecardSummary = DocSummary & {
+  facts?: { blueprint: string };
+  publishedFacts?: { blueprint: string };
+};
 
-// gradedBy are the listed scorecards that grade a blueprint.
+// gradedBy are the listed scorecards that grade a blueprint, drafts
+// included, for builders.
 export function gradedBy(list: DocSummary[], blueprint: string): ScorecardSummary[] {
   return (list as ScorecardSummary[]).filter((s) => s.facts?.blueprint === blueprint);
+}
+
+// publishedGradedBy are the listed scorecards whose published version
+// grades a blueprint, which have results to show.
+export function publishedGradedBy(list: DocSummary[], blueprint: string): ScorecardSummary[] {
+  return (list as ScorecardSummary[]).filter((s) => s.publishedFacts?.blueprint === blueprint);
 }
 
 // builtUnder is the blueprint a scorecard's build page sits under: its
@@ -44,6 +56,27 @@ export function builtUnder(doc: Scorecard): string {
 // scorecardView is the catalog tab of a blueprint that shows a scorecard's
 // results. The prefix keeps it apart from the blueprint's own tabs.
 export const scorecardView = (identifier: string) => `scorecard-${identifier}`;
+
+// resultsPrefix starts the path to an entity's result on a scorecard that
+// grades its blueprint, which every graded blueprint has.
+export const resultsPrefix = "_scorecards";
+
+// scorecardPath is how a blueprint's paths reach its entities' results on
+// a scorecard: through the property naming it, else its results path.
+export function scorecardPath(
+  properties: Property[],
+  identifier: string,
+): { path: string; property?: Property } {
+  const property = properties.find((p) => p.scorecard === identifier);
+  return property
+    ? { path: property.identifier, property }
+    : { path: `${resultsPrefix}.${identifier}` };
+}
+
+// tierTitles names a scorecard's tiers by name, lowest first after no tier.
+export function tierTitles(tiers: Pick<Tier, "name" | "title">[]): Map<string, string> {
+  return new Map([["", "No Tier"], ...tiers.map((tier) => [tier.name, tier.title] as const)]);
+}
 
 export type Status = "passed" | "failed" | "skipped";
 

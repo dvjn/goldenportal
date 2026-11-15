@@ -101,6 +101,11 @@ func Parse(raw string) (*Filter, error) {
 	return &f, nil
 }
 
+// ResultsPath starts a path to an entity's result on a scorecard that
+// grades its blueprint, as _scorecards.<scorecard>. Property names start
+// with a letter, so none clashes.
+const ResultsPath = "_scorecards"
+
 var durationPattern = regexp.MustCompile(`^([1-9][0-9]{0,5})([smhdw])$`)
 
 var durationUnits = map[string]time.Duration{"s": time.Second, "m": time.Minute, "h": time.Hour, "d": 24 * time.Hour, "w": 7 * 24 * time.Hour}

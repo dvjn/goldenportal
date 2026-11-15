@@ -49,8 +49,8 @@ func TestAggregatesAreOneStatement(t *testing.T) {
 	m := match(t, `{"property":"owner","op":"eq","value":"payments"}`)
 	critical, _ := ParseFilter(`{"property":"tier","op":"eq","value":"critical"}`)
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT (count(*))::float8, (sum((CASE WHEN jsonb_typeof(e.properties -> 'stars') = 'number' THEN (e.properties -> 'stars')::numeric END)))::float8, `+
-		`(100.0 * count(*) FILTER (WHERE (e.properties @> $2::jsonb)) / nullif(count(*), 0))::float8, (avg(((SELECT r.score`)+
-		`.*`+regexp.QuoteMeta(` FROM entities e
+		`(100.0 * count(*) FILTER (WHERE (e.properties @> $2::jsonb)) / nullif(count(*), 0))::float8, (avg((sr1.score)::numeric))::float8 FROM entities e
+	LEFT JOIN scorecard_results sr1 ON sr1.scorecard_id = `+readinessID+` AND sr1.entity_id = e.id
 	WHERE e.blueprint_id = '`+serviceID+`' AND (e.relations @> $1::jsonb)`)+`$`).
 		WithArgs(`{"owner":"payments"}`, `{"tier":"critical"}`).
 		WillReturnRows(sqlmock.NewRows([]string{"a", "b", "c", "d"}).AddRow(4, 120, 25, nil))
@@ -114,7 +114,7 @@ func TestCheckAggregate(t *testing.T) {
 		{Aggregate{Op: "distinct", Path: "dependsOn"}, "holds a list"},
 		{Aggregate{Op: "count", Filter: &Filter{Property: "nope", Op: OpExists}}, `no property "nope"`},
 	} {
-		err := CheckAggregate(specs, service(t), test.a)
+		err := CheckAggregate(Schema{Blueprint: service(t), Blueprints: specs}, test.a)
 		if (test.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), test.want)) {
 			t.Errorf("%+v: err = %v, want %q", test.a, err, test.want)
 		}
@@ -152,7 +152,8 @@ func TestGroupByListAndTier(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT g.value, g.count, NULL::text FROM (SELECT to_jsonb(nullif((SELECT r.tier`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT g.value, g.count, NULL::text FROM (SELECT to_jsonb(nullif(sr1.tier, '')) AS value, count(*) AS count FROM entities e
+	LEFT JOIN scorecard_results sr1 ON sr1.scorecard_id = ` + readinessID + ` AND sr1.entity_id = e.id`)).
 		WithArgs(9).
 		WillReturnRows(sqlmock.NewRows([]string{"value", "count", "title"}).AddRow(nil, 4, nil).AddRow([]byte(`"gold"`), 2, nil))
 	facets, none, err := store.Group(t.Context(), m, "readiness", 8)

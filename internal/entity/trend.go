@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/dvjn/goldenportal/internal/blueprint"
 )
 
 // Day is the entities whose date falls on one day, in UTC: how many there
@@ -19,8 +17,8 @@ type Day struct {
 }
 
 // CheckTrend reports whether entities can be put on the day of a field.
-func CheckTrend(specs map[string]blueprint.Spec, spec blueprint.Spec, path string) error {
-	_, err := trendField(&compiler{spec: spec, specs: specs}, path)
+func CheckTrend(s Schema, path string) error {
+	_, err := trendField(s.compiler(true), path)
 	return err
 }
 
@@ -56,7 +54,7 @@ func (s Store) Trend(ctx context.Context, m Match, path string, from, to time.Ti
 	if len(columns) > 0 {
 		extra = ", " + strings.Join(columns, ", ")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+day+`, count(*)`+extra+` FROM entities e
+	rows, err := s.db.QueryContext(ctx, `SELECT `+day+`, count(*)`+extra+c.from()+`
 	WHERE `+m.where+` AND `+date+` >= `+c.arg(from)+` AND `+date+` < `+c.arg(to)+`
 	GROUP BY GROUPING SETS ((`+day+`), ())`, c.args...)
 	if err != nil {

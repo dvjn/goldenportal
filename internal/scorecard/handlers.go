@@ -113,11 +113,12 @@ func scopeOf(ctx *gofr.Context, spec Spec, raw string) (Scope, error) {
 	if err != nil {
 		return Scope{}, err
 	}
-	if err := entity.CheckFilter(specs, ladders, graded, *f); err != nil {
+	schema := entity.Schema{Blueprint: graded, Blueprints: specs, Ladders: ladders}
+	if err := entity.CheckFilter(schema, *f); err != nil {
 		return Scope{}, httpx.BadRequest(err.Error())
 	}
 
-	return Scope{Blueprints: specs, Ladders: ladders, Blueprint: graded, Filter: f}, nil
+	return Scope{Schema: schema, Filter: f}, nil
 }
 
 // ResultsRequest asks for a page of a scorecard's results, searched by

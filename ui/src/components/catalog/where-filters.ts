@@ -8,7 +8,7 @@ import {
 } from "@/components/data-table";
 import { type BlueprintSpec, blueprints, type Property } from "@/features/blueprints";
 import { type Filter, facetsQueryOptions } from "@/features/catalog";
-import { scorecards } from "@/features/scorecards";
+import { resultsPrefix, scorecards, tierTitles } from "@/features/scorecards";
 import { type ValueNames, valueLabel } from "./value-label";
 
 // FilterChip is one top-level condition of the catalog's filter, as the
@@ -44,15 +44,18 @@ const builtIns = new Set([
   "updatedAt",
 ]);
 
-// checkField is a scorecard property's check, such as health.checks.hasReadme.
-const checkField = /^[^.]+\.checks\.[^.]+$/;
+// resultField is a scorecard's tier or check, through a property naming
+// it or its results path: health.checks.hasReadme, _scorecards.health or
+// _scorecards.health.checks.hasReadme.
+const resultField = new RegExp(
+  `^((${resultsPrefix}\\.)?[^.]+\\.checks\\.[^.]+|${resultsPrefix}\\.[^.]+)$`,
+);
 
 // menuField reports whether the menu filters a field: the blueprint's own
-// properties, scorecard tiers and checks among them, and the day it was
-// updated, not the other built-ins or anything a path reaches through a
-// relation.
+// properties, scorecard tiers and checks, and the day it was updated, not
+// the other built-ins or anything a path reaches through a relation.
 function menuField(property: string, date: boolean) {
-  if (checkField.test(property)) return !date;
+  if (resultField.test(property)) return !date;
   if (property.includes(".")) return false;
   if (!builtIns.has(property)) return true;
   return date && property === "updatedAt";
@@ -328,21 +331,17 @@ export function useFixedSummaries(blueprint: string, filters: Filter[]): FixedSu
       const spec: BlueprintSpec | undefined = current
         ? (await client.ensureQueryData(blueprints.queries.detail(current))).published?.spec
         : undefined;
+      if (segment === resultsPrefix && spec && i < segments.length - 1) {
+        const scorecard = segments[i + 1];
+        const own = spec.properties.find((p) => p.scorecard === scorecard);
+        return nameResult(titles, scorecard, own?.title, segments.slice(i + 2));
+      }
       const property: Property | undefined = spec?.properties.find((p) => p.identifier === segment);
       if (!property || !current) return { title: [...titles, ...segments.slice(i)].join(" › ") };
-      titles.push(property.title);
       if (property.scorecard) {
-        if (!last) {
-          const rest = segments.slice(i + 1).map((field) => scoreFields[field] ?? field);
-          return { title: [...titles, ...rest].join(" › ") };
-        }
-        const doc = await client.ensureQueryData(scorecards.queries.detail(property.scorecard));
-        const tiers = doc.published?.spec.tiers ?? [];
-        return {
-          title: titles.join(" › "),
-          values: new Map([["", "No Tier"], ...tiers.map((t) => [t.name, t.title] as const)]),
-        };
+        return nameResult(titles, property.scorecard, property.title, segments.slice(i + 1));
       }
+      titles.push(property.title);
       if (last) {
         const title = titles.join(" › ");
         if (!property.relation) return { title, property };
@@ -357,6 +356,32 @@ export function useFixedSummaries(blueprint: string, filters: Filter[]): FixedSu
       current = property.relation;
     }
     return { title: titles.join(" › ") };
+  }
+
+  // nameResult names a path into a scorecard's result, after the titles of
+  // the relations it follows: by propertyTitle, the property naming the
+  // scorecard, or else the scorecard's own title, then the result's fields.
+  async function nameResult(
+    titles: string[],
+    scorecard: string,
+    propertyTitle: string | undefined,
+    fields: string[],
+  ): Promise<Named> {
+    // A scorecard that won't load is named by its identifier, with no tiers.
+    const doc = await client
+      .ensureQueryData(scorecards.queries.detail(scorecard))
+      .catch(() => undefined);
+    const title = [...titles, propertyTitle ?? doc?.published?.spec.title ?? scorecard];
+    if (fields.length > 0) {
+      return {
+        title: [...title, ...fields.map((field) => scoreFields[field] ?? field)].join(" › "),
+      };
+    }
+    const tiers = doc?.published?.spec.tiers ?? [];
+    return {
+      title: title.join(" › "),
+      values: tierTitles(tiers),
+    };
   }
 
   return filters.map((filter) => describe(filter, (property) => walked?.get(property)));

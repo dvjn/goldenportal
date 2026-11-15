@@ -55,7 +55,10 @@ type Summary struct {
 	HasDraft         bool           `json:"hasDraft"`
 	Stats            map[string]int `json:"stats"`
 	Facts            map[string]any `json:"facts,omitempty"`
-	UpdatedAt        time.Time      `json:"updatedAt"`
+	// PublishedFacts are the published version's, which differ from Facts
+	// while a draft changes them.
+	PublishedFacts map[string]any `json:"publishedFacts,omitempty"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 func (h documents[S]) list(ctx *gofr.Context) (any, error) { return h.List(ctx) }
@@ -92,6 +95,15 @@ func (h documents[S]) List(ctx *gofr.Context) ([]Summary, error) {
 		}
 		if factual, ok := any(spec).(Factual); ok {
 			s.Facts = factual.Facts()
+		}
+		if record.Published() {
+			s.PublishedFacts = s.Facts
+			if record.HasDraft() {
+				published, _ := h.kind.Parse(record.PublishedSource)
+				if factual, ok := any(published).(Factual); ok {
+					s.PublishedFacts = factual.Facts()
+				}
+			}
 		}
 		summaries = append(summaries, s)
 	}
@@ -526,6 +538,26 @@ func (h documents[S]) saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, na
 	auth.Record(ctx, p, h.kind.Action(OpDraftSave), h.target(name, spec), map[string]any{"created": created, "applied": true})
 
 	return nil
+}
+
+// errors are what a source's checks find wrong, as "<path>: <message>".
+func (h documents[S]) errors(ctx context.Context, db DB, source string) ([]string, error) {
+	spec, issues := h.kind.Parse(source)
+	if !HasErrors(issues) && h.kind.Check != nil {
+		more, err := h.kind.Check(ctx, db, spec)
+		if err != nil {
+			return nil, err
+		}
+		issues = append(issues, more...)
+	}
+	var errs []string
+	for _, issue := range issues {
+		if issue.Severity == SeverityError {
+			errs = append(errs, issue.Path+": "+issue.Message)
+		}
+	}
+
+	return errs, nil
 }
 
 func (h documents[S]) publishedSources(ctx context.Context, db DB) (map[string]string, error) {

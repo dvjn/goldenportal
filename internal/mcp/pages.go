@@ -281,6 +281,8 @@ type tabView struct {
 	Title      string `json:"title"`
 	Kind       string `json:"kind"`
 	Scorecard  string `json:"scorecard,omitempty"`
+	// Path is how filters on the blueprint reach the scorecard's results.
+	Path string `json:"path,omitempty"`
 }
 
 type entitiesView struct {
@@ -305,8 +307,8 @@ type catalogPage struct {
 // paged by.
 type tableArgs struct {
 	Search string `json:"search,omitempty" jsonschema:"Text in an entity's title or identifier, ignoring case: anywhere from three characters, at the start before that"`
-	Filter string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the blueprint's properties. A property of type scorecard reaches its result: the property alone is the tier (empty for none), <property>.checks.<id> a check's status (passed, failed or skipped)"`
-	Sort   string `json:"sort,omitempty" jsonschema:"A property, title, createdAt or updatedAt, with a leading - for descending, empty values first ascending and last descending; on a scorecard's results: tier, score, passed, failed or skipped, worst tier first when omitted"`
+	Filter string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the blueprint's properties. _scorecards.<scorecard> reaches the result on any scorecard grading the blueprint, as a property of type scorecard naming it does: alone it is the tier (empty for evaluated with no tier; entities not evaluated match no tier filter; only not and ne reach them), .score, .passed, .failed, .skipped and .failing what they say, .checks.<id> a check's status (passed, failed or skipped)"`
+	Sort   string `json:"sort,omitempty" jsonschema:"A path, such as a property, title, createdAt, updatedAt or _scorecards.<scorecard> for its tier, with a leading - for descending, empty values first ascending and last descending (not evaluated below no tier); on a scorecard's results: tier, score, passed, failed or skipped, worst tier first when omitted"`
 	Page   int    `json:"page,omitempty"`
 	Size   int    `json:"size,omitempty" jsonschema:"Page size: 10, 20, 50 or 100; omit for the default"`
 }
@@ -334,7 +336,10 @@ func readCatalog(b bridge, ctx *gofr.Context, identifier, tab string, table tabl
 	}
 	page.Tabs = append(page.Tabs, tabView{Identifier: tabEntities, Title: "Entities", Kind: tabEntities})
 	for _, s := range grading {
-		page.Tabs = append(page.Tabs, tabView{Identifier: scorecardTab + s.Identifier, Title: s.Title, Kind: tabScorecard, Scorecard: s.Identifier})
+		page.Tabs = append(page.Tabs, tabView{
+			Identifier: scorecardTab + s.Identifier, Title: s.Title, Kind: tabScorecard, Scorecard: s.Identifier,
+			Path: entity.ScorecardPath(spec, s.Identifier),
+		})
 	}
 
 	switch {

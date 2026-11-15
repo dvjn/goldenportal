@@ -13,18 +13,19 @@ import (
 	"github.com/dvjn/goldenportal/internal/pgtest"
 )
 
-// seedResults stores results as an evaluation would.
-func seedResults(t *testing.T, db configdoc.DB, scorecardID string, entityIDs []string, results []Result) {
+// seedResults stores results as an evaluation of spec would.
+func seedResults(t *testing.T, db configdoc.DB, scorecardID string, spec Spec, entityIDs []string, results []Result) {
 	t.Helper()
 	for i, r := range results {
 		criteria, err := json.Marshal(r.Criteria)
 		if err != nil {
 			t.Fatal(err)
 		}
+		rank := slices.IndexFunc(spec.Tiers, func(tier Tier) bool { return tier.Name == r.Tier }) + 1
 		if _, err := db.ExecContext(t.Context(), `
-			INSERT INTO scorecard_results (scorecard_id, entity_id, tier, score, passed, failed, skipped, criteria)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			scorecardID, entityIDs[i], r.Tier, r.Score, r.Passed, r.Failed, r.Skipped, criteria); err != nil {
+			INSERT INTO scorecard_results (scorecard_id, entity_id, tier, tier_rank, score, passed, failed, skipped, criteria)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			scorecardID, entityIDs[i], r.Tier, rank, r.Score, r.Passed, r.Failed, r.Skipped, criteria); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -75,12 +76,12 @@ func TestResultsSortAndFilter(t *testing.T) {
 		}
 		ids, outcome = append(ids, id), append(outcome, s.result)
 	}
-	seedResults(t, db, scorecardID, ids, outcome)
-	spec := Spec{Tiers: []Tier{
+	spec := Spec{Blueprint: "service", Tiers: []Tier{
 		{Name: "bronze", Criteria: []Criterion{{ID: "owner"}}},
 		{Name: "silver", Criteria: []Criterion{{ID: "stars"}}},
 		{Name: "gold"},
 	}}
+	seedResults(t, db, scorecardID, spec, ids, outcome)
 	scope := func(t *testing.T, raw string) Scope {
 		t.Helper()
 		f, err := entity.ParseFilter(raw)
@@ -89,7 +90,7 @@ func TestResultsSortAndFilter(t *testing.T) {
 		}
 		specs, ladders := map[string]blueprint.Spec{"service": graded}, Ladders(map[string]Spec{"health": spec})
 		if f != nil {
-			if err := entity.CheckFilter(specs, ladders, graded, *f); err != nil {
+			if err := entity.CheckFilter(entity.Schema{Blueprint: graded, Blueprints: specs, Ladders: ladders}, *f); err != nil {
 				t.Fatal(err)
 			}
 		}

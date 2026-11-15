@@ -62,6 +62,7 @@ const listed = (identifier: string, title: string, blueprint: string, publishedV
   hasDraft: publishedVersion === 0,
   stats: { tiers: 2, criteria: 2 },
   facts: { blueprint },
+  publishedFacts: publishedVersion > 0 ? { blueprint } : undefined,
   updatedAt: "2026-10-24T10:00:00Z",
 });
 

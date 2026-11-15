@@ -212,14 +212,11 @@ const resultFrom = `
 	JOIN entities e ON e.id = r.entity_id`
 
 // Scope narrows a scorecard's results to the entities Filter matches, a
-// filter on Blueprint, the blueprint the scorecard grades. Blueprints are
-// those its relations lead to, and Ladders the scorecards whose tiers and
-// checks it names. Without a Filter it keeps every result.
+// filter on the blueprint the scorecard grades. Without a Filter it keeps
+// every result.
 type Scope struct {
-	Blueprints map[string]blueprint.Spec
-	Ladders    map[string]blueprint.Ladder
-	Blueprint  blueprint.Spec
-	Filter     *entity.Filter
+	entity.Schema
+	Filter *entity.Filter
 }
 
 // where is SQL for the scope on resultFrom, its values numbered after args.
@@ -228,7 +225,7 @@ func (s Scope) where(args []any) (string, []any, error) {
 		return "true", args, nil
 	}
 
-	return entity.Where(s.Blueprints, s.Ladders, s.Blueprint, *s.Filter, args)
+	return entity.Where(s.Schema, *s.Filter, args)
 }
 
 func summarize(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec, scope Scope) (Summary, error) {
@@ -348,10 +345,6 @@ type ResultQuery struct {
 type ResultPage = httpx.Page[EntityResult]
 
 func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec, q ResultQuery) (ResultPage, error) {
-	tierOrder := []string{""}
-	for _, tier := range spec.Tiers {
-		tierOrder = append(tierOrder, tier.Name)
-	}
 	search := ""
 	if q.Search != "" {
 		search = entity.TextPattern(q.Search)
@@ -366,17 +359,16 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 			AND ` + where
 	matchArgs := slices.Clone(args)
 	graded := "$" + strconv.Itoa(len(args)+1)
-	tiers := "$" + strconv.Itoa(len(args)+2)
-	limit := "$" + strconv.Itoa(len(args)+3)
-	offset := "$" + strconv.Itoa(len(args)+4)
+	limit := "$" + strconv.Itoa(len(args)+2)
+	offset := "$" + strconv.Itoa(len(args)+3)
 	skip := (q.Page - 1) * q.PageSize
-	args = append(args, spec.Blueprint, pq.Array(tierOrder), q.PageSize, skip)
+	args = append(args, spec.Blueprint, q.PageSize, skip)
 
 	rows, err := db.QueryContext(ctx, `
 		SELECT `+graded+`::text, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
 			r.passed, r.failed, r.skipped, r.criteria`+resultFrom+`
 		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id`+matching+`
-		ORDER BY `+resultOrder(q.Sort, "array_position("+tiers+"::text[], r.tier)")+`
+		ORDER BY `+resultOrder(q.Sort)+`
 		LIMIT `+limit+` OFFSET `+offset, args...)
 	if err != nil {
 		return ResultPage{}, err
@@ -403,17 +395,17 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 	return page, err
 }
 
-// resultOrder is the ORDER BY for a ResultQuery's Sort, with tier the
-// expression for a result's place up the tiers. Results without a score
-// count as the lowest. Ties go by tier the same way, then by title and
-// identifier so pages are stable.
-func resultOrder(sort, tier string) string {
+// resultOrder is the ORDER BY for a ResultQuery's Sort, tiers going by
+// their stored place up the ladder. Results without a score count as the
+// lowest. Ties go by tier the same way, then by title and identifier so
+// pages are stable.
+func resultOrder(sort string) string {
 	field, desc := strings.CutPrefix(sort, "-")
 	direction, nulls := "ASC", "NULLS FIRST"
 	if desc {
 		direction, nulls = "DESC", "NULLS LAST"
 	}
-	tier += " " + direction
+	tier := "r.tier_rank " + direction
 	score := "r.score " + direction + " " + nulls
 	var by []string
 	switch field {

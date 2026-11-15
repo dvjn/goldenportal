@@ -154,7 +154,7 @@ func TestRetainedPropertyReadsTheColumn(t *testing.T) {
 	if want := "(e.occurred_at >= now() - $1::interval)"; where != want {
 		t.Fatalf("within compiles to %s, want %s", where, want)
 	}
-	order, err := c.orderBy("-startedAt", nil)
+	order, err := c.orderBy("-startedAt")
 	if err != nil {
 		t.Fatal(err)
 	}

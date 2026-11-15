@@ -134,6 +134,9 @@ func List(ctx *gofr.Context, blueprintID string, req ListRequest) (page Page, er
 	if q.Ladders, err = blueprint.Ladders(ctx, ctx.SQL); err != nil {
 		return Page{}, err
 	}
+	if err := q.check(); err != nil {
+		return Page{}, httpx.BadRequest(err.Error())
+	}
 
 	store := NewStore(ctx.SQL)
 	page, err = store.List(ctx, q)

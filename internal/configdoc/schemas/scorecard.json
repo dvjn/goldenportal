@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Scorecard",
-  "description": "A scorecard rates the entities of one blueprint against a ladder of tiers, such as bronze, silver and gold, each a set of checks. To show results in the catalog, the blueprint declares a property with type: scorecard naming it.",
+  "description": "A scorecard rates the entities of one blueprint against a ladder of tiers, such as bronze, silver and gold, each a set of checks. Paths on the blueprint read an entity's result as _scorecards.<identifier>; a property with type: scorecard naming it gives the result a name of the blueprint's own and a column in the catalog.",
   "type": "object",
   "properties": {
     "kind": { "const": "Scorecard" },
@@ -32,7 +32,7 @@
     "tier": {
       "type": "object",
       "properties": {
-        "name": { "$ref": "#/$defs/name", "description": "The tier's identifier, unique in the scorecard, such as gold. Paths read it as <property>.tier." },
+        "name": { "$ref": "#/$defs/name", "description": "The tier's identifier, unique in the scorecard, such as gold. Paths read the tier reached as _scorecards.<scorecard>, or a scorecard property naming it." },
         "title": { "type": "string", "description": "The tier's label. Defaults to its name." },
         "color": { "$ref": "#/$defs/color", "description": "Colors the tier's badge." },
         "criteria": {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"gofr.dev/pkg/gofr"
@@ -21,6 +23,7 @@ type bulkKind interface {
 	saveDraftAs(ctx *gofr.Context, db DB, p auth.Principal, name, source string) error
 	publishDraft(ctx *gofr.Context, db DB, p auth.Principal, name string, acknowledgeBreaking bool) (Published, error)
 	publishedSources(ctx context.Context, db DB) (map[string]string, error)
+	errors(ctx context.Context, db DB, source string) ([]string, error)
 	draftSource(ctx context.Context, db DB, name string) (string, error)
 	afterPublish(ctx *gofr.Context, p auth.Principal, published Published)
 }
@@ -65,10 +68,77 @@ func WithPending(ctx context.Context, pending map[string]map[string]string) cont
 	return context.WithValue(ctx, pendingKey{}, pending)
 }
 
-// PendingSources returns the sources of a kind that are pending in ctx, by name.
+// PendingSources returns the sources of a kind that are pending in ctx, by
+// name. DeletedSource stands for one being deleted.
 func PendingSources(ctx context.Context, kind string) map[string]string {
 	pending, _ := ctx.Value(pendingKey{}).(map[string]map[string]string)
 	return pending[kind]
+}
+
+// DeletedSource is the pending source of a document being deleted. It
+// doesn't parse, so checks see the document as gone, or look for it to
+// say what reads it.
+const DeletedSource = "\x00deleted"
+
+type recheckingKey struct{}
+
+// Rechecking reports whether ctx is one BreakingReaders checks published
+// documents in, whose checks shouldn't look for what they'd break in turn.
+func Rechecking(ctx context.Context) bool {
+	rechecking, _ := ctx.Value(recheckingKey{}).(bool)
+	return rechecking
+}
+
+// BreakingReaders lists what publishing source as document name, or deleting it
+// with DeletedSource, would break among the published documents of
+// readers, the kinds whose checks read it: each error their checks find
+// with it in place that they don't find without, as "<kind> <identifier>:
+// <path>: <message>". Documents ctx has pending are their own checks' to
+// judge.
+func BreakingReaders(ctx context.Context, db DB, document, name, source string, readers ...string) ([]string, error) {
+	pending, _ := ctx.Value(pendingKey{}).(map[string]map[string]string)
+	with, without := map[string]map[string]string{}, map[string]map[string]string{}
+	for kind, sources := range pending {
+		with[kind], without[kind] = maps.Clone(sources), maps.Clone(sources)
+	}
+	if with[document] == nil {
+		with[document] = map[string]string{}
+	}
+	with[document][name] = source
+	delete(without[document], name)
+	withCtx := context.WithValue(WithPending(ctx, with), recheckingKey{}, true)
+	withoutCtx := context.WithValue(WithPending(ctx, without), recheckingKey{}, true)
+
+	var broken []string
+	for _, k := range kinds {
+		if !slices.Contains(readers, k.documentKind()) {
+			continue
+		}
+		sources, err := k.publishedSources(ctx, db)
+		if err != nil {
+			return nil, err
+		}
+		for _, other := range slices.Sorted(maps.Keys(sources)) {
+			if _, ok := with[k.documentKind()][other]; ok {
+				continue
+			}
+			before, err := k.errors(withoutCtx, db, sources[other])
+			if err != nil {
+				return nil, err
+			}
+			after, err := k.errors(withCtx, db, sources[other])
+			if err != nil {
+				return nil, err
+			}
+			for _, problem := range after {
+				if !slices.Contains(before, problem) {
+					broken = append(broken, strings.ToLower(k.documentKind())+" "+other+": "+problem)
+				}
+			}
+		}
+	}
+
+	return broken, nil
 }
 
 // Planned is what applying one document would do.

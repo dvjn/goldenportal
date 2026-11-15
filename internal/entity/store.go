@@ -222,6 +222,24 @@ func (s Store) Search(ctx context.Context, blueprints []blueprint.Spec, text str
 	return found, rows.Err()
 }
 
+// schema is what q's paths read.
+func (q Query) schema() Schema {
+	return Schema{Blueprint: q.Blueprint, Blueprints: q.Blueprints, Ladders: q.Ladders}
+}
+
+// check checks q's filter and sort as they're written: strictly, so a
+// scorecard, tier or check that isn't there is an error rather than
+// matching nothing.
+func (q Query) check() error {
+	if q.Filter != nil {
+		if err := CheckFilter(q.schema(), *q.Filter); err != nil {
+			return err
+		}
+	}
+
+	return CheckSort(q.schema(), q.Sort)
+}
+
 func (q Query) where(c *compiler) (string, error) {
 	where := "e.blueprint_id = " + BlueprintID(q.Blueprint)
 	if q.Search != "" {
@@ -241,19 +259,19 @@ func (q Query) where(c *compiler) (string, error) {
 // List returns a page of entities. Filter and sort problems come back as a
 // FilterError, since they're the caller's to fix.
 func (s Store) List(ctx context.Context, q Query) (Page, error) {
-	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders}
+	c := q.schema().compiler(false)
 	where, err := q.where(c)
 	if err != nil {
 		return Page{}, err
 	}
 	matchArgs := slices.Clone(c.args)
-	order, err := c.orderBy(q.Sort, q.Ladders)
+	order, err := c.orderBy(q.Sort)
 	if err != nil {
 		return Page{}, FilterError{err}
 	}
 
 	offset := (q.Page - 1) * q.PageSize
-	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns(quoteLiteral(q.Blueprint.Identifier))+` FROM entities e
+	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns(quoteLiteral(q.Blueprint.Identifier))+c.from()+`
 		WHERE `+where+`
 		ORDER BY `+order+`
 		LIMIT `+c.arg(q.PageSize)+` OFFSET `+c.arg(offset), c.args...)
@@ -297,7 +315,7 @@ func (s Store) count(ctx context.Context, where string, args []any) (int, error)
 
 // Count is how many entities q's search and filter match.
 func (s Store) Count(ctx context.Context, q Query) (int, error) {
-	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders}
+	c := q.schema().compiler(false)
 	where, err := q.where(c)
 	if err != nil {
 		return 0, err
@@ -308,7 +326,7 @@ func (s Store) Count(ctx context.Context, q Query) (int, error) {
 
 // Exists reports whether any entity matches q's search and filter.
 func (s Store) Exists(ctx context.Context, q Query) (bool, error) {
-	c := &compiler{spec: q.Blueprint, specs: q.Blueprints, ladders: q.Ladders}
+	c := q.schema().compiler(false)
 	where, err := q.where(c)
 	if err != nil {
 		return false, err

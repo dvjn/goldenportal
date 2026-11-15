@@ -69,7 +69,7 @@ func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, s
 			sql string
 			err error
 		)
-		sql, args, err = entity.Where(specs, nil, bp, f, args)
+		sql, args, err = entity.Where(entity.Schema{Blueprint: bp, Blueprints: specs}, f, args)
 		return "coalesce(" + sql + ", false)", err
 	}
 
@@ -80,7 +80,7 @@ func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, s
 			return "", nil, err
 		}
 	}
-	var statuses, reached []string
+	var statuses, reached, ranks []string
 	for _, tier := range spec.Tiers {
 		for _, c := range tier.Criteria {
 			check, err := where(c.Check)
@@ -98,9 +98,12 @@ func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, s
 			statuses = append(statuses, "CASE "+status+" END")
 		}
 		// A tier is reached when none of its criteria, nor any below, failed.
-		reached = append(reached, "WHEN NOT "+failedSQL+" = ANY(statuses[1:"+strconv.Itoa(len(statuses))+"]) THEN "+arg(tier.Name))
+		when := "WHEN NOT " + failedSQL + " = ANY(statuses[1:" + strconv.Itoa(len(statuses)) + "])"
+		reached = append(reached, when+" THEN "+arg(tier.Name))
+		ranks = append(ranks, when+" THEN "+strconv.Itoa(len(ranks)+1))
 	}
 	slices.Reverse(reached)
+	slices.Reverse(ranks)
 
 	return `
 		WITH checked AS (
@@ -109,6 +112,7 @@ func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, s
 			WHERE e.blueprint_id = ` + entity.BlueprintID(bp) + ` AND ` + scope + `
 		), counted AS (
 			SELECT id AS entity_id, CASE ` + strings.Join(reached, " ") + ` ELSE '' END AS tier,
+				CASE ` + strings.Join(ranks, " ") + ` ELSE 0 END AS tier_rank,
 				cardinality(array_positions(statuses, ` + passedSQL + `)) AS passed,
 				cardinality(array_positions(statuses, ` + failedSQL + `)) AS failed,
 				cardinality(array_positions(statuses, ` + skippedSQL + `)) AS skipped,
@@ -117,15 +121,15 @@ func evaluation(specs map[string]blueprint.Spec, bp blueprint.Spec, spec Spec, s
 		), scored AS (
 			SELECT *, CASE WHEN passed + failed > 0 THEN 100 * passed / (passed + failed) END AS score FROM counted
 		), written AS (
-			INSERT INTO scorecard_results AS r (scorecard_id, entity_id, tier, score, passed, failed, skipped, criteria)
-			SELECT $1::uuid, s.entity_id, s.tier, s.score, s.passed, s.failed, s.skipped, s.criteria
+			INSERT INTO scorecard_results AS r (scorecard_id, entity_id, tier, tier_rank, score, passed, failed, skipped, criteria)
+			SELECT $1::uuid, s.entity_id, s.tier, s.tier_rank, s.score, s.passed, s.failed, s.skipped, s.criteria
 			FROM scored s
 			LEFT JOIN scorecard_results o ON o.scorecard_id = $1::uuid AND o.entity_id = s.entity_id
-			WHERE o.entity_id IS NULL OR (o.tier, o.score, o.passed, o.failed, o.skipped, o.criteria)
-				IS DISTINCT FROM (s.tier, s.score, s.passed, s.failed, s.skipped, s.criteria)
+			WHERE o.entity_id IS NULL OR (o.tier, o.tier_rank, o.score, o.passed, o.failed, o.skipped, o.criteria)
+				IS DISTINCT FROM (s.tier, s.tier_rank, s.score, s.passed, s.failed, s.skipped, s.criteria)
 			ORDER BY s.entity_id
 			ON CONFLICT (scorecard_id, entity_id) DO UPDATE
-				SET tier = excluded.tier, score = excluded.score, passed = excluded.passed, failed = excluded.failed,
+				SET tier = excluded.tier, tier_rank = excluded.tier_rank, score = excluded.score, passed = excluded.passed, failed = excluded.failed,
 					skipped = excluded.skipped, criteria = excluded.criteria,
 					changed_at = CASE WHEN r.tier = excluded.tier THEN r.changed_at ELSE now() END
 			RETURNING 1

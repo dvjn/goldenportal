@@ -118,12 +118,27 @@ func (s Spec) HasProperty(id string) bool {
 // Property returns the property named id.
 func (s Spec) Property(id string) (Property, bool) { return s.property(id) }
 
+// ScorecardProperty returns the property naming scorecard, the
+// blueprint's own name for its results, if it has one.
+func (s Spec) ScorecardProperty(scorecard string) (Property, bool) {
+	i := slices.IndexFunc(s.Properties, func(p Property) bool { return p.Scorecard == scorecard })
+	if i < 0 {
+		return Property{}, false
+	}
+
+	return s.Properties[i], true
+}
+
 // Ladder is what blueprints need of a published scorecard, which this
-// package can't import: the blueprint it scores and its tiers, lowest first,
-// with their checks.
+// package can't import: its title, the blueprint it scores and its tiers,
+// lowest first, with their checks.
 type Ladder struct {
+	Title     string `json:"title"`
 	Blueprint string `json:"blueprint"`
 	Tiers     []Rung `json:"tiers"`
+	// Deleted marks a scorecard a pending change deletes, which nothing
+	// may read.
+	Deleted bool `json:"-"`
 }
 
 // Rung is one tier of a ladder.
@@ -171,13 +186,17 @@ func Ladders(ctx context.Context, db configdoc.DB) (map[string]Ladder, error) {
 	}
 	ladders := map[string]Ladder{}
 	for identifier, source := range sources {
+		if source == configdoc.DeletedSource {
+			ladders[identifier] = Ladder{Deleted: true}
+			continue
+		}
 		r := &configdoc.Reader{}
 		doc := configdoc.ReadDocument(r, source, "Scorecard")
 		target, tiers := configdoc.Field(doc.Spec, "blueprint"), configdoc.Field(doc.Spec, "tiers")
 		if configdoc.HasErrors(r.Issues) || target == nil || tiers == nil {
 			continue
 		}
-		ladder := Ladder{Blueprint: target.Value}
+		ladder := Ladder{Title: doc.Meta.Title, Blueprint: target.Value}
 		if tiers.Decode(&ladder.Tiers) != nil {
 			continue
 		}
@@ -207,6 +226,11 @@ func CheckScorecards(spec Spec, ladders map[string]Ladder) []Issue {
 			issues = append(issues, Issue{
 				Severity: SeverityWarning, Path: path, Line: prop.line,
 				Message: fmt.Sprintf("no scorecard %q is published yet, so %s stays empty until it is", prop.Scorecard, prop.ID),
+			})
+		case ladder.Deleted:
+			issues = append(issues, Issue{
+				Severity: SeverityError, Path: path, Line: prop.line,
+				Message: fmt.Sprintf("%s names scorecard %s, which is being deleted", prop.ID, prop.Scorecard),
 			})
 		case ladder.Blueprint != spec.Identifier:
 			issues = append(issues, Issue{

@@ -65,6 +65,7 @@ func (f *publishFixture) addGraded(identifier, properties, relations, computed s
 
 type stored struct {
 	tier     string
+	rank     int
 	score    *int
 	passed   int
 	failed   int
@@ -75,7 +76,7 @@ type stored struct {
 func (f *publishFixture) results(scorecard string) map[string]stored {
 	f.t.Helper()
 	rows, err := f.db.QueryContext(f.t.Context(), `
-		SELECT e.identifier, r.tier, r.score, r.passed, r.failed, r.skipped, r.criteria FROM scorecard_results r
+		SELECT e.identifier, r.tier, r.tier_rank, r.score, r.passed, r.failed, r.skipped, r.criteria FROM scorecard_results r
 		JOIN entities e ON e.id = r.entity_id
 		JOIN config_documents d ON d.id = r.scorecard_id
 		WHERE d.kind = 'scorecard' AND d.identifier = $1`, scorecard)
@@ -90,7 +91,7 @@ func (f *publishFixture) results(scorecard string) map[string]stored {
 			s          stored
 			criteria   []byte
 		)
-		if err := rows.Scan(&identifier, &s.tier, &s.score, &s.passed, &s.failed, &s.skipped, &criteria); err != nil {
+		if err := rows.Scan(&identifier, &s.tier, &s.rank, &s.score, &s.passed, &s.failed, &s.skipped, &criteria); err != nil {
 			f.t.Fatal(err)
 		}
 		var outcomes map[string]CriterionResult
@@ -137,12 +138,12 @@ func TestEvaluateFilterChecks(t *testing.T) {
 		"bare": {tier: "", score: score(0), failed: 4, skipped: 1, statuses: map[string]string{
 			"owned": StatusFailed, "reachable": StatusFailed, "criticalRepo": StatusSkipped, "manyStars": StatusFailed, "recent": StatusFailed,
 		}},
-		"owned":     {tier: "bronze", score: score(25), passed: 1, failed: 3, skipped: 1},
-		"reachable": {tier: "silver", score: score(50), passed: 2, failed: 2, skipped: 1},
-		"critical": {tier: "bronze", score: score(80), passed: 4, failed: 1, statuses: map[string]string{
+		"owned":     {tier: "bronze", rank: 1, score: score(25), passed: 1, failed: 3, skipped: 1},
+		"reachable": {tier: "silver", rank: 2, score: score(50), passed: 2, failed: 2, skipped: 1},
+		"critical": {tier: "bronze", rank: 1, score: score(80), passed: 4, failed: 1, statuses: map[string]string{
 			"criticalRepo": StatusFailed, "manyStars": StatusPassed, "recent": StatusPassed,
 		}},
-		"gold":    {tier: "gold", score: score(100), passed: 4, skipped: 1},
+		"gold":    {tier: "gold", rank: 3, score: score(100), passed: 4, skipped: 1},
 		"unowned": {tier: "", score: score(50), passed: 2, failed: 2, skipped: 1},
 	}
 	got := f.results("readiness")
@@ -155,9 +156,9 @@ func TestEvaluateFilterChecks(t *testing.T) {
 			t.Errorf("%s has no result", identifier)
 			continue
 		}
-		if g.tier != w.tier || *g.score != *w.score || g.passed != w.passed || g.failed != w.failed || g.skipped != w.skipped {
-			t.Errorf("%s = %s %d (%d passed, %d failed, %d skipped), want %s %d (%d, %d, %d)", identifier,
-				g.tier, *g.score, g.passed, g.failed, g.skipped, w.tier, *w.score, w.passed, w.failed, w.skipped)
+		if g.tier != w.tier || g.rank != w.rank || *g.score != *w.score || g.passed != w.passed || g.failed != w.failed || g.skipped != w.skipped {
+			t.Errorf("%s = %s %d %d (%d passed, %d failed, %d skipped), want %s %d %d (%d, %d, %d)", identifier,
+				g.tier, g.rank, *g.score, g.passed, g.failed, g.skipped, w.tier, w.rank, *w.score, w.passed, w.failed, w.skipped)
 		}
 		for id, status := range w.statuses {
 			if g.statuses[id] != status {

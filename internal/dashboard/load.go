@@ -196,6 +196,11 @@ type loader struct {
 	log func(ctx context.Context, msg string, err error, attrs ...attribute.KeyValue)
 }
 
+// schema is what the widgets' paths on bp read.
+func (l loader) schema(bp blueprint.Spec) entity.Schema {
+	return entity.Schema{Blueprint: bp, Blueprints: l.blueprints, Ladders: l.ladders}
+}
+
 // plan is what a page's widgets need of one query's entities, gathered so
 // each kind of read is one statement: every aggregate together, each
 // grouping, each first page with its count, and each scorecard's tiers.
@@ -399,13 +404,13 @@ func (l loader) stat(w widget.Widget, p *plan) func() (any, error) {
 // max's, the summary's own, or else the unit of the field it works on.
 func (l loader) unit(bp blueprint.Spec, s widget.Summary) string {
 	op, path := s.Op()
-	info, err := entity.Describe(l.blueprints, bp, path)
+	info, err := entity.Describe(l.schema(bp), path)
 	switch {
 	case op == widget.OpShare:
 		return "%"
 	case l.aged(bp, s):
 		return widget.UnitSeconds
-	case entity.Dated(l.blueprints, bp, op, path):
+	case entity.Dated(l.schema(bp), op, path):
 		// A day reads the same anywhere; an instant shows in local time.
 		if info.Property != nil && info.Property.Format == "date" {
 			return widget.UnitDate
@@ -425,7 +430,7 @@ func (l loader) unit(bp blueprint.Spec, s widget.Summary) string {
 // as it is unless its unit asks for the date.
 func (l loader) aged(bp blueprint.Spec, s widget.Summary) bool {
 	op, path := s.Op()
-	return s.Unit != widget.UnitDate && entity.Dated(l.blueprints, bp, op, path)
+	return s.Unit != widget.UnitDate && entity.Dated(l.schema(bp), op, path)
 }
 
 // clock is when the page loads.
@@ -631,7 +636,7 @@ func (l loader) columns(w widget.Widget, bp blueprint.Spec) []tableColumn {
 	for i, c := range w.Columns {
 		col := tableColumn{Title: c.Title, Path: c.Path, Format: c.Format, Condition: c.Filter != nil, Unit: c.Unit}
 		if c.Path != "" {
-			info, _ := entity.Describe(l.blueprints, bp, c.Path)
+			info, _ := entity.Describe(l.schema(bp), c.Path)
 			if col.Title == "" {
 				col.Title = info.Title
 			}

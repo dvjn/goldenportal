@@ -17,7 +17,14 @@ import type {
 import { checkStatuses } from "@/components/scorecards/check-status";
 import type { BlueprintSpec, Property } from "@/features/blueprints";
 import { type Filter, facetsQueryOptions } from "@/features/catalog";
-import { type ScorecardSpec, type Status, scorecards } from "@/features/scorecards";
+import {
+  publishedGradedBy,
+  type ScorecardSpec,
+  type Status,
+  scorecardPath,
+  scorecards,
+  tierTitles,
+} from "@/features/scorecards";
 
 // CatalogFilters are a catalog page's filter as a table shows it: fields to
 // pick from, and a chip per condition.
@@ -54,27 +61,59 @@ function dateFilterable(property: Property) {
   return property.format === "date" || property.format === "date-time";
 }
 
-export const checkPath = (property: string, criterion: string) => `${property}.checks.${criterion}`;
+export const checkPath = (path: string, criterion: string) => `${path}.checks.${criterion}`;
 
 const checkOptions: DataTableOption[] = (Object.keys(checkStatuses) as Status[]).map((status) => ({
   value: JSON.stringify(status),
   label: checkStatuses[status].label,
 }));
 
-// checkFields filter by each check of a scorecard property, named after
-// the property, as a blueprint may have more than one scorecard.
-function checkFields(property: Property, spec: ScorecardSpec | undefined): DataTableFilterField[] {
-  return (spec?.tiers ?? []).flatMap((tier) =>
-    tier.criteria.map(
-      (criterion): DataTableFilterField => ({
-        kind: "options",
-        id: checkPath(property.identifier, criterion.identifier),
-        title: `${property.title} › ${criterion.title}`,
-        useOptions: () => checkOptions,
-        negatable: true,
-      }),
+// Graded is a scorecard grading the blueprint whose tier and checks the
+// menu filters by: through the property naming it, under its title, or
+// else through its results path, under the published scorecard's.
+type Graded = { scorecard: string; path: string; title: string; property?: Property };
+
+// gradedFilters are the published scorecards grading the blueprint, by
+// the property naming each, unless its display turns filters off, or else
+// by its results path.
+function gradedFilters(properties: Property[], published: { identifier: string; title: string }[]) {
+  return published.flatMap((s): Graded[] => {
+    const { path, property } = scorecardPath(properties, s.identifier);
+    if (property && !filterable(property)) return [];
+    return [{ scorecard: s.identifier, path, title: property?.title ?? s.title, property }];
+  });
+}
+
+// scorecardFields filter by a scorecard's tier, unless its property's own
+// field does, and by each of its checks, named after the property or the
+// scorecard, as a blueprint may have more than one scorecard.
+function scorecardFields(graded: Graded, spec: ScorecardSpec | undefined): DataTableFilterField[] {
+  const title = graded.property ? graded.title : (spec?.title ?? graded.title);
+  const tier: DataTableFilterField[] = graded.property
+    ? []
+    : [
+        {
+          kind: "options",
+          id: graded.path,
+          title,
+          useOptions: tierOptions(graded.scorecard),
+          negatable: true,
+        },
+      ];
+  return [
+    ...tier,
+    ...(spec?.tiers ?? []).flatMap((tier) =>
+      tier.criteria.map(
+        (criterion): DataTableFilterField => ({
+          kind: "options",
+          id: checkPath(graded.path, criterion.identifier),
+          title: `${title} › ${criterion.title}`,
+          useOptions: () => checkOptions,
+          negatable: true,
+        }),
+      ),
     ),
-  );
+  ];
 }
 
 // useCatalogFilters says conditions, the catalog's filter on a blueprint's
@@ -86,9 +125,10 @@ export function useCatalogFilters(
   onChange: (next: Filter[]) => void,
 ): CatalogFilters {
   const properties = spec?.properties ?? [];
-  const graded = properties.filter((property) => property.scorecard && filterable(property));
+  const { data: list } = useQuery(scorecards.queries.list);
+  const graded = gradedFilters(properties, publishedGradedBy(list ?? [], blueprint));
   const scorecardSpecs = useQueries({
-    queries: graded.map((property) => scorecards.queries.detail(property.scorecard ?? "")),
+    queries: graded.map((g) => scorecards.queries.detail(g.scorecard)),
     combine: (results) => results.map((result) => result.data?.published?.spec),
   });
   const chipModels = chipsOf(conditions);
@@ -119,7 +159,7 @@ export function useCatalogFilters(
       }),
     ),
     { kind: "date", id: "updatedAt", title: "Updated" },
-    ...graded.flatMap((property, i) => checkFields(property, scorecardSpecs[i])),
+    ...graded.flatMap((g, i) => scorecardFields(g, scorecardSpecs[i])),
   ];
   // A link can filter by any property, so a chip whose property has no field
   // of its own gets one, to show and change it.
@@ -260,35 +300,44 @@ function propertyOptions(blueprint: string, property: Property) {
   };
 }
 
+// tierOptions is the hook a scorecard's tier filter loads its options with.
+function tierOptions(scorecard: string) {
+  return function useOptions() {
+    return useTierOptions(scorecard);
+  };
+}
+
+// useTierOptions loads a scorecard's tiers to filter to, after no tier.
+function useTierOptions(scorecard: string, enabled = true): DataTableOption[] | undefined {
+  const doc = useQuery({ ...scorecards.queries.detail(scorecard), enabled });
+  const tiers = doc.data?.published?.spec.tiers;
+  if (!tiers) return undefined;
+  return [...tierTitles(tiers)].map(([name, title]) => ({
+    value: JSON.stringify(name),
+    label: title,
+  }));
+}
+
 // usePropertyOptions loads the values a property can be filtered to. Enums
 // and booleans offer their values, and scorecards no tier and their tiers;
 // relations and tag lists offer what entities actually have. Options are
 // keyed by their JSON, so values of any type fit the picker.
 function usePropertyOptions(blueprint: string, property: Property): DataTableOption[] | undefined {
-  const scorecard = useQuery({
-    ...scorecards.queries.detail(property.scorecard ?? ""),
-    enabled: Boolean(property.scorecard),
-  });
-  const tiers = scorecard.data?.published?.spec.tiers;
-  const fixed = property.scorecard
-    ? tiers && ["", ...tiers.map((tier) => tier.name)]
-    : (property.enum ?? (property.type === "boolean" ? [true, false] : undefined));
+  const tiers = useTierOptions(property.scorecard ?? "", Boolean(property.scorecard));
+  const fixed = property.enum ?? (property.type === "boolean" ? [true, false] : undefined);
   const facets = useQuery({
     ...facetsQueryOptions(blueprint, property.identifier),
     enabled: !property.scorecard && (!fixed || property.type === "boolean"),
   });
+  if (property.scorecard) return tiers;
   if (!fixed && !facets.data) return undefined;
   const counts = new Map(facets.data?.map((facet) => [JSON.stringify(facet.value), facet]));
   const values = fixed ?? facets.data?.map((facet) => facet.value) ?? [];
 
   const titles = new Map<string, string>(
-    property.scorecard
-      ? [["", "No Tier"], ...(tiers ?? []).map((tier) => [tier.name, tier.title] as const)]
-      : (facets.data ?? []).flatMap((facet) =>
-          typeof facet.value === "string" && facet.title
-            ? [[facet.value, facet.title] as const]
-            : [],
-        ),
+    (facets.data ?? []).flatMap((facet) =>
+      typeof facet.value === "string" && facet.title ? [[facet.value, facet.title] as const] : [],
+    ),
   );
 
   return values.map((value) => {

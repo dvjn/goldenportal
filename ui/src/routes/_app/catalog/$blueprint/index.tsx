@@ -45,7 +45,7 @@ import {
   entitiesQueryOptions,
   type Filter,
 } from "@/features/catalog";
-import { gradedBy, scorecards, scorecardView } from "@/features/scorecards";
+import { publishedGradedBy, scorecardPath, scorecards, scorecardView } from "@/features/scorecards";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 import { usePageTitle } from "@/lib/page-title";
 
@@ -180,7 +180,7 @@ function BlueprintCatalogPage() {
   });
   // Only published scorecards have results to show.
   const { data: scorecardList } = useSuspenseQuery(scorecards.queries.list);
-  const graded = gradedBy(scorecardList, blueprint).filter((s) => s.publishedVersion > 0);
+  const graded = publishedGradedBy(scorecardList, blueprint);
   const conditions = search.filter ?? [];
   const setSearch = (patch: Partial<CatalogSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
@@ -424,7 +424,7 @@ function BlueprintCatalogPage() {
             identifier={s.identifier}
             search={search}
             where={search.filter && { and: search.filter }}
-            property={spec.properties.find((p) => p.scorecard === s.identifier)?.identifier}
+            path={scorecardPath(spec.properties, s.identifier).path}
             catalogFilters={filters}
           />
         </TabsContent>

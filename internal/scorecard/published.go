@@ -44,7 +44,7 @@ func Tiers(ctx context.Context, db configdoc.DB, spec Spec, specs map[string]blu
 	if err != nil {
 		return nil, checks, err
 	}
-	matching, args, err := entity.Matching(specs, bp, filter, []any{id})
+	matching, args, err := entity.Matching(entity.Schema{Blueprint: bp, Blueprints: specs}, filter, []any{id})
 	if err != nil {
 		return nil, checks, err
 	}

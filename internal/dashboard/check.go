@@ -18,15 +18,14 @@ import (
 
 // Check checks a dashboard's inputs, queries and widgets.
 func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, error) {
-	blueprints, scorecards, err := published(ctx, db, nil)
+	blueprints, scorecards, ladders, err := published(ctx, db, nil)
 	if err != nil {
 		return nil, err
 	}
-	ladders := scorecard.Ladders(scorecards)
 	issues := checkInputs(spec.Inputs, blueprints, ladders)
 	issues = append(issues, checkQueries(spec.Queries, blueprints, ladders)...)
 
-	return append(issues, checkWidgets(spec.Widgets, "", blueprints, scorecards)...), nil
+	return append(issues, checkWidgets(spec.Widgets, "", blueprints, scorecards, ladders)...), nil
 }
 
 // checkQueries checks named queries against their blueprints, once, so
@@ -42,7 +41,7 @@ func checkQueries(queries []widget.Query, blueprints map[string]blueprint.Spec, 
 			})
 			continue
 		}
-		if err := checkFilter(blueprints, ladders, bp, q.Filter); err != nil {
+		if err := checkFilter(entity.Schema{Blueprint: bp, Blueprints: blueprints, Ladders: ladders}, q.Filter); err != nil {
 			issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: q.Path + ".filter", Line: q.Line, Message: err.Error()})
 		}
 	}
@@ -73,7 +72,7 @@ func checkInputs(inputs []Input, blueprints map[string]blueprint.Spec, ladders m
 		if bound == nil {
 			continue
 		}
-		if err := entity.CheckFilter(blueprints, ladders, bp, *bound); err != nil {
+		if err := entity.CheckFilter(entity.Schema{Blueprint: bp, Blueprints: blueprints, Ladders: ladders}, *bound); err != nil {
 			issues = append(issues, configdoc.Issue{
 				Severity: configdoc.SeverityError, Path: "spec.inputs." + in.ID + ".default.query.filter", Line: in.line,
 				Message: err.Error(),
@@ -93,17 +92,16 @@ var sampleMe = widget.MeValues(auth.Principal{Email: "me@example.com", DisplayNa
 // being checked. On entity pages, $entity stands for an entity with every
 // property, typed.
 func CheckPages(ctx context.Context, db configdoc.DB, spec blueprint.Spec) ([]configdoc.Issue, error) {
-	blueprints, scorecards, err := published(ctx, db, &spec)
+	blueprints, scorecards, ladders, err := published(ctx, db, &spec)
 	if err != nil {
 		return nil, err
 	}
 
-	return checkPages(spec, blueprints, scorecards), nil
+	return checkPages(spec, blueprints, scorecards, ladders), nil
 }
 
-func checkPages(spec blueprint.Spec, blueprints map[string]blueprint.Spec, scorecards map[string]scorecard.Spec) []configdoc.Issue {
+func checkPages(spec blueprint.Spec, blueprints map[string]blueprint.Spec, scorecards map[string]scorecard.Spec, ladders map[string]blueprint.Ladder) []configdoc.Issue {
 	samples := sampleEntity(spec, blueprints)
-	ladders := scorecard.Ladders(scorecards)
 	bind := func(f *filter.Filter) *filter.Filter { return widget.BindData(f, samples) }
 	var issues []configdoc.Issue
 	for _, page := range []*blueprint.Page{spec.Catalog, spec.Entity} {
@@ -122,7 +120,7 @@ func checkPages(spec blueprint.Spec, blueprints map[string]blueprint.Spec, score
 		var widgets []widget.Widget
 		for _, tab := range page.Tabs {
 			if page == spec.Entity {
-				if err := checkFilter(blueprints, ladders, spec, bind(tab.When)); err != nil {
+				if err := checkFilter(entity.Schema{Blueprint: spec, Blueprints: blueprints, Ladders: ladders}, bind(tab.When)); err != nil {
 					issues = append(issues, configdoc.Issue{Severity: configdoc.SeverityError, Path: "spec.entity.tabs." + tab.ID + ".when", Message: err.Error()})
 				}
 			}
@@ -134,28 +132,35 @@ func checkPages(spec blueprint.Spec, blueprints map[string]blueprint.Spec, score
 				widgets = append(widgets, w)
 			}
 		}
-		issues = append(issues, checkWidgets(widgets, spec.Identifier, blueprints, scorecards)...)
+		issues = append(issues, checkWidgets(widgets, spec.Identifier, blueprints, scorecards, ladders)...)
 	}
 
 	return issues
 }
 
 // published loads what widgets can show, with own in place of its
-// published version.
-func published(ctx context.Context, db configdoc.DB, own *blueprint.Spec) (map[string]blueprint.Spec, map[string]scorecard.Spec, error) {
+// published version, and the scorecards' ladders, which mark one a pending
+// change deletes.
+func published(ctx context.Context, db configdoc.DB, own *blueprint.Spec) (
+	map[string]blueprint.Spec, map[string]scorecard.Spec, map[string]blueprint.Ladder, error,
+) {
 	blueprints, err := blueprint.Published(ctx, db)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if own != nil {
 		blueprints[own.Identifier] = *own
 	}
 	scorecards, err := scorecard.Published(ctx, db)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	ladders, err := blueprint.Ladders(ctx, db)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	return blueprints, scorecards, nil
+	return blueprints, scorecards, ladders, nil
 }
 
 // checkWidgets checks widgets against the blueprints and scorecards they
@@ -163,9 +168,8 @@ func published(ctx context.Context, db configdoc.DB, own *blueprint.Spec) (map[s
 // isn't published is a warning, since it may be on its way; a property or
 // filter they can't answer is an error. A named query's own problems are
 // checkQueries'.
-func checkWidgets(widgets []widget.Widget, page string, blueprints map[string]blueprint.Spec, scorecards map[string]scorecard.Spec) []configdoc.Issue {
+func checkWidgets(widgets []widget.Widget, page string, blueprints map[string]blueprint.Spec, scorecards map[string]scorecard.Spec, ladders map[string]blueprint.Ladder) []configdoc.Issue {
 	var issues []configdoc.Issue
-	ladders := scorecard.Ladders(scorecards)
 	for _, w := range widgets {
 		c := widgetCheck{w: w, blueprints: blueprints, scorecards: scorecards, ladders: ladders}
 		c.check(page)
@@ -181,6 +185,11 @@ type widgetCheck struct {
 	scorecards map[string]scorecard.Spec
 	ladders    map[string]blueprint.Ladder
 	issues     []configdoc.Issue
+}
+
+// schema is what the widget's paths on bp read.
+func (c *widgetCheck) schema(bp blueprint.Spec) entity.Schema {
+	return entity.Schema{Blueprint: bp, Blueprints: c.blueprints, Ladders: c.ladders}
 }
 
 func (c *widgetCheck) report(severity, field, format string, args ...any) {
@@ -204,7 +213,7 @@ func (c *widgetCheck) query(q *widget.Query, field string) (blueprint.Spec, bool
 	case !ok && q.Name == "":
 		c.report(configdoc.SeverityWarning, field+".blueprint", "no blueprint %q is published yet", q.Blueprint)
 	case ok && q.Name == "":
-		c.fail(field+".filter", checkFilter(c.blueprints, c.ladders, bp, q.Filter))
+		c.fail(field+".filter", checkFilter(c.schema(bp), q.Filter))
 	}
 
 	return bp, ok
@@ -220,9 +229,12 @@ func (c *widgetCheck) check(page string) {
 		// leaves out those it can't find.
 		return
 	case widget.TypeProperties:
+		// It shows the entity's own properties; any other path goes in a table.
 		if bp, ok := c.blueprints[page]; ok {
 			for _, property := range w.Properties {
-				c.fail("properties", entity.CheckColumn(c.blueprints, bp, property))
+				if _, own := bp.Property(property); !own {
+					c.report(configdoc.SeverityError, "properties", "%s isn't a property of %s, and a properties widget shows only those; show it in a table", property, bp.Identifier)
+				}
 			}
 		}
 		return
@@ -253,7 +265,7 @@ func (c *widgetCheck) value(v widget.Value) {
 			return
 		}
 	}
-	if err := entity.CheckAggregate(c.blueprints, bp, a); err != nil {
+	if err := entity.CheckAggregate(c.schema(bp), a); err != nil {
 		c.fail("value."+op, err)
 		return
 	}
@@ -265,7 +277,7 @@ func (c *widgetCheck) value(v widget.Value) {
 // which neither is.
 func (c *widgetCheck) unit(bp blueprint.Spec, field string, s widget.Summary) {
 	op, path := s.Op()
-	switch date := entity.Dated(c.blueprints, bp, op, path); {
+	switch date := entity.Dated(c.schema(bp), op, path); {
 	case date && c.w.Type == widget.TypeTrend:
 		c.report(configdoc.SeverityError, field+"."+op, "a trend shows a number for each day, so its measure can't be the %s of a date; count the entities, or take the %s of a number", op, op)
 	case date && s.Unit != "" && s.Unit != widget.UnitDate:
@@ -277,6 +289,10 @@ func (c *widgetCheck) unit(bp blueprint.Spec, field string, s widget.Summary) {
 
 func (c *widgetCheck) scorecard() {
 	sc, ok := c.scorecards[c.w.Scorecard]
+	if c.ladders[c.w.Scorecard].Deleted {
+		c.report(configdoc.SeverityError, "scorecard", "%s is being deleted", c.w.Scorecard)
+		return
+	}
 	if !ok {
 		c.report(configdoc.SeverityWarning, "scorecard", "no scorecard %q is published yet", c.w.Scorecard)
 		return
@@ -288,7 +304,7 @@ func (c *widgetCheck) scorecard() {
 		c.report(configdoc.SeverityError, "query", "the query picks %s, but %s scores %s", q.Blueprint, sc.Identifier, sc.Blueprint)
 	case q.Name == "":
 		if bp, ok := c.blueprints[sc.Blueprint]; ok {
-			c.fail("query.filter", checkFilter(c.blueprints, c.ladders, bp, q.Filter))
+			c.fail("query.filter", checkFilter(c.schema(bp), q.Filter))
 		}
 	}
 }
@@ -299,17 +315,17 @@ func (c *widgetCheck) entities(bp blueprint.Spec) {
 	w := c.w
 	switch w.Type {
 	case widget.TypeBar, widget.TypeDonut, widget.TypeSplit:
-		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
+		c.fail("groupBy", entity.CheckGroup(c.schema(bp), w.GroupBy))
 		if w.Measure != nil {
 			c.measure(bp, "measure", *w.Measure)
 		}
 	case widget.TypeMatrix:
-		c.fail("groupBy", entity.CheckGroup(c.blueprints, bp, w.GroupBy))
+		c.fail("groupBy", entity.CheckGroup(c.schema(bp), w.GroupBy))
 		for i, m := range w.Measures {
 			c.measure(bp, fmt.Sprintf("measures[%d]", i), m)
 		}
 	case widget.TypeTrend:
-		c.fail("date", entity.CheckTrend(c.blueprints, bp, w.Date))
+		c.fail("date", entity.CheckTrend(c.schema(bp), w.Date))
 		if w.Measure != nil {
 			c.measure(bp, "measure", *w.Measure)
 		}
@@ -318,17 +334,17 @@ func (c *widgetCheck) entities(bp blueprint.Spec) {
 			field := fmt.Sprintf("columns[%d]", i)
 			switch {
 			case column.Path != "":
-				c.fail(field+".path", entity.CheckColumn(c.blueprints, bp, column.Path))
+				c.fail(field+".path", entity.CheckColumn(c.schema(bp), column.Path))
 			case column.Filter != nil:
-				c.fail(field+".filter", checkFilter(c.blueprints, c.ladders, bp, column.Filter))
+				c.fail(field+".filter", checkFilter(c.schema(bp), column.Filter))
 			}
 		}
 		if _, byCondition, _ := w.SortCondition(); w.Sort != "" && !byCondition {
-			c.fail("sort", entity.CheckSort(c.blueprints, bp, w.Sort))
+			c.fail("sort", entity.CheckSort(c.schema(bp), w.Sort))
 		}
 		if l := w.RowLink; l != nil {
 			for _, path := range widget.RowTemplatePaths(l.URL + l.Path) {
-				c.fail("rowLink", entity.CheckColumn(c.blueprints, bp, path))
+				c.fail("rowLink", entity.CheckColumn(c.schema(bp), path))
 			}
 		}
 	}
@@ -337,13 +353,13 @@ func (c *widgetCheck) entities(bp blueprint.Spec) {
 // measure checks what a measure works on: the entities its filter narrows
 // to, and its share's condition or the field it sums up.
 func (c *widgetCheck) measure(bp blueprint.Spec, field string, m widget.Measure) {
-	c.fail(field+".filter", checkFilter(c.blueprints, c.ladders, bp, m.Filter))
+	c.fail(field+".filter", checkFilter(c.schema(bp), m.Filter))
 	switch op, path := m.Op(); op {
 	case widget.OpCount:
 	case widget.OpShare:
-		c.fail(field+".share", checkFilter(c.blueprints, c.ladders, bp, m.Share))
+		c.fail(field+".share", checkFilter(c.schema(bp), m.Share))
 	default:
-		if err := entity.CheckAggregate(c.blueprints, bp, entity.Aggregate{Op: op, Path: path}); err != nil {
+		if err := entity.CheckAggregate(c.schema(bp), entity.Aggregate{Op: op, Path: path}); err != nil {
 			c.fail(field+"."+op, err)
 			return
 		}
@@ -362,24 +378,24 @@ func (c *widgetCheck) link() {
 	if !ok {
 		return
 	}
-	c.fail("link.filter", checkFilter(c.blueprints, c.ladders, bp, l.Filter))
+	c.fail("link.filter", checkFilter(c.schema(bp), l.Filter))
 	switch {
 	case l.Group && c.w.GroupBy != "":
-		c.fail("link.group", entity.CheckFilter(c.blueprints, c.ladders, bp, filter.Filter{Property: c.w.GroupBy, Op: filter.OpExists}))
+		c.fail("link.group", entity.CheckFilter(c.schema(bp), filter.Filter{Property: c.w.GroupBy, Op: filter.OpExists}))
 	case l.Group && c.w.Date != "":
-		c.fail("link.group", entity.CheckFilter(c.blueprints, c.ladders, bp, filter.Filter{Property: c.w.Date, Op: filter.OpGte, Value: "2026-10-25T00:00:00Z"}))
+		c.fail("link.group", entity.CheckFilter(c.schema(bp), filter.Filter{Property: c.w.Date, Op: filter.OpGte, Value: "2026-10-25T00:00:00Z"}))
 	}
 }
 
 // checkFilter checks a filter with its context values bound to text, as
 // they will be when the widget loads.
-func checkFilter(blueprints map[string]blueprint.Spec, ladders map[string]blueprint.Ladder, bp blueprint.Spec, f *filter.Filter) error {
+func checkFilter(s entity.Schema, f *filter.Filter) error {
 	bound := bindSample(f)
 	if bound == nil {
 		return nil
 	}
 
-	return entity.CheckFilter(blueprints, ladders, bp, *bound)
+	return entity.CheckFilter(s, *bound)
 }
 
 // bindSample binds a filter's context values to text, as they will be when

@@ -48,7 +48,7 @@ func TestIndexKeysAreTheCompilersExpressions(t *testing.T) {
 		if !ok {
 			t.Fatalf("SortKey(%s) = none", sort)
 		}
-		order, err := (&compiler{spec: svc, specs: specs}).orderBy(sort, nil)
+		order, err := (&compiler{spec: svc, specs: specs}).orderBy(sort)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +79,7 @@ func TestIndexKeysAreTheCompilersExpressions(t *testing.T) {
 		if len(keys) != 1 {
 			t.Fatalf("%s: keys = %+v", c.filter, keys)
 		}
-		sql, _, err := Where(specs, nil, svc, *f, nil)
+		sql, _, err := Where(Schema{Blueprint: svc, Blueprints: specs}, *f, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +122,7 @@ func TestIndexKeysFollowRelations(t *testing.T) {
 		t.Errorf("keys =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 	// The relation's key is what a hop compiles to.
-	sql, _, err := Where(specs, nil, deployment, *f, nil)
+	sql, _, err := Where(Schema{Blueprint: deployment, Blueprints: specs}, *f, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,5 +164,22 @@ func TestIndexKeysLeaveOutWhatNoIndexServes(t *testing.T) {
 		if key, ok := SortKey(specs, svc, sort); ok {
 			t.Errorf("SortKey(%s) = %+v", sort, key)
 		}
+	}
+}
+
+func TestScorecardResultsAreNotEntityKeys(t *testing.T) {
+	// Their indexes are scorecard_results' own, not one on entities.
+	svc := service(t)
+	for _, sort := range []string{"readiness", "-_scorecards.service-readiness", "_scorecards.service-readiness.score"} {
+		if key, ok := SortKey(nil, svc, sort); ok {
+			t.Errorf("SortKey(%s) = %+v", sort, key)
+		}
+	}
+	f := &Filter{And: []Filter{
+		{Property: "_scorecards.service-readiness.score", Op: OpGte, Value: float64(50)},
+		{Property: "readiness.failed", Op: OpLt, Value: float64(2)},
+	}}
+	if keys := FilterKeys(nil, svc, f); len(keys) != 0 {
+		t.Errorf("keys = %+v", keys)
 	}
 }

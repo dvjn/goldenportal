@@ -34,7 +34,7 @@ func (l loader) groups(w widget.Widget, p *plan) func() (any, error) {
 		}
 		data := l.groupData(w, p, g.facets[:min(len(g.facets), w.Limit)], g.none)
 		if w.Type == widget.TypeSplit {
-			info, _ := entity.Describe(l.blueprints, p.query.Blueprint, w.GroupBy)
+			info, _ := entity.Describe(l.schema(p.query.Blueprint), w.GroupBy)
 			byEnum(data.Groups, func(g group) any { return g.Value }, info.Property)
 		}
 		return data, nil
@@ -100,7 +100,7 @@ func (l loader) groupData(w widget.Widget, p *plan, facets []entity.Facet, none 
 	if !linkGroups {
 		data.Link = l.link(w, nil)
 	}
-	info, _ := entity.Describe(l.blueprints, p.query.Blueprint, w.GroupBy)
+	info, _ := entity.Describe(l.schema(p.query.Blueprint), w.GroupBy)
 	single := singleValued(info)
 	for i, facet := range facets {
 		data.Groups[i] = group{Facet: colored(facet, info)}
@@ -170,7 +170,7 @@ func (l loader) matrix(w widget.Widget, p *plan) func() (any, error) {
 				data.Overall = append(data.Overall, l.cell(w, w.Measures[i], m.read(values, 0), nil))
 			}
 		}
-		info, _ := entity.Describe(l.blueprints, p.query.Blueprint, w.GroupBy)
+		info, _ := entity.Describe(l.schema(p.query.Blueprint), w.GroupBy)
 		op := filter.OpEq
 		if !singleValued(info) {
 			op = filter.OpContains

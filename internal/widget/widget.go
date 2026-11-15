@@ -694,7 +694,7 @@ func fieldOf(op string) string {
 	return "a number field, such as cost or service.cost"
 }
 
-var pathPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*(\.[a-zA-Z][a-zA-Z0-9_-]*)*$`)
+var pathPattern = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_-]*|_scorecards)(\.([a-zA-Z][a-zA-Z0-9_-]*|_scorecards))*$`)
 
 // validPath reports whether text is written as a field's path. Whether the
 // blueprint has the field is checked against it later.

@@ -3,6 +3,7 @@ package entity
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,21 +42,19 @@ const (
 // ParseFilter reads a filter from JSON. An empty string is no filter.
 func ParseFilter(raw string) (*Filter, error) { return filter.Parse(raw) }
 
-// CheckFilter reports whether a filter fits a blueprint, without running it.
-// specs are the blueprints its relations lead to, for properties that
-// follow them, and ladders the scorecards whose tiers and checks it names.
-func CheckFilter(specs map[string]blueprint.Spec, ladders map[string]blueprint.Ladder, spec blueprint.Spec, f Filter) error {
-	c := &compiler{spec: spec, specs: specs, ladders: ladders}
-	_, err := c.compile(f, 1)
-
+// CheckFilter reports whether a filter fits a blueprint, without running
+// it, as publishing and the filters people write are checked: the
+// scorecards, tiers and checks it names must be s's.
+func CheckFilter(s Schema, f Filter) error {
+	_, err := s.compiler(true).compile(f, 1)
 	return err
 }
 
-// Where compiles a filter for a query of spec's entities as e, checking the
-// tiers and checks it names against ladders. The filter's values number
-// after args, and come back added to them.
-func Where(specs map[string]blueprint.Spec, ladders map[string]blueprint.Ladder, spec blueprint.Spec, f Filter, args []any) (string, []any, error) {
-	c := &compiler{spec: spec, specs: specs, ladders: ladders, args: args}
+// Where compiles a filter for a query of s's entities as e. Its values
+// number after args, and come back added to them.
+func Where(s Schema, f Filter, args []any) (string, []any, error) {
+	c := s.compiler(false)
+	c.args = args
 	sql, err := c.compile(f, 1)
 
 	return sql, c.args, err
@@ -63,20 +62,59 @@ func Where(specs map[string]blueprint.Spec, ladders map[string]blueprint.Ladder,
 
 // compiler turns a filter into SQL, adding values as query arguments.
 // specs are the blueprints relations lead to, and hops how many it has
-// followed to reach spec. With ladders, a tier or check the scorecard
-// doesn't have is an error; stored filters are checked when published, so
-// running them after a scorecard changes matches nothing instead.
+// followed to reach spec. Strict, a scorecard, tier or check the ladders
+// don't have is an error. Stored filters, sorts and paths were checked
+// when published, so run after a scorecard changes, they match nothing
+// and read empty instead.
 type compiler struct {
 	spec       blueprint.Spec
 	specs      map[string]blueprint.Spec
 	ladders    map[string]blueprint.Ladder
+	strict     bool
 	args       []any
 	conditions int
 	hops       int
+	// joins are the scorecards whose results the statement joins, in the
+	// order joinedRow numbers them.
+	joins []string
 }
 
 func (c *compiler) field(path string) (field, error) {
-	return reader{specs: c.specs}.read(c.spec, "e", path, c.hops)
+	return reader{specs: c.specs, ladders: c.ladders, strict: c.strict}.read(c.spec, "e", path, c.hops)
+}
+
+// joined reads a result field of e from its scorecard's result joined
+// once to the statement, for sorts, groups and aggregates, which read it
+// on every row.
+func (c *compiler) joined(fld field) field {
+	if fld.result == nil || fld.result.of != "e" {
+		return fld
+	}
+	at := slices.Index(c.joins, fld.result.scorecard)
+	if at < 0 {
+		at = len(c.joins)
+		c.joins = append(c.joins, fld.result.scorecard)
+	}
+	row := joinedRow(at)
+	fld.value = fld.result.read(row)
+	if fld.rank != "" {
+		fld.rank = tierRank(row)
+	}
+
+	return fld
+}
+
+// from is the statement's FROM: the entities as e, and the results it
+// joins. An entity has at most one result per scorecard.
+func (c *compiler) from() string {
+	from := " FROM entities e"
+	for i, scorecard := range c.joins {
+		row := joinedRow(i)
+		from += "\n\tLEFT JOIN scorecard_results " + row + " ON " + row + ".scorecard_id = " + scorecardID(scorecard) +
+			" AND " + row + ".entity_id = e.id"
+	}
+
+	return from
 }
 
 func (c *compiler) arg(value any) string {
@@ -139,7 +177,15 @@ func (c *compiler) condition(f Filter) (string, error) {
 	if err := c.checkScorecard(fld, f); err != nil {
 		return "", err
 	}
+	if fld.result != nil {
+		return c.resultCondition(fld, f)
+	}
 
+	return c.match(fld, f)
+}
+
+// match is SQL for whether fld meets f's comparison.
+func (c *compiler) match(fld field, f Filter) (string, error) {
 	switch f.Op {
 	case OpExists:
 		if fld.kind == kindTier {
@@ -162,11 +208,8 @@ func (c *compiler) condition(f Filter) (string, error) {
 		}
 		return sql, nil
 	case OpIn:
-		if f.Value != nil {
-			return "", fmt.Errorf("in on %s takes values, a list or a variable such as $input.team, not value", f.Property)
-		}
-		if f.Values == nil {
-			return "", fmt.Errorf("in on %s needs values", f.Property)
+		if err := checkIn(f); err != nil {
+			return "", err
 		}
 		// A list written empty, as a filter bound to no values is, matches nothing.
 		if len(f.Values) == 0 {
@@ -199,10 +242,131 @@ func (c *compiler) condition(f Filter) (string, error) {
 	return "", fmt.Errorf("unknown op %q on %s; use eq, ne, in, contains, exists, gt, gte, lt, lte or within", f.Op, f.Property)
 }
 
-// checkScorecard reports a tier or check that the scorecard a field reads
+// checkIn reports an in without a list of values.
+func checkIn(f Filter) error {
+	if f.Value != nil {
+		return fmt.Errorf("in on %s takes values, a list or a variable such as $input.team, not value", f.Property)
+	}
+	if f.Values == nil {
+		return fmt.Errorf("in on %s needs values", f.Property)
+	}
+
+	return nil
+}
+
+// resultCondition matches entities by their result on a scorecard with a
+// semi-join on scorecard_results: (scorecard_id, tier, entity_id) answers
+// tiers, and the GIN on criteria checks' statuses and failing checks. Ne
+// is the eq it negates, so it also matches entities not evaluated.
+func (c *compiler) resultCondition(fld field, f Filter) (string, error) {
+	res := *fld.result
+	if f.Op == OpNe {
+		f.Op = OpEq
+		sql, err := c.resultCondition(fld, f)
+		if err != nil {
+			return "", err
+		}
+		return "NOT " + sql, nil
+	}
+	var values []any
+	switch f.Op {
+	case OpEq:
+		if f.Value == nil {
+			return "", fmt.Errorf("compare %s with a value, or use exists", f.Property)
+		}
+		values = []any{f.Value}
+	case OpIn:
+		if err := checkIn(f); err != nil {
+			return "", err
+		}
+		values = f.Values
+	}
+	listed := f.Op == OpEq || f.Op == OpIn
+	switch {
+	case fld.kind == kindTier && (listed || f.Op == OpExists):
+		return c.tierCondition(res, f, values)
+	case fld.check != "" && f.Op == OpExists:
+		return c.statusOf(res, []string{fld.check}, CheckStatuses), nil
+	case fld.check != "" && listed:
+		statuses := map[string]any{}
+		for _, value := range values {
+			status, ok := value.(string)
+			if !ok {
+				return "", fmt.Errorf("%s is a check's status: %s", f.Property, strings.Join(CheckStatuses, ", "))
+			}
+			statuses[status] = nil
+		}
+		return c.statusOf(res, []string{fld.check}, slices.Sorted(maps.Keys(statuses))), nil
+	case fld.many && (listed || f.Op == OpContains):
+		if f.Op == OpContains {
+			values = []any{f.Value}
+		}
+		failing := make([]string, len(values))
+		for i, value := range values {
+			check, ok := value.(string)
+			if !ok {
+				return "", fmt.Errorf("%s lists checks by identifier, so compare it with text", f.Property)
+			}
+			failing[i] = check
+		}
+		return c.statusOf(res, failing, []string{"failed"}), nil
+	}
+	inner := fld
+	inner.value, inner.result, inner.nullable = res.read(resultRow), nil, true
+	sql, err := c.match(inner, f)
+	if err != nil {
+		return "", err
+	}
+
+	return res.matching(sql), nil
+}
+
+// tierCondition matches tiers by name, "" for evaluated with no tier.
+// Entities not evaluated have no tier to match, so only not and ne reach
+// them.
+func (c *compiler) tierCondition(res result, f Filter, values []any) (string, error) {
+	if f.Op == OpExists {
+		return res.matching(resultRow + ".tier <> ''"), nil
+	}
+	tiers := make([]string, 0, len(values))
+	for _, value := range values {
+		tier, ok := value.(string)
+		if !ok {
+			return "", fmt.Errorf("%s is text", f.Property)
+		}
+		tiers = append(tiers, tier)
+	}
+	if len(tiers) == 0 {
+		return "false", nil
+	}
+
+	return res.matching(resultRow + ".tier = ANY(" + c.arg(pq.Array(tiers)) + "::text[])"), nil
+}
+
+// statusOf matches results where any of checks has any of statuses, as
+// containments the GIN on criteria answers.
+func (c *compiler) statusOf(res result, checks, statuses []string) string {
+	var sqls []string
+	for _, check := range checks {
+		for _, status := range statuses {
+			encoded, _ := json.Marshal(map[string]any{check: map[string]string{"status": status}})
+			sqls = append(sqls, resultRow+".criteria @> "+c.arg(string(encoded))+"::jsonb")
+		}
+	}
+	if len(sqls) == 0 {
+		return "false"
+	}
+
+	return res.matching("(" + strings.Join(sqls, " OR ") + ")")
+}
+
+// checkScorecard reports, strictly, a tier the scorecard a field reads
 // doesn't have, or a status no check has. A scorecard not in ladders isn't
 // published, so it has no results to compare.
 func (c *compiler) checkScorecard(fld field, f Filter) error {
+	if !c.strict {
+		return nil
+	}
 	var values []any
 	switch f.Op {
 	case OpEq, OpNe:
@@ -220,14 +384,11 @@ func (c *compiler) checkScorecard(fld field, f Filter) error {
 		names := ladder.Names()
 		for _, value := range values {
 			if name, _ := value.(string); !slices.Contains(names, name) {
-				return fmt.Errorf("%s is a tier of %s: %s, or \"\" for none, not %v",
+				return fmt.Errorf("%s is a tier of %s: %s, or \"\" for evaluated with no tier, not %v",
 					f.Property, fld.scorecard, strings.Join(names[1:], ", "), quoted(value))
 			}
 		}
 	case fld.check != "":
-		if checks := ladder.Checks(); !slices.Contains(checks, fld.check) {
-			return fmt.Errorf("%s has no check %q; its checks are %s", fld.checkOf, fld.check, strings.Join(checks, ", "))
-		}
 		for _, value := range values {
 			if status, _ := value.(string); !slices.Contains(CheckStatuses, status) {
 				return fmt.Errorf("%s is a check's status: %s, not %v", f.Property, strings.Join(CheckStatuses, ", "), quoted(value))
@@ -277,7 +438,7 @@ func (c *compiler) follow(f Filter, name, rest string) (string, error) {
 	}
 	// The subquery's aliases shadow the outer ones, so the condition
 	// compiles as it would on target's own entities.
-	inner := &compiler{spec: target, specs: c.specs, ladders: c.ladders, args: c.args, conditions: c.conditions, hops: c.hops + 1}
+	inner := &compiler{spec: target, specs: c.specs, ladders: c.ladders, strict: c.strict, args: c.args, conditions: c.conditions, hops: c.hops + 1}
 	f.Property = rest
 	sql, err := inner.condition(f)
 	c.args, c.conditions = inner.args, inner.conditions
@@ -298,7 +459,7 @@ func (c *compiler) follow(f Filter, name, rest string) (string, error) {
 }
 
 // equals matches a value, or for lists and many-relations, one of their
-// items. A tier of "" matches no tier, evaluated or not.
+// items. A tier of "" matches evaluated with no tier.
 func (c *compiler) equals(fld field, property string, value any) (string, error) {
 	if value == nil {
 		return "", fmt.Errorf("compare %s with a value, or use exists", property)
@@ -325,8 +486,6 @@ func (c *compiler) equals(fld field, property string, value any) (string, error)
 		switch fld.kind {
 		case kindDate:
 			return "(" + fld.value + " = " + c.arg(text) + "::timestamptz)", nil
-		case kindTier:
-			return "(coalesce(" + fld.value + ", '') = " + c.arg(text) + ")", nil
 		}
 		return "(" + fld.value + " = " + c.arg(text) + ")", nil
 	}
@@ -384,9 +543,9 @@ func textOf(fld field) string {
 // orderBy sorts by a path, ascending unless it starts with "-". Empty
 // values sort lowest, first going up and last coming down, so one index
 // serves both. Ties fall back to the title, then the identifier, so pages
-// are stable. Tiers sort up their scorecard's ladder, lowest first, as
-// ladders say.
-func (c *compiler) orderBy(sort string, ladders map[string]blueprint.Ladder) (string, error) {
+// are stable. Tiers sort up their scorecard's ladder, lowest first, by the
+// rank stored with each result; not evaluated sorts below no tier.
+func (c *compiler) orderBy(sort string) (string, error) {
 	if sort == "" {
 		return "e.title, e.identifier", nil
 	}
@@ -401,9 +560,11 @@ func (c *compiler) orderBy(sort string, ladders map[string]blueprint.Ladder) (st
 	if fld.many || fld.kind == "object" {
 		return "", fmt.Errorf("%s holds a list or an object, which can't be sorted", sort)
 	}
+	fld = c.joined(fld)
 	value := fld.sortKey()
-	if ladder, ok := ladders[fld.scorecard]; ok && fld.kind == kindTier {
-		value = "array_position(" + c.arg(pq.Array(ladder.Names())) + "::text[], coalesce(" + value + ", ''))"
+	// The rank is the ladder's as last evaluated, until a publish's evaluation re-ranks.
+	if fld.kind == kindTier {
+		value = fld.rank
 	}
 
 	return value + " " + direction + ", e.title, e.identifier", nil

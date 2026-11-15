@@ -30,7 +30,7 @@ type Match struct {
 // filters like false, so it isn't coalesced, which would hide it from the
 // indexes.
 func NewMatch(q Query) (Match, error) {
-	c := &compiler{spec: q.Blueprint, specs: q.Blueprints}
+	c := q.schema().compiler(false)
 	q.Search = ""
 	where, err := q.where(c)
 	if err != nil {
@@ -64,9 +64,10 @@ var Aggregates = []string{widget.OpCount, widget.OpDistinct, "sum", "avg", widge
 // percentiles are the fractions the percentile ops stand for.
 var percentiles = map[string]string{"p50": "0.5", "p90": "0.9", "p95": "0.95", "p99": "0.99"}
 
-// CheckAggregate reports whether a blueprint's entities can be summed up this way.
-func CheckAggregate(specs map[string]blueprint.Spec, spec blueprint.Spec, a Aggregate) error {
-	_, err := aggregateSQL(&compiler{spec: spec, specs: specs}, a)
+// CheckAggregate reports whether a blueprint's entities can be summed up
+// this way.
+func CheckAggregate(s Schema, a Aggregate) error {
+	_, err := aggregateSQL(s.compiler(true), a)
 	return err
 }
 
@@ -130,6 +131,7 @@ func aggregateSQL(c *compiler, a Aggregate) (string, error) {
 			}
 			return "", fmt.Errorf("%s works on numbers, and %s isn't one", a.Op, a.Path)
 		}
+		fld = c.joined(fld)
 		if fraction, ok := percentiles[a.Op]; ok {
 			return of("percentile_cont(" + fraction + ") WITHIN GROUP (ORDER BY " + fld.number() + ")"), nil
 		}
@@ -141,8 +143,8 @@ func aggregateSQL(c *compiler, a Aggregate) (string, error) {
 
 // Dated reports whether an aggregate of a blueprint's entities is the min
 // or max of a date, which comes in seconds rather than the date's own unit.
-func Dated(specs map[string]blueprint.Spec, spec blueprint.Spec, op, path string) bool {
-	fld, err := fieldFor(specs, spec, path)
+func Dated(s Schema, op, path string) bool {
+	fld, err := fieldFor(s, false, path)
 	return err == nil && dated(op, fld)
 }
 
@@ -190,7 +192,7 @@ func (s Store) Aggregates(ctx context.Context, m Match, aggregates []Aggregate) 
 	for i := range values {
 		targets[i] = &values[i]
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT `+strings.Join(columns, ", ")+` FROM entities e
+	if err := s.db.QueryRowContext(ctx, `SELECT `+strings.Join(columns, ", ")+c.from()+`
 	WHERE `+m.where, c.args...).Scan(targets...); err != nil {
 		return nil, err
 	}
@@ -224,8 +226,8 @@ func (s Store) Facets(ctx context.Context, q Query, path string) ([]Facet, error
 }
 
 // CheckGroup reports whether entities can be counted by a field's values.
-func CheckGroup(specs map[string]blueprint.Spec, spec blueprint.Spec, path string) error {
-	_, err := groupField(&compiler{spec: spec, specs: specs}, path)
+func CheckGroup(s Schema, path string) error {
+	_, err := groupField(s.compiler(true), path)
 	return err
 }
 
@@ -294,6 +296,7 @@ func (s Store) GroupBy(ctx context.Context, m Match, path string, aggregates []A
 	if err != nil {
 		return nil, nil, FilterError{err}
 	}
+	fld = c.joined(fld)
 	columns, err := aggregateColumns(c, aggregates)
 	if err != nil {
 		return nil, nil, err
@@ -304,7 +307,7 @@ func (s Store) GroupBy(ctx context.Context, m Match, path string, aggregates []A
 		outer += ", g.v" + strconv.Itoa(i)
 		named += ", k.v" + strconv.Itoa(i)
 	}
-	value, from := fld.json(), " FROM entities e"
+	value, from := fld.json(), c.from()
 	if fld.many {
 		from += `
 	LEFT JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(` + fld.value + `) = 'array' THEN ` + fld.value + ` END) item ON true`
@@ -427,8 +430,8 @@ func listedValues(fld field, ladders map[string]blueprint.Ladder) []string {
 }
 
 // CheckSort reports whether a blueprint's entities can be sorted this way.
-func CheckSort(specs map[string]blueprint.Spec, spec blueprint.Spec, sort string) error {
-	_, err := (&compiler{spec: spec, specs: specs}).orderBy(sort, nil)
+func CheckSort(s Schema, sort string) error {
+	_, err := s.compiler(true).orderBy(sort)
 	return err
 }
 
@@ -443,9 +446,10 @@ type FieldInfo struct {
 	Kind      string
 }
 
-// Describe says what a path ends on, or why a blueprint can't read it.
-func Describe(specs map[string]blueprint.Spec, spec blueprint.Spec, path string) (FieldInfo, error) {
-	fld, err := fieldFor(specs, spec, path)
+// Describe says what a path ends on, or why a blueprint can't read it, as
+// stored paths run: a scorecard that's changed since reads empty.
+func Describe(s Schema, path string) (FieldInfo, error) {
+	fld, err := fieldFor(s, false, path)
 	if err != nil {
 		return FieldInfo{}, err
 	}
@@ -455,8 +459,8 @@ func Describe(specs map[string]blueprint.Spec, spec blueprint.Spec, path string)
 
 // CheckColumn reports whether a path can be shown, in a table or on an
 // entity page.
-func CheckColumn(specs map[string]blueprint.Spec, spec blueprint.Spec, path string) error {
-	_, err := fieldFor(specs, spec, path)
+func CheckColumn(s Schema, path string) error {
+	_, err := fieldFor(s, true, path)
 	return err
 }
 
@@ -507,7 +511,7 @@ func (s Store) Rows(ctx context.Context, m Match, order Order, limit int, column
 		}
 		selects = append(selects, ", "+value+" AS k"+strconv.Itoa(i), ", "+links)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.identifier, e.title`+strings.Join(selects, "")+` FROM entities e
+	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.identifier, e.title`+strings.Join(selects, "")+c.from()+`
 	WHERE `+m.where+`
 	ORDER BY `+orderBy+`
 	LIMIT `+c.arg(limit), c.args...)
@@ -553,7 +557,7 @@ func (s Store) Rows(ctx context.Context, m Match, order Order, limit int, column
 // false first ascending, as a boolean property does.
 func rowOrder(c *compiler, m Match, order Order, columns []Column) (string, error) {
 	if !order.ByCondition {
-		return c.orderBy(order.Sort, m.ladders)
+		return c.orderBy(order.Sort)
 	}
 	if order.Column < 0 || order.Column >= len(columns) || !columns[order.Column].Condition {
 		return "", fmt.Errorf("column %d isn't a condition to sort by", order.Column)
@@ -608,11 +612,7 @@ func rowLinks(c *compiler, fld field, path string) (string, error) {
 	FROM jsonb_array_elements_text(CASE jsonb_typeof(` + value + `) WHEN 'array' THEN ` + value + ` WHEN 'string' THEN jsonb_build_array(` + value + `) END) WITH ORDINALITY x(id, n)
 	LEFT JOIN entities t ON t.blueprint_id = ` + BlueprintID(specNamed(c.specs, fld.relation)) + ` AND t.identifier = x.id)`, nil
 	case fld.kind == kindTier:
-		scored := "identifier"
-		if at := strings.LastIndex(path, "."); at >= 0 {
-			scored = path[:at] + ".identifier"
-		}
-		owner, err := c.field(scored)
+		owner, err := c.field(fld.owner)
 		if err != nil {
 			return "", err
 		}
@@ -622,12 +622,12 @@ func rowLinks(c *compiler, fld field, path string) (string, error) {
 	return "NULL::jsonb", nil
 }
 
-// Matching is SQL selecting the IDs of the entities of spec matching
-// filter, with its arguments numbered after args. specs are the blueprints
-// its relations lead to.
-func Matching(specs map[string]blueprint.Spec, spec blueprint.Spec, filter *Filter, args []any) (string, []any, error) {
-	c := &compiler{spec: spec, specs: specs, args: args}
-	where, err := Query{Blueprint: spec, Filter: filter}.where(c)
+// Matching is SQL selecting the IDs of the entities of s's blueprint
+// matching filter, with its arguments numbered after args.
+func Matching(s Schema, filter *Filter, args []any) (string, []any, error) {
+	c := s.compiler(false)
+	c.args = args
+	where, err := Query{Blueprint: s.Blueprint, Filter: filter}.where(c)
 	if err != nil {
 		return "", nil, err
 	}

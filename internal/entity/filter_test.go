@@ -1,7 +1,6 @@
 package entity
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -237,15 +236,15 @@ func TestOrderBy(t *testing.T) {
 		{retained, "lastDeployedAt", "e.occurred_at ASC NULLS FIRST, e.title, e.identifier"},
 	}
 	for _, test := range tests {
-		if got, err := (&compiler{spec: test.spec}).orderBy(test.sort, nil); err != nil || got != test.want {
+		if got, err := (&compiler{spec: test.spec}).orderBy(test.sort); err != nil || got != test.want {
 			t.Errorf("orderBy(%q) = %s, %v, want %s", test.sort, got, err, test.want)
 		}
 	}
 	c := &compiler{spec: service(t)}
-	if _, err := c.orderBy("tags", nil); err == nil {
+	if _, err := c.orderBy("tags"); err == nil {
 		t.Error("sorting by a list should fail")
 	}
-	if _, err := c.orderBy("$updatedAt", nil); err == nil || !strings.Contains(err.Error(), `no property "$updatedAt"`) {
+	if _, err := c.orderBy("$updatedAt"); err == nil || !strings.Contains(err.Error(), `no property "$updatedAt"`) {
 		t.Errorf("err = %v, want an unknown property", err)
 	}
 }
@@ -267,7 +266,7 @@ func TestCheckFilterScorecardNames(t *testing.T) {
 		{"any value", `{"not":{"property":"readiness.checks.hasOwner","op":"exists"}}`, service(t), ""},
 		{
 			"unknown tier", `{"property":"readiness","op":"eq","value":"platinum"}`, service(t),
-			`readiness is a tier of service-readiness: bronze, gold, or "" for none, not "platinum"`,
+			`readiness is a tier of service-readiness: bronze, gold, or "" for evaluated with no tier, not "platinum"`,
 		},
 		{
 			"unknown check", `{"property":"readiness.checks.hasDocs","op":"eq","value":"failed"}`, service(t),
@@ -285,7 +284,7 @@ func TestCheckFilterScorecardNames(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = CheckFilter(specs, ladders, test.on, *f)
+			err = CheckFilter(Schema{Blueprint: test.on, Blueprints: specs, Ladders: ladders}, *f)
 			if test.want == "" && err != nil || test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)) {
 				t.Fatalf("err = %v, want %q", err, test.want)
 			}
@@ -294,18 +293,33 @@ func TestCheckFilterScorecardNames(t *testing.T) {
 
 	// A scorecard that isn't published has nothing to check against.
 	f, _ := ParseFilter(`{"property":"readiness","op":"eq","value":"platinum"}`)
-	if err := CheckFilter(specs, nil, service(t), *f); err != nil {
+	if err := CheckFilter(Schema{Blueprint: service(t), Blueprints: specs}, *f); err != nil {
 		t.Errorf("err = %v without ladders", err)
 	}
 }
 
-func TestListRejectsUnknownChecks(t *testing.T) {
-	f, _ := ParseFilter(`{"property":"readiness.checks.hasDocs","op":"eq","value":"failed"}`)
-	ladders := map[string]blueprint.Ladder{"service-readiness": {Tiers: []blueprint.Rung{{Name: "gold", Criteria: map[string]any{"onCall": nil}}}}}
-	// The filter is refused before the database is asked.
-	_, err := Store{}.List(t.Context(), Query{Blueprint: service(t), Ladders: ladders, Filter: f, Page: 1, PageSize: 10})
-	var filterErr FilterError
-	if !errors.As(err, &filterErr) || !strings.Contains(err.Error(), `no check "hasDocs"`) {
-		t.Fatalf("err = %v, want a FilterError naming the check", err)
+func TestWrittenQueriesAreCheckedStoredOnesReadEmpty(t *testing.T) {
+	ladders := map[string]blueprint.Ladder{
+		"service-readiness": {Blueprint: "service", Tiers: []blueprint.Rung{{Name: "gold", Criteria: map[string]any{"onCall": nil}}}},
+		"team-health":       {Blueprint: "team"},
+	}
+	for _, path := range []string{
+		"readiness.checks.hasDocs", "_scorecards.service-readiness.checks.hasDocs",
+		"_scorecards.deleted", "_scorecards.team-health",
+	} {
+		f := &Filter{Property: path, Op: OpExists}
+		q := Query{Blueprint: service(t), Ladders: ladders, Filter: f}
+		// A query people write is refused before the database is asked.
+		if err := q.check(); err == nil {
+			t.Errorf("%s: written, it isn't refused", path)
+		}
+		// Stored ones were checked when published; since changed, they
+		// compile, to match nothing, in filters and sorts alike.
+		if _, err := q.where(q.schema().compiler(false)); err != nil {
+			t.Errorf("%s: stored, its filter fails: %v", path, err)
+		}
+		if _, err := q.schema().compiler(false).orderBy(path); err != nil && !strings.Contains(err.Error(), "can't be sorted") {
+			t.Errorf("%s: stored, its sort fails: %v", path, err)
+		}
 	}
 }

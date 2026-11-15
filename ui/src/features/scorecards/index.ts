@@ -6,8 +6,10 @@ export {
   entityScorecardsQueryOptions,
   evaluateScorecard,
   gradedBy,
+  publishedGradedBy,
   type Result,
   type ResultQuery,
+  resultsPrefix,
   resultsQueryOptions,
   type Scorecard,
   type ScorecardSpec,
@@ -16,9 +18,11 @@ export {
   type Status,
   type Summary,
   scorecardKeys,
+  scorecardPath,
   scorecards,
   scorecardView,
   summaryQueryOptions,
   type Tier,
+  tierTitles,
 } from "./api";
 export { useSummary } from "./queries";

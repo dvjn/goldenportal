@@ -80,7 +80,7 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 			if f == nil {
 				continue
 			}
-			if err := entity.CheckFilter(published, ladders, bp, *f); err != nil {
+			if err := entity.CheckFilter(entity.Schema{Blueprint: bp, Blueprints: published, Ladders: ladders}, *f); err != nil {
 				add(configdoc.SeverityError, path, spec.line, "%v", err)
 			}
 		}
@@ -149,7 +149,7 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 				}
 			}
 		case step.Approval != nil && step.Approval.Approvers.Filter != nil && bp.Identifier != "":
-			if err := entity.CheckFilter(published, ladders, bp, *step.Approval.Approvers.Filter); err != nil {
+			if err := entity.CheckFilter(entity.Schema{Blueprint: bp, Blueprints: published, Ladders: ladders}, *step.Approval.Approvers.Filter); err != nil {
 				add(configdoc.SeverityError, path+".approval.approvers.filter", step.line, "%v", err)
 			}
 		case step.Check != nil:
@@ -159,7 +159,7 @@ func Check(ctx context.Context, db configdoc.DB, spec Spec) ([]configdoc.Issue, 
 				continue
 			}
 			if step.Check.Filter != nil {
-				if err := entity.CheckFilter(published, ladders, target, *step.Check.Filter); err != nil {
+				if err := entity.CheckFilter(entity.Schema{Blueprint: target, Blueprints: published, Ladders: ladders}, *step.Check.Filter); err != nil {
 					add(configdoc.SeverityError, path+".check.filter", step.line, "%v", err)
 				}
 			}

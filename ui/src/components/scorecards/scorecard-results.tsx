@@ -16,9 +16,9 @@ type ResultsProps = {
   search: TableSearch;
   // where is the catalog page's filter, which the tiers, counts and entities follow.
   where?: Filter;
-  // property is the blueprint's scorecard property, through which the filter
-  // reaches tiers and checks; without one, they can't be picked.
-  property?: string;
+  // path reaches the scorecard's result on the blueprint's entities, for
+  // the filter to pick a tier or a check's status by.
+  path: string;
   catalogFilters: CatalogFilters;
 };
 
@@ -41,7 +41,7 @@ function Results({
   spec,
   search,
   where,
-  property,
+  path,
   catalogFilters,
 }: Readonly<ResultsProps & { spec: ScorecardSpec }>) {
   const summary = useSummary(spec.identifier, where, { placeholderData: keepPreviousData });
@@ -63,7 +63,7 @@ function Results({
                 <TierDistribution
                   tiers={spec.tiers}
                   counts={summary.data.tiers}
-                  onPick={property ? (tier) => show(property, tier) : undefined}
+                  onPick={(tier) => show(path, tier)}
                 />
               </>
             ) : (
@@ -77,9 +77,7 @@ function Results({
         spec={spec}
         results={{
           summary: summary.data,
-          onPick: property
-            ? (criterion, status) => show(checkPath(property, criterion), status)
-            : undefined,
+          onPick: (criterion, status) => show(checkPath(path, criterion), status),
         }}
       />
       <div ref={entities} className="scroll-mt-16">

@@ -77,6 +77,25 @@ describe("filter chips", () => {
     );
   });
 
+  it("edits a scorecard's tier and checks, through a property or its results path", () => {
+    const filter: Filter[] = [
+      { property: "_scorecards.security", op: "in", values: ["", "gold"] },
+      { property: "_scorecards.security.checks.hasSast", op: "eq", value: "failed" },
+      { not: { property: "readiness.checks.onCall", op: "eq", value: "passed" } },
+      { property: "owner._scorecards.health", op: "eq", value: "gold" },
+      { property: "_scorecards.security.score", op: "gte", value: 50 },
+    ];
+    expect(chipsOf(filter).map((chip) => [chip.kind, "property" in chip && chip.property])).toEqual(
+      [
+        ["options", "_scorecards.security"],
+        ["options", "_scorecards.security.checks.hasSast"],
+        ["options", "readiness.checks.onCall"],
+        ["fixed", false],
+        ["fixed", false],
+      ],
+    );
+  });
+
   it("fixes a second condition on a property that has a chip", () => {
     const first: Filter = { property: "tier", op: "in", values: ["critical", "standard"] };
     const second: Filter = { property: "tier", op: "ne", value: "standard" };

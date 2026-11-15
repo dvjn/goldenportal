@@ -16,6 +16,7 @@ var Kind = configdoc.Kind[Spec]{
 	Plural:    "scorecards",
 	Parse:     Parse,
 	Check:     Check,
+	Deletable: deletable,
 	Diff:      Diff,
 	Committed: func(ctx *gofr.Context, next Spec) { evaluateSoon(ctx, ctx.SQL, next.Identifier) },
 }

@@ -457,7 +457,9 @@ spec:
 		t.Fatal(issues)
 	}
 	blueprints := map[string]blueprint.Spec{"service": bp, "team": {Identifier: "team"}}
-	scorecards := map[string]scorecard.Spec{"readiness": {Identifier: "readiness", Blueprint: "service"}}
+	scorecards := map[string]scorecard.Spec{"readiness": {Identifier: "readiness", Blueprint: "service", Tiers: []scorecard.Tier{
+		{Name: "gold", Criteria: []scorecard.Criterion{{ID: "hasOwner"}}},
+	}}}
 	services := &widget.Query{Blueprint: "service"}
 	bad := &filter.Filter{Property: "nope", Op: "eq", Value: "x"}
 	value := func(v widget.Value) *widget.Value { v.Query = *services; return &v }
@@ -494,6 +496,10 @@ spec:
 		{"row link paths", widget.Widget{Type: widget.TypeTable, Query: services, RowLink: &widget.Link{Path: "/x/{{ owner.title }}/{{ nope | ascii_downcase }}"}}, "error w.rowLink"},
 		{"path columns", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "owner.title"}, {Path: "readiness"}, {Path: "readiness.failed"}, {Path: "readiness.checks.hasOwner"}, {Path: "ownerName"}}}, ""},
 		{"scorecard field", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "readiness.tier"}}}, "error w.columns[0].path"},
+		{"results path columns", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "_scorecards.readiness"}, {Path: "_scorecards.readiness.checks.hasOwner"}}, Sort: "-_scorecards.readiness.score"}, ""},
+		{"a check the scorecard lacks", widget.Widget{Type: widget.TypeTable, Query: services, Columns: []widget.Column{{Path: "readiness.checks.onCall"}}, Sort: "_scorecards.readiness.checks.onCall"}, "error w.columns[0].path, error w.sort"},
+		{"group by a check the scorecard lacks", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "_scorecards.readiness.checks.onCall"}, "error w.groupBy"},
+		{"results of a scorecard of another blueprint", widget.Widget{Type: widget.TypeTable, Query: &widget.Query{Blueprint: "team"}, Columns: []widget.Column{{Path: "_scorecards.readiness"}}}, "error w.columns[0].path"},
 		{"sort a list", widget.Widget{Type: widget.TypeTable, Query: services, Sort: "tags"}, "error w.sort"},
 		{"sort by tier", widget.Widget{Type: widget.TypeTable, Query: services, Sort: "-readiness"}, ""},
 		{"filter with me", widget.Widget{Type: widget.TypeTable, Query: &widget.Query{Blueprint: "service", Filter: &filter.Filter{Property: "owner", Op: "eq", Value: widget.ValueMe}}}, ""},
@@ -506,6 +512,7 @@ spec:
 		{"scorecard of another blueprint", widget.Widget{Type: widget.TypeScorecard, Scorecard: "readiness", Query: &widget.Query{Blueprint: "team"}}, "error w.query"},
 		{"scorecard narrowed", widget.Widget{Type: widget.TypeScorecard, Scorecard: "readiness", Query: &widget.Query{Filter: &filter.Filter{Property: "tier", Op: "eq", Value: "a"}}}, ""},
 		{"properties", widget.Widget{Type: widget.TypeProperties, Properties: []string{"tier", "nope"}}, "error w.properties"},
+		{"properties only of the entity's own", widget.Widget{Type: widget.TypeProperties, Properties: []string{"readiness", "_scorecards.readiness", "owner.title"}}, "error w.properties, error w.properties"},
 		{"percentile", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{P95: "coverage"}})}, ""},
 		{"percentile of text", widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{P95: "tier"}})}, "error w.value.p95"},
 		{"bar measure", widget.Widget{Type: widget.TypeBar, Query: services, GroupBy: "tier", Measure: &widget.Measure{Filter: &filter.Filter{Property: "tags", Op: "exists"}, Summary: widget.Summary{P90: "coverage"}}}, ""},
@@ -520,7 +527,7 @@ spec:
 		t.Run(test.name, func(t *testing.T) {
 			test.widget.Path = "w"
 			got := []string{}
-			for _, issue := range checkWidgets([]widget.Widget{test.widget}, "service", blueprints, scorecards) {
+			for _, issue := range checkWidgets([]widget.Widget{test.widget}, "service", blueprints, scorecards, scorecard.Ladders(scorecards)) {
 				got = append(got, issue.Severity+" "+issue.Path)
 			}
 			if strings.Join(got, ", ") != test.want {
@@ -536,7 +543,7 @@ spec:
 		{widget.Widget{Type: widget.TypeStat, Value: value(widget.Value{Summary: widget.Summary{P95: "tier"}})}, "p95 works on numbers, and tier isn't one"},
 		{widget.Widget{Type: widget.TypeTrend, Query: services, Date: "coverage"}, "coverage isn't a date, so entities can't be put on its day"},
 	} {
-		if issues := checkWidgets([]widget.Widget{test.widget}, "service", blueprints, scorecards); len(issues) != 1 || issues[0].Message != test.want {
+		if issues := checkWidgets([]widget.Widget{test.widget}, "service", blueprints, scorecards, scorecard.Ladders(scorecards)); len(issues) != 1 || issues[0].Message != test.want {
 			t.Errorf("issues = %+v, want %q", issues, test.want)
 		}
 	}
@@ -654,7 +661,7 @@ spec:
 	}}
 	for _, w := range own.Entity.Tabs[0].Widgets {
 		f := widget.BindData(w.Value.Query.Filter, sampleEntity(own, nil))
-		if err := checkFilter(nil, nil, target, f); err != nil {
+		if err := checkFilter(entity.Schema{Blueprint: target}, f); err != nil {
 			t.Errorf("%s: %v", w.ID, err)
 		}
 	}
@@ -679,7 +686,7 @@ spec:
 		t.Fatal(issues)
 	}
 	got := []string{}
-	for _, issue := range checkPages(own, map[string]blueprint.Spec{"job": own}, nil) {
+	for _, issue := range checkPages(own, map[string]blueprint.Spec{"job": own}, nil, nil) {
 		got = append(got, issue.Severity+" "+issue.Path)
 	}
 	if want := "error spec.entity.tabs.later.when"; strings.Join(got, ", ") != want {
