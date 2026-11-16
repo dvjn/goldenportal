@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.4-bookworm}
+    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:18.7-bookworm}
     container_name: ${POSTGRES_CONTAINER:-goldenportal-postgres}
     user: root
     # Statement statistics, and the plans of statements slower than 300 ms
@@ -30,7 +30,7 @@ services:
   # Where the API sends its spans and the UI's, as configs/.dev.env says;
   # its UI is at http://localhost:47686. deps/jaeger.yaml sets it up.
   jaeger:
-    image: ${JAEGER_IMAGE:-docker.io/jaegertracing/jaeger:2.22.0}
+    image: ${JAEGER_IMAGE:-docker.io/jaegertracing/jaeger:2.23.0}
     container_name: ${JAEGER_CONTAINER:-goldenportal-jaeger}
     user: root
     command: ["--config", "/etc/jaeger/config.yaml"]

@@ -27,7 +27,7 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 🧰 Install Tools
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: ${{ env.MISE_VERSION }}
           cache_save: ${{ github.ref == 'refs/heads/main' }}
@@ -62,7 +62,7 @@ jobs:
     # The tests make their own databases on this server.
     services:
       postgres:
-        image: docker.io/library/postgres:18.4-bookworm
+        image: docker.io/library/postgres:18.7-bookworm
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -79,7 +79,7 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 🧰 Install Tools
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: ${{ env.MISE_VERSION }}
           cache_save: ${{ github.ref == 'refs/heads/main' }}
@@ -118,7 +118,7 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 🧰 Install Tools
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: ${{ env.MISE_VERSION }}
           cache_save: ${{ github.ref == 'refs/heads/main' }}
