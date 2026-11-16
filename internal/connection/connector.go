@@ -260,7 +260,7 @@ var Connectors = []Connector{
 		ID:          "authentik",
 		Icon:        "key-round",
 		Color:       "orange",
-		Title:       "authentik",
+		Title:       "Authentik",
 		Description: "Users and groups with their attributes, and each group's members and parents, read with an API token from an authentik instance.",
 		Pulls:       true,
 		Checks:      true,
