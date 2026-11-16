@@ -34,5 +34,6 @@ func All() map[int64]migration.Migrate {
 		20261116140000: dropErroredResults(),
 		20261116150000: oauthGrantsPerEndpoint(),
 		20261117120000: indexableQueryShapes(),
+		20261118120000: entityIndexes(),
 	}
 }

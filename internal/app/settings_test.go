@@ -10,6 +10,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/entity"
+	"github.com/dvjn/goldenportal/internal/index"
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 )
@@ -71,7 +72,7 @@ func TestDescribeConfigScorecardSchedule(t *testing.T) {
 }
 
 func TestScheduleSetting(t *testing.T) {
-	for _, env := range []string{scorecard.EvaluationScheduleEnv, entity.RetentionScheduleEnv} {
+	for _, env := range []string{scorecard.EvaluationScheduleEnv, entity.RetentionScheduleEnv, index.ScheduleEnv} {
 		got, err := scheduleSetting(config.NewMockConfig(nil), env, "0 * * * *")
 		if err != nil || got != "0 * * * *" {
 			t.Errorf("%s unset = %q, %v; want the default", env, got, err)

@@ -55,6 +55,7 @@ const configuration: ServerConfiguration = {
     logLevel: "INFO",
     retentionSchedule: "17 4 * * *",
     scorecardSchedule: "0 * * * *",
+    indexSchedule: "41 * * * *",
   },
 };
 
@@ -146,6 +147,7 @@ describe("configuration", () => {
     expect(row("Metrics Port")).toHaveTextContent("2121");
     expect(row("Log Level")).toHaveTextContent("INFO");
     expect(row("Scorecard Schedule")).toHaveTextContent("0 * * * *");
+    expect(row("Index Schedule")).toHaveTextContent("41 * * * *");
   });
 
   it("copies the redirect URI", async () => {

@@ -251,6 +251,7 @@ function PlatformCard({
           <Detail label="Log Level">{server.logLevel}</Detail>
           <Detail label="Retention Schedule">{server.retentionSchedule}</Detail>
           <Detail label="Scorecard Schedule">{server.scorecardSchedule}</Detail>
+          <Detail label="Index Schedule">{server.indexSchedule}</Detail>
         </DetailList>
       </CardContent>
     </Card>

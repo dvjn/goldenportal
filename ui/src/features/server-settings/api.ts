@@ -40,6 +40,7 @@ export type ServerConfiguration = {
     logLevel: string;
     retentionSchedule: string;
     scorecardSchedule: string;
+    indexSchedule: string;
   };
 };
 

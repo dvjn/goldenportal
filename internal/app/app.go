@@ -15,6 +15,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/index"
 	portalmcp "github.com/dvjn/goldenportal/internal/mcp"
 	"github.com/dvjn/goldenportal/internal/oauth"
 	"github.com/dvjn/goldenportal/internal/scim"
@@ -95,12 +96,23 @@ func New() *gofr.App {
 	oauthServer.Register(api)
 	access.Register(api)
 	connection.Register(api, app.Config.Get("GP_BASE_URL"), app.Config.Get(connection.WebhookKeyEnv))
-	blueprint.Register(api, []blueprint.Checker{dashboard.CheckPages, connection.CheckSources, scorecard.CheckGraders}, scorecard.EvaluateScoring)
+	indexes, err := index.SettingsFrom(app.Config)
+	if err != nil {
+		app.Logger().Fatal(err)
+	}
+	// Indexes follow what blueprints, dashboards, scorecards and actions
+	// sort and filter by.
+	reindex := index.Register(api, indexes, mustSchedule(app, index.ScheduleEnv, index.DefaultSchedule))
+	blueprint.Register(api, []blueprint.Checker{dashboard.CheckPages, connection.CheckSources, scorecard.CheckGraders},
+		func(ctx *gofr.Context, identifier string) {
+			scorecard.EvaluateScoring(ctx, identifier)
+			reindex(ctx)
+		})
 	entity.Register(api, mustSchedule(app, entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule))
 	connection.RegisterIngest(app)
-	scorecard.Register(api, mustSchedule(app, scorecard.EvaluationScheduleEnv, scorecard.DefaultEvaluationSchedule))
-	dashboard.Register(api)
-	action.Register(api, app.Config.Get("GP_BASE_URL"))
+	scorecard.Register(api, mustSchedule(app, scorecard.EvaluationScheduleEnv, scorecard.DefaultEvaluationSchedule), reindex)
+	dashboard.Register(api, reindex)
+	action.Register(api, app.Config.Get("GP_BASE_URL"), reindex)
 	search.Register(api, searcher)
 	configdoc.RegisterBulk(api)
 	configdoc.RegisterSchemas(api)

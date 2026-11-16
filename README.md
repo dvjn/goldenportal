@@ -10,6 +10,8 @@ Golden Portal is a developer portal. It brings dashboards, scorecards, and golde
 
 The portal migrates its database when it starts. Some migrations build indexes on `entities`, which blocks writes to it until they finish, so a large catalog may take a while to start after an upgrade.
 
+The portal also indexes what its published configuration sorts and filters entities by, on blueprints with at least 50,000 entities (`ENTITY_INDEX_MIN_ROWS`). It builds and drops these indexes in the background, without blocking writes, after each publish, as it starts and every hour (`ENTITY_INDEX_SCHEDULE`, a cron expression). A build waits for transactions under way to end, for up to an hour. The indexes are named `gpx_*` and listed, with why each exists and how its last build or drop went, in the `entity_indexes` table. Each one slows writes to its blueprint, so `ENTITY_INDEX_MAX_PER_BLUEPRINT` (8) and `ENTITY_INDEX_MAX` (64) cap how many there are; setting either to 0 turns them off and drops those built.
+
 ## Agents
 
 AI assistants connect to the portal over MCP, signing in with the portal's own OAuth. There are two servers, at the portal's public URL (`GP_BASE_URL`):

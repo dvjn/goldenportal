@@ -24,9 +24,14 @@ import (
 )
 
 // Register serves dashboards and pages. The handlers read the request and
-// call the services below, which MCP calls too.
-func Register(app httpx.Routes) {
-	configdoc.Register(app, Kind)
+// call the services below, which MCP calls too. committed, if set, follows
+// up a dashboard's publish once it commits.
+func Register(app httpx.Routes, committed func(ctx *gofr.Context)) {
+	kind := Kind
+	if committed != nil {
+		kind.Committed = func(ctx *gofr.Context, _ Spec) { committed(ctx) }
+	}
+	configdoc.Register(app, kind)
 	app.GET("home", home)
 	app.GET("dashboards/{identifier}/view", dashboardView)
 	app.GET("dashboards/{identifier}/data", dashboardData)

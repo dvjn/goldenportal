@@ -79,6 +79,7 @@ const serverConfiguration = {
     logLevel: "INFO",
     retentionSchedule: "17 4 * * *",
     scorecardSchedule: "0 * * * *",
+    indexSchedule: "41 * * * *",
   },
 };
 

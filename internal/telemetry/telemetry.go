@@ -37,6 +37,8 @@ const (
 	RunID      = attribute.Key("gp.run.id")
 	Trigger    = attribute.Key("gp.run.trigger")
 	Mode       = attribute.Key("gp.run.mode")
+	Index      = attribute.Key("gp.index")
+	IndexKey   = attribute.Key("gp.index.key")
 	// Items is how many items a step read or wrote; the counts below split
 	// a run's by what became of them.
 	Items     = attribute.Key("gp.items")

@@ -12,11 +12,17 @@ var baseURL string
 
 // Register serves actions and their runs, and has this instance take on
 // runs no instance holds. The handlers read the request and call the
-// services, which MCP calls too.
-func Register(app httpx.Routes, portalURL string) {
+// services, which MCP calls too. committed, if set, follows up an action's
+// or a workflow's publish once it commits.
+func Register(app httpx.Routes, portalURL string, committed func(ctx *gofr.Context)) {
 	baseURL = portalURL
-	configdoc.Register(app, Kind)
-	configdoc.Register(app, WorkflowDocs)
+	actions, workflows := Kind, WorkflowDocs
+	if committed != nil {
+		actions.Committed = func(ctx *gofr.Context, _ Spec) { committed(ctx) }
+		workflows.Committed = actions.Committed
+	}
+	configdoc.Register(app, actions)
+	configdoc.Register(app, workflows)
 	app.GET("self-service", selfServiceCatalog)
 	app.POST("workflows/{identifier}/runs", startWorkflow)
 	app.GET("catalog/{blueprint}/actions", forEntity)

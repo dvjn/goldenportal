@@ -57,7 +57,7 @@ spec:
 
 var registerKinds = sync.OnceFunc(func() {
 	blueprint.Register(httpxtest.New(), []blueprint.Checker{CheckGraders}, EvaluateScoring)
-	Register(httpxtest.New(), DefaultEvaluationSchedule)
+	Register(httpxtest.New(), DefaultEvaluationSchedule, nil)
 })
 
 // publishFixture publishes through the documents service as a builder, and
@@ -308,7 +308,7 @@ func TestEvaluateAtStart(t *testing.T) {
 	pgtest.Publish(t, f.db, Name, "seeded", strings.Replace(healthYAML, "identifier: health", "identifier: seeded", 1))
 
 	r := httpxtest.New()
-	Register(r, DefaultEvaluationSchedule)
+	Register(r, DefaultEvaluationSchedule, nil)
 	if len(r.OnStarts) != 1 {
 		t.Fatalf("%d start-up hooks, want one", len(r.OnStarts))
 	}

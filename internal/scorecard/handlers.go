@@ -17,9 +17,17 @@ import (
 
 // Register serves scorecards and evaluates every one of them at start and
 // on schedule, a cron expression. The handlers read the request and call
-// the services below, which MCP calls too.
-func Register(app httpx.Routes, schedule string) {
-	configdoc.Register(app, Kind)
+// the services below, which MCP calls too. committed, if set, follows up a
+// scorecard's publish once it commits, after its evaluation is asked for.
+func Register(app httpx.Routes, schedule string, committed func(ctx *gofr.Context)) {
+	kind := Kind
+	if committed != nil {
+		kind.Committed = func(ctx *gofr.Context, next Spec) {
+			Kind.Committed(ctx, next)
+			committed(ctx)
+		}
+	}
+	configdoc.Register(app, kind)
 	app.GET("scorecards/{identifier}/summary", summary)
 	app.GET("scorecards/{identifier}/results", listResults)
 	app.POST("scorecards/{identifier}/evaluate", evaluateNow)

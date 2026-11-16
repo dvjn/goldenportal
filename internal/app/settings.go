@@ -9,6 +9,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/index"
 	"github.com/dvjn/goldenportal/internal/scim"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 )
@@ -79,6 +80,9 @@ type serverInfo struct {
 	// ScorecardSchedule is when every scorecard is evaluated in full, a cron
 	// expression.
 	ScorecardSchedule string `json:"scorecardSchedule"`
+	// IndexSchedule is when the indexes published configuration asks for
+	// are built and dropped between publishes, a cron expression.
+	IndexSchedule string `json:"indexSchedule"`
 }
 
 func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server) serverConfig {
@@ -123,6 +127,7 @@ func describeConfig(cfg config.Config, oidc *auth.OIDC, scimServer *scim.Server)
 			LogLevel:          cfg.GetOrDefault("LOG_LEVEL", "INFO"),
 			RetentionSchedule: cfg.GetOrDefault(entity.RetentionScheduleEnv, entity.DefaultRetentionSchedule),
 			ScorecardSchedule: cfg.GetOrDefault(scorecard.EvaluationScheduleEnv, scorecard.DefaultEvaluationSchedule),
+			IndexSchedule:     cfg.GetOrDefault(index.ScheduleEnv, index.DefaultSchedule),
 		},
 	}
 }
