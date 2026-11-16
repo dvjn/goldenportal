@@ -110,6 +110,7 @@ function Calendar({
         ...classNames,
       }}
       components={{
+        // biome-ignore-start lint/correctness/noComponentHookFactories: kept as shadcn ships them.
         Root: ({ className, rootRef, ...props }) => {
           return <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />;
         },
@@ -134,6 +135,7 @@ function Calendar({
             </td>
           );
         },
+        // biome-ignore-end lint/correctness/noComponentHookFactories: kept as shadcn ships them.
         ...components,
       }}
       {...props}

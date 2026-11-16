@@ -280,6 +280,7 @@ function optionsConditions(
 // propertyOptions is the hook a property's filter loads its options with,
 // once the filter is picked.
 function propertyOptions(blueprint: string, property: Property) {
+  // biome-ignore lint/correctness/noComponentHookFactories: React tracks hooks by call order, not identity, so a new one each render keeps its state.
   return function useOptions() {
     return usePropertyOptions(blueprint, property);
   };
@@ -287,6 +288,7 @@ function propertyOptions(blueprint: string, property: Property) {
 
 // tierOptions is the hook a scorecard's tier filter loads its options with.
 function tierOptions(scorecard: string) {
+  // biome-ignore lint/correctness/noComponentHookFactories: React tracks hooks by call order, not identity, so a new one each render keeps its state.
   return function useOptions() {
     return useTierOptions(scorecard);
   };

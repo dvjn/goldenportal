@@ -20,6 +20,7 @@ export function renderWithQueryClient(
   queryClient = createTestQueryClient(),
   options?: Omit<RenderOptions, "wrapper">,
 ) {
+  // biome-ignore lint/correctness/noComponentHookFactories: Testing Library keeps one wrapper per render, rerenders included.
   function Wrapper({ children }: Readonly<{ children: ReactNode }>) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   }
