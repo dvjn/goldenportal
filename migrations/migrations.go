@@ -38,5 +38,6 @@ func All() map[int64]migration.Migrate {
 		20261118140000: scorecardResultPaths(),
 		20261118150000: entityBatches(),
 		20261119120000: groupParents(),
+		20261120120000: flatExtras(),
 	}
 }

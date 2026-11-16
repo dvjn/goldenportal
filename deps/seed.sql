@@ -776,19 +776,19 @@ spec:
       mode: upsert
       entity:
         identifier: '"gitlab-" + (.id | tostring)'
-        title: (._gp.project | split("/") | last) + " " + .sha[0:8]
+        title: (._project | split("/") | last) + " " + .sha[0:8]
         properties:
-          service: ._gp.project | split("/") | last
+          service: ._project | split("/") | last
           environment: .environment.name
           version: .sha[0:8]
           status: '{"success": "succeeded", "failed": "failed", "canceled": "failed"}[.status] // "running"'
           startedAt: .created_at
           finishedAt: if .status | IN("success", "failed", "canceled") then .finished_at // .updated_at else null end
-          approvalRequired: ._gp.approvalRequired
-          approvedBy: ._gp.approvals | values | map(select(.status == "approved") | .user.username)
-          approvedAt: ._gp.approvedAt
-          approvalSeconds: ._gp.approvalSeconds
-          waitSeconds: ._gp.waitSeconds
+          approvalRequired: ._approvalRequired
+          approvedBy: ._approvals | values | map(select(.status == "approved") | .user.username)
+          approvedAt: ._approvedAt
+          approvalSeconds: ._approvalSeconds
+          waitSeconds: ._waitSeconds
   # The mocks have a fortnight of history, so a week shows older rows
   # leaving the catalog, but for production's, kept a month.
   retention:
@@ -902,10 +902,10 @@ spec:
           visibility: .visibility
           defaultBranch: .default_branch
           archived: .archived
-          ci: ._gp.latestPipeline.status
-          ciValid: ._gp.ciConfig.valid
-          ciStages: '[._gp.ciConfig.jobs[]?.stage] | unique'
-          defaultBranchProtected: ._gp.defaultBranch.protected
+          ci: ._latestPipeline.status
+          ciValid: ._ciConfig.valid
+          ciStages: '[._ciConfig.jobs[]?.stage] | unique'
+          defaultBranchProtected: ._defaultBranch.protected
           url: .web_url
           lastActivityAt: .last_activity_at
   catalog:
@@ -962,10 +962,10 @@ spec:
       resource: merge_requests
       mode: upsert
       entity:
-        identifier: ._gp.project + "!" + (.iid | tostring)
+        identifier: ._project + "!" + (.iid | tostring)
         title: .title
         properties:
-          repo: ._gp.project
+          repo: ._project
           state: if .state == "opened" and .draft then "draft" else .state end
           author: .author.username
           branch: .source_branch
@@ -1068,9 +1068,9 @@ spec:
       mode: upsert
       entity:
         identifier: .id
-        title: '(._gp.project | split("/") | last) + " " + .ref + " #" + (.iid // .id | tostring)'
+        title: '(._project | split("/") | last) + " " + .ref + " #" + (.iid // .id | tostring)'
         properties:
-          repo: ._gp.project
+          repo: ._project
           ref: .ref
           source: .source
           status: .status
@@ -1204,34 +1204,34 @@ spec:
       type: string
       format: uri
   sources:
-    # Every attempt of every job, numbered under _gp, and each job as its
+    # Every attempt of every job, numbered, and each job as its
     # latest attempt left it.
     - connection: gitlab
       resource: job_attempts
       mode: upsert
       entity:
         identifier: .id
-        title: '.name + " #" + (._gp.attempt | tostring)'
+        title: '.name + " #" + (._attempt | tostring)'
         properties:
           pipeline: .pipeline.id | tostring
-          repo: ._gp.project
+          repo: ._project
           runner: .runner.id | values | tostring
           name: .name
           stage: .stage
           status: .status
           failureReason: .failure_reason
           allowFailure: .allow_failure
-          attempt: ._gp.attempt
-          retried: ._gp.retried
+          attempt: ._attempt
+          retried: ._retried
           seconds: .duration
           queuedSeconds: .queued_duration
           addedAt: .created_at
-          queuedAt: ._gp.queuedAt
-          waitSeconds: ._gp.waitSeconds
-          stageWaitSeconds: ._gp.stageWaitSeconds
-          playWaitSeconds: ._gp.playWaitSeconds
-          manual: ._gp.manual
-          playedBy: ._gp.playedBy.username
+          queuedAt: ._queuedAt
+          waitSeconds: ._waitSeconds
+          stageWaitSeconds: ._stageWaitSeconds
+          playWaitSeconds: ._playWaitSeconds
+          manual: ._manual
+          playedBy: ._playedBy.username
           tags: .tag_list
           ref: .ref
           commit: .commit.id
@@ -1359,24 +1359,24 @@ spec:
         title: .name
         properties:
           pipeline: .pipeline.id | tostring
-          repo: ._gp.project
+          repo: ._project
           runner: .runner.id | values | tostring
           name: .name
           stage: .stage
           status: .status
           failureReason: .failure_reason
-          attempts: ._gp.attempts
-          failedAttempts: ._gp.failedAttempts
-          flaky: ._gp.flaky
+          attempts: ._attempts
+          failedAttempts: ._failedAttempts
+          flaky: ._flaky
           seconds: .duration
           queuedSeconds: .queued_duration
           addedAt: .created_at
-          queuedAt: ._gp.queuedAt
-          waitSeconds: ._gp.waitSeconds
-          stageWaitSeconds: ._gp.stageWaitSeconds
-          playWaitSeconds: ._gp.playWaitSeconds
-          manual: ._gp.manual
-          playedBy: ._gp.playedBy.username
+          queuedAt: ._queuedAt
+          waitSeconds: ._waitSeconds
+          stageWaitSeconds: ._stageWaitSeconds
+          playWaitSeconds: ._playWaitSeconds
+          manual: ._manual
+          playedBy: ._playedBy.username
           finishedAt: .finished_at
           triggeredAt: .pipeline.created_at
           url: .web_url
@@ -1488,7 +1488,7 @@ spec:
       mode: upsert
       entity:
         identifier: .id
-        title: ._gp.title
+        title: ._title
         properties:
           type: .runner_type | rtrimstr("_type")
           status: .status
@@ -1501,8 +1501,8 @@ spec:
           accessLevel: .access_level
           maximumTimeout: .maximum_timeout
           maintenanceNote: .maintenance_note
-          groups: ._gp.groups
-          repositories: ._gp.projects
+          groups: ._groups
+          repositories: ._projects
           version: .version
           revision: .revision
           platform: .platform
@@ -1510,8 +1510,8 @@ spec:
           registeredBy: .created_by.username
           registeredAt: .created_at
           contactedAt: .contacted_at
-          lastJobAt: ._gp.lastJobAt
-          url: ._gp.url
+          lastJobAt: ._lastJobAt
+          url: ._url
   # A runner is read only when jobs ran on it, so one that ran none for a
   # while leaves.
   retention:

@@ -78,6 +78,9 @@ func TestMigrationKeepsCursors(t *testing.T) {
 			t.Errorf("%s has sources %+v", bp, sources)
 		}
 	}
+	if got := published["pipeline"].Sources; len(got) == 1 && got[0].Entity.Identifier != `._project + "#" + (.id | tostring)` {
+		t.Errorf("pipeline's identifier is %s, want it to read ._project", got[0].Entity.Identifier)
+	}
 	record, err := configdoc.NewStore(db, Name).Get(ctx, "gitlab")
 	if err != nil {
 		t.Fatal(err)

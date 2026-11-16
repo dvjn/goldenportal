@@ -48,20 +48,20 @@ func gitlabBlueprints(withGroups bool) []string {
 		{"projects", "project", `
         identifier: .path_with_namespace
         properties:
-          ci: ._gp.latestPipeline.status
-          protected: ._gp.defaultBranch.protected
-          ciValid: ._gp.ciConfig.valid`, "ci protected ciValid"},
-		{"tags", "tag", `{identifier: ._gp.project + "@" + .name}`, ""},
-		{"merge_requests", "merge-request", `{identifier: ._gp.project + "!" + (.iid | tostring)}`, ""},
-		{"issues", "issue", `{identifier: ._gp.project + "#" + (.iid | tostring)}`, ""},
-		{"releases", "release", `{identifier: ._gp.project + "@" + .tag_name}`, ""},
+          ci: ._latestPipeline.status
+          protected: ._defaultBranch.protected
+          ciValid: ._ciConfig.valid`, "ci protected ciValid"},
+		{"tags", "tag", `{identifier: ._project + "@" + .name}`, ""},
+		{"merge_requests", "merge-request", `{identifier: ._project + "!" + (.iid | tostring)}`, ""},
+		{"issues", "issue", `{identifier: ._project + "#" + (.iid | tostring)}`, ""},
+		{"releases", "release", `{identifier: ._project + "@" + .tag_name}`, ""},
 		{"pipelines", "pipeline", "{identifier: .id}", ""},
 		{"jobs", "job", "{identifier: .id}", ""},
 		{"job_attempts", "job-attempt", "{identifier: .id}", ""},
 		{"runners", "runner", "{identifier: .id}", ""},
 		{"deployments", "deployment", "{identifier: .id}", ""},
-		{"environments", "environment", `{identifier: ._gp.project + "/" + .name}`, ""},
-		{"members", "member", `{identifier: ._gp.group + "/" + .username}`, ""},
+		{"environments", "environment", `{identifier: ._project + "/" + .name}`, ""},
+		{"members", "member", `{identifier: ._group + "/" + .username}`, ""},
 	} {
 		if !withGroups && (b.resource == "groups" || b.resource == "members") {
 			continue
@@ -311,8 +311,8 @@ func TestGitLabPull(t *testing.T) {
 	}{
 		{gitlabGroups, []string{"full_path"}, "acme,acme/platform"},
 		{gitlabProjects, []string{"path_with_namespace"}, "acme/api,acme/platform/web,octo/tools"},
-		{gitlabProjects, []string{parentKey, "latestPipeline", "id"}, "13,13,13"},
-		{gitlabMembers, []string{parentKey, "group"}, "acme,acme,acme/platform"},
+		{gitlabProjects, []string{"_latestPipeline", "id"}, "13,13,13"},
+		{gitlabMembers, []string{"_group"}, "acme,acme,acme/platform"},
 		{gitlabMembers, []string{"username"}, "ada,grace,linus"},
 		// Without cursors, everything, however long ago it changed.
 		{gitlabMergeRequests, []string{"iid"}, "4,3,2,1,4,3,2,1,4,3,2,1"},
@@ -324,9 +324,9 @@ func TestGitLabPull(t *testing.T) {
 		{gitlabJobs, []string{"id"}, "140,132,130,120,110,140,132,130,120,110,140,132,130,120,110"},
 		{gitlabJobAttempts, []string{"id"}, "140,132,131,130,120,110,140,132,131,130,120,110,140,132,131,130,120,110"},
 		{gitlabDeployments, []string{"id"}, "22,21,22,21,22,21"},
-		{gitlabEnvironments, []string{parentKey, "lastDeployment", "id"}, "22,21,22,21,22,21"},
-		{gitlabReleases, []string{parentKey, "project"}, "acme/api,acme/api,acme/platform/web,acme/platform/web,octo/tools,octo/tools"},
-		{gitlabProjects, []string{parentKey, "defaultBranch", "commit", "id"}, "ma1n,ma1n,ma1n"},
+		{gitlabEnvironments, []string{"_lastDeployment", "id"}, "22,21,22,21,22,21"},
+		{gitlabReleases, []string{"_project"}, "acme/api,acme/api,acme/platform/web,acme/platform/web,octo/tools,octo/tools"},
+		{gitlabProjects, []string{"_defaultBranch", "commit", "id"}, "ma1n,ma1n,ma1n"},
 	}
 	for _, c := range checks {
 		if got := gitlabField(pulled[c.resource], c.path...); got != gitlabSorted(c.want) {
@@ -352,7 +352,7 @@ func TestGitLabPull(t *testing.T) {
 		if bad := nonJSON(project); bad != "" {
 			t.Errorf("%s carries %s, which jq can't read", project["path_with_namespace"], bad)
 		}
-		got, _ := json.Marshal(valueAt(project, parentKey, "vulnerabilities"))
+		got, _ := json.Marshal(valueAt(project, "_vulnerabilities"))
 		want := "null"
 		switch project["path_with_namespace"] {
 		case "acme/api":
@@ -367,7 +367,7 @@ func TestGitLabPull(t *testing.T) {
 			t.Errorf("%s has vulnerabilities %s, want %s", project["path_with_namespace"], got, want)
 		}
 		// Its dependencies by license, where the token can read them.
-		deps, _ := json.Marshal(valueAt(project, parentKey, "dependencies"))
+		deps, _ := json.Marshal(valueAt(project, "_dependencies"))
 		wantDeps := "null"
 		if project["path_with_namespace"] == "acme/api" {
 			wantDeps = `{"count":4,"licenses":{"EPL-2.0 OR GPL-2.0-only":1,"GPL-3.0-only":1,"MIT":1,"unknown":1},"malware":1,"osPackages":1}`
@@ -381,18 +381,18 @@ func TestGitLabPull(t *testing.T) {
 	for _, project := range pulled[gitlabProjects] {
 		path := project["path_with_namespace"]
 		checks := map[string]any{"pipelineMustSucceed": path == "acme/platform/web", "discussionsMustBeResolved": path == "octo/tools"}
-		if got := valueAt(project, parentKey, "mergeChecks"); !reflect.DeepEqual(got, checks) {
+		if got := valueAt(project, "_mergeChecks"); !reflect.DeepEqual(got, checks) {
 			t.Errorf("%s has merge checks %v, want %v", path, got, checks)
 		}
 	}
 	for _, project := range pulled[gitlabProjects] {
 		// octo/tools has no CI configuration file, so no CI config.
-		config, _ := valueAt(project, parentKey, "ciConfig").(map[string]any)
+		config, _ := valueAt(project, "_ciConfig").(map[string]any)
 		if (config == nil) != (project["path_with_namespace"] == "octo/tools") {
 			t.Errorf("%s has CI config %v", project["path_with_namespace"], config)
 		}
 		// The root's files and the .gitlab directory's, without directories.
-		if files := valueAt(project, parentKey, "files"); !reflect.DeepEqual(files, []any{"README.md", ".gitlab/CODEOWNERS"}) {
+		if files := valueAt(project, "_files"); !reflect.DeepEqual(files, []any{"README.md", ".gitlab/CODEOWNERS"}) {
 			t.Errorf("%s has files %v, want README.md and .gitlab/CODEOWNERS", project["path_with_namespace"], files)
 		}
 		if config == nil {
@@ -444,6 +444,43 @@ func TestGitLabPull(t *testing.T) {
 		entries[0].Entity.Properties["protected"] != true || entries[0].Entity.Properties["ciValid"] != true {
 		t.Errorf("project entry = %+v", entries)
 	}
+}
+
+// gitlabAdded are the fields the portal adds to each resource's items, by
+// name without their _.
+var gitlabAdded = map[string][]string{
+	gitlabMembers: {"group"},
+	gitlabProjects: {
+		"defaultBranch", "ciConfig", "latestPipeline", "files", "mergeChecks", "vulnerabilities", "dependencies",
+	},
+	gitlabTags:          {"project"},
+	gitlabMergeRequests: {"project"},
+	gitlabIssues:        {"project"},
+	gitlabReleases:      {"project"},
+	gitlabPipelines:     {"project"},
+	gitlabJobs:          append([]string{"project", "attempt", "retried", "attempts", "failedAttempts", "flaky"}, gitlabWaitNames...),
+	gitlabJobAttempts:   append([]string{"project", "attempt", "retried", "attempts", "failedAttempts", "flaky"}, gitlabWaitNames...),
+	gitlabRunners:       gitlabRunnerNames,
+	gitlabDeployments:   {"project", "approvalRequired", "approvals", "approvedAt", "approvalSeconds", "waitSeconds"},
+	gitlabEnvironments:  {"project", "lastDeployment"},
+}
+
+func TestGitLabPullAddsFields(t *testing.T) {
+	f := newGitLabFixture(t)
+	_, config := gitlabSpec(t, gitlabYAML, f.url())
+	pulled, failed := pullGitLab(t, config)
+	if len(failed) != 0 {
+		t.Fatalf("failed = %v", failed)
+	}
+	for _, resource := range gitlabResources {
+		if len(pulled[resource]) == 0 {
+			t.Errorf("read no %s", resource)
+		}
+	}
+	if !f.served["_links"] {
+		t.Error("served no _links, which GitLab gives projects")
+	}
+	checkAdded(t, gitlabAdded, pulled, f.served)
 }
 
 // TestGitLabPullFromCursors checks a sync reads what piles up from where
@@ -539,7 +576,7 @@ func TestGitLabPullScopesItems(t *testing.T) {
 		// Several projects may share a runner, which is in none of them.
 		case item.Resource == gitlabRunners:
 		case !slices.Contains(gitlabGroupResources, item.Resource):
-			path, _ := valueAt(object, parentKey, "project").(string)
+			path, _ := valueAt(object, "_project").(string)
 			want = ids[path]
 		}
 		if item.Scope != want || want == "" && !slices.Contains(append([]string{gitlabRunners}, gitlabGroupResources...), item.Resource) {
@@ -726,7 +763,7 @@ func TestGitLabTransport(t *testing.T) {
 		gitlabTooMany(w)
 	})
 	pulled, failed := pullGitLab(t, config, gitlabTags, gitlabProjects)
-	if len(failed) != 0 || len(pulled[gitlabTags]) != 3 || valueAt(pulled[gitlabProjects][0], parentKey, "ciConfig") == nil {
+	if len(failed) != 0 || len(pulled[gitlabTags]) != 3 || valueAt(pulled[gitlabProjects][0], "_ciConfig") == nil {
 		t.Fatalf("pulled = %v, failed = %v", pulled, failed)
 	}
 	if got := len(f.sent(http.MethodGet, "/projects/1/repository/tags")); got != 3 {
@@ -893,7 +930,7 @@ func TestGitLabReceive(t *testing.T) {
 	}
 	items, _ = receiveGitLab(t, config, "Pipeline Hook", `{"object_kind": "pipeline", "object_attributes": {"id": 13, "ref": "main"}, `+project+`}`)
 	if p := items[len(items)-1].Object.(map[string]any); items[len(items)-1].Resource != gitlabProjects || p["permissions"] != nil || p["cicd_catalog_enabled"] != nil ||
-		valueAt(p, parentKey, "latestPipeline", "status") != "success" {
+		valueAt(p, "_latestPipeline", "status") != "success" {
 		t.Errorf("project = %v, want it as a sync gives it, with its latest pipeline", p)
 	}
 
@@ -1387,6 +1424,14 @@ func TestGitLabReceivesRealPayloads(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				received, served := map[string][]map[string]any{}, map[string]bool{}
+				for _, item := range items {
+					if !item.Deleted {
+						received[item.Resource] = append(received[item.Resource], item.Object.(map[string]any))
+					}
+				}
+				jsonKeys(served, answers)
+				checkAdded(t, gitlabAdded, received, served)
 				entries, got := gitlabMapped(t, spec, items)
 				if got != c.want {
 					t.Errorf("seed %v gives %s, want %s", c.seed, got, c.want)
@@ -1413,6 +1458,22 @@ func valueAt(object map[string]any, keys ...string) any {
 
 	return value
 }
+
+// extras are those of the named fields the portal added to an object.
+func extras(object map[string]any, names ...string) map[string]any {
+	out := map[string]any{}
+	for _, name := range names {
+		if value, ok := object["_"+name]; ok {
+			out[name] = value
+		}
+	}
+
+	return out
+}
+
+var gitlabRunnerNames = []string{"title", "groups", "projects", "url", "lastJobAt"}
+
+var gitlabWaitNames = []string{"queuedAt", "waitSeconds", "manual", "playWaitSeconds", "stageWaitSeconds", "playedBy"}
 
 // nonJSON names the first value in v of a type JSON doesn't decode to, or
 // gives "".
@@ -1475,12 +1536,9 @@ func TestGitLabWithApprovals(t *testing.T) {
 	} {
 		d := deployment()
 		gitlabWithApprovals(d, test.one, "acme/api")
-		got := map[string]any{}
-		for _, key := range []string{"approvalRequired", "approvedAt", "approvalSeconds", "waitSeconds"} {
-			got[key] = valueAt(d, parentKey, key)
-		}
+		got := extras(d, "approvalRequired", "approvedAt", "approvalSeconds", "waitSeconds")
 		got["approvedBy"] = nil
-		if approvals, ok := valueAt(d, parentKey, "approvals").([]any); ok {
+		if approvals, ok := valueAt(d, "_approvals").([]any); ok {
 			by := []string{}
 			for _, a := range approvals {
 				if valueAt(a.(map[string]any), "status") == "approved" {
@@ -1513,12 +1571,12 @@ func TestGitLabPullApprovals(t *testing.T) {
 		byID[idOf(d["id"])] = d
 	}
 	production, staging := byID["22"], byID["21"]
-	if valueAt(production, parentKey, "approvalRequired") != true || valueAt(production, parentKey, "approvalSeconds") != float64(300) ||
-		valueAt(production, parentKey, "approvedAt") != gitlabLater(gitlabT3, 5*time.Minute) || valueAt(production, parentKey, "waitSeconds") != float64(360) ||
-		valueAt(production, parentKey, "project") != "acme/api" || production["approvals"] != nil {
+	if valueAt(production, "_approvalRequired") != true || valueAt(production, "_approvalSeconds") != float64(300) ||
+		valueAt(production, "_approvedAt") != gitlabLater(gitlabT3, 5*time.Minute) || valueAt(production, "_waitSeconds") != float64(360) ||
+		valueAt(production, "_project") != "acme/api" || production["approvals"] != nil {
 		t.Errorf("deployment 22 = %v, want it as GitLab lists it, approved after five minutes and started after six", production)
 	}
-	if valueAt(staging, parentKey, "approvalRequired") != false {
+	if valueAt(staging, "_approvalRequired") != false {
 		t.Errorf("deployment 21 = %v, want it needing no approval", staging)
 	}
 	items, err := receiveGitLab(t, config, "Deployment Hook", `{"object_kind": "deployment", "deployment_id": 22, `+
@@ -1549,7 +1607,7 @@ func TestGitLabPullApprovals(t *testing.T) {
 	asked = len(f.sent(http.MethodGet, "/projects/1/deployments/22"))
 	for range 2 {
 		d := map[string]any{"id": float64(22), "environment": map[string]any{"name": "production"}}
-		if err := approvals.add(t.Context(), d); err != nil || valueAt(d, parentKey, "approvalRequired") != nil {
+		if err := approvals.add(t.Context(), d); err != nil || valueAt(d, "_approvalRequired") != nil {
 			t.Errorf("without approvals from GitLab, deployment 22 = %v, %v; want them unknown", d, err)
 		}
 	}

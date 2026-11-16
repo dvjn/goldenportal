@@ -122,7 +122,7 @@ func (c *AuthentikConfig) Check(ctx context.Context, _ configdoc.DB, req CheckRe
 	return nil
 }
 
-// Pull reads every user and group, by name under _gp: each user's groups,
+// Pull reads every user and group, adding by name each user's groups,
 // with those it's in through a child group, as authentik counts them, and
 // those it was added to directly; and each group's members the same two
 // ways, and its ancestors. The objects' own lists are by primary key.
@@ -176,16 +176,16 @@ func (c *AuthentikConfig) Pull(ctx context.Context, _ configdoc.DB, p PullReques
 				members[k] = append(members[k], username)
 			}
 		}
-		user[parentKey] = map[string]any{"groups": sortedNames(in), "directGroups": sortedNames(added)}
+		addExtras(user, map[string]any{"groups": sortedNames(in), "directGroups": sortedNames(added)})
 	}
 	for key, group := range byKey {
 		above := make([]string, len(ancestors[key]))
 		for i, k := range ancestors[key] {
 			above[i] = name(k)
 		}
-		group[parentKey] = map[string]any{
+		addExtras(group, map[string]any{
 			"members": sortedNames(members[key]), "directMembers": sortedNames(direct[key]), "ancestors": sortedNames(above),
-		}
+		})
 	}
 	for _, resource := range []string{authentikUsers, authentikGroups} {
 		if !slices.Contains(p.Resources, resource) {

@@ -32,7 +32,7 @@ var Kind = configdoc.Kind[Spec]{
 		if err != nil {
 			return nil, err
 		}
-		return append(Check(spec, published), CheckScorecards(spec, ladders)...), nil
+		return slices.Concat(Check(spec, published), CheckScorecards(spec, ladders), checkSourceReads(spec)), nil
 	},
 	Diff:      Diff,
 	Deletable: deletable,

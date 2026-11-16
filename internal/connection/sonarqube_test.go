@@ -35,11 +35,7 @@ func sonarFixture(t *testing.T) *httptest.Server {
 		case "/api/authentication/validate":
 			answer = map[string]any{"valid": true}
 		case "/api/components/search_projects":
-			answer = map[string]any{"paging": map[string]any{"total": 3}, "components": []any{
-				map[string]any{"key": "acme_api", "name": "api", "analysisDate": "2026-11-01T10:00:00+0000"},
-				map[string]any{"key": "acme_web", "name": "web"},
-				map[string]any{"key": "other_tool", "name": "tool"},
-			}}
+			answer = map[string]any{"paging": map[string]any{"total": 3}, "components": sonarFixtureProjects()}
 		case "/api/measures/search":
 			if q.Get("projectKeys") != "acme_api,acme_web" {
 				t.Errorf("measures asked for %s, want the selected projects", q.Get("projectKeys"))
@@ -73,6 +69,14 @@ func sonarFixture(t *testing.T) *httptest.Server {
 	t.Setenv("GP_SECRET_SONAR", "sonar-token")
 
 	return server
+}
+
+func sonarFixtureProjects() []any {
+	return []any{
+		map[string]any{"key": "acme_api", "name": "api", "analysisDate": "2026-11-01T10:00:00+0000"},
+		map[string]any{"key": "acme_web", "name": "web"},
+		map[string]any{"key": "other_tool", "name": "tool"},
+	}
 }
 
 func sonarConfig(t *testing.T, url string) *SonarQubeConfig {
@@ -109,16 +113,22 @@ func TestSonarQubePull(t *testing.T) {
 	if err != nil || len(failed.Failed) != 0 {
 		t.Fatalf("failed = %v, err = %v", failed, err)
 	}
+	objects, served := map[string][]map[string]any{}, map[string]bool{}
+	for _, item := range items {
+		objects[item.Resource] = append(objects[item.Resource], item.Object.(map[string]any))
+	}
+	jsonKeys(served, sonarFixtureProjects())
+	checkAdded(t, map[string][]string{sonarProjects: {"measures", "qualityGate", "repository"}}, objects, served)
 	got, _ := json.Marshal(items)
 	for _, want := range []string{
 		// The selected projects only, with measures as numbers, a new-code
 		// measure from its period, and the status alone left as text.
 		`"key":"acme_api"`, `"key":"acme_web"`,
-		`"measures":{"alert_status":"ERROR","coverage":84.1,"new_coverage":61.5}`,
-		`"qualityGate":{"conditions":[{"metricKey":"new_coverage","status":"ERROR"}],"status":"ERROR"}`,
-		`"repository":{"alm":"gitlab","url":"https://gitlab.com/acme/api"}`,
+		`"_measures":{"alert_status":"ERROR","coverage":84.1,"new_coverage":61.5}`,
+		`"_qualityGate":{"conditions":[{"metricKey":"new_coverage","status":"ERROR"}],"status":"ERROR"}`,
+		`"_repository":{"alm":"gitlab","url":"https://gitlab.com/acme/api"}`,
 		// Never analysed, and bound to nothing.
-		`"_gp":{"measures":{},"qualityGate":null,"repository":null}`,
+		`"_measures":{},"_qualityGate":null,"_repository":null`,
 	} {
 		if !strings.Contains(string(got), want) {
 			t.Errorf("items = %s\nwant %s", got, want)

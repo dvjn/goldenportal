@@ -45,13 +45,13 @@ const (
       resource: job_attempts
       mode: upsert
       entity:
-        identifier: ._gp.project + "#" + (.id | tostring)
+        identifier: ._project + "#" + (.id | tostring)
         properties:
-          pipeline: ._gp.project + "#" + (.pipeline.id | tostring)
-          repo: ._gp.project
+          pipeline: ._project + "#" + (.pipeline.id | tostring)
+          repo: ._project
           runner: .runner.id | values | tostring
-          attempt: ._gp.attempt
-          retried: ._gp.retried
+          attempt: ._attempt
+          retried: ._retried
           triggeredAt: .pipeline.created_at
 `
 	runnerSources = `  sources:
@@ -60,10 +60,10 @@ const (
       mode: upsert
       entity:
         identifier: .id
-        title: ._gp.title
+        title: ._title
         properties:
           version: .version
-          lastJobAt: ._gp.lastJobAt
+          lastJobAt: ._lastJobAt
 `
 )
 

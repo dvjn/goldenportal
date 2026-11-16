@@ -62,9 +62,7 @@ func resolveRefs[C any](ctx context.Context, client C, system, event string, ref
 		}
 		at := earliest(ref.readAt, clock.take())
 		for _, object := range found {
-			if ref.parent != nil {
-				object[parentKey] = ref.parent
-			}
+			addExtras(object, ref.parent)
 			items = append(items, Item{Resource: ref.resource, Object: object, Deleted: deleted, Scope: ref.scope, SourceAt: at})
 		}
 	}

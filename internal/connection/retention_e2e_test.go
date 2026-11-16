@@ -37,7 +37,7 @@ const (
       resource: pipelines
       mode: upsert
       entity:
-        identifier: ._gp.project + "#" + (.id | tostring)
+        identifier: ._project + "#" + (.id | tostring)
         properties: {startedAt: .created_at}
 `
 )
