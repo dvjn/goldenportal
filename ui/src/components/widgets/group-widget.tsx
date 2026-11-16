@@ -1,6 +1,7 @@
 import { Cell, Pie, PieChart } from "recharts";
 import { EmptyValue, exactTitle } from "@/components/catalog/property-value";
 import { EmptyState } from "@/components/empty-state";
+import { Truncated } from "@/components/truncated";
 import {
   type ChartConfig,
   ChartContainer,
@@ -10,7 +11,8 @@ import {
 import type { Facet } from "@/features/catalog";
 import type { GroupData, LinkData, Reading } from "@/features/widgets";
 import { categorical, swatch } from "@/lib/colors";
-import { formatPercent } from "@/lib/format";
+import { formatCount, formatPercent } from "@/lib/format";
+import { CountOf } from "./count-of";
 import { formatReading, isShare } from "./reading";
 import { ViewAll, WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 import { WidgetLink } from "./widget-link";
@@ -88,11 +90,11 @@ function toGroup(
 
 function GroupLabel({ group }: Readonly<{ group: Group }>) {
   return (
-    <span className="truncate">
+    <Truncated title={group.label} className="max-w-none">
       <WidgetLink link={group.link} className="hover:underline">
         {group.label}
       </WidgetLink>
-    </span>
+    </Truncated>
   );
 }
 
@@ -104,7 +106,9 @@ function Bars({ groups }: Readonly<{ groups: Group[] }>) {
         <li key={group.key} className="grid gap-1 text-sm">
           <span className="flex items-baseline justify-between gap-3">
             <GroupLabel group={group} />
-            <span className="text-xs text-muted-foreground tabular-nums">{group.count}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {formatCount(group.count)}
+            </span>
           </span>
           <span className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
             <span
@@ -150,11 +154,7 @@ function MeasureBars({ groups, unit }: Readonly<{ groups: Group[]; unit?: string
                     {formatReading(measure, unit)}
                   </span>
                 )}
-                {share && (
-                  <span className="text-xs text-muted-foreground">
-                    {measure.count} of {measure.total}
-                  </span>
-                )}
+                {share && <CountOf count={measure.count} total={measure.total} />}
               </span>
             </span>
             <span className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
@@ -196,7 +196,7 @@ function Split({ groups }: Readonly<{ groups: Group[] }>) {
           <li key={group.key} className="flex min-w-0 items-center gap-1.5">
             <span className={`size-2 shrink-0 rounded-full ${group.dot}`} aria-hidden />
             <GroupLabel group={group} />
-            <span className="text-muted-foreground tabular-nums">{group.count}</span>
+            <span className="text-muted-foreground tabular-nums">{formatCount(group.count)}</span>
             <span className="text-xs text-muted-foreground tabular-nums">{share(group)}</span>
           </li>
         ))}
@@ -232,7 +232,7 @@ function Donut({ groups }: Readonly<{ groups: Group[] }>) {
           </PieChart>
         </ChartContainer>
         <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-semibold tabular-nums">{total}</span>
+          <span className="text-xl font-semibold tabular-nums">{formatCount(total)}</span>
         </span>
       </div>
       <ul className="grid min-w-36 flex-1 gap-1.5 text-sm">
@@ -242,7 +242,9 @@ function Donut({ groups }: Readonly<{ groups: Group[] }>) {
               <span className={`size-2 shrink-0 rounded-full ${group.dot}`} aria-hidden />
               <GroupLabel group={group} />
             </span>
-            <span className="text-xs text-muted-foreground tabular-nums">{group.count}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {formatCount(group.count)}
+            </span>
           </li>
         ))}
       </ul>

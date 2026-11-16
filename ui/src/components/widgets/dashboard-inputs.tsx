@@ -111,7 +111,7 @@ export function DashboardInputs({
               className="h-auto p-0 text-sm"
               onClick={() => onChange(input, [])}
             >
-              Show everything
+              Show Everything
             </Button>
           </p>
         ))}

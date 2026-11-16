@@ -9,6 +9,7 @@ type DataTableColumnHeaderProps<TData extends RowData, TValue> = {
 };
 
 // DataTableColumnHeader is a column title that sorts the table when clicked.
+// Its cell says how the column is sorted, with ariaSort.
 export function DataTableColumnHeader<TData extends RowData, TValue>({
   column,
   title,
@@ -29,10 +30,16 @@ export function DataTableColumnHeader<TData extends RowData, TValue>({
       onClick={column.getToggleSortingHandler()}
     >
       {title}
-      <Icon className={sorted ? undefined : "text-muted-foreground"} />
-      <span className="sr-only">
-        {sorted === "asc" ? ", sorted ascending" : sorted === "desc" ? ", sorted descending" : ""}
-      </span>
+      <Icon className={sorted ? undefined : "text-muted-foreground"} aria-hidden />
     </Button>
   );
+}
+
+// ariaSort is how a column's header cell tells assistive tech it's sorted.
+export function ariaSort<TData extends RowData, TValue>(
+  column: Column<DataTableFeatures, TData, TValue>,
+) {
+  if (!column.getCanSort()) return undefined;
+  const sorted = column.getIsSorted();
+  return sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
 }

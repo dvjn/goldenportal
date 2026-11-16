@@ -75,6 +75,13 @@ export function formatSeconds(value: number): string {
   return small > 0 ? `${big}${bigSuffix}${small}${smallSuffix}` : `${big}${bigSuffix}`;
 }
 
+const counts = new Intl.NumberFormat("en");
+
+// formatCount writes a count with thousands separators, such as 51,476.
+export function formatCount(value: number) {
+  return counts.format(value);
+}
+
 // percentOf rounds a share to the nearest percent, half up. It works on
 // whole counts to dodge float error, which would turn 29 of 100 into 28.
 export function percentOf(count: number, total: number) {

@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/page-header";
 import { PageIcon } from "@/components/page-icons";
 import { Button } from "@/components/ui/button";
 import { type ActionSummary, actions } from "@/features/actions";
+import { formatCount } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/actions/")({
   validateSearch: validateTableSearch,
@@ -29,7 +30,7 @@ const count = (id: "inputs" | "steps", title: string) =>
     id,
     header: ({ column }) => <DataTableColumnHeader column={column} title={title} />,
     enableGlobalFilter: false,
-    cell: ({ getValue }) => <span className="tabular-nums">{getValue()}</span>,
+    cell: ({ getValue }) => <span className="tabular-nums">{formatCount(getValue())}</span>,
   });
 
 const columns = [

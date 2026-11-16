@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatCount } from "@/lib/format";
 import { type CursorLinks, type DataTableFeatures, pageSizes } from "./table";
 
 type DataTablePaginationProps<TData extends RowData> = {
@@ -53,15 +54,8 @@ export function DataTablePagination<TData extends RowData>({
     { label: "Last page", icon: ChevronsRight, go: go.last, disabled: atEnd },
   ];
 
-  // Read by cursor, a page knows where it is only at either end of the list.
-  let showing = `Showing ${pageIndex * pageSize + 1} to ${Math.min((pageIndex + 1) * pageSize, rows)} of ${rows}`;
-  if (cursor) {
-    showing = atStart
-      ? `Showing 1 to ${shown} of ${rows}`
-      : atEnd
-        ? `Showing ${rows - shown + 1} to ${rows} of ${rows}`
-        : `Showing ${shown} of ${rows}`;
-  }
+  // A page read by cursor doesn't know where it starts, so no page says.
+  const showing = `Showing ${formatCount(shown)} of ${formatCount(rows)}`;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
@@ -87,7 +81,7 @@ export function DataTablePagination<TData extends RowData>({
         </div>
         {!cursor && (
           <span className="tabular-nums">
-            Page {pageIndex + 1} of {pages}
+            Page {formatCount(pageIndex + 1)} of {formatCount(pages)}
           </span>
         )}
         <div className="flex items-center gap-1">

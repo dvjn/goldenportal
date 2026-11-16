@@ -7,8 +7,9 @@ import { LinkCard } from "@/components/link-card";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { gradedBy, scorecards } from "@/features/scorecards";
+import { formatCount } from "@/lib/format";
 
-const count = (n: number, noun: string) => `${n} ${n === 1 ? noun : `${noun}s`}`;
+const count = (n: number, noun: string) => `${formatCount(n)} ${n === 1 ? noun : `${noun}s`}`;
 
 // BlueprintScorecards lists the scorecards that grade a blueprint, drafts
 // too, for builders to open or start one.

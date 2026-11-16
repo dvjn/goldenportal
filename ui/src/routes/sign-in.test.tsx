@@ -67,7 +67,7 @@ describe("sign in", () => {
       ...signedOut,
       "POST auth/logout": () => new Response(null, { status: 201 }),
     });
-    await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
+    await user.click(screen.getByRole("menuitem", { name: "Sign Out" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
     expect(requests["POST auth/logout"]?.headers.get("X-GP-CSRF")).toBe("1");

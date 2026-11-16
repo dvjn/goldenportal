@@ -7,6 +7,7 @@ import { DataTable, dataTableColumns, validateTableSearch } from "@/components/d
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { PageIcon } from "@/components/page-icons";
+import { Truncated } from "@/components/truncated";
 import { approvalDetail, approvalsQueryOptions, type Run } from "@/features/actions";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 
@@ -29,17 +30,15 @@ const columns = [
     header: "Run",
     cell: ({ row }) => (
       <div className="grid max-w-96 gap-0.5">
-        <Link
-          to="/runs/$id"
-          params={{ id: row.original.id }}
-          className="truncate font-medium hover:underline"
-        >
-          {row.original.title}
-        </Link>
+        <Truncated title={row.original.title} className="max-w-none font-medium">
+          <Link to="/runs/$id" params={{ id: row.original.id }} className="hover:underline">
+            {row.original.title}
+          </Link>
+        </Truncated>
         {approvalMessage(row.original) && (
-          <span className="truncate text-xs text-muted-foreground">
+          <Truncated className="max-w-none text-xs text-muted-foreground">
             {approvalMessage(row.original)}
-          </span>
+          </Truncated>
         )}
       </div>
     ),

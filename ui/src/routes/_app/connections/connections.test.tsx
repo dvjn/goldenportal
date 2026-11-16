@@ -230,7 +230,7 @@ describe("connections", () => {
     renderRoute("/connections/inventory?tab=runs");
 
     await screen.findByLabelText("Succeeded with Warnings");
-    expect(screen.getByText("Showing 1 to 1 of 1")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 1")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(await screen.findByRole("option", { name: "Outcome" }));
     await user.click(await screen.findByRole("option", { name: /Failed/ }));

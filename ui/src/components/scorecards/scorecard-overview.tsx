@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { blueprints } from "@/features/blueprints";
 import { invalidateResults } from "@/features/refresh";
 import { evaluateScorecard, type ScorecardSpec, useSummary } from "@/features/scorecards";
+import { formatCount } from "@/lib/format";
 
 // ScorecardOverview shows a scorecard's definition to those who build it:
 // what it grades and through which property, and its criteria. How
@@ -62,7 +63,7 @@ function EvaluateButton({ identifier }: Readonly<{ identifier: string }>) {
     mutationFn: () => evaluateScorecard(identifier),
     onSuccess: async ({ entities }) => {
       await invalidateResults(queryClient, identifier);
-      toast.success(`Evaluated ${entities} ${entities === 1 ? "entity" : "entities"}`);
+      toast.success(`Evaluated ${formatCount(entities)} ${entities === 1 ? "entity" : "entities"}`);
     },
     onError: (error) => toast.error(error.message),
   });

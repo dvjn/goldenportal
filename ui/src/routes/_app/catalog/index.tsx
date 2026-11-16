@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { PageIcon } from "@/components/page-icons";
 import { Input } from "@/components/ui/input";
 import { catalogQueryOptions } from "@/features/catalog";
+import { formatCount } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/catalog/")({
   loader: ({ context }) => context.queryClient.ensureQueryData(catalogQueryOptions),
@@ -75,7 +76,7 @@ function CatalogPage() {
               >
                 <p
                   className="flex items-baseline gap-1.5 self-end px-4"
-                  title={`${entry.entities} entities`}
+                  title={`${formatCount(entry.entities)} entities`}
                 >
                   <span className="text-2xl font-semibold tabular-nums">
                     {count.format(entry.entities)}

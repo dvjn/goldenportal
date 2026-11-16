@@ -26,6 +26,7 @@ import { PageHeader } from "@/components/page-header";
 import { pageIcons } from "@/components/page-icons";
 import { PageTab } from "@/components/page-tabs";
 import { ScorecardResults } from "@/components/scorecards/scorecard-results";
+import { Truncated } from "@/components/truncated";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -47,7 +48,7 @@ import {
   type Filter,
 } from "@/features/catalog";
 import { publishedGradedBy, scorecardPath, scorecards, scorecardView } from "@/features/scorecards";
-import { formatAbsolute, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatCount, formatRelative } from "@/lib/format";
 import { usePageTitle } from "@/lib/page-title";
 
 // CatalogSearch is the page's state in the URL: view is the open tab, a
@@ -216,16 +217,18 @@ function BlueprintCatalogPage() {
       id: "title",
       header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
       cell: ({ row }) => (
-        <EntityLink
-          blueprint={blueprint}
-          identifier={row.original.identifier}
-          className="grid max-w-72 hover:underline"
-        >
-          <span className="truncate font-medium" title={row.original.title}>
-            <SplitTitle title={row.original.title} />
-          </span>
+        <div className="grid max-w-72 min-w-40">
+          <Truncated title={row.original.title} className="max-w-none font-medium">
+            <EntityLink
+              blueprint={blueprint}
+              identifier={row.original.identifier}
+              className="hover:underline"
+            >
+              <SplitTitle title={row.original.title} />
+            </EntityLink>
+          </Truncated>
           {subtitle ? (
-            <span className="truncate text-xs text-muted-foreground">
+            <span className="min-w-0 text-xs text-muted-foreground">
               <PropertyValue
                 property={subtitle}
                 value={row.original.properties[subtitle.identifier]}
@@ -235,15 +238,12 @@ function BlueprintCatalogPage() {
             </span>
           ) : (
             row.original.title !== row.original.identifier && (
-              <code
-                className="truncate font-mono text-xs text-muted-foreground"
-                title={row.original.identifier}
-              >
+              <Truncated className="max-w-none font-mono text-xs text-muted-foreground">
                 {row.original.identifier}
-              </code>
+              </Truncated>
             )
           )}
-        </EntityLink>
+        </div>
       ),
     }),
     // Columns keep the order they're listed in.
@@ -345,9 +345,13 @@ function BlueprintCatalogPage() {
       filters={filters.filters}
       onClearFilters={filters.onClearFilters}
       actions={
-        // With no entities there are no columns to choose; a search or filter
-        // that matches none keeps the menu, so the toolbar doesn't shift.
-        (page.isPending || total > 0 || Boolean(search.q || search.filter)) && (
+        // With no entities there are no columns to choose; a search, filter
+        // or sort that matches none, or that fails, keeps the menu, so the
+        // toolbar doesn't shift.
+        (page.isPending ||
+          page.isError ||
+          total > 0 ||
+          Boolean(search.q || search.filter || search.sort)) && (
           <ColumnsMenu
             spec={spec}
             shown={shown}
@@ -408,7 +412,9 @@ function BlueprintCatalogPage() {
             <Rows3 />
             Entities
             {first.data && (
-              <span className="text-xs text-muted-foreground tabular-nums">{total}</span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {formatCount(total)}
+              </span>
             )}
           </PageTab>
           {graded.map((s) => (
@@ -506,7 +512,7 @@ function ColumnsMenu({
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onReset}>
               <RotateCcw />
-              Reset to defaults
+              Reset to Defaults
             </DropdownMenuItem>
           </>
         )}

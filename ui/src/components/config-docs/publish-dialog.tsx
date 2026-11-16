@@ -17,6 +17,7 @@ import {
 import { Label } from "@/components/ui/label";
 import type { ConfigDocs } from "@/features/config-docs";
 import { invalidatePublished } from "@/features/refresh";
+import { formatCount } from "@/lib/format";
 
 const sectionLabels: Record<string, string> = {
   blueprint: "Blueprint",
@@ -144,7 +145,7 @@ function PublishReview<S>({
               />
               <Label htmlFor="acknowledge-breaking" className="leading-snug font-normal">
                 {data.affected > 0
-                  ? `I understand this affects ${data.affected} ${data.affected === 1 ? "entity" : "entities"}, and values the changes remove are dropped.`
+                  ? `I understand this affects ${formatCount(data.affected)} ${data.affected === 1 ? "entity" : "entities"}, and values the changes remove are dropped.`
                   : "I understand these changes are breaking."}
               </Label>
             </div>

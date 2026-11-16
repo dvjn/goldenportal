@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { writeUiState } from "@/hooks/use-ui-state";
 import { isBadRequest } from "@/lib/api";
+import { ariaSort } from "./data-table-column-header";
 import {
   type DataTableChip,
   DataTableFilterBox,
@@ -96,7 +97,7 @@ const pendingRows = 5;
 // ClearFiltersButton removes a table's filters, wherever they're shown.
 export function ClearFiltersButton({ onClick }: Readonly<{ onClick: () => void }>) {
   return (
-    <Button variant="link" className="h-auto p-0" onClick={onClick}>
+    <Button variant="outline" onClick={onClick}>
       Clear Filters
     </Button>
   );
@@ -238,7 +239,11 @@ export function DataTable<TData extends RowData>({
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <TableHead key={header.id} className={tableCellClass}>
+                <TableHead
+                  key={header.id}
+                  className={tableCellClass}
+                  aria-sort={ariaSort(header.column)}
+                >
                   {header.isPlaceholder ? null : <table.FlexRender header={header} />}
                 </TableHead>
               ))}
@@ -268,25 +273,24 @@ export function DataTable<TData extends RowData>({
                   title={`Can't list ${noun} this way`}
                   description="Something in the link no longer applies."
                 >
-                  <div className="flex justify-center gap-4">
+                  <div className="flex flex-wrap justify-center gap-2">
                     {filtered && <ClearFiltersButton onClick={clearAll} />}
                     {search.sort && (
                       <Button
-                        variant="link"
-                        className="h-auto p-0"
+                        variant="outline"
                         onClick={() => setSearch({ sort: undefined, cursor: undefined })}
                       >
                         Reset Sort
                       </Button>
                     )}
                     {search.q && !filtered && (
-                      <Button variant="link" className="h-auto p-0" onClick={clearAll}>
+                      <Button variant="outline" onClick={clearAll}>
                         Clear Search
                       </Button>
                     )}
                     {!filtered && !search.sort && !search.q && onRetry && (
-                      <Button variant="link" className="h-auto p-0" onClick={onRetry}>
-                        Try again
+                      <Button variant="outline" onClick={onRetry}>
+                        Try Again
                       </Button>
                     )}
                   </div>
@@ -299,7 +303,7 @@ export function DataTable<TData extends RowData>({
                 <span className="text-muted-foreground">{error.message} </span>
                 {onRetry && (
                   <Button variant="link" className="h-auto p-0" onClick={onRetry}>
-                    Try again
+                    Try Again
                   </Button>
                 )}
               </TableCell>
@@ -315,7 +319,7 @@ export function DataTable<TData extends RowData>({
                   {filtered ? (
                     <ClearFiltersButton onClick={clearAll} />
                   ) : (
-                    <Button variant="link" className="h-auto p-0" onClick={clearAll}>
+                    <Button variant="outline" onClick={clearAll}>
                       Clear Search
                     </Button>
                   )}

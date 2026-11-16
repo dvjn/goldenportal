@@ -174,12 +174,12 @@ describe("configuration", () => {
     });
     renderRoute("/settings/configuration");
 
-    await user.click(await screen.findByRole("button", { name: "Test connection" }));
+    await user.click(await screen.findByRole("button", { name: "Test Connection" }));
 
     expect(
       await screen.findByText("Couldn't load the identity provider's settings: connection refused"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Test connection" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Test Connection" })).toBeEnabled();
   });
 
   it("gives the SCIM endpoint to copy when SCIM is on", async () => {

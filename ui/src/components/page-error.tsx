@@ -49,7 +49,7 @@ export function PageError({ error, back }: PageErrorProps) {
   return (
     <EmptyCard icon={<CircleAlert />} title={title} description={detail}>
       <Button variant="outline" onClick={() => router.invalidate()}>
-        Try again
+        Try Again
       </Button>
     </EmptyCard>
   );

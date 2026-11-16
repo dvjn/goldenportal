@@ -131,7 +131,7 @@ describe("catalog", () => {
     await user.click(await screen.findByRole("menuitemcheckbox", { name: "Readiness" }));
     expect(screen.queryByRole("columnheader", { name: "Readiness" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("menuitem", { name: "Reset to defaults" }));
+    await user.click(screen.getByRole("menuitem", { name: "Reset to Defaults" }));
     expect(await screen.findByRole("columnheader", { name: /Readiness/ })).toBeInTheDocument();
   });
 
@@ -408,7 +408,7 @@ describe("catalog", () => {
     });
     const { router } = renderRoute("/catalog/service");
     await screen.findByRole("link", { name: /Alpha/ });
-    expect(screen.getByText("Showing 1 to 1 of 3")).toBeVisible();
+    expect(screen.getByText("Showing 1 of 3")).toBeVisible();
     expect(screen.queryByText(/^Page /)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "First page" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
@@ -420,7 +420,7 @@ describe("catalog", () => {
 
     await user.click(screen.getByRole("button", { name: "Last page" }));
     await screen.findByRole("link", { name: /Charlie/ });
-    expect(screen.getByText("Showing 3 to 3 of 3")).toBeVisible();
+    expect(screen.getByText("Showing 1 of 3")).toBeVisible();
     expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Last page" })).toBeDisabled();
 
@@ -437,6 +437,17 @@ describe("catalog", () => {
     await vi.waitFor(() => expect(cursors.at(-1)).toBe(""));
     expect(router.state.location.search).toMatchObject({ sort: "title" });
     expect(router.state.location.search).not.toHaveProperty("cursor");
+  });
+
+  it("says how many entities match with thousands separated", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": ok({ items: [ledger], total: 51476, next: "n", last: "l" }),
+      "GET catalog/service/facets": ok([]),
+    });
+    renderRoute("/catalog/service");
+    expect(await screen.findByText("Showing 1 of 51,476")).toBeVisible();
   });
 
   it("goes back to the first page when the server turns a cursor down", async () => {
@@ -470,7 +481,7 @@ describe("catalog", () => {
     // Turned down, the table says so without the server's words.
     expect(await screen.findByText("Can't list entities this way")).toBeVisible();
     expect(screen.queryByText("the filter names an unknown property")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await user.click(screen.getByRole("button", { name: "Try Again" }));
     expect(await screen.findByRole("link", { name: /Ledger/ })).toBeVisible();
   });
 
@@ -489,6 +500,8 @@ describe("catalog", () => {
 
     expect(await screen.findByText("Can't list entities this way")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Service" })).toBeVisible();
+    // The toolbar stays as it is with any filter or sort.
+    expect(screen.getByRole("button", { name: "Columns" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear Filters" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reset Sort" }));
     expect(await screen.findByRole("link", { name: /Ledger/ })).toBeVisible();

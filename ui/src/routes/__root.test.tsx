@@ -55,7 +55,7 @@ describe("app shell", () => {
     expect(await screen.findByText("config unavailable")).toBeInTheDocument();
 
     stubApi({ "GET config": acmeConfig, "GET me": ok(ada) });
-    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await user.click(screen.getByRole("button", { name: "Try Again" }));
 
     expect(await screen.findByRole("link", { name: "Acme" })).toBeInTheDocument();
   });
@@ -108,7 +108,7 @@ describe("app shell", () => {
     renderRoute("/missing");
 
     expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to the home page" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Go to Home" })).toHaveAttribute("href", "/");
   });
 
   it("searches the portal with the platform's shortcut", async () => {

@@ -202,7 +202,11 @@ describe("a scorecard in the catalog", () => {
     await screen.findByRole("row", { name: /Ledger/ });
     expect(resultsParam(requests, "sort")).toBe("-score");
     expect(new URL(requests["GET catalog/service"].url).searchParams.get("sort")).toBeNull();
-    expect(screen.getByRole("button", { name: "Score, sorted descending" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Score" })).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    expect(screen.getByRole("columnheader", { name: "Tier" })).toHaveAttribute("aria-sort", "none");
 
     // Unsorted is worst tier first, so tiers sort best first, then worst first.
     const sorted = async (sort: string) =>
@@ -212,7 +216,11 @@ describe("a scorecard in the catalog", () => {
       });
     await user.click(screen.getByRole("button", { name: "Tier" }));
     await sorted("-tier");
-    await user.click(screen.getByRole("button", { name: "Tier, sorted descending" }));
+    expect(screen.getByRole("columnheader", { name: "Tier" })).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    await user.click(screen.getByRole("button", { name: "Tier" }));
     await sorted("tier");
     await user.click(screen.getByRole("button", { name: "Failed" }));
     await sorted("-failed");
@@ -299,13 +307,15 @@ describe("a scorecard in the catalog", () => {
       "GET catalog/service/facets": ok([]),
     });
     const filter = encodeURIComponent(
-      JSON.stringify([{ property: "readiness", op: "eq", value: "silver" }]),
+      JSON.stringify([{ property: "readiness.checks.onCall", op: "eq", value: "passed" }]),
     );
     const { router } = renderRoute(`/catalog/service?view=scorecard-readiness&filter=${filter}`);
 
     expect(await screen.findByText("No entities match the filters")).toBeVisible();
     // The chips stand above the tiers as well as in the entities' search box.
-    const removes = await screen.findAllByRole("button", { name: "Remove Readiness filter" });
+    const removes = await screen.findAllByRole("button", {
+      name: "Remove Readiness › Owner is on call filter",
+    });
     expect(removes).toHaveLength(2);
     const tiers = screen.getByText("Tiers");
     expect(
@@ -316,7 +326,7 @@ describe("a scorecard in the catalog", () => {
     expect(await screen.findByRole("row", { name: /Ledger/ })).toBeVisible();
     expect(router.state.location.search).not.toHaveProperty("filter");
     expect(
-      screen.queryByRole("button", { name: "Remove Readiness filter" }),
+      screen.queryByRole("button", { name: "Remove Readiness › Owner is on call filter" }),
     ).not.toBeInTheDocument();
   });
 
@@ -349,6 +359,38 @@ describe("a scorecard in the catalog", () => {
     await user.click(screen.getAllByRole("button", { name: "Clear Filters" })[0]);
     expect(await screen.findByRole("row", { name: /Ledger/ })).toBeVisible();
     expect(router.state.location.search).not.toHaveProperty("filter");
+  });
+
+  it("counts each tier in the legend as if no tier were picked", async () => {
+    const user = userEvent.setup();
+    const onlyBronze = {
+      ...summary,
+      tiers: summary.tiers.map((t) => ({ ...t, count: t.name === "bronze" ? 2 : 0 })),
+    };
+    stubApi({
+      ...catalogRoutes,
+      "GET scorecards/readiness/summary": (request) =>
+        new URL(request.url).searchParams.get("filter")?.includes('"readiness"')
+          ? ok(onlyBronze)()
+          : ok(summary)(),
+    });
+    renderRoute("/catalog/service?view=scorecard-readiness");
+    const count = async (tier: string) =>
+      (await screen.findByRole("button", { name: tier })).parentElement?.textContent;
+
+    expect(await count("No Tier")).toBe("No Tier1");
+    await user.click(await screen.findByRole("button", { name: "Bronze" }));
+    expect(await screen.findByRole("button", { name: "Bronze" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(await count("No Tier")).toBe("No Tier1");
+    await user.click(await screen.findByRole("button", { name: "Bronze" }));
+    expect(await screen.findByRole("button", { name: "Bronze" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(await count("No Tier")).toBe("No Tier1");
   });
 
   it("toggles tiers in the legend, each in or out of those picked", async () => {

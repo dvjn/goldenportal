@@ -217,7 +217,7 @@ function TestConnection() {
   return (
     <Button variant="outline" size="sm" onClick={() => run.mutate()} disabled={run.isPending}>
       {run.isPending && <Loader2 className="animate-spin" aria-hidden />}
-      Test connection
+      Test Connection
     </Button>
   );
 }

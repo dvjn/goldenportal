@@ -13,6 +13,7 @@ import {
   validateTableSearch,
 } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
+import { Truncated } from "@/components/truncated";
 import {
   type Run,
   type RunFilters,
@@ -72,17 +73,15 @@ const columns = {
     header: "Run",
     cell: ({ row }) => (
       <div className="grid max-w-96 gap-0.5">
-        <Link
-          to="/runs/$id"
-          params={{ id: row.original.id }}
-          className="truncate font-medium hover:underline"
-        >
-          {row.original.title}
-        </Link>
+        <Truncated title={row.original.title} className="max-w-none font-medium">
+          <Link to="/runs/$id" params={{ id: row.original.id }} className="hover:underline">
+            {row.original.title}
+          </Link>
+        </Truncated>
         {row.original.summary && (
-          <span className="truncate text-xs text-muted-foreground" title={row.original.summary}>
+          <Truncated className="max-w-none text-xs text-muted-foreground">
             {row.original.summary}
-          </span>
+          </Truncated>
         )}
       </div>
     ),

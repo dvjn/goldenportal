@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/empty-state";
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import type { Filter } from "@/features/catalog";
 import { type EntityResult, resultsQueryOptions, type ScorecardSpec } from "@/features/scorecards";
-import { formatPercent } from "@/lib/format";
+import { formatCount, formatPercent } from "@/lib/format";
 
 const column = dataTableColumns<EntityResult>();
 
@@ -22,7 +22,7 @@ const count = (title: string, id: "passed" | "failed" | "skipped") =>
   column.accessor(id, {
     sortDescFirst: true,
     header: ({ column }) => <DataTableColumnHeader column={column} title={title} />,
-    cell: ({ getValue }) => <span className="tabular-nums">{getValue()}</span>,
+    cell: ({ getValue }) => <span className="tabular-nums">{formatCount(getValue())}</span>,
   });
 
 // ScorecardEntities lists the result of every entity where matches on a
@@ -104,7 +104,7 @@ export function ScorecardEntities({
                 identifier={row.original.identifier}
                 tab={spec.identifier}
               >
-                View all
+                View All
               </EntityLink>
             }
           />

@@ -43,7 +43,7 @@ function RootError({ error }: ErrorComponentProps) {
       <h1 className="text-2xl font-semibold">{title}</h1>
       <p className="text-muted-foreground">{detail}</p>
       <Button variant="outline" onClick={() => router.invalidate()}>
-        Try again
+        Try Again
       </Button>
     </section>
   );
@@ -55,7 +55,7 @@ function NotFound() {
       <h1 className="text-2xl font-semibold">Page not found</h1>
       <p className="text-muted-foreground">The page you are looking for does not exist.</p>
       <Button asChild variant="outline">
-        <Link to="/">Go to the home page</Link>
+        <Link to="/">Go to Home</Link>
       </Button>
     </section>
   );

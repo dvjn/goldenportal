@@ -96,7 +96,7 @@ function SelfServicePage() {
               description={`Nothing is named "${q}".`}
             >
               <Button variant="link" className="h-auto p-0" onClick={() => searchFor("")}>
-                Clear the search
+                Clear Search
               </Button>
             </EmptyCard>
           )}

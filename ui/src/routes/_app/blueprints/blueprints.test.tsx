@@ -104,7 +104,7 @@ describe("blueprints", () => {
   it("lists blueprints with their status and entities", async () => {
     stubApi({
       ...signedInBuilder,
-      "GET catalog": ok([{ identifier: "service", title: "Service", entities: 12 }]),
+      "GET catalog": ok([{ identifier: "service", title: "Service", entities: 51476 }]),
       "GET blueprints": ok([
         {
           identifier: "service",
@@ -122,7 +122,7 @@ describe("blueprints", () => {
     // Published, with a draft waiting.
     expect(within(row).getByText("Published")).toBeInTheDocument();
     expect(within(row).getByText("Draft")).toBeInTheDocument();
-    expect(await within(row).findByRole("cell", { name: "12" })).toBeInTheDocument();
+    expect(await within(row).findByRole("cell", { name: "51,476" })).toBeInTheDocument();
     // The primary action leads the page, not the table.
     expect(
       screen.getByRole("link", { name: "New Blueprint" }).closest("[data-slot=card]"),

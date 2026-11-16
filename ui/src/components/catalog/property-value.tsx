@@ -1,11 +1,13 @@
 import { Link as RouterLink } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Check, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { ListValue } from "@/components/catalog/list-value";
 import { useLookupTarget } from "@/components/catalog/lookup-target";
 import { Markdown } from "@/components/markdown";
 import { ScorecardValue } from "@/components/scorecards/scorecard-value";
+import { Truncated } from "@/components/truncated";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { Display, Property } from "@/features/blueprints";
@@ -109,7 +111,10 @@ export function PropertyValue({
   entity,
   compact = false,
 }: PropertyValueProps) {
-  const cut = compact ? "block max-w-64 truncate" : "";
+  // fit cuts text short in a table cell, where it would squeeze the other
+  // columns, and elsewhere lets it wrap as wrap says.
+  const fit = (text: string, node: ReactNode = text, wrap = "break-words") =>
+    compact ? <Truncated title={text}>{node}</Truncated> : <span className={wrap}>{node}</span>;
   if (property.lookup && entity) {
     return (
       <LookupValue
@@ -139,6 +144,7 @@ export function PropertyValue({
         compact={compact}
         items={links.map((link) => ({
           key: link.identifier,
+          title: link.title ?? link.identifier,
           node: link.title ? (
             <EntityLink blueprint={target} identifier={link.identifier}>
               {link.title}
@@ -172,18 +178,14 @@ export function PropertyValue({
     );
     const labels = items.map((item) => valueLabel(item, { property }));
     if (as === "list") {
-      const joined = labels.join(", ");
-      return (
-        <span className={cn("break-words", cut)} title={compact ? joined : undefined}>
-          {joined}
-        </span>
-      );
+      return fit(labels.join(", "));
     }
     return (
       <ListValue
         compact={compact}
         items={items.map((item, i) => ({
           key: item,
+          title: labels[i],
           node: labels[i],
           tint: swatch(colors?.[item])?.badge,
         }))}
@@ -232,19 +234,15 @@ export function PropertyValue({
           {text}
         </a>
       ) : isWebUrl(text) ? (
-        <a
-          href={text}
-          target="_blank"
-          rel="noreferrer"
-          className={cn("break-all hover:underline", cut)}
-          title={compact ? text : undefined}
-        >
-          {text.replace(/^https?:\/\//, "")}
-        </a>
+        fit(
+          text,
+          <a href={text} target="_blank" rel="noreferrer" className="hover:underline">
+            {text.replace(/^https?:\/\//, "")}
+          </a>,
+          "break-all",
+        )
       ) : (
-        <span className={cn("break-all", cut)} title={compact ? text : undefined}>
-          {text}
-        </span>
+        fit(text, text, "break-all")
       );
     case "relative":
       return (
@@ -257,11 +255,7 @@ export function PropertyValue({
     case "badge":
       return <ValueBadge value={valueLabel(text, { property })} color={colors?.[text]} />;
     case "code":
-      return (
-        <code className={cn("font-mono text-xs break-all", cut)} title={compact ? text : undefined}>
-          {text}
-        </code>
-      );
+      return fit(text, <code className="font-mono text-xs">{text}</code>, "break-all");
   }
   if (property.format === "markdown") {
     return compact ? (
@@ -272,11 +266,7 @@ export function PropertyValue({
       <Markdown>{text}</Markdown>
     );
   }
-  return (
-    <span className={cn("break-words", cut)} title={compact ? text : undefined}>
-      {text}
-    </span>
-  );
+  return fit(text);
 }
 
 // More counts the items a compact value leaves out, and names them on hover.
@@ -346,7 +336,7 @@ function ViewAll({
 }: Readonly<{ entity: { blueprint: string; identifier: string }; tab?: string }>) {
   return (
     <EntityLink blueprint={entity.blueprint} identifier={entity.identifier} tab={tab}>
-      View all
+      View All
     </EntityLink>
   );
 }
@@ -367,7 +357,7 @@ export function CatalogViewAll({
       }}
       className="hover:underline"
     >
-      View all
+      View All
     </RouterLink>
   );
 }

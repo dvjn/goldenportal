@@ -21,7 +21,7 @@ import {
   useGrants,
 } from "@/features/access";
 import { type Role, useMe } from "@/features/auth";
-import { formatAbsolute, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatCount, formatRelative } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/settings/access")({
   validateSearch: validateTableSearch,
@@ -97,7 +97,7 @@ function SubjectCell({ grant }: Readonly<{ grant: Grant }>) {
         <span className="font-medium">{grant.name}</span>
         <span className="text-xs text-muted-foreground">
           {grant.subjectType === "group"
-            ? `Group · ${grant.memberCount} ${grant.memberCount === 1 ? "member" : "members"}`
+            ? `Group · ${formatCount(grant.memberCount ?? 0)} ${grant.memberCount === 1 ? "member" : "members"}`
             : grant.email}
         </span>
       </div>

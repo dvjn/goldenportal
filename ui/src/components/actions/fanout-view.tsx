@@ -7,6 +7,7 @@ import {
   type RunStep,
   runsQueryOptions,
 } from "@/features/actions";
+import { formatCount } from "@/lib/format";
 import { RunStatus } from "./run-status";
 
 // childPage is how many runs a step that's still waiting lists; the server
@@ -49,8 +50,8 @@ function FanoutList({ runs }: Readonly<{ runs: FanoutRun[] }>) {
   return (
     <div className="grid gap-2">
       <p className="text-sm tabular-nums">
-        <span className="font-medium">{succeeded}</span>
-        <span className="text-muted-foreground"> of {runs.length} succeeded</span>
+        <span className="font-medium">{formatCount(succeeded)}</span>
+        <span className="text-muted-foreground"> of {formatCount(runs.length)} succeeded</span>
       </p>
       <ul className="grid gap-1.5" aria-label="Runs">
         {runs.map((child) => (

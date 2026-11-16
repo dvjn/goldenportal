@@ -2,19 +2,15 @@ import { cn } from "cn";
 import { EmptyValue, exactTitle } from "@/components/catalog/property-value";
 import { tableCellClass } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Truncated } from "@/components/truncated";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { MatrixCell, MatrixData } from "@/features/widgets";
 import { formatPercent } from "@/lib/format";
+import { CountOf } from "./count-of";
 import { formatReading, isShare } from "./reading";
 import { WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 import { WidgetLink } from "./widget-link";
+import { labelCell, WidgetTable } from "./widget-table";
 
 // MatrixWidget shows each measure for each group, so a viewer reads down a
 // column for the group that lags and across a row for what it lags in.
@@ -45,7 +41,7 @@ export function MatrixWidget({ widget, context, data, error }: WidgetProps<Matri
       {data.rows.length === 0 ? (
         <EmptyState compact title="No groups yet" />
       ) : (
-        <Table>
+        <WidgetTable>
           <TableHeader>
             <TableRow>
               <TableHead className={tableCellClass}>
@@ -61,10 +57,12 @@ export function MatrixWidget({ widget, context, data, error }: WidgetProps<Matri
           <TableBody>
             {data.rows.map((row) => (
               <TableRow key={JSON.stringify(row.value)}>
-                <TableCell className={cn(tableCellClass, "font-medium")}>
-                  <WidgetLink link={live ? row.link : undefined} className="hover:underline">
-                    {row.title ?? String(row.value)}
-                  </WidgetLink>
+                <TableCell className={cn(tableCellClass, labelCell, "font-medium")}>
+                  <Truncated title={row.title ?? String(row.value)} className="max-w-none">
+                    <WidgetLink link={live ? row.link : undefined} className="hover:underline">
+                      {row.title ?? String(row.value)}
+                    </WidgetLink>
+                  </Truncated>
                 </TableCell>
                 {row.cells.map(cell)}
               </TableRow>
@@ -76,7 +74,7 @@ export function MatrixWidget({ widget, context, data, error }: WidgetProps<Matri
               </TableRow>
             )}
           </TableBody>
-        </Table>
+        </WidgetTable>
       )}
     </WidgetCard>
   );
@@ -142,9 +140,7 @@ function Share({
         >
           {formatPercent(cell.count, cell.total)}
         </WidgetLink>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {cell.count} of {cell.total}
-        </span>
+        <CountOf count={cell.count} total={cell.total} />
       </span>
       <span className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
         <span

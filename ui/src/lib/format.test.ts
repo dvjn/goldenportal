@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatPercent, formatSeconds, percentOf } from "./format";
+import { formatCount, formatPercent, formatSeconds, percentOf } from "./format";
+
+describe("formatCount", () => {
+  it("separates thousands", () => {
+    expect(formatCount(51476)).toBe("51,476");
+    expect(formatCount(7)).toBe("7");
+  });
+});
 
 describe("formatPercent", () => {
   it("rounds to the nearest percent", () => {

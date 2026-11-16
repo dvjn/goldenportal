@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LinkData, StatData, Widget } from "@/features/widgets";
 import { formatPercent } from "@/lib/format";
+import { CountOf } from "./count-of";
 import { WidgetError, type WidgetProps, WidgetTitle } from "./widget-grid";
 import { linkable, WidgetLink } from "./widget-link";
 
@@ -39,9 +40,7 @@ export function StatWidget({ widget, context, data, error }: WidgetProps<StatDat
         )}
       </span>
       {data.count !== undefined && data.total !== undefined && (
-        <span className="truncate text-xs text-muted-foreground tabular-nums">
-          {data.count} of {data.total}
-        </span>
+        <CountOf count={data.count} total={data.total} className="truncate" />
       )}
     </StatCard>
   );

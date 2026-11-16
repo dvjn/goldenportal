@@ -100,12 +100,12 @@ export function NavUser() {
         <DropdownMenuItem asChild>
           <Link to="/account/apps">
             <pageIcons.apps />
-            Connected apps
+            Connected Apps
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={handleSignOut}>
           <LogOut />
-          Sign out
+          Sign Out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

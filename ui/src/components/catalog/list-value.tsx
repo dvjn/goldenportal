@@ -1,11 +1,13 @@
 import { cn } from "cn";
 import { type ComponentProps, type ReactNode, useState } from "react";
+import { Truncated } from "@/components/truncated";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { formatCount } from "@/lib/format";
 
-// ListItem is one value of a list: how it shows, its key, and the tint of
-// its chip, if it has a color.
-export type ListItem = { key: string; node: ReactNode; tint?: string };
+// ListItem is one value of a list: how it shows, its key, the tint of its
+// chip, if it has a color, and its text, for when a cell cuts it short.
+export type ListItem = { key: string; node: ReactNode; tint?: string; title?: string };
 
 // A table cell shows one item and lists the rest on demand, up to
 // popoverItems; a page shows a few as chips and opens up to pageItems in
@@ -31,7 +33,7 @@ export function ListValue({
     const rest = total - 1;
     return (
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className="min-w-0 truncate">{first?.node}</span>
+        <Truncated title={first?.title}>{first?.node}</Truncated>
         {rest > 0 && (
           <Popover>
             <PopoverTrigger asChild>
@@ -77,11 +79,11 @@ function MoreChip({ count, ...props }: Readonly<{ count: number }> & ComponentPr
   return (
     <button
       type="button"
-      aria-label={`Show ${count} more`}
+      aria-label={`Show ${formatCount(count)} more`}
       className="inline-flex h-5 shrink-0 items-center rounded-md bg-secondary px-1.5 text-xs text-secondary-foreground tabular-nums outline-none hover:bg-secondary/80 focus-visible:ring-2 focus-visible:ring-ring/50"
       {...props}
     >
-      +{count}
+      +{formatCount(count)}
     </button>
   );
 }

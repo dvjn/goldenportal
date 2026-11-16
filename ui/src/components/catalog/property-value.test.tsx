@@ -1,8 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Property } from "@/features/blueprints";
 import { PropertyValue } from "./property-value";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const url: Property = { identifier: "url", title: "URL", type: "string", format: "uri" };
 
@@ -48,12 +52,25 @@ describe("PropertyValue", () => {
     expect(screen.queryByRole("button", { name: /more/ })).not.toBeInTheDocument();
   });
 
-  it("cuts long compact text short and keeps it on hover", () => {
+  it("cuts a long value short in a cell and shows all of it on focus", async () => {
+    const user = userEvent.setup();
+    // jsdom lays nothing out, so say every cell overflows.
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(500);
     const notes: Property = { identifier: "notes", title: "Notes", type: "string" };
     const long = "a long note ".repeat(20).trim();
-    render(<PropertyValue property={notes} value={long} compact />);
+    render(
+      <>
+        <PropertyValue property={notes} value={long} compact />
+        <PropertyValue property={url} value="https://example.com/a/long/path" compact />
+      </>,
+    );
 
-    expect(screen.getByText(long)).toHaveAttribute("title", long);
+    // Text alone takes focus; a link does, and shows its whole address.
     expect(screen.getByText(long)).toHaveClass("truncate");
+    await user.tab();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(long);
+    await user.tab();
+    expect(screen.getByRole("link", { name: "example.com/a/long/path" })).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("https://example.com/a/long/path");
   });
 });

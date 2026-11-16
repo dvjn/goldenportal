@@ -10,7 +10,7 @@ import { CriterionDetails, FilterSummary } from "@/components/scorecards/criteri
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ScorecardSpec, Status, Summary } from "@/features/scorecards";
-import { formatAbsolute, formatPercent, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatCount, formatPercent, formatRelative } from "@/lib/format";
 
 // evaluating looks as a running run does, for results catching up with a publish.
 const evaluating: StatusLook = {
@@ -36,7 +36,7 @@ export function AboutCard({
           {children}
           {summary && (
             <Detail label="Entities">
-              <span className="font-medium tabular-nums">{summary.entities}</span>
+              <span className="font-medium tabular-nums">{formatCount(summary.entities)}</span>
             </Detail>
           )}
           {summary?.evaluating ? (
@@ -169,7 +169,7 @@ function StatusCounts({
     <span className="flex gap-3 text-xs text-muted-foreground tabular-nums">
       {countedStatuses.map((status) => {
         const n = counts?.[status] ?? 0;
-        const text = `${n} ${checkStatuses[status].label.toLowerCase()}`;
+        const text = `${formatCount(n)} ${checkStatuses[status].label.toLowerCase()}`;
         const className = cn("w-20 text-left", n > 0 && checkStatuses[status].className);
         if (!onPick) {
           return (

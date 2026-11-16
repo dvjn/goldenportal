@@ -2,6 +2,7 @@ import { cn } from "cn";
 import { TierBadge, tierColors } from "@/components/scorecards/tier-badge";
 import { Toggle } from "@/components/ui/toggle";
 import type { Summary, Tier } from "@/features/scorecards";
+import { formatCount } from "@/lib/format";
 
 // TierDistribution is one bar split by how many entities reached each tier,
 // best tier first, with a legend of counts. With onPick, each legend entry
@@ -58,7 +59,7 @@ export function TierDistribution({
               ) : (
                 <TierBadge tiers={tiers} name={tier.name} />
               )}
-              <span className="text-muted-foreground tabular-nums">{tier.count}</span>
+              <span className="text-muted-foreground tabular-nums">{formatCount(tier.count)}</span>
             </span>
           ))}
         </div>

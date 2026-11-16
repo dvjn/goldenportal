@@ -16,6 +16,7 @@ import {
   connectorsQueryOptions,
   statusQueryOptions,
 } from "@/features/connections";
+import { formatCount } from "@/lib/format";
 
 // ConnectionOverview shows a connection read-only: its connector and what
 // blueprints read from it. Pushing has its own tab, and syncing sits in the page header.
@@ -72,9 +73,9 @@ function ReadsCard({ identifier }: Readonly<{ identifier: string }>) {
                       </Badge>
                       <span
                         className="font-medium tabular-nums"
-                        title={`${entities(source.blueprint)} ${entities(source.blueprint) === 1 ? "entity" : "entities"}`}
+                        title={`${formatCount(entities(source.blueprint))} ${entities(source.blueprint) === 1 ? "entity" : "entities"}`}
                       >
-                        {entities(source.blueprint)}
+                        {formatCount(entities(source.blueprint))}
                       </span>
                     </span>
                   </li>

@@ -45,7 +45,7 @@ import {
 } from "@/features/catalog";
 import { entityScorecardsQueryOptions } from "@/features/scorecards";
 import { useUiState } from "@/hooks/use-ui-state";
-import { formatAbsolute, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatCount, formatRelative } from "@/lib/format";
 
 // The blueprint's entity tabs and each scorecard that scores the entity get
 // a tab, between Overview and the system tabs. A blueprint tab named
@@ -212,13 +212,15 @@ function EntityPage() {
             {(available.length > 0 || runs > 0) && (
               <PageTab value="runs">
                 Runs
-                <span className="text-xs text-muted-foreground tabular-nums">{runs}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {formatCount(runs)}
+                </span>
               </PageTab>
             )}
             <PageTab value="relations">
               Relations
               <span className="text-xs text-muted-foreground tabular-nums">
-                {relationCount(spec, entity)}
+                {formatCount(relationCount(spec, entity))}
               </span>
             </PageTab>
             <PageTab value="yaml">YAML</PageTab>
@@ -427,7 +429,7 @@ function relationGroups(spec: BlueprintSpec, entity: EntityDetail): RelationGrou
       total: incoming.total,
       viewAll: (
         <IncomingLink incoming={incoming} identifier={entity.identifier}>
-          View all
+          View All
         </IncomingLink>
       ),
     });
@@ -502,7 +504,7 @@ function RelationsSummary({
                       search={{ tab: "relations" }}
                       className="font-medium tabular-nums hover:underline"
                     >
-                      {row.total}
+                      {formatCount(row.total)}
                     </Link>
                   </li>
                 ))}
@@ -548,7 +550,7 @@ function EntityError(props: ErrorComponentProps) {
       {...props}
       back={
         <Link to="/catalog/$blueprint" params={{ blueprint }}>
-          Back to the list
+          Back to the List
         </Link>
       }
     />

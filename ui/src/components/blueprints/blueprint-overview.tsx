@@ -41,7 +41,7 @@ import {
   usageQueryOptions,
 } from "@/features/blueprints";
 import { type ConnectionSummary, connections } from "@/features/connections";
-import { formatAbsolute, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatCount, formatRelative } from "@/lib/format";
 
 const sources: Record<ReturnType<typeof propertySource>, { label: string; icon: LucideIcon }> = {
   stored: { label: "Stored", icon: Database },
@@ -405,9 +405,9 @@ function WritersCard({ spec, usage }: Readonly<{ spec: BlueprintSpec; usage?: Us
                 </div>
                 <span
                   className="font-medium tabular-nums"
-                  title={`${writer.entities} ${writer.entities === 1 ? "entity" : "entities"}`}
+                  title={`${formatCount(writer.entities)} ${writer.entities === 1 ? "entity" : "entities"}`}
                 >
-                  {writer.entities}
+                  {formatCount(writer.entities)}
                 </span>
                 {!writer.mapped && (
                   <Badge variant="outline" title="No source of this blueprint reads it any more">

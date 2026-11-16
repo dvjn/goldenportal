@@ -27,7 +27,7 @@ import {
   type RunTrigger,
   runsQueryOptions,
 } from "@/features/connections";
-import { formatAbsolute, formatDuration, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatCount, formatDuration, formatRelative } from "@/lib/format";
 
 // RunsSearch is the runs table's state in the URL. trigger and outcome are
 // comma-separated lists.
@@ -176,7 +176,7 @@ const columns = [
               : "block text-right text-muted-foreground tabular-nums"
           }
         >
-          {row.original[count.key]}
+          {formatCount(row.original[count.key])}
         </span>
       ),
     }),
@@ -274,9 +274,9 @@ function RunProblems({ run }: Readonly<{ run: Run }>) {
               run.error &&
                 "Some or all resources couldn't be fetched, so nothing they write was deleted.",
               run.failed > 0 &&
-                `${run.failed} of ${run.received} items weren't written` +
+                `${formatCount(run.failed)} of ${formatCount(run.received)} items weren't written` +
                   (run.failed > run.errors.length
-                    ? `; the first ${run.errors.length} are shown`
+                    ? `; the first ${formatCount(run.errors.length)} are shown`
                     : "") +
                   ".",
               run.warning && "It read everything it could, but warned of the problem below.",

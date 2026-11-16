@@ -10,6 +10,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
+import { formatCount } from "@/lib/format";
 
 // count, when known, is how many rows have the value.
 export type DataTableOption = { value: string; label: string; count?: number };
@@ -71,7 +72,7 @@ export function DataTableFacetedOptions({
               {option.label}
               {option.count !== undefined && (
                 <CommandShortcut className="font-mono tracking-normal tabular-nums">
-                  {option.count}
+                  {formatCount(option.count)}
                 </CommandShortcut>
               )}
             </CommandItem>

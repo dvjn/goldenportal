@@ -108,7 +108,7 @@ export function WidgetGrid({
           disabled={results.isFetching}
         >
           {results.isFetching ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-          Try again
+          Try Again
         </Button>
       </EmptyCard>
     );
@@ -123,7 +123,10 @@ export function WidgetGrid({
           error = new Error("The widget's data didn't come back.");
         }
         return (
-          <div key={widget.identifier} className={cn("col-span-12 grid", spans[widget.width])}>
+          <div
+            key={widget.identifier}
+            className={cn("col-span-12 grid grid-cols-1", spans[widget.width])}
+          >
             <WidgetBody
               source={source}
               widget={widget}
@@ -241,7 +244,7 @@ export function ViewAll({ link }: Readonly<{ link: LinkData | undefined }>) {
       link={link}
       className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
     >
-      View all
+      View All
       <ArrowRight className="size-3.5" aria-hidden />
     </WidgetLink>
   );

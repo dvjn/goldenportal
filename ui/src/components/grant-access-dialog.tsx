@@ -31,6 +31,7 @@ import {
   usersQueryOptions,
 } from "@/features/access";
 import { type Role, useMe } from "@/features/auth";
+import { formatCount } from "@/lib/format";
 
 type Subject = { type: SubjectType; id: string; name: string };
 
@@ -153,7 +154,8 @@ function SubjectPicker({
                   <Users />
                   <span className="flex-1">{group.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    {group.memberCount} {group.memberCount === 1 ? "member" : "members"}
+                    {formatCount(group.memberCount)}{" "}
+                    {group.memberCount === 1 ? "member" : "members"}
                   </span>
                   {value?.id === group.id && <Check />}
                 </CommandItem>

@@ -15,6 +15,7 @@ import { PageIcon } from "@/components/page-icons";
 import { Button } from "@/components/ui/button";
 import { type BlueprintSummary, blueprints, useBlueprints } from "@/features/blueprints";
 import { catalogQueryOptions } from "@/features/catalog";
+import { formatCount } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/blueprints/")({
   validateSearch: validateTableSearch,
@@ -35,7 +36,12 @@ const columns = [
     id: "entities",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Entities" />,
     enableGlobalFilter: false,
-    cell: ({ row }) => row.original.entities ?? <EmptyValue title="Not published" />,
+    cell: ({ row }) =>
+      row.original.entities === undefined ? (
+        <EmptyValue title="Not published" />
+      ) : (
+        formatCount(row.original.entities)
+      ),
   }),
   doc.updated,
 ];

@@ -38,6 +38,16 @@ export function ScorecardResults({
   return <Results spec={spec} {...props} />;
 }
 
+// withoutTier is where without its conditions on the tier at path; the
+// rest of the filter still applies.
+function withoutTier(where: Filter | undefined, path: string): Filter | undefined {
+  if (!where || !("and" in where)) return where;
+  const onTier = (f: Filter): boolean =>
+    ("property" in f && f.property === path) || ("not" in f && onTier(f.not));
+  const rest = where.and.filter((f) => !onTier(f));
+  return rest.length > 0 ? { and: rest } : undefined;
+}
+
 // uncounted stands in for counts the summary couldn't give; the entities
 // table below says why and how to clear it.
 const uncounted = "Can't count these entities.";
@@ -50,6 +60,11 @@ function Results({
   catalogFilters,
 }: Readonly<ResultsProps & { spec: ScorecardSpec }>) {
   const summary = useSummary(spec.identifier, where, { placeholderData: keepPreviousData });
+  // The legend counts each tier as if none were picked, so it shows what
+  // picking another would bring in.
+  const tiers = useSummary(spec.identifier, withoutTier(where, path), {
+    placeholderData: keepPreviousData,
+  });
   const entities = useRef<HTMLDivElement>(null);
   const show = (path: string, value: string) => {
     catalogFilters.set(path, [value]);
@@ -61,32 +76,32 @@ function Results({
   const clear = <ClearFiltersButton onClick={catalogFilters.onClearFilters} />;
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <DataTableChips chips={chips} />
           {clear}
         </div>
       )}
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card>
           <CardTitleBar title="Tiers" />
           <CardContent className="grid gap-3">
-            {summary.data?.entities === 0 && chips.length > 0 ? (
+            {tiers.data?.entities === 0 && chips.length > 0 ? (
               <EmptyState compact title="No entities match the filters">
                 {clear}
               </EmptyState>
-            ) : summary.data ? (
+            ) : tiers.data && summary.data ? (
               <>
                 <ChecksPassing {...checkTotals(summary.data.criteria)} />
                 <TierDistribution
                   tiers={spec.tiers}
-                  counts={summary.data.tiers}
+                  counts={tiers.data.tiers}
                   picked={picked}
                   onPick={(tier) => catalogFilters.toggle(path, tier)}
                 />
               </>
-            ) : summary.isError ? (
+            ) : summary.isError || tiers.isError ? (
               <p className="text-sm text-muted-foreground">{uncounted}</p>
             ) : (
               <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Loading" />

@@ -13,10 +13,10 @@ export function tierColors(tiers: Tier[], name: string) {
 }
 
 export function tierTitle(tiers: Tier[], name: string) {
-  return tiers.find((tier) => tier.name === name)?.title ?? "No tier";
+  return tiers.find((tier) => tier.name === name)?.title ?? "No Tier";
 }
 
-// TierBadge shows a tier with its color, or "No tier" when none was reached.
+// TierBadge shows a tier with its color, or "No Tier" when none was reached.
 export function TierBadge({
   tiers,
   name,

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/chart";
 import type { LinkData, TrendData, TrendDay } from "@/features/widgets";
 import { toCatalogLink } from "./catalog-filter";
+import { CountOf } from "./count-of";
 import { formatReading, isShare, summaryOp } from "./reading";
 import { ViewAll, WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 import { linkable, WidgetLink } from "./widget-link";
@@ -42,11 +43,7 @@ export function TrendWidget({ widget, context, data, error }: WidgetProps<TrendD
           >
             {all ?? <EmptyValue title="Nothing to measure" />}
           </span>
-          {isShare(data.all) && (
-            <span className="text-xs text-muted-foreground">
-              {data.all.count} of {data.all.total}
-            </span>
-          )}
+          {isShare(data.all) && <CountOf count={data.all.count} total={data.all.total} />}
         </div>
         <TrendChart
           days={data.days}
@@ -103,9 +100,7 @@ function TrendChart({
               <span className="font-medium tabular-nums" title={exactTitle(day.value, unit)}>
                 {formatReading(day, unit) ?? "Nothing to measure"}
                 {isShare(day) && (
-                  <span className="ml-2 text-muted-foreground">
-                    {day.count} of {day.total}
-                  </span>
+                  <CountOf count={day.count} total={day.total} className="ml-2 text-sm" />
                 )}
               </span>
             );

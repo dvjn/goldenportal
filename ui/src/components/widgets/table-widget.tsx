@@ -11,19 +11,14 @@ import {
 import { tableCellClass } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { ScoreLink } from "@/components/scorecards/scorecard-value";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Truncated } from "@/components/truncated";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Link } from "@/features/catalog";
 import type { TableColumn, TableData } from "@/features/widgets";
 import { formatAbsolute, formatRelative } from "@/lib/format";
 import { ViewAll, WidgetCard, WidgetError, WidgetLoading, type WidgetProps } from "./widget-grid";
 import { linkable, WidgetLink } from "./widget-link";
+import { labelCell, WidgetTable } from "./widget-table";
 
 // TableWidget lists the first entities that match, with a link to the rest.
 // The server reads each column and says how to show it.
@@ -49,7 +44,7 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
       {data.rows.length === 0 ? (
         <EmptyState compact title="No entities yet" />
       ) : (
-        <Table>
+        <WidgetTable>
           <TableHeader>
             <TableRow>
               <TableHead className={tableCellClass}>Title</TableHead>
@@ -70,16 +65,18 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
               const link = live ? row.link : undefined;
               return (
                 <TableRow key={row.identifier}>
-                  <TableCell className={cn(tableCellClass, "font-medium")}>
-                    {linkable(link) ? (
-                      <WidgetLink link={link} className="hover:underline">
-                        <RowTitle title={row.title} />
-                      </WidgetLink>
-                    ) : (
-                      <EntityLink blueprint={data.blueprint} identifier={row.identifier}>
-                        <RowTitle title={row.title} />
-                      </EntityLink>
-                    )}
+                  <TableCell className={cn(tableCellClass, labelCell, "font-medium")}>
+                    <Truncated className="max-w-none" title={row.title}>
+                      {linkable(link) ? (
+                        <WidgetLink link={link} className="hover:underline">
+                          {row.title}
+                        </WidgetLink>
+                      ) : (
+                        <EntityLink blueprint={data.blueprint} identifier={row.identifier}>
+                          {row.title}
+                        </EntityLink>
+                      )}
+                    </Truncated>
                   </TableCell>
                   {columns.map(({ column, index }) => (
                     <TableCell key={index} className={tableCellClass}>
@@ -106,7 +103,7 @@ export function TableWidget({ widget, context, data, error }: WidgetProps<TableD
               );
             })}
           </TableBody>
-        </Table>
+        </WidgetTable>
       )}
     </WidgetCard>
   );
@@ -164,16 +161,6 @@ function BuiltIn({ name, value }: Readonly<{ name: string; value: unknown }>) {
       );
   }
   return value;
-}
-
-// RowTitle cuts a long title, such as a merge request's, so the columns
-// after it stay in view; the whole title shows on hover.
-function RowTitle({ title }: Readonly<{ title: string }>) {
-  return (
-    <span className="block max-w-80 truncate" title={title}>
-      {title}
-    </span>
-  );
 }
 
 // Computed shows what a column's format worked out: numbers in its unit,

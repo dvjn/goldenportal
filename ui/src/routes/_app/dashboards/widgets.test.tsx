@@ -258,7 +258,7 @@ describe("dashboards and page tabs", () => {
       "href",
       "/catalog/service/gold?tab=readiness",
     );
-    expect(screen.getByText("No tier")).toBeInTheDocument();
+    expect(screen.getByText("No Tier")).toBeInTheDocument();
     expect(screen.getByTitle("Not evaluated")).toBeInTheDocument();
   });
 
@@ -353,7 +353,7 @@ describe("dashboards and page tabs", () => {
     expect(screen.queryByText(/localhost/)).not.toBeInTheDocument();
 
     reachable = true;
-    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await user.click(screen.getByRole("button", { name: "Try Again" }));
     await stat(/^Critical Services$/, "3");
   });
 
@@ -425,15 +425,14 @@ describe("dashboards and page tabs", () => {
       "/connections/ledger",
     );
     // A long title is cut, whole on hover, so the columns stay in view.
-    expect(within(ledgerRow).getByText("Ledger")).toHaveClass("truncate");
-    expect(within(ledgerRow).getByText("Ledger")).toHaveAttribute("title", "Ledger");
+    expect(within(ledgerRow).getByText("Ledger").closest(".truncate")).toBeInTheDocument();
     // A link that would leave the portal opens the entity instead.
     expect(screen.getByRole("link", { name: "Search" })).toHaveAttribute(
       "href",
       "/catalog/service/search",
     );
     // The link to the rest reads the same however many there are.
-    expect(screen.getByRole("link", { name: "View all" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "View All" })).toHaveAttribute(
       "href",
       "/catalog/service?view=entities",
     );
@@ -742,7 +741,7 @@ describe("dashboards and page tabs", () => {
     const p95 = screen.getByText("P95 Coverage per Day").closest("[data-slot=card]") as HTMLElement;
     expect(p95).toHaveTextContent("88%");
     expect(p95).toHaveTextContent("Nov 8, 2026: nothing to measure");
-    expect(within(p95).getByRole("link", { name: /View all/ })).toBeInTheDocument();
+    expect(within(p95).getByRole("link", { name: /View All/ })).toBeInTheDocument();
   });
 
   it("shows a stat compactly with its icon, and a scorecard as numbers", async () => {
@@ -1402,7 +1401,7 @@ describe("dashboards and page tabs", () => {
       false,
     );
 
-    await user.click(screen.getByRole("button", { name: "Show everything" }));
+    await user.click(screen.getByRole("button", { name: "Show Everything" }));
     await vi.waitFor(() => {
       const url = new URL(requests["GET dashboards/mine/data"].url);
       expect(url.searchParams.getAll("input.team")).toEqual([""]);
@@ -1491,7 +1490,7 @@ describe("dashboards and page tabs", () => {
     expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
 
     // Clearing is a change from nothing, so it goes in the URL as "".
-    await user.click(screen.getByRole("button", { name: "Show everything" }));
+    await user.click(screen.getByRole("button", { name: "Show Everything" }));
     await vi.waitFor(() => {
       expect(router.state.location.search).toEqual({ team: "" });
       url = new URL(requests["GET dashboards/mine/data"].url);
