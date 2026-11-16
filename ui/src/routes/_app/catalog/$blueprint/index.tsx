@@ -51,10 +51,7 @@ import { publishedGradedBy, scorecardPath, scorecards, scorecardView } from "@/f
 import { formatAbsolute, formatCount, formatRelative } from "@/lib/format";
 import { usePageTitle } from "@/lib/page-title";
 
-// CatalogSearch is the page's state in the URL: view is the open tab, a
-// dashboard, a scorecard's results or "entities", filter the conditions
-// every entity either table lists meets, and the rest is the open table's;
-// cols lists the entities table's shown columns.
+// CatalogSearch keeps filter while a scorecard's tab is open, for the entities tab to come back to.
 type CatalogSearch = TableSearch & {
   view?: string;
   filter?: Filter[];
@@ -102,8 +99,8 @@ function validFilter(filter: unknown): Filter[] | undefined {
 const isScorecardView = (view?: string) => view?.startsWith(scorecardView("")) ?? false;
 
 // entitySearch is the entities table's part of the search. A scorecard's
-// results table has the search box, sorting and paging while its tab is
-// open, so the entities, which the tab still counts, are left unsearched.
+// results table has the sorting and paging while its tab is open, so the
+// entities, which the tab still counts, are left unsearched and unsorted.
 function entitySearch({ view, ...search }: CatalogSearch): CatalogSearch {
   if (!isScorecardView(view)) return search;
   const { q: _q, sort: _s, cursor: _c, ...rest } = search;
@@ -439,9 +436,7 @@ function BlueprintCatalogPage() {
           <ScorecardResults
             identifier={s.identifier}
             search={search}
-            where={search.filter && { and: search.filter }}
             path={scorecardPath(spec.properties, s.identifier).path}
-            catalogFilters={filters}
           />
         </TabsContent>
       ))}

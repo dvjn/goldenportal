@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import type { Filter } from "@/features/catalog";
 import { invalidateResults } from "@/features/refresh";
 import { summaryQueryOptions } from "./api";
 
@@ -9,11 +8,10 @@ import { summaryQueryOptions } from "./api";
 // they have.
 export function useSummary(
   identifier: string,
-  filter?: Filter,
-  options?: Partial<Pick<ReturnType<typeof summaryQueryOptions>, "enabled" | "placeholderData">>,
+  options?: Partial<Pick<ReturnType<typeof summaryQueryOptions>, "enabled">>,
 ) {
   const queryClient = useQueryClient();
-  const summary = useQuery({ ...summaryQueryOptions(identifier, filter), ...options });
+  const summary = useQuery({ ...summaryQueryOptions(identifier), ...options });
   const evaluating = summary.data?.evaluating ?? false;
   const wasEvaluating = useRef(evaluating);
   useEffect(() => {

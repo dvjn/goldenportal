@@ -37,13 +37,6 @@ export type CatalogFilters = {
     chips: DataTableChip[];
   };
   onClearFilters: () => void;
-  // set makes a field's chip match values, in place of any it had, or
-  // with none, removes it.
-  set: (property: string, values: unknown[]) => void;
-  // picked are the values a field's chip matches, unless it negates them.
-  picked: (property: string) => unknown[];
-  // toggle adds value to what a field's chip matches, or takes it away.
-  toggle: (property: string, value: unknown) => void;
 };
 
 // filterable properties get a filter with their values to pick from: those
@@ -242,8 +235,6 @@ export function useCatalogFilters(
     });
   }
 
-  const optionsChip = (id: string) =>
-    chipModels.find((c) => c.kind === "options" && c.property === id);
   // Picking a value for a property that has a chip changes it; otherwise
   // the condition joins the rest.
   const pick = (id: string, next: DataTableFilterValue | undefined, not?: boolean) => {
@@ -268,35 +259,9 @@ export function useCatalogFilters(
     );
   };
 
-  const set = (property: string, values: unknown[]) => {
-    const chip = optionsChip(property);
-    const next =
-      values.length === 0
-        ? []
-        : [
-            optionsFilter(
-              property,
-              values.map((v) => JSON.stringify(v)),
-              false,
-            ),
-          ];
-    onChange(chip ? replaceConditions(conditions, chip.indices, next) : [...conditions, ...next]);
-  };
-  const picked = (property: string) => {
-    const chip = optionsChip(property);
-    if (chip?.kind !== "options" || chip.negated) return [];
-    return chip.values.map((key) => JSON.parse(key) as unknown);
-  };
-
   return {
     filters: { fields, value, negated, onChange: pick, chips },
     onClearFilters: () => onChange([]),
-    set,
-    picked,
-    toggle: (property, value) => {
-      const now = picked(property);
-      set(property, now.includes(value) ? now.filter((v) => v !== value) : [...now, value]);
-    },
   };
 }
 

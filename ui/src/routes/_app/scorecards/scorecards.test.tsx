@@ -155,9 +155,8 @@ describe("a scorecard in the catalog", () => {
     await waitFor(() =>
       expect(router.state.location.search).toEqual({ view: "scorecard-readiness" }),
     );
-    // 2 of the 5 checks that ran pass, and 2 of the 3 entities checked have an owner.
+    // 2 of the 5 checks that ran pass.
     expect(await screen.findByText("40%")).toBeInTheDocument();
-    expect(screen.getByText("67%")).toBeInTheDocument();
     const row = await screen.findByRole("row", { name: /Ledger/ });
     expect(within(row).getByText("50%")).toBeInTheDocument();
     expect(within(row).getByText("Owner is on call")).toBeInTheDocument();
@@ -226,196 +225,89 @@ describe("a scorecard in the catalog", () => {
     await sorted("-failed");
   });
 
-  it("counts each criterion's results, each filtering to its entities in the same tab", async () => {
+  it("links each criterion's counts to the entities tab, filtered to their status", async () => {
     const user = userEvent.setup();
     const requests = stubApi(catalogRoutes);
     const { router } = renderRoute("/catalog/service?view=scorecard-readiness");
 
-    await user.click(await screen.findByRole("button", { name: "Owner is on call: 2 failed" }));
+    expect(
+      await screen.findByRole("link", { name: "Owner is on call: 1 skipped" }),
+    ).toBeInTheDocument();
+    // A count of none has no entities to open.
+    expect(screen.queryByRole("link", { name: "Owner is on call: 0 passed" })).toBeNull();
+    await user.click(screen.getByRole("link", { name: "Owner is on call: 2 failed" }));
     const failing = { property: "readiness.checks.onCall", op: "eq", value: "failed" };
     await vi.waitFor(() => {
-      expect(router.state.location.search).toEqual({
-        view: "scorecard-readiness",
-        filter: [failing],
-      });
-      expect(resultsParam(requests, "filter")).toBe(JSON.stringify({ and: [failing] }));
-      expect(summaryParam(requests, "filter")).toBe(JSON.stringify({ and: [failing] }));
+      expect(router.state.location.search).toEqual({ view: "entities", filter: [failing] });
+      expect(new URL(requests["GET catalog/service"].url).searchParams.get("filter")).toBe(
+        JSON.stringify({ and: [failing] }),
+      );
     });
-    expect(screen.getByRole("tab", { name: "Readiness" })).toHaveAttribute("aria-selected", "true");
-
-    // Another count of the same criterion replaces its chip.
-    await user.click(screen.getByRole("button", { name: "Owner is on call: 1 skipped" }));
-    await vi.waitFor(() =>
-      expect(router.state.location.search).toMatchObject({
-        filter: [{ ...failing, value: "skipped" }],
-      }),
-    );
-    // Its chip stands above the tiers and in the entities' search box.
+    expect(screen.getByRole("tab", { name: /Entities/ })).toHaveAttribute("aria-selected", "true");
     expect(
-      screen.getAllByRole("button", { name: "Readiness › Owner is on call: Skipped" }),
-    ).toHaveLength(2);
-    // A count of none picks its status too, so the filter can move to it.
-    await user.click(screen.getByRole("button", { name: "Owner is on call: 0 passed" }));
-    await vi.waitFor(() =>
-      expect(router.state.location.search).toMatchObject({
-        filter: [{ ...failing, value: "passed" }],
-      }),
-    );
-    await user.click(
-      screen.getAllByRole("button", { name: "Remove Readiness › Owner is on call filter" })[0],
-    );
-    await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty("filter"));
+      await screen.findByRole("button", { name: "Readiness › Owner is on call: Failed" }),
+    ).toBeVisible();
   });
 
-  it("filters its entities by tiers picked in the legend or the filter", async () => {
-    const user = userEvent.setup();
-    const requests = stubApi(catalogRoutes);
-    const { router } = renderRoute("/catalog/service?view=scorecard-readiness");
-
-    await user.click(await screen.findByRole("button", { name: /Bronze/ }));
-    const bronze = { property: "readiness", op: "eq", value: "bronze" };
-    await vi.waitFor(() => {
-      expect(router.state.location.search).toMatchObject({ filter: [bronze] });
-      expect(resultsParam(requests, "filter")).toBe(JSON.stringify({ and: [bronze] }));
-    });
-
-    // The filter adds tiers rather than replacing the one picked.
-    const chip = screen.getAllByRole("button", { name: "Remove Readiness filter" })[0]
-      .parentElement;
-    await user.click(within(chip as HTMLElement).getByRole("button", { name: /^Readiness/ }));
-    await user.click(await screen.findByRole("option", { name: "No Tier" }));
-    await vi.waitFor(() => {
-      const filter = JSON.parse(resultsParam(requests, "filter") ?? "null");
-      expect(filter.and).toHaveLength(1);
-      expect(filter.and[0]).toMatchObject({ property: "readiness", op: "in" });
-      expect(filter.and[0].values).toEqual(expect.arrayContaining(["bronze", ""]));
-    });
-  });
-
-  it("shows its filters above its tiers, and says when they match nothing", async () => {
-    const user = userEvent.setup();
-    stubApi({
-      ...catalogRoutes,
-      "GET scorecards/readiness/summary": (request) =>
-        new URL(request.url).searchParams.has("filter")
-          ? ok({ ...summary, entities: 0, tiers: [], criteria: [] })()
-          : ok(summary)(),
-      "GET scorecards/readiness/results": (request) =>
-        new URL(request.url).searchParams.has("filter")
-          ? ok({ items: [], total: 0 })()
-          : ok({ items: [ledger], total: 1 })(),
-      "GET catalog/service/facets": ok([]),
-    });
-    const filter = encodeURIComponent(
-      JSON.stringify([{ property: "readiness.checks.onCall", op: "eq", value: "passed" }]),
-    );
-    const { router } = renderRoute(`/catalog/service?view=scorecard-readiness&filter=${filter}`);
-
-    expect(await screen.findByText("No entities match the filters")).toBeVisible();
-    // The chips stand above the tiers as well as in the entities' search box.
-    const removes = await screen.findAllByRole("button", {
-      name: "Remove Readiness › Owner is on call filter",
-    });
-    expect(removes).toHaveLength(2);
-    const tiers = screen.getByText("Tiers");
-    expect(
-      removes[0].compareDocumentPosition(tiers) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-
-    await user.click(screen.getAllByRole("button", { name: "Clear Filters" })[0]);
-    expect(await screen.findByRole("row", { name: /Ledger/ })).toBeVisible();
-    expect(router.state.location.search).not.toHaveProperty("filter");
-    expect(
-      screen.queryByRole("button", { name: "Remove Readiness › Owner is on call filter" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps the page when a link's filter no longer applies, saying so briefly", async () => {
-    const user = userEvent.setup();
-    const refused = 'readiness has no check "bogus"; its checks are hasOwner, onCall';
-    const bogus = (request: Request, data: unknown) =>
-      new URL(request.url).searchParams.has("filter") ? fail(400, refused)() : ok(data)();
-    stubApi({
-      ...catalogRoutes,
-      "GET catalog/service": (request) => bogus(request, { items: [], total: 4 }),
-      "GET scorecards/readiness/summary": (request) => bogus(request, summary),
-      "GET scorecards/readiness/results": (request) =>
-        bogus(request, { items: [ledger], total: 1 }),
-      "GET catalog/service/facets": ok([]),
-    });
-    const filter = encodeURIComponent(
-      JSON.stringify([{ property: "readiness.checks.bogus", op: "eq", value: "failed" }]),
-    );
-    const { router } = renderRoute(`/catalog/service?view=scorecard-readiness&filter=${filter}`);
-
-    expect(await screen.findByText("Can't list entities this way")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Service" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Readiness" })).toBeVisible();
-    // Neither the tiers nor the criteria show counts they don't have.
-    expect(await screen.findAllByText("Can't count these entities.")).toHaveLength(2);
-    expect(screen.queryByText(/0 passed/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/its checks are/)).not.toBeInTheDocument();
-
-    await user.click(screen.getAllByRole("button", { name: "Clear Filters" })[0]);
-    expect(await screen.findByRole("row", { name: /Ledger/ })).toBeVisible();
-    expect(router.state.location.search).not.toHaveProperty("filter");
-  });
-
-  it("counts each tier in the legend as if no tier were picked", async () => {
-    const user = userEvent.setup();
-    const onlyBronze = {
-      ...summary,
-      tiers: summary.tiers.map((t) => ({ ...t, count: t.name === "bronze" ? 2 : 0 })),
-    };
-    stubApi({
-      ...catalogRoutes,
-      "GET scorecards/readiness/summary": (request) =>
-        new URL(request.url).searchParams.get("filter")?.includes('"readiness"')
-          ? ok(onlyBronze)()
-          : ok(summary)(),
-    });
-    renderRoute("/catalog/service?view=scorecard-readiness");
-    const count = async (tier: string) =>
-      (await screen.findByRole("button", { name: tier })).parentElement?.textContent;
-
-    expect(await count("No Tier")).toBe("No Tier1");
-    await user.click(await screen.findByRole("button", { name: "Bronze" }));
-    expect(await screen.findByRole("button", { name: "Bronze" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(await count("No Tier")).toBe("No Tier1");
-    await user.click(await screen.findByRole("button", { name: "Bronze" }));
-    expect(await screen.findByRole("button", { name: "Bronze" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    expect(await count("No Tier")).toBe("No Tier1");
-  });
-
-  it("toggles tiers in the legend, each in or out of those picked", async () => {
+  it("links each tier's count to the entities tab, filtered to that tier", async () => {
     const user = userEvent.setup();
     stubApi(catalogRoutes);
-    const { router } = renderRoute("/catalog/service?view=scorecard-readiness");
-    const legend = async (name: string) => screen.findByRole("button", { name });
-    const tiers = () =>
-      (router.state.location.search as { filter?: { value?: unknown; values?: unknown[] }[] })
-        .filter?.[0];
+    const { router } = renderRoute(
+      "/catalog/service?view=scorecard-readiness&cols=readiness&size=50&sort=-score",
+    );
 
-    expect(await legend("Bronze")).toHaveAttribute("aria-pressed", "false");
-    await user.click(await legend("Bronze"));
-    await vi.waitFor(() => expect(tiers()).toMatchObject({ value: "bronze" }));
-    expect(await legend("Bronze")).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("link", { name: "Bronze: 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Silver: 0" })).toBeNull();
+    await user.click(screen.getByRole("link", { name: "No Tier: 1" }));
+    // The viewer's columns and page size come along; the sort was the tab's.
+    await vi.waitFor(() =>
+      expect(router.state.location.search).toEqual({
+        view: "entities",
+        filter: [{ property: "readiness", op: "eq", value: "" }],
+        cols: "readiness",
+        size: 50,
+      }),
+    );
+  });
 
-    // Another tier joins the one picked, and a second click lets one go.
-    await user.click(await legend("No Tier"));
-    await vi.waitFor(() => expect(tiers()?.values).toEqual(["bronze", ""]));
-    expect(await legend("No Tier")).toHaveAttribute("aria-pressed", "true");
-    await user.click(await legend("Bronze"));
-    await vi.waitFor(() => expect(tiers()).toMatchObject({ value: "" }));
-    await user.click(await legend("No Tier"));
-    await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty("filter"));
-    expect(await legend("Bronze")).toHaveAttribute("aria-pressed", "false");
+  it("shows the whole scorecard, with no search and without the entities tab's filter", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi(catalogRoutes);
+    const owned = { property: "readiness.checks.hasOwner", op: "eq", value: "failed" };
+    const { router } = renderRoute(
+      `/catalog/service?view=scorecard-readiness&q=led&filter=${encodeURIComponent(JSON.stringify([owned]))}`,
+    );
+
+    await screen.findByRole("row", { name: /Ledger/ });
+    expect(await screen.findByText("40%")).toBeInTheDocument();
+    expect(resultsParam(requests, "filter")).toBeNull();
+    expect(resultsParam(requests, "q")).toBeNull();
+    expect(summaryParam(requests, "filter")).toBeNull();
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Readiness ›/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Filter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear Filters" })).toBeNull();
+
+    // A count's link lists what it counted, in place of the entities' filter.
+    await user.click(screen.getByRole("link", { name: "Bronze: 2" }));
+    await vi.waitFor(() =>
+      expect(router.state.location.search).toEqual({
+        view: "entities",
+        filter: [{ property: "readiness", op: "eq", value: "bronze" }],
+      }),
+    );
+  });
+
+  it("says when it can't count the entities", async () => {
+    stubApi({
+      ...catalogRoutes,
+      "GET scorecards/readiness/summary": fail(400, "the results aren't readable"),
+    });
+    renderRoute("/catalog/service?view=scorecard-readiness");
+
+    expect(await screen.findAllByText("Can't count these entities.")).toHaveLength(2);
+    expect(screen.queryByText(/0 passed/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("row", { name: /Ledger/ })).toBeVisible();
   });
 
   it("goes back to the first page of results when the server turns a cursor down", async () => {
@@ -432,29 +324,28 @@ describe("a scorecard in the catalog", () => {
     expect(router.state.location.search).not.toHaveProperty("cursor");
   });
 
-  it("keeps its filter for the entities tab, leaving its search behind", async () => {
+  it("keeps the entities tab's filter for coming back to, leaving the search behind", async () => {
     const user = userEvent.setup();
     const requests = stubApi(catalogRoutes);
     const filter = [{ property: "readiness.checks.hasOwner", op: "eq", value: "failed" }];
     const { router } = renderRoute(
-      `/catalog/service?view=scorecard-readiness&q=led&filter=${encodeURIComponent(JSON.stringify(filter))}&cursor=abc`,
+      `/catalog/service?q=led&filter=${encodeURIComponent(JSON.stringify(filter))}`,
     );
+    const chip = { name: "Readiness › Has an owner: Failed" };
 
+    expect(await screen.findByRole("button", chip)).toBeVisible();
+    await user.click(screen.getByRole("tab", { name: "Readiness" }));
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ view: "scorecard-readiness", filter }),
+    );
     await screen.findByRole("row", { name: /Ledger/ });
-    expect(resultsParam(requests, "q")).toBe("led");
-    expect(
-      screen.getAllByRole("button", { name: "Readiness › Has an owner: Failed" })[0],
-    ).toBeVisible();
+    expect(resultsParam(requests, "q")).toBeNull();
+    expect(resultsParam(requests, "filter")).toBeNull();
+    expect(screen.queryByRole("button", chip)).toBeNull();
+
     await user.click(screen.getByRole("tab", { name: /Entities/ }));
     await waitFor(() => expect(router.state.location.search).toEqual({ view: "entities", filter }));
-    await vi.waitFor(() =>
-      expect(new URL(requests["GET catalog/service"].url).searchParams.get("filter")).toBe(
-        JSON.stringify({ and: filter }),
-      ),
-    );
-    expect(
-      screen.getAllByRole("button", { name: "Readiness › Has an owner: Failed" })[0],
-    ).toBeVisible();
+    expect(await screen.findByRole("button", chip)).toBeVisible();
   });
 
   it("offers its checks among the entities tab's filters", async () => {

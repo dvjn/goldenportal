@@ -14,7 +14,6 @@ export {
 } from "./data-table-faceted-filter";
 export {
   type DataTableChip,
-  DataTableChips,
   DataTableFilterBox,
 } from "./data-table-filter-box";
 export {

@@ -1,25 +1,21 @@
 import { cn } from "cn";
-import { TierBadge, tierColors } from "@/components/scorecards/tier-badge";
-import { Toggle } from "@/components/ui/toggle";
+import { CountLink, type ResultsPath } from "@/components/scorecards/count-link";
+import { TierBadge, tierColors, tierTitle } from "@/components/scorecards/tier-badge";
 import type { Summary, Tier } from "@/features/scorecards";
 import { formatCount } from "@/lib/format";
 
 // TierDistribution is one bar split by how many entities reached each tier,
-// best tier first, with a legend of counts. With onPick, each legend entry
-// toggles its tier, "" for none, in or out of those picked, pressed while
-// picked lists it.
+// best tier first, with a legend of counts.
 export function TierDistribution({
   tiers,
   counts,
   legend = true,
-  picked = [],
-  onPick,
+  link,
 }: Readonly<{
   tiers: Tier[];
   counts: Summary["tiers"];
   legend?: boolean;
-  picked?: string[];
-  onPick?: (tier: string) => void;
+  link?: ResultsPath;
 }>) {
   const ordered = [...counts].reverse();
   const total = counts.reduce((sum, tier) => sum + tier.count, 0);
@@ -43,25 +39,24 @@ export function TierDistribution({
             ))}
       </div>
       {legend && (
-        <div className={cn("flex flex-wrap gap-y-1", onPick ? "-ml-2.5 gap-x-3" : "gap-x-4")}>
-          {ordered.map((tier) => (
-            // The count stands beside the toggle, so the toggle reads as its tier.
-            <span key={tier.name || "none"} className="flex items-center gap-1.5 text-sm">
-              {onPick ? (
-                <Toggle
-                  size="sm"
-                  className="text-sm"
-                  pressed={picked.includes(tier.name)}
-                  onPressedChange={() => onPick(tier.name)}
-                >
-                  <TierBadge tiers={tiers} name={tier.name} />
-                </Toggle>
-              ) : (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {ordered.map((tier) => {
+            const count = formatCount(tier.count);
+            return (
+              <span key={tier.name || "none"} className="flex items-center gap-1.5 text-sm">
                 <TierBadge tiers={tiers} name={tier.name} />
-              )}
-              <span className="text-muted-foreground tabular-nums">{formatCount(tier.count)}</span>
-            </span>
-          ))}
+                <CountLink
+                  link={link}
+                  value={tier.name}
+                  count={tier.count}
+                  label={`${tierTitle(tiers, tier.name)}: ${count}`}
+                  className="text-muted-foreground tabular-nums"
+                >
+                  {count}
+                </CountLink>
+              </span>
+            );
+          })}
         </div>
       )}
     </div>

@@ -127,8 +127,6 @@ export type Summary = {
 export type ResultPage = CursorPage<EntityResult>;
 
 export type ResultQuery = {
-  filter?: Filter;
-  q?: string;
   sort?: string;
   cursor?: string;
   size?: number;
@@ -139,8 +137,7 @@ export const scorecards = configDocs<ScorecardSpec>("scorecards");
 const path = (identifier: string) => `scorecards/${encodeURIComponent(identifier)}`;
 
 export const scorecardKeys = {
-  summary: (identifier: string, filter?: Filter) =>
-    [...scorecards.keys.detail(identifier), "summary", filter ?? null] as const,
+  summary: (identifier: string) => [...scorecards.keys.detail(identifier), "summary"] as const,
   results: (identifier: string, query: ResultQuery) =>
     [...scorecards.keys.detail(identifier), "results", query] as const,
   entities: ["entity-scorecards"] as const,
@@ -148,19 +145,15 @@ export const scorecardKeys = {
     [...scorecardKeys.entities, blueprint, identifier] as const,
 };
 
-export async function getSummary(identifier: string, filter?: Filter): Promise<Summary> {
-  const searchParams = new URLSearchParams();
-  if (filter) searchParams.set("filter", JSON.stringify(filter));
-  return (
-    await api.get(`${path(identifier)}/summary`, { searchParams }).json<ApiDataResponse<Summary>>()
-  ).data;
+export async function getSummary(identifier: string): Promise<Summary> {
+  return (await api.get(`${path(identifier)}/summary`).json<ApiDataResponse<Summary>>()).data;
 }
 
 export async function listResults(identifier: string, query: ResultQuery): Promise<ResultPage> {
   const searchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === "") continue;
-    searchParams.set(key, key === "filter" ? JSON.stringify(value) : String(value));
+    searchParams.set(key, String(value));
   }
   return (
     await api
@@ -192,10 +185,10 @@ export async function listEntityScorecards(
 // catch up with a publish.
 const evaluatingPoll = 2000;
 
-export const summaryQueryOptions = (identifier: string, filter?: Filter) =>
+export const summaryQueryOptions = (identifier: string) =>
   queryOptions({
-    queryKey: scorecardKeys.summary(identifier, filter),
-    queryFn: () => getSummary(identifier, filter),
+    queryKey: scorecardKeys.summary(identifier),
+    queryFn: () => getSummary(identifier),
     refetchInterval: (query) => (query.state.data?.evaluating ? evaluatingPoll : false),
   });
 

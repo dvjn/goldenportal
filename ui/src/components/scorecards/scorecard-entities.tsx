@@ -1,4 +1,3 @@
-import type { CatalogFilters } from "@/components/catalog/catalog-filters";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { ListValue } from "@/components/catalog/list-value";
 import { EmptyValue } from "@/components/catalog/property-value";
@@ -12,7 +11,6 @@ import {
 } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { TierBadge } from "@/components/scorecards/tier-badge";
-import type { Filter } from "@/features/catalog";
 import { type EntityResult, resultsQueryOptions, type ScorecardSpec } from "@/features/scorecards";
 import { formatCount, formatPercent } from "@/lib/format";
 
@@ -25,21 +23,13 @@ const count = (title: string, id: "passed" | "failed" | "skipped") =>
     cell: ({ getValue }) => <span className="tabular-nums">{formatCount(getValue())}</span>,
   });
 
-// ScorecardEntities lists the result of every entity where matches on a
-// scorecard, worst tier first unless sorted otherwise. catalogFilters show
-// where as the catalog page's chips.
+// ScorecardEntities lists the result of every entity on a scorecard,
+// worst tier first unless sorted otherwise.
 export function ScorecardEntities({
   spec,
   search,
-  where,
-  catalogFilters,
-}: Readonly<{
-  spec: ScorecardSpec;
-  search: TableSearch;
-  where?: Filter;
-  catalogFilters: CatalogFilters;
-}>) {
-  const query = { filter: where, q: search.q, sort: search.sort, size: usePageSize(search) };
+}: Readonly<{ spec: ScorecardSpec; search: TableSearch }>) {
+  const query = { sort: search.sort, size: usePageSize(search) };
   const { page, total, pending } = useCursorPage(
     (cursor) => resultsQueryOptions(spec.identifier, { ...query, cursor }),
     search.cursor,
@@ -121,15 +111,12 @@ export function ScorecardEntities({
       columns={columns}
       getRowId={(r) => `${r.blueprint}/${r.identifier}`}
       search={search}
-      searchLabel="Search entities"
       rowCount={total}
       cursor={page.data ?? {}}
       loading={page.isPlaceholderData}
       pending={pending}
       error={page.error}
       onRetry={() => void page.refetch()}
-      filters={catalogFilters.filters}
-      onClearFilters={catalogFilters.onClearFilters}
       empty={
         <EmptyState
           title="No scores yet"

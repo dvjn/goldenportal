@@ -20,7 +20,7 @@ export function ScorecardOverview({
   spec,
   published,
 }: Readonly<{ spec: ScorecardSpec; published: boolean }>) {
-  const summary = useSummary(spec.identifier, undefined, { enabled: published });
+  const summary = useSummary(spec.identifier, { enabled: published });
   const { data: blueprint } = useQuery(blueprints.queries.detail(spec.blueprint));
   const property = blueprint?.published?.spec.properties.find(
     (p) => p.scorecard === spec.identifier,

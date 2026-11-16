@@ -2,15 +2,16 @@ import { cn } from "cn";
 import { Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { CardSection, CardTitleBar } from "@/components/card-sections";
-import { EmptyValue } from "@/components/catalog/property-value";
+import { checkPath } from "@/components/catalog/catalog-filters";
 import { Detail, DetailList } from "@/components/detail-list";
 import { RunStatusMark, type StatusLook } from "@/components/run-status-mark";
 import { checkStatuses } from "@/components/scorecards/check-status";
+import { CountLink, type ResultsPath } from "@/components/scorecards/count-link";
 import { CriterionDetails, FilterSummary } from "@/components/scorecards/criterion-details";
 import { TierBadge } from "@/components/scorecards/tier-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ScorecardSpec, Status, Summary } from "@/features/scorecards";
-import { formatAbsolute, formatCount, formatPercent, formatRelative } from "@/lib/format";
+import { formatAbsolute, formatCount, formatRelative } from "@/lib/format";
 
 // evaluating looks as a running run does, for results catching up with a publish.
 const evaluating: StatusLook = {
@@ -63,12 +64,10 @@ export function AboutCard({
   );
 }
 
-// CriteriaResults are how each criterion fares, for CriteriaCard to show
-// beside it. onPick, when given, filters to the entities with a status on
-// a criterion.
+// CriteriaResults are how each criterion fares, for CriteriaCard to show beside it.
 type CriteriaResults = {
   summary?: Summary;
-  onPick?: (criterion: string, status: Status) => void;
+  link?: ResultsPath;
 };
 
 // CriteriaCard lists a scorecard's criteria tier by tier, each with its
@@ -92,14 +91,13 @@ export function CriteriaCard({
             <ul className="grid">
               {tier.criteria.map((criterion) => {
                 const c = counts.get(criterion.identifier);
-                const applicable = c ? c.passed + c.failed : 0;
-                const share = applicable > 0 && c ? (c.passed / applicable) * 100 : null;
+                const total = c ? c.passed + c.failed + c.skipped : 0;
                 return (
                   <li
                     key={criterion.identifier}
                     className={
                       results
-                        ? "grid items-center gap-x-4 gap-y-1 py-1.5 text-sm md:grid-cols-[minmax(0,1fr)_8rem_3rem_auto]"
+                        ? "grid items-center gap-x-4 gap-y-1 py-1.5 text-sm md:grid-cols-[minmax(0,1fr)_8rem_auto]"
                         : "grid py-1.5 text-sm"
                     }
                   >
@@ -117,25 +115,28 @@ export function CriteriaCard({
                     </div>
                     {results && (
                       <>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
-                          <div
-                            className="h-full rounded-full bg-emerald-500"
-                            style={{ width: `${share ?? 0}%` }}
-                          />
+                        <div
+                          className="flex h-1.5 overflow-hidden rounded-full bg-muted"
+                          aria-hidden
+                        >
+                          {c &&
+                            total > 0 &&
+                            countedStatuses.map((status) => (
+                              <div
+                                key={status}
+                                className={barColors[status]}
+                                style={{ width: `${(c[status] / total) * 100}%` }}
+                              />
+                            ))}
                         </div>
-                        <span className="text-xs text-muted-foreground tabular-nums md:text-right">
-                          {c && share !== null ? (
-                            formatPercent(c.passed, applicable)
-                          ) : (
-                            <EmptyValue title="No entity has been checked" />
-                          )}
-                        </span>
                         <StatusCounts
                           title={criterion.title}
                           counts={c}
-                          onPick={
-                            results.onPick &&
-                            ((status) => results.onPick?.(criterion.identifier, status))
+                          link={
+                            results.link && {
+                              ...results.link,
+                              path: checkPath(results.link.path, criterion.identifier),
+                            }
                           }
                         />
                       </>
@@ -153,41 +154,43 @@ export function CriteriaCard({
 
 const countedStatuses: Status[] = ["passed", "failed", "skipped"];
 
-// StatusCounts says how many entities have each status on a criterion. With
-// onPick, every count picks its status, none too, so a filter on one status
-// can move to another.
+const barColors: Record<Status, string> = {
+  passed: "bg-emerald-500",
+  failed: "bg-destructive",
+  skipped: "bg-muted-foreground/40",
+};
+
+// StatusCounts says how many entities have each status on a criterion.
 function StatusCounts({
   title,
   counts,
-  onPick,
+  link,
 }: Readonly<{
   title: string;
   counts?: Record<Status, number>;
-  onPick?: (status: Status) => void;
+  link?: ResultsPath;
 }>) {
   return (
     <span className="flex gap-3 text-xs text-muted-foreground tabular-nums">
       {countedStatuses.map((status) => {
         const n = counts?.[status] ?? 0;
-        const text = `${formatCount(n)} ${checkStatuses[status].label.toLowerCase()}`;
-        const className = cn("w-20 text-left", n > 0 && checkStatuses[status].className);
-        if (!onPick) {
-          return (
-            <span key={status} className={className}>
-              {text}
-            </span>
-          );
-        }
+        const { icon: Icon, className, label } = checkStatuses[status];
+        const text = `${formatCount(n)} ${label.toLowerCase()}`;
         return (
-          <button
+          <CountLink
             key={status}
-            type="button"
-            className={cn(className, "hover:underline")}
-            aria-label={`${title}: ${text}`}
-            onClick={() => onPick(status)}
+            link={link}
+            value={status}
+            count={n}
+            label={`${title}: ${text}`}
+            className={cn("w-12", n > 0 && className)}
           >
-            {text}
-          </button>
+            <span title={text} className="inline-flex items-center gap-1">
+              {formatCount(n)}
+              <Icon className="size-3.5" aria-hidden />
+              <span className="sr-only">{` ${label.toLowerCase()}`}</span>
+            </span>
+          </CountLink>
         );
       })}
     </span>

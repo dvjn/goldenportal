@@ -52,7 +52,9 @@ type DataTableProps<TData extends RowData> = {
   getRowId: (row: TData) => string;
   // search is the route's table state; pass Route.useSearch().
   search: TableSearch;
-  searchLabel: string;
+  // searchLabel names the search box; without it the table has none and
+  // leaves the URL's q alone.
+  searchLabel?: string;
   // filters sit in the search box as chips, added from a picker of their fields.
   filters?: {
     fields: DataTableFilterField[];
@@ -131,6 +133,7 @@ export function DataTable<TData extends RowData>({
   const sorting = sortingFromSearch(search.sort);
   usePageSize(search);
   const pagination = paginationFromSearch(search);
+  const q = searchLabel === undefined ? undefined : search.q;
 
   function setSearch(patch: TableSearch) {
     // The table works on any route, so it merges into whatever search the route has.
@@ -143,7 +146,7 @@ export function DataTable<TData extends RowData>({
     data,
     columns,
     getRowId,
-    state: { sorting, pagination, globalFilter: search.q ?? "" },
+    state: { sorting, pagination, globalFilter: q ?? "" },
     onSortingChange: (updater) => {
       const next = typeof updater === "function" ? updater(sorting) : updater;
       setSearch({ sort: sortToSearch(next), page: undefined, cursor: undefined });
@@ -165,9 +168,9 @@ export function DataTable<TData extends RowData>({
     rowCount,
   });
 
-  const [query, setQuery] = useState(search.q ?? "");
+  const [query, setQuery] = useState(q ?? "");
   useEffect(() => {
-    if (query === (search.q ?? "")) return;
+    if (query === (q ?? "")) return;
     const timer = setTimeout(
       () => setSearch({ q: query || undefined, page: undefined, cursor: undefined }),
       searchDelay,
@@ -184,7 +187,7 @@ export function DataTable<TData extends RowData>({
       fixedFilters,
     );
   const filtered = chips.length > 0;
-  const searching = Boolean(search.q) || filtered;
+  const searching = Boolean(q) || filtered;
   const total = server ? rowCount : table.getFilteredRowModel().rows.length;
 
   // A page past the end, after rows went away or a bookmark aged, goes back to the last one.
@@ -220,20 +223,29 @@ export function DataTable<TData extends RowData>({
       aria-busy={loading || pending || undefined}
     >
       {title && <CardTitleBar title={title} />}
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b px-(--card-spacing) py-3">
-        <DataTableFilterBox
-          label={searchLabel}
-          query={query}
-          onQueryChange={setQuery}
-          chips={chips}
-          fields={filters?.fields ?? []}
-          value={filters?.value ?? {}}
-          negated={filters?.negated}
-          onChange={filters?.onChange ?? (() => {})}
-          onClear={clearAll}
-        />
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
-      </div>
+      {(searchLabel !== undefined || actions) && (
+        <div
+          className={cn(
+            "flex flex-wrap items-start gap-2 border-b px-(--card-spacing) py-3",
+            searchLabel === undefined ? "justify-end" : "justify-between",
+          )}
+        >
+          {searchLabel !== undefined && (
+            <DataTableFilterBox
+              label={searchLabel}
+              query={query}
+              onQueryChange={setQuery}
+              chips={chips}
+              fields={filters?.fields ?? []}
+              value={filters?.value ?? {}}
+              negated={filters?.negated}
+              onChange={filters?.onChange ?? (() => {})}
+              onClear={clearAll}
+            />
+          )}
+          {actions && <div className="flex items-center gap-2">{actions}</div>}
+        </div>
+      )}
       <Table className={loading ? "opacity-60 transition-opacity" : undefined}>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
@@ -283,12 +295,12 @@ export function DataTable<TData extends RowData>({
                         Reset Sort
                       </Button>
                     )}
-                    {search.q && !filtered && (
+                    {q && !filtered && (
                       <Button variant="outline" onClick={clearAll}>
                         Clear Search
                       </Button>
                     )}
-                    {!filtered && !search.sort && !search.q && onRetry && (
+                    {!filtered && !search.sort && !q && onRetry && (
                       <Button variant="outline" onClick={onRetry}>
                         Try Again
                       </Button>
@@ -314,7 +326,7 @@ export function DataTable<TData extends RowData>({
                 <EmptyState
                   compact
                   title={`No ${noun} match`}
-                  description={search.q ? `Nothing found for "${search.q}".` : undefined}
+                  description={q ? `Nothing found for "${q}".` : undefined}
                 >
                   {filtered ? (
                     <ClearFiltersButton onClick={clearAll} />

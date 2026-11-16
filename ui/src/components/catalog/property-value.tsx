@@ -1,7 +1,7 @@
-import { Link as RouterLink } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { EntitiesLink } from "@/components/catalog/entities-link";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { ListValue } from "@/components/catalog/list-value";
 import { useLookupTarget } from "@/components/catalog/lookup-target";
@@ -348,17 +348,12 @@ export function CatalogViewAll({
   identifiers,
 }: Readonly<{ blueprint: string; identifiers: string[] }>) {
   return (
-    <RouterLink
-      to="/catalog/$blueprint"
-      params={{ blueprint }}
-      search={{
-        view: "entities",
-        filter: [{ property: "identifier", op: "in", values: identifiers }],
-      }}
-      className="hover:underline"
+    <EntitiesLink
+      blueprint={blueprint}
+      filter={[{ property: "identifier", op: "in", values: identifiers }]}
     >
       View All
-    </RouterLink>
+    </EntitiesLink>
   );
 }
 
