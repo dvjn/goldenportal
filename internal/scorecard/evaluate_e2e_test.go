@@ -179,14 +179,14 @@ func TestEvaluateFilterChecks(t *testing.T) {
 		return at
 	}
 	gold, owned := changedAt("gold"), changedAt("owned")
-	if scored, written, err := evaluateIn(t.Context(), f.db, mustParse(t, readinessFilters), 1); err != nil || scored != 6 || written != 0 {
-		t.Fatalf("evaluating again scored %d and wrote %d (%v), want 6 and none", scored, written, err)
+	if counts, err := scoreVersion(t.Context(), f.db, mustParse(t, readinessFilters), 1); err != nil || counts.scored != 6 || counts.written != 0 {
+		t.Fatalf("evaluating again scored %d and wrote %d (%v), want 6 and none", counts.scored, counts.written, err)
 	}
 	f.addGraded("gold", `{"stars": 50, "deployedAt": "`+now+`"}`, `{"team": "ops"}`, `{"critical": false}`)
 	f.addGraded("owned", `{"stars": 5}`, `{"team": "ops"}`, `{"critical": false}`)
 	f.addGraded("bare", `{"tier": "experimental"}`, `{}`, `{"critical": false}`)
-	if scored, written, err := evaluateIn(t.Context(), f.db, mustParse(t, readinessFilters), 1); err != nil || scored != 5 || written != 2 {
-		t.Fatalf("evaluating after changes scored %d and wrote %d (%v), want 5 and 2", scored, written, err)
+	if counts, err := scoreVersion(t.Context(), f.db, mustParse(t, readinessFilters), 1); err != nil || counts.scored != 5 || counts.written != 2 || counts.removed != 1 {
+		t.Fatalf("evaluating after changes scored %d, wrote %d and removed %d (%v), want 5, 2 and 1", counts.scored, counts.written, counts.removed, err)
 	}
 	if !changedAt("gold").After(gold) || !changedAt("owned").After(owned) {
 		t.Error("a new tier kept the time the old one was reached")

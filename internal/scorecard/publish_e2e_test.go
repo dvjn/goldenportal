@@ -289,13 +289,40 @@ func TestEvaluateInTurnGivesUp(t *testing.T) {
 	}
 }
 
-// TestEvaluationPanicIsAnError checks a panic while evaluating comes back
-// as an error, so the worker carries on.
-func TestEvaluationPanicIsAnError(t *testing.T) {
+// TestPublishedEvaluationWaitsAgain checks an evaluation a publish started
+// that gave up waiting for a run under way waits again, rather than leave
+// the version Evaluating until the next scheduled run.
+func TestPublishedEvaluationWaitsAgain(t *testing.T) {
 	f := newPublishFixture(t)
-	panicking := func(context.Context, *gofrSQL.Tx, string) error { panic("boom") }
-	if _, err := evaluateTraced(context.Background(), f.db, "health", panicking); err == nil || !strings.Contains(err.Error(), "boom") {
-		t.Errorf("err = %v, want the panic as an error", err)
+	f.publish("blueprints", "service", serviceYAML)
+	f.addEntity("service", "api", `{"owner": "platform"}`)
+	f.evaluateQueued()
+	previous := lockWait
+	lockWait = 100 * time.Millisecond
+	t.Cleanup(func() { lockWait = previous })
+
+	holder, err := tryLock(t.Context(), f.db, "health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.publish("scorecards", "health", healthYAML)
+	done := make(chan struct{})
+	go func() {
+		f.evaluateQueued()
+		close(done)
+	}()
+	time.Sleep(3 * lockWait)
+	holder.Release(t.Context())
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the evaluation didn't run once the other let go")
+	}
+	if got := f.tiers("health"); got["api"] != "owned" {
+		t.Errorf("results = %v, want api owned", got)
+	}
+	if f.evaluating("health") {
+		t.Error("the summary says Evaluating after the evaluation ran")
 	}
 }
 

@@ -3,7 +3,6 @@ package index
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"maps"
@@ -20,6 +19,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/pglock"
 	"github.com/dvjn/goldenportal/internal/telemetry"
 )
 
@@ -102,7 +102,7 @@ func Register(app httpx.Routes, s Settings, schedule string) func(*gofr.Context)
 // the lock stay on.
 type database interface {
 	configdoc.DB
-	Conn(ctx context.Context) (*sql.Conn, error)
+	pglock.Lender
 }
 
 // running is whether a reconcile is under way in this process, and again
@@ -181,14 +181,15 @@ func reconcile(ctx context.Context, db database, s Settings) (err error) {
 		telemetry.End(span, err)
 	}()
 
-	if r.conn, err = db.Conn(ctx); err != nil {
+	lock, err := pglock.Take(ctx, db, 0, lockKey)
+	if errors.Is(err, pglock.ErrBusy) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	defer r.conn.Close()
-	if err := r.conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+lockKey+`)`).Scan(&r.locked); err != nil || !r.locked {
-		return err
-	}
-	defer r.release(context.WithoutCancel(ctx))
+	defer lock.Release(ctx)
+	r.conn, r.locked = lock.Conn, true
 	if _, err := r.conn.ExecContext(ctx, `SET lock_timeout = 0`); err != nil {
 		return err
 	}
@@ -279,22 +280,6 @@ type reconciler struct {
 func (r *reconciler) bound(ctx context.Context, d time.Duration) error {
 	_, err := r.conn.ExecContext(ctx, `SET statement_timeout = `+strconv.FormatInt(d.Milliseconds(), 10))
 	return err
-}
-
-// release gives up the lock and the settings, or else the connection
-// itself, which mustn't go back to the pool holding either.
-func (r *reconciler) release(ctx context.Context) {
-	var unlocked bool
-	err := r.conn.QueryRowContext(ctx, `SELECT pg_advisory_unlock(`+lockKey+`)`).Scan(&unlocked)
-	for _, reset := range []string{`RESET lock_timeout`, `RESET statement_timeout`} {
-		if err == nil {
-			_, err = r.conn.ExecContext(ctx, reset)
-		}
-	}
-	if err != nil || !unlocked {
-		telemetry.Warn(ctx, "the connection that reconciled indexes is closed rather than reused", err)
-		_ = r.conn.Raw(func(any) error { return driver.ErrBadConn })
-	}
 }
 
 // large names the blueprints with at least minRows entities, or half as

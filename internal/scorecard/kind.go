@@ -18,7 +18,11 @@ var Kind = configdoc.Kind[Spec]{
 	Check:     Check,
 	Deletable: deletable,
 	Diff:      Diff,
-	Committed: func(ctx *gofr.Context, next Spec) { evaluateSoon(ctx, ctx.SQL, next.Identifier) },
+	Committed: func(ctx *gofr.Context, next Spec) {
+		if db, ok := database(ctx); ok {
+			evaluateSoon(ctx, db, next.Identifier)
+		}
+	},
 }
 
 // Diff lists what publishing next over previous changes. Nothing is

@@ -36,5 +36,6 @@ func All() map[int64]migration.Migrate {
 		20261117120000: indexableQueryShapes(),
 		20261118120000: entityIndexes(),
 		20261118140000: scorecardResultPaths(),
+		20261118150000: entityBatches(),
 	}
 }

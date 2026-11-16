@@ -32,7 +32,11 @@ func Register(app httpx.Routes, schedule string, committed func(ctx *gofr.Contex
 	app.GET("scorecards/{identifier}/results", listResults)
 	app.POST("scorecards/{identifier}/evaluate", evaluateNow)
 	app.GET("catalog/{blueprint}/scorecards", forEntity)
-	app.AddCronJob(schedule, "evaluate-scorecards", func(ctx *gofr.Context) { evaluateAll(ctx, ctx.SQL) })
+	app.AddCronJob(schedule, "evaluate-scorecards", func(ctx *gofr.Context) {
+		if db, ok := database(ctx); ok {
+			evaluateAll(ctx, db)
+		}
+	})
 	app.OnStart(evaluateAtStart)
 }
 
@@ -200,7 +204,11 @@ func EvaluateNow(ctx *gofr.Context, name string) (Evaluated, error) {
 		return Evaluated{}, err
 	}
 
-	n, err := evaluateInTurn(ctx, ctx.SQL, name)
+	db, ok := database(ctx)
+	if !ok {
+		return Evaluated{}, errors.New("the database can't lend a connection to evaluate on")
+	}
+	n, err := evaluateInTurn(ctx, db, name)
 	if errors.Is(err, ErrEvaluating) {
 		return Evaluated{}, httpx.Conflict(err.Error())
 	}
