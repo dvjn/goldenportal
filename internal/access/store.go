@@ -53,11 +53,12 @@ func (s Store) ListGrants(ctx context.Context) ([]Grant, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT rb.subject_type, rb.subject_id, rb.role, rb.created_at,
 			coalesce(u.display_name, g.name), coalesce(u.email, ''),
-			CASE WHEN g.id IS NOT NULL
-				THEN (SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id) END
+			CASE WHEN g.id IS NOT NULL THEN coalesce(mc.members, 0) END
 		FROM role_bindings rb
 		LEFT JOIN users u ON rb.subject_type = 'user' AND u.id = rb.subject_id
 		LEFT JOIN groups g ON rb.subject_type = 'group' AND g.id = rb.subject_id
+		LEFT JOIN (`+auth.MemberCountsSQL(`SELECT subject_id FROM role_bindings WHERE subject_type = 'group'`)+`) mc
+			ON mc.group_id = g.id
 		WHERE u.id IS NOT NULL OR g.id IS NOT NULL
 		ORDER BY lower(coalesce(u.display_name, g.name))`)
 	if err != nil {
@@ -89,7 +90,8 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 // searchSQL ranks each subject by the closest of its texts: equal to the
 // search, starting with it, with a word starting with it, or holding it.
 // Words break at spaces and the punctuation group names and emails use.
-const searchSQL = `
+func searchSQL() string {
+	return `
 	WITH matched AS (
 		SELECT f.type, f.id, f.name, f.email, r.rank
 		FROM (
@@ -114,16 +116,17 @@ const searchSQL = `
 		LIMIT $4
 	)
 	SELECT m.type, m.id, m.name, m.email,
-		CASE WHEN m.type = 'group'
-			THEN (SELECT count(*) FROM group_members gm WHERE gm.group_id = m.id) END
+		CASE WHEN m.type = 'group' THEN coalesce(mc.members, 0) END
 	FROM matched m
+	LEFT JOIN (` + auth.MemberCountsSQL(`SELECT id FROM matched WHERE type = 'group'`) + `) mc ON mc.group_id = m.id
 	ORDER BY m.rank, lower(m.name), m.type, m.id`
+}
 
 // Search finds up to limit groups and active users whose name, or a user's
 // email, holds text, ignoring case, closest matches first. The user
 // excludeUserID is left out, as admins can't change their own access.
 func (s Store) Search(ctx context.Context, text, excludeUserID string, limit int) ([]Subject, error) {
-	rows, err := s.db.QueryContext(ctx, searchSQL, text, excludeUserID, likeEscaper.Replace(text), limit)
+	rows, err := s.db.QueryContext(ctx, searchSQL(), text, excludeUserID, likeEscaper.Replace(text), limit)
 	if err != nil {
 		return nil, err
 	}

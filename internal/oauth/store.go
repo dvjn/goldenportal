@@ -242,7 +242,7 @@ func (s Store) AccessPrincipal(ctx context.Context, token, resource string) (aut
 		lastUsed sql.NullTime
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, `+auth.EffectiveRoleSQL+`, `+auth.GroupNamesSQL+`,
+		SELECT u.id, u.email, u.display_name, `+auth.EffectiveRoleSQL()+`, `+auth.GroupNamesSQL()+`,
 			t.scopes, g.id, g.last_used_at
 		FROM oauth_tokens t
 		JOIN oauth_grants g ON g.id = t.grant_id
