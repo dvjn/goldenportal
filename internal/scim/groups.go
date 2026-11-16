@@ -25,6 +25,13 @@ func (e patchError) Error() string { return string(e) }
 
 func errPatch(message string) error { return patchError(message) }
 
+// valueError is a value the portal can't read, answered as invalidValue.
+type valueError string
+
+func (e valueError) Error() string { return string(e) }
+
+var errParents = valueError(`parents must be a list of {"externalId": "..."}`)
+
 func (h handler) groups(rest []string) {
 	switch {
 	case len(rest) == 0 && h.r.Method == http.MethodGet:
@@ -47,12 +54,18 @@ func (h handler) groups(rest []string) {
 }
 
 func (h handler) groupResource(g group) groupResource {
+	parents := make([]parentRef, len(g.Parents))
+	for i, id := range g.Parents {
+		parents[i] = parentRef{ExternalID: id}
+	}
+
 	return groupResource{
-		Schemas:     []string{schemaGroup},
+		Schemas:     []string{schemaGroup, schemaGroupParents},
 		ID:          g.ID,
 		ExternalID:  g.ExternalID,
 		DisplayName: g.Name,
 		Members:     g.Members,
+		Parents:     &groupParents{Parents: parents},
 		Meta: &meta{
 			ResourceType: "Group", Created: g.Created, LastModified: g.Updated,
 			Location: h.s.URL() + "/Groups/" + g.ID,
@@ -99,22 +112,27 @@ func (h handler) getGroup(id string) {
 	h.json(http.StatusOK, h.groupResource(g))
 }
 
-func (h handler) readGroup() (groupResource, bool) {
+func (h handler) readGroup() (groupResource, []string, bool) {
 	var res groupResource
 	if !h.bind(&res) {
-		return groupResource{}, false
+		return groupResource{}, nil, false
 	}
 	res.DisplayName = strings.TrimSpace(res.DisplayName)
 	if res.DisplayName == "" {
 		writeError(h.w, http.StatusBadRequest, "invalidValue", "displayName is required")
-		return groupResource{}, false
+		return groupResource{}, nil, false
+	}
+	parents, err := res.Parents.externalIDs()
+	if err != nil {
+		writeError(h.w, http.StatusBadRequest, "invalidValue", err.Error())
+		return groupResource{}, nil, false
 	}
 
-	return res, true
+	return res, parents, true
 }
 
 func (h handler) createGroup() {
-	res, ok := h.readGroup()
+	res, parents, ok := h.readGroup()
 	if !ok {
 		return
 	}
@@ -122,6 +140,9 @@ func (h handler) createGroup() {
 	id, err := h.st.createGroup(h.ctx(), res.DisplayName, res.ExternalID)
 	if err == nil {
 		err = h.st.setMembers(h.ctx(), id, memberIDs(res.Members))
+	}
+	if err == nil {
+		err = h.st.setParents(h.ctx(), id, parents)
 	}
 	if err != nil {
 		h.fail(err, "group")
@@ -132,7 +153,7 @@ func (h handler) createGroup() {
 }
 
 func (h handler) replaceGroup(id string) {
-	res, ok := h.readGroup()
+	res, parents, ok := h.readGroup()
 	if !ok {
 		return
 	}
@@ -140,6 +161,9 @@ func (h handler) replaceGroup(id string) {
 	err := h.st.updateGroup(h.ctx(), id, res.DisplayName, res.ExternalID)
 	if err == nil {
 		err = h.st.setMembers(h.ctx(), id, memberIDs(res.Members))
+	}
+	if err == nil {
+		err = h.st.setParents(h.ctx(), id, parents)
 	}
 	if err != nil {
 		h.fail(err, "group")
@@ -151,6 +175,11 @@ func (h handler) replaceGroup(id string) {
 // memberFilter matches the member paths identity providers remove by:
 // members[value eq "id"].
 var memberFilter = regexp.MustCompile(`(?i)^members\[\s*value\s+eq\s+"([^"]+)"\s*\]$`)
+
+const parentsPath = schemaGroupParents + ":parents"
+
+// parentFilter matches the RFC 7644 path that removes one parent.
+var parentFilter = regexp.MustCompile(`(?i)^` + regexp.QuoteMeta(parentsPath) + `\[\s*externalId\s+eq\s+"([^"]+)"\s*\]$`)
 
 func (h handler) patchGroup(id string) {
 	var req patchRequest
@@ -164,25 +193,36 @@ func (h handler) patchGroup(id string) {
 		return
 	}
 
+	// The name and external id change in memory and are written once, so the
+	// order a no-path value's attributes come in doesn't matter.
+	patched := current
 	for _, op := range req.Operations {
-		if err := h.applyGroupOperation(current, op); err != nil {
-			if _, ok := err.(patchError); ok {
+		if err := h.applyGroupOperation(&patched, op); err != nil {
+			switch err.(type) {
+			case patchError:
 				writeError(h.w, http.StatusBadRequest, "invalidPath", err.Error())
-			} else {
+			case valueError:
+				writeError(h.w, http.StatusBadRequest, "invalidValue", err.Error())
+			default:
 				h.fail(err, "group")
 			}
 			return
 		}
 	}
 
-	if err := h.st.touchGroup(h.ctx(), id); err != nil {
+	if patched.Name != current.Name || patched.ExternalID != current.ExternalID {
+		err = h.st.updateGroup(h.ctx(), id, patched.Name, patched.ExternalID)
+	} else {
+		err = h.st.touchGroup(h.ctx(), id)
+	}
+	if err != nil {
 		h.fail(err, "group")
 		return
 	}
 	h.respondGroup(http.StatusOK, id)
 }
 
-func (h handler) applyGroupOperation(g group, op patchOperation) error {
+func (h handler) applyGroupOperation(g *group, op patchOperation) error {
 	kind := strings.ToLower(op.Op)
 	path := strings.TrimSpace(op.Path)
 	ctx := h.ctx()
@@ -192,6 +232,12 @@ func (h handler) applyGroupOperation(g group, op patchOperation) error {
 			return errPatch("only remove works on a single member")
 		}
 		return h.st.removeMembers(ctx, g.ID, []string{match[1]})
+	}
+	if match := parentFilter.FindStringSubmatch(path); match != nil {
+		if kind != "remove" {
+			return errPatch("only remove works on a single parent")
+		}
+		return h.st.removeParents(ctx, g.ID, []string{match[1]})
 	}
 
 	switch strings.ToLower(path) {
@@ -210,12 +256,44 @@ func (h handler) applyGroupOperation(g group, op patchOperation) error {
 		}
 	case "displayname":
 		if value, ok := op.Value.(string); ok && strings.TrimSpace(value) != "" {
-			return h.st.updateGroup(ctx, g.ID, strings.TrimSpace(value), g.ExternalID)
+			g.Name = strings.TrimSpace(value)
+			return nil
 		}
 		return errPatch("displayName needs a non-empty string")
 	case "externalid":
-		value, _ := op.Value.(string)
-		return h.st.updateGroup(ctx, g.ID, g.Name, value)
+		g.ExternalID, _ = op.Value.(string)
+		return nil
+	case strings.ToLower(parentsPath):
+		if kind == "remove" && op.Value == nil {
+			return h.st.setParents(ctx, g.ID, nil)
+		}
+		ids, err := parentList(op.Value)
+		if err != nil {
+			return err
+		}
+		switch kind {
+		case "add":
+			return h.st.addParents(ctx, g.ID, ids)
+		case "remove":
+			return h.st.removeParents(ctx, g.ID, ids)
+		case "replace":
+			return h.st.setParents(ctx, g.ID, ids)
+		}
+	case strings.ToLower(schemaGroupParents):
+		if kind == "remove" && op.Value == nil {
+			return h.st.setParents(ctx, g.ID, nil)
+		}
+		values, ok := op.Value.(map[string]any)
+		if !ok {
+			return errPatch("the " + schemaGroupParents + " extension needs an object value")
+		}
+		for key, value := range values {
+			sub := patchOperation{Op: op.Op, Path: schemaGroupParents + ":" + key, Value: value}
+			if err := h.applyGroupOperation(g, sub); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "":
 		values, ok := op.Value.(map[string]any)
 		if !ok {
@@ -224,9 +302,6 @@ func (h handler) applyGroupOperation(g group, op patchOperation) error {
 		for key, value := range values {
 			if err := h.applyGroupOperation(g, patchOperation{Op: op.Op, Path: key, Value: value}); err != nil {
 				return err
-			}
-			if strings.EqualFold(key, "displayName") {
-				g.Name, _ = value.(string)
 			}
 		}
 		return nil
@@ -255,9 +330,9 @@ func (h handler) respondGroup(status int, id string) {
 	h.json(status, h.groupResource(g))
 }
 
-// refsFrom reads member references from a PATCH value: a list of
-// {"value": id} objects, or a single one.
-func refsFrom(value any) []ref {
+// objectsFrom reads a multi-valued PATCH value: a list of objects, or a
+// single one.
+func objectsFrom(value any) []map[string]any {
 	var items []any
 	switch v := value.(type) {
 	case []any:
@@ -266,16 +341,57 @@ func refsFrom(value any) []ref {
 		items = []any{v}
 	}
 
-	refs := make([]ref, 0, len(items))
+	objects := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		if m, ok := item.(map[string]any); ok {
-			if id, ok := m["value"].(string); ok {
-				refs = append(refs, ref{Value: id})
-			}
+			objects = append(objects, m)
+		}
+	}
+
+	return objects
+}
+
+// refsFrom reads member references, {"value": id} objects, from a PATCH value.
+func refsFrom(value any) []ref {
+	objects := objectsFrom(value)
+	refs := make([]ref, 0, len(objects))
+	for _, m := range objects {
+		if id, ok := m["value"].(string); ok {
+			refs = append(refs, ref{Value: id})
 		}
 	}
 
 	return refs
+}
+
+// parentList reads a parents value. An empty list or null clears them, but a
+// value with no parent in it is refused, so a broken identity provider
+// mapping can't drop every inherited role.
+func parentList(value any) ([]string, error) {
+	if list, ok := value.([]any); value == nil || ok && len(list) == 0 {
+		return []string{}, nil
+	}
+	ids := parentIDs(value)
+	if len(ids) == 0 {
+		return nil, errParents
+	}
+
+	return ids, nil
+}
+
+// parentIDs reads parent references, {"externalId": id} objects, from a
+// PATCH value.
+func parentIDs(value any) []string {
+	ids := []string{}
+	for _, m := range objectsFrom(value) {
+		for key, v := range m {
+			if id, ok := v.(string); ok && id != "" && strings.EqualFold(key, "externalId") {
+				ids = append(ids, id)
+			}
+		}
+	}
+
+	return ids
 }
 
 // memberIDs keeps the member ids that could name a user.

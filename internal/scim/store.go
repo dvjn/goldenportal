@@ -44,6 +44,7 @@ type group struct {
 	Created    time.Time
 	Updated    time.Time
 	Members    []ref
+	Parents    []string
 }
 
 // A user's SCIM userName is the one their identity provider set, or their email
@@ -208,7 +209,11 @@ func (s store) cutOff(ctx context.Context, userID string) error {
 }
 
 const selectGroups = `
-	SELECT g.id, g.name, coalesce(g.external_id, ''), g.created_at, g.updated_at
+	SELECT g.id, g.name, coalesce(g.external_id, ''), g.created_at, g.updated_at,
+		coalesce((
+			SELECT array_agg(gp.parent_external_id ORDER BY gp.parent_external_id)
+			FROM group_parents gp WHERE gp.group_id = g.id
+		), '{}')
 	FROM groups g`
 
 var groupColumns = map[string]string{
@@ -236,7 +241,7 @@ func (s store) listGroups(ctx context.Context, f *filter, start, count int, with
 	var groups []group
 	for rows.Next() {
 		var g group
-		if err := rows.Scan(&g.ID, &g.Name, &g.ExternalID, &g.Created, &g.Updated); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.ExternalID, &g.Created, &g.Updated, pq.Array(&g.Parents)); err != nil {
 			return nil, 0, err
 		}
 		groups = append(groups, g)
@@ -335,6 +340,39 @@ func (s store) removeMembers(ctx context.Context, groupID string, userIDs []stri
 	_, err := s.db.ExecContext(ctx, `
 		DELETE FROM group_members WHERE group_id = $1 AND user_id::text = ANY($2)`,
 		groupID, pq.Array(userIDs))
+
+	return err
+}
+
+// setParents makes the group's parents exactly externalIDs. They are kept
+// even when no group has that id yet.
+func (s store) setParents(ctx context.Context, groupID string, externalIDs []string) error {
+	// A nil slice is sent as NULL, which would delete nothing.
+	if externalIDs == nil {
+		externalIDs = []string{}
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM group_parents WHERE group_id = $1 AND NOT (parent_external_id = ANY($2))`,
+		groupID, pq.Array(externalIDs)); err != nil {
+		return err
+	}
+
+	return s.addParents(ctx, groupID, externalIDs)
+}
+
+func (s store) addParents(ctx context.Context, groupID string, externalIDs []string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO group_parents (group_id, parent_external_id)
+		SELECT $1, unnest($2::text[])
+		ON CONFLICT DO NOTHING`, groupID, pq.Array(externalIDs))
+
+	return err
+}
+
+func (s store) removeParents(ctx context.Context, groupID string, externalIDs []string) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM group_parents WHERE group_id = $1 AND parent_external_id = ANY($2)`,
+		groupID, pq.Array(externalIDs))
 
 	return err
 }

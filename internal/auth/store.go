@@ -20,25 +20,6 @@ const (
 	signInTimeout      = 10 * time.Minute
 )
 
-// EffectiveRoleSQL selects the highest role bound to user u directly or
-// through one of their groups; everyone is at least a member.
-const EffectiveRoleSQL = `coalesce((
-	SELECT rb.role FROM role_bindings rb
-	WHERE (rb.subject_type = 'user' AND rb.subject_id = u.id)
-		OR (rb.subject_type = 'group' AND rb.subject_id IN (
-			SELECT gm.group_id FROM group_members gm WHERE gm.user_id = u.id))
-	ORDER BY CASE rb.role WHEN 'admin' THEN 3 WHEN 'builder' THEN 2 ELSE 1 END DESC
-	LIMIT 1
-), 'member')`
-
-// GroupNamesSQL selects the sorted names of the groups user u is in, as a
-// text array, so the principal carries them without a second query.
-const GroupNamesSQL = `coalesce((
-	SELECT array_agg(g.name ORDER BY g.name) FROM group_members gm
-	JOIN groups g ON g.id = gm.group_id
-	WHERE gm.user_id = u.id
-), '{}')`
-
 var (
 	errNotFound    = errors.New("not found")
 	errDeactivated = errors.New("user is deactivated")
@@ -210,7 +191,7 @@ func (s Store) SessionPrincipal(ctx context.Context, sessionHash []byte) (Princi
 	)
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, s.last_seen_at, `+EffectiveRoleSQL+`, `+GroupNamesSQL+`
+		SELECT u.id, u.email, u.display_name, s.last_seen_at, `+EffectiveRoleSQL()+`, `+GroupNamesSQL()+`
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.id_hash = $1

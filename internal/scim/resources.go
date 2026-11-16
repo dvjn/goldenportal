@@ -11,11 +11,13 @@ import (
 const (
 	schemaUser          = "urn:ietf:params:scim:schemas:core:2.0:User"
 	schemaGroup         = "urn:ietf:params:scim:schemas:core:2.0:Group"
+	schemaGroupParents  = "urn:goldenportal:params:scim:schemas:extension:2.0:Group"
 	schemaListResponse  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	schemaPatchOp       = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 	schemaError         = "urn:ietf:params:scim:api:messages:2.0:Error"
 	schemaProviderCfg   = "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"
 	schemaResourceType  = "urn:ietf:params:scim:schemas:core:2.0:ResourceType"
+	schemaSchema        = "urn:ietf:params:scim:schemas:core:2.0:Schema"
 	contentType         = "application/scim+json"
 	defaultListCount    = 100
 	maxListCount        = 1000
@@ -60,12 +62,33 @@ type userResource struct {
 }
 
 type groupResource struct {
-	Schemas     []string `json:"schemas"`
-	ID          string   `json:"id,omitempty"`
-	ExternalID  string   `json:"externalId,omitempty"`
-	DisplayName string   `json:"displayName"`
-	Members     []ref    `json:"members,omitempty"`
-	Meta        *meta    `json:"meta,omitempty"`
+	Schemas     []string      `json:"schemas"`
+	ID          string        `json:"id,omitempty"`
+	ExternalID  string        `json:"externalId,omitempty"`
+	DisplayName string        `json:"displayName"`
+	Members     []ref         `json:"members,omitempty"`
+	Parents     *groupParents `json:"urn:goldenportal:params:scim:schemas:extension:2.0:Group,omitempty"`
+	Meta        *meta         `json:"meta,omitempty"`
+}
+
+// groupParents is the portal's group extension: the groups this group is
+// in, by the identity provider's id for them.
+type groupParents struct {
+	// Parents is read the way PATCH reads it, so a single object or a
+	// malformed element doesn't fail the whole request.
+	Parents any `json:"parents"`
+}
+
+type parentRef struct {
+	ExternalID string `json:"externalId"`
+}
+
+func (p *groupParents) externalIDs() ([]string, error) {
+	if p == nil {
+		return nil, nil
+	}
+
+	return parentList(p.Parents)
 }
 
 type listResponse struct {

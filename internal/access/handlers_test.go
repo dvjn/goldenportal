@@ -74,7 +74,7 @@ func TestSearchSubjectsNeedsText(t *testing.T) {
 func TestSearchSubjectsAsksForTheText(t *testing.T) {
 	db, mock, metrics := gofrSQL.NewSQLMocks(t)
 	metrics.EXPECT().RecordHistogram(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-	mock.ExpectQuery(searchSQL).WithArgs("50%_off", "admin-id", `50\%\_off`, searchLimit).
+	mock.ExpectQuery(searchSQL()).WithArgs("50%_off", "admin-id", `50\%\_off`, searchLimit).
 		WillReturnRows(sqlmock.NewRows([]string{"type", "id", "name", "email", "members"}).
 			AddRow("group", "g1", "50%_off", "", 3).
 			AddRow("user", "u1", "Grace Hopper", "grace@example.com", nil))

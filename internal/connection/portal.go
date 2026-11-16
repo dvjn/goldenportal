@@ -8,6 +8,7 @@ import (
 	"github.com/lib/pq"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/dvjn/goldenportal/internal/auth"
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 )
@@ -23,6 +24,8 @@ type portalData struct {
 	Connections []portalConnection `json:"connections"`
 }
 
+// A user's groups and a group's members count those through a group below,
+// as role grants do; the direct lists are what the identity provider set.
 type portalUser struct {
 	ID             string     `json:"id"`
 	Email          string     `json:"email"`
@@ -30,15 +33,17 @@ type portalUser struct {
 	Username       string     `json:"username"`
 	Active         bool       `json:"active"`
 	Groups         []string   `json:"groups"`
+	DirectGroups   []string   `json:"directGroups"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	LastSignedInAt *time.Time `json:"lastSignedInAt"`
 }
 
 type portalGroup struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Members   []string  `json:"members"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Members       []string  `json:"members"`
+	DirectMembers []string  `json:"directMembers"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 type portalBlueprint struct {
@@ -192,13 +197,22 @@ func portalSnapshot(ctx context.Context, db configdoc.DB, resources []string) (m
 
 func portalUsers(ctx context.Context, db configdoc.DB, data *portalData) error {
 	users, err := db.QueryContext(ctx, `
+		WITH memberships AS (`+auth.MembershipsSQL()+`),
+		effective AS (
+			SELECT m.user_id, array_agg(g.name ORDER BY g.name) AS names FROM memberships m
+			JOIN groups g ON g.id = m.group_id
+			GROUP BY m.user_id
+		),
+		direct AS (
+			SELECT gm.user_id, array_agg(g.name ORDER BY g.name) AS names FROM group_members gm
+			JOIN groups g ON g.id = gm.group_id
+			GROUP BY gm.user_id
+		)
 		SELECT u.id, u.email, u.display_name, coalesce(u.username, ''), u.status = 'active',
-			coalesce(array_agg(g.name ORDER BY g.name) FILTER (WHERE g.id IS NOT NULL), '{}'),
-			u.created_at, u.last_login_at
+			coalesce(e.names, '{}'), coalesce(d.names, '{}'), u.created_at, u.last_login_at
 		FROM users u
-		LEFT JOIN group_members gm ON gm.user_id = u.id
-		LEFT JOIN groups g ON g.id = gm.group_id
-		GROUP BY u.id
+		LEFT JOIN effective e ON e.user_id = u.id
+		LEFT JOIN direct d ON d.user_id = u.id
 		ORDER BY u.email`)
 	if err != nil {
 		return err
@@ -207,7 +221,7 @@ func portalUsers(ctx context.Context, db configdoc.DB, data *portalData) error {
 	for users.Next() {
 		var u portalUser
 		if err := users.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Username, &u.Active, pq.Array(&u.Groups),
-			&u.CreatedAt, &u.LastSignedInAt); err != nil {
+			pq.Array(&u.DirectGroups), &u.CreatedAt, &u.LastSignedInAt); err != nil {
 			return err
 		}
 		data.Users = append(data.Users, u)
@@ -218,12 +232,21 @@ func portalUsers(ctx context.Context, db configdoc.DB, data *portalData) error {
 
 func portalGroups(ctx context.Context, db configdoc.DB, data *portalData) error {
 	groups, err := db.QueryContext(ctx, `
-		SELECT g.id, g.name,
-			coalesce(array_agg(u.email ORDER BY u.email) FILTER (WHERE u.id IS NOT NULL), '{}'), g.created_at
+		WITH memberships AS (`+auth.MembershipsSQL()+`),
+		effective AS (
+			SELECT m.group_id, array_agg(u.email ORDER BY u.email) AS emails FROM memberships m
+			JOIN users u ON u.id = m.user_id
+			GROUP BY m.group_id
+		),
+		direct AS (
+			SELECT gm.group_id, array_agg(u.email ORDER BY u.email) AS emails FROM group_members gm
+			JOIN users u ON u.id = gm.user_id
+			GROUP BY gm.group_id
+		)
+		SELECT g.id, g.name, coalesce(e.emails, '{}'), coalesce(d.emails, '{}'), g.created_at
 		FROM groups g
-		LEFT JOIN group_members gm ON gm.group_id = g.id
-		LEFT JOIN users u ON u.id = gm.user_id
-		GROUP BY g.id
+		LEFT JOIN effective e ON e.group_id = g.id
+		LEFT JOIN direct d ON d.group_id = g.id
 		ORDER BY g.name`)
 	if err != nil {
 		return err
@@ -231,7 +254,7 @@ func portalGroups(ctx context.Context, db configdoc.DB, data *portalData) error 
 	defer groups.Close()
 	for groups.Next() {
 		var g portalGroup
-		if err := groups.Scan(&g.ID, &g.Name, pq.Array(&g.Members), &g.CreatedAt); err != nil {
+		if err := groups.Scan(&g.ID, &g.Name, pq.Array(&g.Members), pq.Array(&g.DirectMembers), &g.CreatedAt); err != nil {
 			return err
 		}
 		data.Groups = append(data.Groups, g)

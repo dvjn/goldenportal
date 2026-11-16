@@ -80,7 +80,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, st store, db DB) 
 	case len(parts) == 1 && parts[0] == "ResourceTypes" && r.Method == http.MethodGet:
 		h.resourceTypes()
 	case len(parts) == 1 && parts[0] == "Schemas" && r.Method == http.MethodGet:
-		h.json(http.StatusOK, listOf(nil))
+		h.json(http.StatusOK, listOf([]any{h.groupParentsSchema()}))
+	case len(parts) == 2 && parts[0] == "Schemas" && r.Method == http.MethodGet:
+		if !strings.EqualFold(parts[1], schemaGroupParents) {
+			writeError(w, http.StatusNotFound, "", "no such schema")
+			return
+		}
+		h.json(http.StatusOK, h.groupParentsSchema())
 	case parts[0] == "Users":
 		h.users(parts[1:])
 	case parts[0] == "Groups":
@@ -199,16 +205,48 @@ func (h handler) serviceProviderConfig() {
 }
 
 func (h handler) resourceTypes() {
-	resourceType := func(name, endpoint, schema string) any {
+	resourceType := func(name, endpoint, schema string, extensions ...string) any {
+		schemaExtensions := make([]map[string]any, len(extensions))
+		for i, extension := range extensions {
+			schemaExtensions[i] = map[string]any{"schema": extension, "required": false}
+		}
 		return map[string]any{
 			"schemas": []string{schemaResourceType}, "id": name, "name": name,
-			"endpoint": endpoint, "schema": schema,
+			"endpoint": endpoint, "schema": schema, "schemaExtensions": schemaExtensions,
 		}
 	}
 	h.json(http.StatusOK, listOf([]any{
 		resourceType("User", "/Users", schemaUser),
-		resourceType("Group", "/Groups", schemaGroup),
+		resourceType("Group", "/Groups", schemaGroup, schemaGroupParents),
 	}))
+}
+
+// groupParentsSchema describes the group extension as RFC 7643 section 7 does.
+func (h handler) groupParentsSchema() any {
+	attribute := func(name, kind, description string, multiValued, required bool) map[string]any {
+		return map[string]any{
+			"name": name, "type": kind, "description": description,
+			"multiValued": multiValued, "required": required, "caseExact": true,
+			"mutability": "readWrite", "returned": "default", "uniqueness": "none",
+		}
+	}
+	parents := attribute("parents", "complex",
+		"The groups this group is in. Members of this group count as members of those too.", true, false)
+	parents["subAttributes"] = []any{
+		attribute("externalId", "string", "The identity provider's id for the parent group, its externalId here.", false, true),
+	}
+
+	return map[string]any{
+		"schemas":     []string{schemaSchema},
+		"id":          schemaGroupParents,
+		"name":        "GroupParents",
+		"description": "Where a group sits in the identity provider's hierarchy.",
+		"attributes":  []any{parents},
+		"meta": map[string]any{
+			"resourceType": "Schema",
+			"location":     h.s.URL() + "/Schemas/" + schemaGroupParents,
+		},
+	}
 }
 
 // validID reports whether id could name a portal user or group.

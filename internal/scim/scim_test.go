@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"gofr.dev/pkg/gofr/logging"
@@ -139,5 +140,42 @@ func TestMemberReferences(t *testing.T) {
 	}
 	if m := memberFilter.FindStringSubmatch(`members[value eq "` + id + `"]`); m == nil || m[1] != id {
 		t.Fatalf("member filter = %v", m)
+	}
+}
+
+func TestDiscoveryListsTheGroupExtension(t *testing.T) {
+	s := New(testToken, "https://portal.example.com", logging.NewMockLogger(logging.ERROR))
+
+	var types listResponse
+	_ = json.Unmarshal(serve(t, s, http.MethodGet, "/scim/v2/ResourceTypes", testToken).Body.Bytes(), &types)
+	group, _ := types.Resources[1].(map[string]any)
+	extensions, _ := group["schemaExtensions"].([]any)
+	if len(extensions) != 1 || extensions[0].(map[string]any)["schema"] != schemaGroupParents {
+		t.Fatalf("Group schemaExtensions = %v", group["schemaExtensions"])
+	}
+
+	var schemas listResponse
+	_ = json.Unmarshal(serve(t, s, http.MethodGet, "/scim/v2/Schemas", testToken).Body.Bytes(), &schemas)
+	if len(schemas.Resources) != 1 || schemas.Resources[0].(map[string]any)["id"] != schemaGroupParents {
+		t.Fatalf("Schemas = %+v", schemas)
+	}
+	if rec := serve(t, s, http.MethodGet, "/scim/v2/Schemas/"+schemaGroupParents, testToken); rec.Code != http.StatusOK {
+		t.Fatalf("GET the extension schema = %d", rec.Code)
+	}
+	if rec := serve(t, s, http.MethodGet, "/scim/v2/Schemas/urn:other", testToken); rec.Code != http.StatusNotFound {
+		t.Fatalf("GET an unknown schema = %d", rec.Code)
+	}
+}
+
+func TestParentReferences(t *testing.T) {
+	got := parentIDs([]any{
+		map[string]any{"externalId": "1"}, map[string]any{"ExternalID": "2"}, map[string]any{"value": "3"}, "junk",
+	})
+	if !slices.Equal(got, []string{"1", "2"}) {
+		t.Fatalf("parentIDs = %v", got)
+	}
+	m := parentFilter.FindStringSubmatch(`URN:goldenportal:params:scim:schemas:extension:2.0:Group:parents[externalId eq "42"]`)
+	if m == nil || m[1] != "42" {
+		t.Fatalf("parent filter = %v", m)
 	}
 }

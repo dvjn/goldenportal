@@ -40,6 +40,7 @@ func New() *gofr.App {
 
 	secureCookies := app.Config.GetOrDefault("GP_COOKIE_SECURE", "true") != "false"
 	scimServer := scim.New(app.Config.Get("GP_SCIM_TOKEN"), app.Config.Get("GP_BASE_URL"), app.Logger())
+	auth.UseGroupParents(scimServer.Enabled())
 	oidc := auth.NewOIDC(auth.OIDCConfig{
 		Issuer:              app.Config.Get("GP_OIDC_ISSUER"),
 		ClientID:            app.Config.Get("GP_OIDC_CLIENT_ID"),
