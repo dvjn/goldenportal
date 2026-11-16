@@ -77,8 +77,8 @@ type pendingEvaluation struct {
 }
 
 // pending holds the scorecards waiting to be evaluated after a publish. One
-// worker evaluates them in turn, so a bulk publish holds one connection
-// rather than one per scorecard, and a scorecard published twice meanwhile
+// worker evaluates them in turn, so a bulk publish holds one run's connections
+// rather than those of one per scorecard, and a scorecard published twice meanwhile
 // is evaluated once.
 var pending struct {
 	sync.Mutex

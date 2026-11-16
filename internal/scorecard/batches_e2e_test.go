@@ -81,7 +81,8 @@ func TestEvaluateInBatches(t *testing.T) {
 	}
 	f.exec(`CREATE FUNCTION locked() RETURNS trigger LANGUAGE plpgsql AS $$
 		BEGIN
-			IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted) THEN
+			IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted
+				AND database = (SELECT oid FROM pg_database WHERE datname = current_database())) THEN
 				RAISE EXCEPTION 'a result was written without the evaluation lock';
 			END IF;
 			RETURN NEW;
@@ -204,6 +205,35 @@ func TestEvaluationLockReleased(t *testing.T) {
 	}
 	if _, err := Evaluate(t.Context(), f.db, "readiness"); err != nil {
 		t.Errorf("err = %v after runs that ended early, want an evaluation", err)
+	}
+}
+
+// TestCancelledRunFreesLockAtOnce checks an evaluation straight after a
+// cancelled one runs, however long the cancelled run's sessions take to end.
+func TestCancelledRunFreesLockAtOnce(t *testing.T) {
+	f := gradeServices(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	slowToEnd := func(ctx context.Context, db pglock.Lender, name string) (*pglock.Lock, error) {
+		defer cancel()
+		lock, err := tryLock(ctx, db, name)
+		if err != nil {
+			return nil, err
+		}
+		// A session drops its temporary tables before it gives up its locks.
+		if _, err := lock.Conn.ExecContext(t.Context(), `DO $$ BEGIN
+			FOR i IN 1..200 LOOP EXECUTE format('CREATE TEMP TABLE slow_%s ()', i); END LOOP;
+		END $$`); err != nil {
+			t.Error(err)
+		}
+
+		return lock, nil
+	}
+	if _, err := runEvaluation(ctx, f.db, "readiness", slowToEnd); err == nil {
+		t.Error("a cancelled run succeeded")
+	}
+	if _, err := Evaluate(t.Context(), f.db, "readiness"); err != nil {
+		t.Errorf("err = %v straight after a cancelled run, want an evaluation", err)
 	}
 }
 

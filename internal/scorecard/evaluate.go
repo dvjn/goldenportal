@@ -49,7 +49,7 @@ type CriterionResult struct {
 var ErrEvaluating = errors.New("this scorecard is already being evaluated")
 
 // Database is what evaluations run on: one of its connections holds a
-// run's lock from its first batch to its last.
+// run's lock from its first batch to its last, while the others do the work.
 type Database interface {
 	configdoc.DB
 	pglock.Lender
@@ -155,11 +155,27 @@ func runEvaluation(ctx context.Context, db Database, name string, take lockTaker
 	return counts.scored, err
 }
 
+// evaluations bounds this instance's runs, each holding two connections.
+var evaluations = make(chan struct{}, 2)
+
+// takeTimeout bounds taking the lock beyond lockWait.
+const takeTimeout = 10 * time.Second
+
 // evaluatePublished holds the scorecard's lock on one connection while it
-// scores the published version, so another run's batches can't interleave
-// with its own.
+// scores the published version on others, so another run's batches can't
+// interleave with its own.
 func evaluatePublished(ctx context.Context, db Database, name string, take lockTaker) (tally, error) {
-	lock, err := take(ctx, db, name)
+	select {
+	case evaluations <- struct{}{}:
+	case <-ctx.Done():
+		return tally{}, ctx.Err()
+	}
+	defer func() { <-evaluations }()
+
+	// The driver closes a cancelled connection, which frees its lock only later.
+	lockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lockWait+takeTimeout)
+	defer cancel()
+	lock, err := take(lockCtx, db, name)
 	if err != nil {
 		return tally{}, err
 	}
@@ -167,7 +183,7 @@ func evaluatePublished(ctx context.Context, db Database, name string, take lockT
 
 	// Read under the lock, so an evaluation that waited scores the version
 	// published while it waited.
-	record, err := configdoc.NewStore(lock.Conn, Name).Get(ctx, name)
+	record, err := configdoc.NewStore(db, Name).Get(ctx, name)
 	if err != nil {
 		return tally{}, err
 	}
@@ -176,7 +192,7 @@ func evaluatePublished(ctx context.Context, db Database, name string, take lockT
 	}
 	spec, _ := Parse(record.PublishedSource)
 
-	return scoreVersion(ctx, lock.Conn, spec, record.PublishedVersion)
+	return scoreVersion(ctx, db, spec, record.PublishedVersion)
 }
 
 // scoreVersion scores version, spec, a batch of entities at a time, each
