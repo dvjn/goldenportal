@@ -20,8 +20,7 @@ func Register(app httpx.Routes) {
 	app.GET("settings/access", listGrants)
 	app.PUT("settings/access/{type}/{id}", grant)
 	app.DELETE("settings/access/{type}/{id}", revoke)
-	app.GET("settings/access/users", listUsers)
-	app.GET("settings/access/groups", listGroups)
+	app.GET("settings/access/subjects", searchSubjects)
 	app.GET("settings/audit", listAudit)
 }
 
@@ -33,20 +32,23 @@ func listGrants(ctx *gofr.Context) (any, error) {
 	return NewStore(ctx.SQL).ListGrants(ctx)
 }
 
-func listUsers(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
+// searchLimit is how many people and groups a search offers.
+const searchLimit = 5
+
+// searchSubjects finds the people and groups whose name or email holds q,
+// for granting a role, and none when q is blank.
+func searchSubjects(ctx *gofr.Context) (any, error) {
+	p, err := auth.Require(ctx, auth.RoleAdmin)
+	if err != nil {
 		return nil, err
 	}
 
-	return NewStore(ctx.SQL).ListUsers(ctx)
-}
-
-func listGroups(ctx *gofr.Context) (any, error) {
-	if _, err := auth.Require(ctx, auth.RoleAdmin); err != nil {
-		return nil, err
+	text := strings.TrimSpace(ctx.Param("q"))
+	if text == "" {
+		return []Subject{}, nil
 	}
 
-	return NewStore(ctx.SQL).ListGroups(ctx)
+	return NewStore(ctx.SQL).Search(ctx, text, p.ID, searchLimit)
 }
 
 type grantRequest struct {

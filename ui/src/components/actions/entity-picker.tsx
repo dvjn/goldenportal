@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronsUpDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { OptionMark } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { entitiesQueryOptions } from "@/features/catalog";
+import { useDebounced } from "@/hooks/use-debounced";
 
 // pickerSize is how many entities the picker offers at once; typing narrows them.
 const pickerSize = 20;
@@ -46,11 +47,7 @@ export function EntityPicker({
 }: EntityPickerProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [query, setQuery] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => setQuery(text.trim()), searchDelay);
-    return () => clearTimeout(timer);
-  }, [text]);
+  const query = useDebounced(text.trim(), searchDelay);
   const found = useQuery({
     ...entitiesQueryOptions({ blueprint, q: query || undefined, size: pickerSize }),
     enabled: open,

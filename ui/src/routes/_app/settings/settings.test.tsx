@@ -36,11 +36,21 @@ const grants = [
   },
 ];
 
-const users = [
-  { id: ada.id, displayName: "Ada Lovelace", email: ada.email },
-  { id: "u2", displayName: "Grace Hopper", email: "grace@example.com" },
+const grace = { type: "user", id: "u2", name: "Grace Hopper", email: "grace@example.com" };
+// The server's matches for "gr", people and groups ranked together.
+const grMatches = [
+  { type: "group", id: "g2", name: "graders", memberCount: 1 },
+  grace,
+  { type: "user", id: "u3", name: "Greta Garbo", email: "greta@example.com" },
+  { type: "group", id: "g3", name: "green-team", memberCount: 12 },
+  { type: "user", id: "u4", name: "Margret Ng", email: "margret@example.com" },
 ];
-const groups = [{ id: "g1", name: "platform-engineers", memberCount: 3 }];
+
+// subjectsByQuery answers subject searches from the matches given for each query.
+function subjectsByQuery(matches: Record<string, unknown[]>) {
+  return (request: Request) =>
+    Response.json({ data: matches[new URL(request.url).searchParams.get("q") ?? ""] ?? [] });
+}
 
 const serverConfiguration = {
   portal: {
@@ -165,21 +175,135 @@ describe("access", () => {
     const requests = stubApi({
       ...signedInAdmin,
       "GET settings/access": ok(grants),
-      "GET settings/access/users": ok(users),
-      "GET settings/access/groups": ok(groups),
+      "GET settings/access/subjects": subjectsByQuery({ grace: [grace] }),
       "PUT settings/access/user/u2": () => new Response(null, { status: 200 }),
     });
     renderRoute("/settings/access");
 
     await user.click(await screen.findByRole("button", { name: "Grant Access" }));
     await user.click(screen.getByRole("combobox", { name: "Person or group" }));
-    expect(screen.queryByRole("option", { name: /Ada Lovelace/ })).not.toBeInTheDocument();
+    await user.type(screen.getByRole("combobox", { name: "Search people and groups" }), "grace");
     await user.click(await screen.findByRole("option", { name: /Grace Hopper/ }));
+    expect(screen.getByRole("combobox", { name: "Person or group" })).toHaveTextContent(
+      "Grace Hopper",
+    );
     await user.click(screen.getByRole("button", { name: "Grant Access" }));
 
     await waitFor(() => expect(requests["PUT settings/access/user/u2"]).toBeDefined());
     expect(await requests["PUT settings/access/user/u2"]?.json()).toEqual({ role: "builder" });
     expect(await screen.findByText("Granted builder to Grace Hopper")).toBeInTheDocument();
+  });
+
+  it("offers no one until something is typed", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      ...signedInAdmin,
+      "GET settings/access": ok(grants),
+      "GET settings/access/subjects": subjectsByQuery({ gr: grMatches }),
+    });
+    renderRoute("/settings/access");
+
+    await user.click(await screen.findByRole("button", { name: "Grant Access" }));
+    await user.click(screen.getByRole("combobox", { name: "Person or group" }));
+    const search = screen.getByRole("combobox", { name: "Search people and groups" });
+    await user.type(search, "   ");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nobody matches/)).not.toBeInTheDocument();
+    expect(requests["GET settings/access/subjects"]).toBeUndefined();
+  });
+
+  it("lists the server's matches in its order with their details, the first highlighted", async () => {
+    const user = userEvent.setup();
+    const requests = stubApi({
+      ...signedInAdmin,
+      "GET settings/access": ok(grants),
+      "GET settings/access/subjects": subjectsByQuery({ gr: grMatches }),
+    });
+    renderRoute("/settings/access");
+
+    await user.click(await screen.findByRole("button", { name: "Grant Access" }));
+    await user.click(screen.getByRole("combobox", { name: "Person or group" }));
+    await user.type(screen.getByRole("combobox", { name: "Search people and groups" }), "gr");
+
+    await screen.findByRole("option", { name: /graders/ });
+    const options = screen.getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "graders1 member",
+      "Grace Hoppergrace@example.com",
+      "Greta Garbogreta@example.com",
+      "green-team12 members",
+      "Margret Ngmargret@example.com",
+    ]);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+    expect(new URL(requests["GET settings/access/subjects"]?.url ?? "").searchParams.get("q")).toBe(
+      "gr",
+    );
+  });
+
+  it("hides matches for earlier text, and says when nobody matches", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...signedInAdmin,
+      "GET settings/access": ok(grants),
+      "GET settings/access/subjects": subjectsByQuery({ gr: grMatches }),
+    });
+    renderRoute("/settings/access");
+
+    await user.click(await screen.findByRole("button", { name: "Grant Access" }));
+    await user.click(screen.getByRole("combobox", { name: "Person or group" }));
+    const search = screen.getByRole("combobox", { name: "Search people and groups" });
+    await user.type(search, "gr");
+    await screen.findByRole("option", { name: /graders/ });
+    await user.type(search, "z");
+
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("Nobody matches. People appear after they first sign in."),
+    ).toBeInTheDocument();
+  });
+
+  it("says it's searching until the server answers", async () => {
+    const user = userEvent.setup();
+    let answer = () => {};
+    stubApi({
+      ...signedInAdmin,
+      "GET settings/access": ok(grants),
+      "GET settings/access/subjects": () =>
+        new Promise<Response>((resolve) => {
+          answer = () => resolve(Response.json({ data: [grace] }));
+        }),
+    });
+    renderRoute("/settings/access");
+
+    await user.click(await screen.findByRole("button", { name: "Grant Access" }));
+    await user.click(screen.getByRole("combobox", { name: "Person or group" }));
+    await user.type(screen.getByRole("combobox", { name: "Search people and groups" }), "grace");
+
+    expect(await screen.findByText("Searching…")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.getByText("Searching…")).toBeInTheDocument();
+    answer();
+    expect(await screen.findByRole("option", { name: /Grace Hopper/ })).toBeInTheDocument();
+    expect(screen.queryByText("Searching…")).not.toBeInTheDocument();
+  });
+
+  it("shows why a search failed", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...signedInAdmin,
+      "GET settings/access": ok(grants),
+      "GET settings/access/subjects": fail(403, "this needs the admin role"),
+    });
+    renderRoute("/settings/access");
+
+    await user.click(await screen.findByRole("button", { name: "Grant Access" }));
+    await user.click(screen.getByRole("combobox", { name: "Person or group" }));
+    await user.type(screen.getByRole("combobox", { name: "Search people and groups" }), "grace");
+
+    expect(await screen.findByText("this needs the admin role")).toBeInTheDocument();
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
   });
 
   it("removes a grant after confirming", async () => {

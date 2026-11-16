@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/dvjn/goldenportal/internal/auth"
@@ -36,17 +37,14 @@ type Grant struct {
 	GrantedAt   time.Time `json:"grantedAt"`
 }
 
-// User and Group are what an admin can grant a role to.
-type User struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"displayName"`
-	Email       string `json:"email"`
-}
-
-type Group struct {
+// Subject is a user or group an admin can grant a role to: a user with
+// their email, a group with its member count.
+type Subject struct {
+	Type        string `json:"type"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	MemberCount int    `json:"memberCount"`
+	Email       string `json:"email,omitempty"`
+	MemberCount *int   `json:"memberCount,omitempty"`
 }
 
 // ListGrants returns every role given directly to a user or group. Roles
@@ -86,48 +84,68 @@ func (s Store) ListGrants(ctx context.Context) ([]Grant, error) {
 	return grants, rows.Err()
 }
 
-func (s Store) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, display_name, email FROM users
-		WHERE status = 'active'
-		ORDER BY lower(display_name), email`)
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// searchSQL ranks each subject by the closest of its texts: equal to the
+// search, starting with it, with a word starting with it, or holding it.
+// Words break at spaces and the punctuation group names and emails use.
+const searchSQL = `
+	WITH matched AS (
+		SELECT f.type, f.id, f.name, f.email, r.rank
+		FROM (
+			SELECT 'group' AS type, g.id, g.name, '' AS email, ARRAY[g.name] AS texts
+			FROM groups g
+			UNION ALL
+			SELECT 'user', u.id, u.display_name, u.email, ARRAY[u.display_name, u.email]
+			FROM users u
+			WHERE u.status = 'active' AND u.id::text <> $2
+		) f,
+		LATERAL (
+			SELECT min(CASE
+				WHEN lower(t) = lower($1) THEN 0
+				WHEN lower(t) LIKE lower($3) || '%' THEN 1
+				WHEN ' ' || translate(lower(t), '-_.@', '    ') LIKE '% ' || lower($3) || '%' THEN 2
+				WHEN lower(t) LIKE '%' || lower($3) || '%' THEN 3
+			END) AS rank
+			FROM unnest(f.texts) t
+		) r
+		WHERE r.rank IS NOT NULL
+		ORDER BY r.rank, lower(f.name), f.type, f.id
+		LIMIT $4
+	)
+	SELECT m.type, m.id, m.name, m.email,
+		CASE WHEN m.type = 'group'
+			THEN (SELECT count(*) FROM group_members gm WHERE gm.group_id = m.id) END
+	FROM matched m
+	ORDER BY m.rank, lower(m.name), m.type, m.id`
+
+// Search finds up to limit groups and active users whose name, or a user's
+// email, holds text, ignoring case, closest matches first. The user
+// excludeUserID is left out, as admins can't change their own access.
+func (s Store) Search(ctx context.Context, text, excludeUserID string, limit int) ([]Subject, error) {
+	rows, err := s.db.QueryContext(ctx, searchSQL, text, excludeUserID, likeEscaper.Replace(text), limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	users := []User{}
+	found := []Subject{}
 	for rows.Next() {
-		var u User
-		if err := rows.Scan(&u.ID, &u.DisplayName, &u.Email); err != nil {
+		var (
+			subject Subject
+			members sql.NullInt64
+		)
+		if err := rows.Scan(&subject.Type, &subject.ID, &subject.Name, &subject.Email, &members); err != nil {
 			return nil, err
 		}
-		users = append(users, u)
-	}
-
-	return users, rows.Err()
-}
-
-func (s Store) ListGroups(ctx context.Context) ([]Group, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT g.id, g.name, (SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id)
-		FROM groups g
-		ORDER BY lower(g.name)`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	groups := []Group{}
-	for rows.Next() {
-		var g Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.MemberCount); err != nil {
-			return nil, err
+		if members.Valid {
+			n := int(members.Int64)
+			subject.MemberCount = &n
 		}
-		groups = append(groups, g)
+		found = append(found, subject)
 	}
 
-	return groups, rows.Err()
+	return found, rows.Err()
 }
 
 // Grant gives a user or group a role, replacing any role they had directly.
