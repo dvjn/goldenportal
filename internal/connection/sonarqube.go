@@ -160,7 +160,7 @@ func (c *SonarQubeConfig) Check(ctx context.Context, _ configdoc.DB, req CheckRe
 }
 
 // Pull reads the projects, each with its quality gate, its measures and
-// the repository it's bound to, under _gp.
+// the repository it's bound to.
 func (c *SonarQubeConfig) Pull(ctx context.Context, _ configdoc.DB, p PullRequest,
 	emit func(resource string, items []Item) error,
 ) (Report, error) {
@@ -195,7 +195,7 @@ func (c *SonarQubeConfig) Pull(ctx context.Context, _ configdoc.DB, p PullReques
 	return Report{}, emit(sonarProjects, items)
 }
 
-// pullSonarProject reads what's kept under a project's _gp besides its
+// pullSonarProject reads what the portal adds to a project besides its
 // measures: its quality gate and the repository it's bound to.
 func pullSonarProject(ctx context.Context, client *apiClient, project map[string]any, measures map[string]map[string]any) (err error) {
 	key, _ := project["key"].(string)
@@ -209,7 +209,7 @@ func pullSonarProject(ctx context.Context, client *apiClient, project map[string
 	if err != nil {
 		return err
 	}
-	project[parentKey] = map[string]any{"measures": measures[key], "qualityGate": gate, "repository": repository}
+	addExtras(project, map[string]any{"measures": measures[key], "qualityGate": gate, "repository": repository})
 
 	return nil
 }

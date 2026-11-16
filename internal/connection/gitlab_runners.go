@@ -122,7 +122,7 @@ func (s *gitlabRunnerSightings) read(ctx context.Context, client *gitlabClient) 
 }
 
 // gitlabRunner reads a runner seen on its own, giving it with what it
-// belongs to under _gp: its title, its groups' and projects' full paths,
+// belongs to: its title, its groups' and projects' full paths,
 // its page in GitLab, and when its newest attempt started.
 func gitlabRunner(ctx context.Context, client *gitlabClient, seen *gitlabRunnerSeen) (map[string]any, error) {
 	var detail map[string]any
@@ -167,9 +167,9 @@ func gitlabRunnerObject(detail map[string]any, seen *gitlabRunnerSeen) map[strin
 	if owners := map[any][]string{"group_type": groupURLs, "project_type": projectURLs}[runner["runner_type"]]; len(owners) > 0 {
 		page = owners[0] + "/-/runners/" + idOf(runner["id"])
 	}
-	runner[parentKey] = map[string]any{
+	addExtras(runner, map[string]any{
 		"title": gitlabRunnerTitle(runner), "groups": groups, "projects": projects, "url": page, "lastJobAt": seen.lastJobAt,
-	}
+	})
 
 	return runner
 }

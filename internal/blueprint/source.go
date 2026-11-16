@@ -3,6 +3,7 @@ package blueprint
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -24,7 +25,11 @@ type Source struct {
 	Mode   string       `json:"mode"`
 	Entity SourceEntity `json:"entity"`
 	line   int
+	lines  sourceLines
 }
+
+// sourceLines are where a source's filter, identifier and title were written.
+type sourceLines struct{ filter, identifier, title int }
 
 // How a source keeps its blueprint. A reconcile source makes it hold what
 // its resource holds: a complete sync reads the resource in full and
@@ -68,6 +73,7 @@ var (
 // they were written.
 func SameSource(a, b Source) bool {
 	a.line, b.line = 0, 0
+	a.lines, b.lines = sourceLines{}, sourceLines{}
 	strip := func(props []SourceProperty) []SourceProperty {
 		out := make([]SourceProperty, len(props))
 		for i, p := range props {
@@ -130,6 +136,7 @@ func (p *parser) source(path string, node *yaml.Node, spec Spec) (Source, *yaml.
 		p.Errorf(node, path+".resource", "add the resource to map, such as resource: users")
 	}
 	s.Filter = p.expression(fields, node, path, "filter", false)
+	s.lines.filter = lineOf(fields["filter"])
 
 	entity := fields["entity"]
 	if entity == nil {
@@ -143,6 +150,7 @@ func (p *parser) source(path string, node *yaml.Node, spec Spec) (Source, *yaml.
 	}
 	s.Entity.Identifier = p.expression(entityFields, entity, entityPath, "identifier", true)
 	s.Entity.Title = p.expression(entityFields, entity, entityPath, "title", false)
+	s.lines.identifier, s.lines.title = lineOf(entityFields["identifier"]), lineOf(entityFields["title"])
 	p.Each(entityFields["properties"], entityPath+".properties", func(id string, key, value *yaml.Node) {
 		propPath := entityPath + ".properties." + id
 		prop := SourceProperty{ID: id, Expression: p.jqText(value, propPath), line: key.Line}
@@ -187,4 +195,139 @@ func (p *parser) jqText(node *yaml.Node, path string) string {
 	}
 
 	return node.Value
+}
+
+func lineOf(node *yaml.Node) int {
+	if node == nil {
+		return 0
+	}
+
+	return node.Line
+}
+
+var (
+	// gpRead is a read of a field connectors used to add under _gp, which
+	// they now add to the item itself as _<name>.
+	gpRead = regexp.MustCompile(`(?:\._gp|\."_gp"|\.\["_gp"\])(\?)?` +
+		`(?:\.([A-Za-z_][A-Za-z0-9_]*)|\."([A-Za-z_][A-Za-z0-9_]*)"|\.?\["([A-Za-z_][A-Za-z0-9_]*)"\])`)
+	gpHead = regexp.MustCompile(`\._gp\b|\."_gp"|\.\["_gp"\]`)
+)
+
+// gpReads rewrites the reads of _gp that start a path from the item, as
+// with ._gp.project, saying where each moved, and reports whether any read
+// of _gp is left that it couldn't rewrite, as with ._gp | keys. Paths
+// further in, such as .labels["_gp"], and string literals are left alone.
+func gpReads(expression string) (rewritten string, moved []string, left bool) {
+	code := jqCode(expression)
+	var out strings.Builder
+	last := 0
+	for _, m := range gpRead.FindAllStringSubmatchIndex(expression, -1) {
+		if !startsPath(expression, code, m[0]) {
+			continue
+		}
+		group := func(i int) string {
+			if m[2*i] < 0 {
+				return ""
+			}
+			return expression[m[2*i]:m[2*i+1]]
+		}
+		to := "._" + group(2) + group(3) + group(4) + group(1)
+		if message := expression[m[0]:m[1]] + " is now " + to; !slices.Contains(moved, message) {
+			moved = append(moved, message)
+		}
+		out.WriteString(expression[last:m[0]] + to)
+		last = m[1]
+	}
+	out.WriteString(expression[last:])
+	rewritten = out.String()
+	code = jqCode(rewritten)
+	for _, m := range gpHead.FindAllStringIndex(rewritten, -1) {
+		left = left || startsPath(rewritten, code, m[0])
+	}
+
+	return rewritten, moved, left
+}
+
+// startsPath reports whether the . at at starts a path in code, rather than
+// going on from a value, as in .x._gp or $x._gp.
+func startsPath(expression string, code []bool, at int) bool {
+	return code[at] && (at == 0 || !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$.?)]}\"", rune(expression[at-1])))
+}
+
+// jqCode marks the bytes of a jq expression that are code, leaving out
+// string literals, but for their interpolations, and comments.
+func jqCode(expression string) []bool {
+	code := make([]bool, len(expression))
+	// outer holds the paren depth to return to as each interpolation ends.
+	var outer []int
+	depth, inString := 0, false
+	for i := 0; i < len(expression); i++ {
+		c := expression[i]
+		if inString {
+			switch {
+			case c == '\\' && i+1 < len(expression) && expression[i+1] == '(':
+				outer, depth, inString = append(outer, depth), 0, false
+				i++
+			case c == '\\':
+				i++
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '#':
+			for i < len(expression) && expression[i] != '\n' {
+				i++
+			}
+		case '(':
+			depth++
+			code[i] = true
+		case ')':
+			if depth == 0 && len(outer) > 0 {
+				depth, outer, inString = outer[len(outer)-1], outer[:len(outer)-1], true
+				continue
+			}
+			depth--
+			code[i] = true
+		default:
+			code[i] = true
+		}
+	}
+
+	return code
+}
+
+// checkSourceReads refuses sources that read _gp, which connectors no longer
+// add, naming where each read moved to.
+func checkSourceReads(spec Spec) []Issue {
+	var issues []Issue
+	check := func(path string, line int, expression string) {
+		_, messages, left := gpReads(expression)
+		if left {
+			messages = append(messages, "_gp is gone: connectors add each field to the item itself, so ._gp.<name> is now ._<name>")
+		}
+		if len(messages) > 0 {
+			issues = append(issues, Issue{Severity: SeverityError, Path: path, Line: line, Message: strings.Join(messages, "; ")})
+		}
+	}
+	or := func(line, fallback int) int {
+		if line == 0 {
+			return fallback
+		}
+		return line
+	}
+	for i, s := range spec.Sources {
+		path := fmt.Sprintf("spec.sources[%d]", i)
+		check(path+".filter", or(s.lines.filter, s.line), s.Filter)
+		check(path+".entity.identifier", or(s.lines.identifier, s.line), s.Entity.Identifier)
+		check(path+".entity.title", or(s.lines.title, s.line), s.Entity.Title)
+		for _, prop := range s.Entity.Properties {
+			check(path+".entity.properties."+prop.ID, prop.line, prop.Expression)
+		}
+	}
+
+	return issues
 }

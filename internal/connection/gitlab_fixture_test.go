@@ -55,6 +55,11 @@ type gitlabFixture struct {
 	deletedHooks int
 	// inFlight and mostInFlight count the requests being answered.
 	inFlight, mostInFlight int
+
+	// served are the keys of every object answered, at any depth. Hooks
+	// answer under mu, so these have a lock of their own.
+	servedMu sync.Mutex
+	served   map[string]bool
 }
 
 const gitlabFixtureToken = "glpat-fixture"
@@ -82,6 +87,7 @@ func newGitLabFixture(t *testing.T) *gitlabFixture {
 	f := &gitlabFixture{
 		t: t, access: 40, scopes: []string{"api"},
 		answers: map[string][]func(http.ResponseWriter){}, hooks: map[string][]map[string]any{}, tokens: map[string]string{},
+		served: map[string]bool{},
 	}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
@@ -155,6 +161,9 @@ func gitlabNotFound(w http.ResponseWriter) {
 }
 
 func (f *gitlabFixture) reply(w http.ResponseWriter, status int, body any) {
+	f.servedMu.Lock()
+	jsonKeys(f.served, body)
+	f.servedMu.Unlock()
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }
@@ -239,6 +248,7 @@ func gitlabFixtureProject(id string) map[string]any {
 		"archived": false, "empty_repo": false, "last_activity_at": gitlabT3, "issues_access_level": "enabled", "builds_access_level": "enabled",
 		"repository_access_level": "enabled", "merge_requests_access_level": "enabled", "environments_access_level": "enabled",
 		"namespace": map[string]any{"full_path": fullPath[:strings.LastIndex(fullPath, "/")]}, "only_allow_merge_if_all_discussions_are_resolved": id == "3",
+		"_links": map[string]any{"self": "https://gitlab.example.com/api/v4/projects/" + id},
 	}
 	if id == "2" {
 		p["issues_access_level"] = "disabled"

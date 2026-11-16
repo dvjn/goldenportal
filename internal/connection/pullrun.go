@@ -18,11 +18,14 @@ import (
 // What reading a code host on each sync takes, whichever it is: what was
 // asked for, and what failed.
 
-// parentKey is the key items carry what they belong to under, such as their
-// repository, since the objects a system gives don't all say. Underscored,
-// it's unlikely to clash with a field of theirs, and a source reads it the
-// same whatever the system.
-const parentKey = "_gp"
+// addExtras puts what the portal adds to an object, such as its repository,
+// on it as fields named _<name>, which a source reads the same whatever the
+// system. No name may be one the system gives the object.
+func addExtras(object, extras map[string]any) {
+	for name, value := range extras {
+		object["_"+name] = value
+	}
+}
 
 // pullRun is one sync's reading of a system: what it was asked for, what it
 // emitted, and what failed. Reads of different parts may run at once.
@@ -162,9 +165,7 @@ func (p *pullRun) emitObjects(resource string, objects []map[string]any, parent 
 	}
 	items := make([]Item, len(objects))
 	for i, object := range objects {
-		if parent != nil {
-			object[parentKey] = parent
-		}
+		addExtras(object, parent)
 		items[i] = Item{Resource: resource, Object: object, Scope: from.scope, SourceAt: from.at}
 	}
 	p.mu.Lock()

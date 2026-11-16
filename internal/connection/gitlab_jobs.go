@@ -319,7 +319,7 @@ func gitlabWithTimes(ctx context.Context, client *gitlabClient, base, fullPath s
 }
 
 // gitlabAttempts reads every attempt of a pipeline's jobs, retried ones
-// included, oldest first, each numbered under _gp: attempt, which try of
+// included, oldest first, each numbered: attempt, which try of
 // its job it is, counting from 1; retried, whether a later one replaced
 // it; attempts, how many its job had; failedAttempts, how many of those
 // failed; and flaky, whether its job failed and then passed when retried.
@@ -349,17 +349,17 @@ func gitlabAttempts(ctx context.Context, client *gitlabClient, base, pipeline, f
 		}
 		flaky := failed > 0 && tries[len(tries)-1]["status"] == "success"
 		for i, a := range tries {
-			a[parentKey] = map[string]any{
+			addExtras(a, map[string]any{
 				"project": fullPath, "attempt": float64(i + 1), "retried": i < len(tries)-1,
 				"attempts": float64(len(tries)), "failedAttempts": float64(failed), "flaky": flaky,
-			}
+			})
 		}
 	}
 
 	return attempts, nil
 }
 
-// gitlabWaits notes under _gp how long each of a pipeline's attempts
+// gitlabWaits notes on each of a pipeline's attempts how long it
 // waited before it queued for a runner, given the pipeline's manual jobs,
 // or nil when GitLab didn't say which they are: queuedAt, when it queued,
 // its start less its time queued, as GitLab reckons that; waitSeconds,
@@ -379,37 +379,42 @@ func gitlabWaits(attempts []map[string]any, manual *gitlabManualPipeline) {
 		}
 	}
 	for _, a := range attempts {
-		gp, _ := a[parentKey].(map[string]any)
-		if gp == nil {
-			continue
+		if _, numbered := a["_attempt"]; numbered {
+			addExtras(a, gitlabWait(attempts, a, manual, stage))
 		}
-		created, queued := timeOf(a, "created_at"), time.Time{}
-		started := timeOf(a, "started_at")
-		if queuedFor, ok := a["queued_duration"].(float64); ok && !started.IsZero() && !created.IsZero() {
-			queued = started.Add(-time.Duration(queuedFor * float64(time.Second)))
-		}
-		maps.Copy(gp, map[string]any{
-			"queuedAt": nil, "waitSeconds": nil, "manual": nil,
-			"playWaitSeconds": nil, "stageWaitSeconds": nil, "playedBy": nil,
-		})
-		if !queued.IsZero() {
-			gp["queuedAt"], gp["waitSeconds"] = queued.UTC().Format("2006-01-02T15:04:05.000Z"), gitlabSeconds(created, queued)
-		}
-		if manual == nil {
-			continue
-		}
-		job, isManual := manual.jobs[idOf(a["id"])]
-		gp["manual"] = isManual
-		if queued.IsZero() {
-			continue
-		}
-		ready := queued
-		if isManual {
-			ready = gitlabReady(attempts, a, job, stage, created, queued)
-			gp["playedBy"] = gitlabUser(a["user"])
-		}
-		gp["stageWaitSeconds"], gp["playWaitSeconds"] = gitlabSeconds(created, ready), gitlabSeconds(ready, queued)
 	}
+}
+
+// gitlabWait is what gitlabWaits notes on one attempt.
+func gitlabWait(attempts []map[string]any, a map[string]any, manual *gitlabManualPipeline, stage map[string]int) map[string]any {
+	wait := map[string]any{
+		"queuedAt": nil, "waitSeconds": nil, "manual": nil,
+		"playWaitSeconds": nil, "stageWaitSeconds": nil, "playedBy": nil,
+	}
+	created, queued := timeOf(a, "created_at"), time.Time{}
+	started := timeOf(a, "started_at")
+	if queuedFor, ok := a["queued_duration"].(float64); ok && !started.IsZero() && !created.IsZero() {
+		queued = started.Add(-time.Duration(queuedFor * float64(time.Second)))
+	}
+	if !queued.IsZero() {
+		wait["queuedAt"], wait["waitSeconds"] = queued.UTC().Format("2006-01-02T15:04:05.000Z"), gitlabSeconds(created, queued)
+	}
+	if manual == nil {
+		return wait
+	}
+	job, isManual := manual.jobs[idOf(a["id"])]
+	wait["manual"] = isManual
+	if queued.IsZero() {
+		return wait
+	}
+	ready := queued
+	if isManual {
+		ready = gitlabReady(attempts, a, job, stage, created, queued)
+		wait["playedBy"] = gitlabUser(a["user"])
+	}
+	wait["stageWaitSeconds"], wait["playWaitSeconds"] = gitlabSeconds(created, ready), gitlabSeconds(ready, queued)
+
+	return wait
 }
 
 // gitlabReady is when a manual attempt could first be played: when the
@@ -462,7 +467,7 @@ func gitlabOldestFirst(attempts []map[string]any) {
 func gitlabLatest(attempts []map[string]any) []map[string]any {
 	var latest []map[string]any
 	for _, a := range attempts {
-		if gp, _ := a[parentKey].(map[string]any); gp["retried"] != true {
+		if a["_retried"] != true {
 			latest = append(latest, a)
 		}
 	}

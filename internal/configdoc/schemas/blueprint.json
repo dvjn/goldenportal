@@ -88,10 +88,10 @@
               "topics": ".topics",
               "url": ".web_url",
               "lastActivityAt": ".last_activity_at",
-              "ci": "._gp.latestPipeline.status",
-              "ciValid": "._gp.ciConfig.valid",
-              "ciStages": "[._gp.ciConfig.jobs[]?.stage] | unique",
-              "defaultBranchProtected": "._gp.defaultBranch.protected"
+              "ci": "._latestPipeline.status",
+              "ciValid": "._ciConfig.valid",
+              "ciStages": "[._ciConfig.jobs[]?.stage] | unique",
+              "defaultBranchProtected": "._defaultBranch.protected"
             }
           }
         },
@@ -99,10 +99,10 @@
           "connection": "gitlab",
           "resource": "tags",
           "entity": {
-            "identifier": "._gp.project + \"@\" + .name",
+            "identifier": "._project + \"@\" + .name",
             "title": ".name",
             "properties": {
-              "repo": "._gp.project",
+              "repo": "._project",
               "commit": ".commit.short_id"
             }
           }
@@ -111,10 +111,10 @@
           "connection": "gitlab",
           "resource": "merge_requests",
           "entity": {
-            "identifier": "._gp.project + \"!\" + (.iid | tostring)",
+            "identifier": "._project + \"!\" + (.iid | tostring)",
             "title": ".title",
             "properties": {
-              "repo": "._gp.project",
+              "repo": "._project",
               "state": "if .state == \"opened\" and .draft then \"draft\" else .state end",
               "author": ".author.username",
               "branch": ".source_branch",
@@ -128,10 +128,10 @@
           "connection": "gitlab",
           "resource": "issues",
           "entity": {
-            "identifier": "._gp.project + \"#\" + (.iid | tostring)",
+            "identifier": "._project + \"#\" + (.iid | tostring)",
             "title": ".title",
             "properties": {
-              "repo": "._gp.project",
+              "repo": "._project",
               "state": ".state",
               "author": ".author.username",
               "labels": ".labels",
@@ -143,10 +143,10 @@
           "connection": "gitlab",
           "resource": "releases",
           "entity": {
-            "identifier": "._gp.project + \"@\" + .tag_name",
+            "identifier": "._project + \"@\" + .tag_name",
             "title": ".name // .tag_name",
             "properties": {
-              "repo": "._gp.project",
+              "repo": "._project",
               "tag": ".tag_name",
               "upcoming": ".upcoming_release",
               "releasedAt": ".released_at",
@@ -159,9 +159,9 @@
           "resource": "pipelines",
           "entity": {
             "identifier": ".id",
-            "title": "._gp.project + \" \" + .ref",
+            "title": "._project + \" \" + .ref",
             "properties": {
-              "repo": "._gp.project",
+              "repo": "._project",
               "ref": ".ref",
               "source": ".source",
               "status": ".status",
@@ -179,15 +179,15 @@
             "title": ".name",
             "properties": {
               "pipeline": ".pipeline.id | tostring",
-              "repo": "._gp.project",
+              "repo": "._project",
               "name": ".name",
               "stage": ".stage",
               "status": ".status",
-              "attempts": "._gp.attempts",
-              "failedAttempts": "._gp.failedAttempts",
-              "flaky": "._gp.flaky",
+              "attempts": "._attempts",
+              "failedAttempts": "._failedAttempts",
+              "flaky": "._flaky",
               "seconds": ".duration",
-              "waitSeconds": "._gp.waitSeconds",
+              "waitSeconds": "._waitSeconds",
               "url": ".web_url"
             }
           }
@@ -198,21 +198,21 @@
           "mode": "upsert",
           "entity": {
             "identifier": ".id",
-            "title": ".name + \" #\" + (._gp.attempt | tostring)",
+            "title": ".name + \" #\" + (._attempt | tostring)",
             "properties": {
               "pipeline": ".pipeline.id | tostring",
-              "repo": "._gp.project",
+              "repo": "._project",
               "runner": ".runner.id | values | tostring",
               "status": ".status",
               "failureReason": ".failure_reason",
-              "attempt": "._gp.attempt",
-              "retried": "._gp.retried",
+              "attempt": "._attempt",
+              "retried": "._retried",
               "seconds": ".duration",
               "queuedSeconds": ".queued_duration",
-              "waitSeconds": "._gp.waitSeconds",
-              "playWaitSeconds": "._gp.playWaitSeconds",
-              "manual": "._gp.manual",
-              "playedBy": "._gp.playedBy.username",
+              "waitSeconds": "._waitSeconds",
+              "playWaitSeconds": "._playWaitSeconds",
+              "manual": "._manual",
+              "playedBy": "._playedBy.username",
               "startedAt": ".started_at",
               "url": ".web_url"
             }
@@ -224,16 +224,16 @@
           "mode": "upsert",
           "entity": {
             "identifier": ".id",
-            "title": "._gp.title",
+            "title": "._title",
             "properties": {
               "type": ".runner_type | rtrimstr(\"_type\")",
               "status": ".status",
               "tags": ".tag_list",
               "version": ".version",
-              "groups": "._gp.groups",
-              "repositories": "._gp.projects",
-              "lastJobAt": "._gp.lastJobAt",
-              "url": "._gp.url"
+              "groups": "._groups",
+              "repositories": "._projects",
+              "lastJobAt": "._lastJobAt",
+              "url": "._url"
             }
           }
         },
@@ -242,15 +242,15 @@
           "resource": "deployments",
           "entity": {
             "identifier": ".id",
-            "title": "._gp.project + \" \" + .environment.name",
+            "title": "._project + \" \" + .environment.name",
             "properties": {
-              "repo": "._gp.project",
+              "repo": "._project",
               "environment": ".environment.name",
               "version": ".sha[0:8]",
               "status": ".status",
               "startedAt": ".created_at",
               "finishedAt": ".finished_at",
-              "approvalSeconds": "._gp.approvalSeconds"
+              "approvalSeconds": "._approvalSeconds"
             }
           }
         },
@@ -258,15 +258,15 @@
           "connection": "gitlab",
           "resource": "environments",
           "entity": {
-            "identifier": "._gp.project + \"/\" + .name",
+            "identifier": "._project + \"/\" + .name",
             "title": ".name",
             "properties": {
-              "repo": "._gp.project",
+              "repo": "._project",
               "tier": ".tier",
               "state": ".state",
               "url": ".external_url",
-              "version": "._gp.lastDeployment.sha[0:8]",
-              "deployedAt": "._gp.lastDeployment.finished_at"
+              "version": "._lastDeployment.sha[0:8]",
+              "deployedAt": "._lastDeployment.finished_at"
             }
           }
         },
@@ -275,10 +275,10 @@
           "resource": "members",
           "filter": ".state == \"active\"",
           "entity": {
-            "identifier": "._gp.group + \"/\" + .username",
+            "identifier": "._group + \"/\" + .username",
             "title": ".name",
             "properties": {
-              "group": "._gp.group",
+              "group": "._group",
               "username": ".username",
               "accessLevel": ".access_level"
             }
@@ -291,9 +291,9 @@
             "identifier": ".key",
             "title": ".name",
             "properties": {
-              "repo": "._gp.repository.url | select(. != null) | sub(\"^https?://[^/]+/\"; \"\")",
-              "gate": "._gp.qualityGate.status",
-              "coverage": "._gp.measures.coverage",
+              "repo": "._repository.url | select(. != null) | sub(\"^https?://[^/]+/\"; \"\")",
+              "gate": "._qualityGate.status",
+              "coverage": "._measures.coverage",
               "analysedAt": ".analysisDate"
             }
           }
@@ -306,7 +306,7 @@
             "identifier": ".name | ascii_downcase | gsub(\"[^a-z0-9]+\"; \"-\")",
             "title": ".name",
             "properties": {
-              "members": "._gp.members"
+              "members": "._members"
             }
           }
         }

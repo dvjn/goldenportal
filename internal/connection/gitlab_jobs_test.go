@@ -44,10 +44,7 @@ func TestGitLabPullNumbersAttempts(t *testing.T) {
 			if !ok {
 				continue
 			}
-			gp := map[string]any{}
-			for _, key := range []string{"project", "attempt", "retried", "attempts", "failedAttempts", "flaky"} {
-				gp[key] = valueAt(attempt, parentKey, key)
-			}
+			gp := extras(attempt, "project", "attempt", "retried", "attempts", "failedAttempts", "flaky")
 			if got, _ := json.Marshal(gp); string(got) != want {
 				t.Errorf("%s %v carries %s, want %s", resource, attempt["id"], got, want)
 			}
@@ -230,7 +227,7 @@ func TestGitLabWaits(t *testing.T) {
 	attempt := func(id float64, name, stage string, started, queued, finished float64) map[string]any {
 		a := map[string]any{
 			"id": id, "name": name, "stage": stage, "created_at": at(0), "started_at": nil, "finished_at": nil, "queued_duration": nil,
-			"user": map[string]any{"id": float64(1), "username": "ada", "name": "Ada", "state": "active"}, parentKey: map[string]any{},
+			"user": map[string]any{"id": float64(1), "username": "ada", "name": "Ada", "state": "active"}, "_attempt": float64(1),
 		}
 		if started > 0 {
 			a["started_at"], a["queued_duration"] = at(started), queued
@@ -272,7 +269,7 @@ func TestGitLabWaits(t *testing.T) {
 	}
 	for _, a := range got {
 		if w, ok := want[idOf(a["id"])]; ok {
-			if gp, _ := json.Marshal(a[parentKey]); string(gp) != w {
+			if gp, _ := json.Marshal(extras(a, gitlabWaitNames...)); string(gp) != w {
 				t.Errorf("attempt %v carries\n%s, want\n%s", a["id"], gp, w)
 			}
 		}
@@ -280,7 +277,7 @@ func TestGitLabWaits(t *testing.T) {
 
 	unknown := attempts()
 	gitlabWaits(unknown, nil)
-	if gp, _ := json.Marshal(unknown[3][parentKey]); string(gp) != `{"manual":null,"playWaitSeconds":null,"playedBy":null,`+
+	if gp, _ := json.Marshal(extras(unknown[3], gitlabWaitNames...)); string(gp) != `{"manual":null,"playWaitSeconds":null,"playedBy":null,`+
 		`"queuedAt":"2026-11-04T06:10:00.000Z","stageWaitSeconds":null,"waitSeconds":600}` {
 		t.Errorf("without its manual jobs, attempt 4 carries %s, want its wait unsplit", gp)
 	}
@@ -312,14 +309,10 @@ func TestGitLabPullManualJobs(t *testing.T) {
 	played := of(withPipelines[gitlabJobAttempts], "110")
 	want := `{"manual":true,"playWaitSeconds":569.75,"playedBy":{"id":2,"name":"Grace","username":"grace"},` +
 		`"queuedAt":"` + gitlabLater(gitlabT0, 10*time.Minute-30250*time.Millisecond) + `","stageWaitSeconds":0,"waitSeconds":569.75}`
-	gp := map[string]any{}
-	for _, key := range []string{"queuedAt", "waitSeconds", "manual", "playWaitSeconds", "stageWaitSeconds", "playedBy"} {
-		gp[key] = valueAt(played, parentKey, key)
-	}
-	if got, _ := json.Marshal(gp); string(got) != want {
+	if got, _ := json.Marshal(extras(played, gitlabWaitNames...)); string(got) != want {
 		t.Errorf("attempt 110 carries\n%s, want\n%s", got, want)
 	}
-	if valueAt(of(withPipelines[gitlabJobAttempts], "130"), parentKey, "manual") != false {
+	if valueAt(of(withPipelines[gitlabJobAttempts], "130"), "_manual") != false {
 		t.Errorf("attempt 130 = %v, want it not manual", of(withPipelines[gitlabJobAttempts], "130"))
 	}
 
@@ -345,7 +338,7 @@ func TestGitLabPullManualJobs(t *testing.T) {
 
 	f.noGraphQL = true
 	without, failed := pullGitLab(t, config, gitlabJobAttempts)
-	if a := of(without[gitlabJobAttempts], "110"); len(failed) != 0 || valueAt(a, parentKey, "manual") != nil || valueAt(a, parentKey, "waitSeconds") != 569.75 {
+	if a := of(without[gitlabJobAttempts], "110"); len(failed) != 0 || valueAt(a, "_manual") != nil || valueAt(a, "_waitSeconds") != 569.75 {
 		t.Errorf("without GraphQL, attempt 110 = %v, failed = %v; want its wait, not known to be manual", a, failed)
 	}
 }

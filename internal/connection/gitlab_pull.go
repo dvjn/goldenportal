@@ -406,8 +406,8 @@ func (p *gitlabPull) readProjects(ctx context.Context, groups []map[string]any) 
 	return nil
 }
 
-// gitlabWithDefaultBranch puts what a project's default branch has under
-// _gp, each null when the project has none: the branch itself, its CI
+// gitlabWithDefaultBranch adds what a project's default branch has to it,
+// each null when the project has none: the branch itself, its CI
 // config, and its latest pipeline, as the project's CI status. They're the
 // project's, rather than resources of their own, since a catalog of
 // repositories wants its default branch, not every branch.
@@ -469,10 +469,10 @@ func gitlabWithDefaultBranch(ctx context.Context, client *gitlabClient, groups *
 			return err
 		}
 	}
-	project[parentKey] = map[string]any{
+	addExtras(project, map[string]any{
 		"defaultBranch": head, "ciConfig": config, "latestPipeline": latest, "files": files, "mergeChecks": checks,
 		"vulnerabilities": vulnerabilities, "dependencies": dependencies,
-	}
+	})
 
 	return nil
 }
@@ -608,7 +608,7 @@ func gitlabVulnerabilities(ctx context.Context, client *gitlabClient, project ma
 }
 
 // gitlabMergeChecks are the merge checks GitLab enforces on a project's
-// merge requests, keyed as _gp.mergeChecks has them.
+// merge requests, keyed as _mergeChecks has them.
 var gitlabMergeChecks = map[string]string{
 	"pipelineMustSucceed":       "only_allow_merge_if_pipeline_succeeds",
 	"discussionsMustBeResolved": "only_allow_merge_if_all_discussions_are_resolved",
@@ -708,9 +708,8 @@ func gitlabFiles(ctx context.Context, client *gitlabClient, base, branch string)
 	return files, nil
 }
 
-// gitlabWithLastDeployment puts an environment's last successful
-// deployment, or null, and its project, under _gp, as what's deployed
-// there.
+// gitlabWithLastDeployment adds an environment's last successful
+// deployment, or null, and its project to it, as what's deployed there.
 func gitlabWithLastDeployment(ctx context.Context, client *gitlabClient, base, fullPath string, environment map[string]any) error {
 	var deployments []map[string]any
 	name, _ := environment["name"].(string)
@@ -722,7 +721,7 @@ func gitlabWithLastDeployment(ctx context.Context, client *gitlabClient, base, f
 	if len(deployments) > 0 {
 		last = deployments[0]
 	}
-	environment[parentKey] = map[string]any{"project": fullPath, "lastDeployment": last}
+	addExtras(environment, map[string]any{"project": fullPath, "lastDeployment": last})
 
 	return nil
 }
@@ -754,7 +753,7 @@ func (a *gitlabApprovals) add(ctx context.Context, deployment map[string]any) er
 		}
 	}
 	gitlabWithApprovals(deployment, one, a.fullPath)
-	switch required := objectOf(deployment, parentKey)["approvalRequired"]; {
+	switch required := deployment["_approvalRequired"]; {
 	case one != nil && required == nil:
 		a.unknown = true
 	case required == false:
@@ -764,7 +763,7 @@ func (a *gitlabApprovals) add(ctx context.Context, deployment map[string]any) er
 	return nil
 }
 
-// gitlabWithApprovals puts under a deployment's _gp its project and what
+// gitlabWithApprovals adds to a deployment its project and what
 // one, the deployment as GitLab gives it on its own, says of its
 // approvals: approvalRequired, whether its environment's rules ask for
 // any; approvals, each with its user, status, created_at and comment;
@@ -776,10 +775,10 @@ func (a *gitlabApprovals) add(ctx context.Context, deployment map[string]any) er
 // and the wait for a runner.
 func gitlabWithApprovals(deployment, one map[string]any, fullPath string) {
 	created := timeOf(deployment, "created_at")
-	gp := map[string]any{"project": fullPath, "approvalRequired": nil, "approvals": nil, "approvedAt": nil, "approvalSeconds": nil, "waitSeconds": nil}
-	deployment[parentKey] = gp
+	extras := map[string]any{"project": fullPath, "approvalRequired": nil, "approvals": nil, "approvedAt": nil, "approvalSeconds": nil, "waitSeconds": nil}
+	defer addExtras(deployment, extras)
 	if started := timeOf(objectOf(deployment, "deployable"), "started_at"); !started.IsZero() && !created.IsZero() {
-		gp["waitSeconds"] = gitlabSeconds(created, started)
+		extras["waitSeconds"] = gitlabSeconds(created, started)
 	}
 	given, ok := one["approvals"].([]any)
 	if !ok {
@@ -814,9 +813,9 @@ func gitlabWithApprovals(deployment, one map[string]any, fullPath string) {
 			}
 		}
 	}
-	gp["approvalRequired"], gp["approvals"] = required || pending > 0 || len(given) > 0, approvals
+	extras["approvalRequired"], extras["approvals"] = required || pending > 0 || len(given) > 0, approvals
 	if approvedAt != nil && pending == 0 && !rejected {
-		gp["approvedAt"], gp["approvalSeconds"] = approvedAt, gitlabSeconds(created, approved)
+		extras["approvedAt"], extras["approvalSeconds"] = approvedAt, gitlabSeconds(created, approved)
 	}
 }
 

@@ -462,7 +462,7 @@ spec:
         title: .ref
         properties:
           status: .status
-          project: ._gp.project
+          project: ._project
 `
 
 func TestParseSources(t *testing.T) {
@@ -541,8 +541,8 @@ func TestParseSourceProblems(t *testing.T) {
 
 func TestSameSource(t *testing.T) {
 	a := mustParse(t, pipelineYAML).Sources[0]
-	reordered := strings.Replace(pipelineYAML, "          status: .status\n          project: ._gp.project\n",
-		"          project: ._gp.project\n          status: .status\n", 1)
+	reordered := strings.Replace(pipelineYAML, "          status: .status\n          project: ._project\n",
+		"          project: ._project\n          status: .status\n", 1)
 	b := mustParse(t, "\n\n"+reordered).Sources[0]
 	if !SameSource(a, b) {
 		t.Fatalf("reordered properties on other lines differ: %+v %+v", a, b)
@@ -551,6 +551,56 @@ func TestSameSource(t *testing.T) {
 	if SameSource(a, b) {
 		t.Fatal("a filter makes no difference")
 	}
+}
+
+func TestCheckSourceReadsGP(t *testing.T) {
+	const property, identifier, title = "spec.sources[0].entity.properties.project", "spec.sources[0].entity.identifier", "spec.sources[0].entity.title"
+	for _, test := range []struct {
+		field, expression, path string
+		line                    int
+		want                    string
+	}{
+		{"project", `._gp.project`, property, 17, "._gp.project is now ._project"},
+		{"project", `._gp["project"]`, property, 17, `._gp["project"] is now ._project`},
+		{"project", `.["_gp"].project`, property, 17, `.["_gp"].project is now ._project`},
+		{"project", `._gp?.project`, property, 17, "._gp?.project is now ._project?"},
+		{"project", `"\(._gp.project)!"`, property, 17, "._gp.project is now ._project"},
+		{"identifier", `._gp.project + "#" + (._gp.project | ascii_downcase)`, identifier, 13, "._gp.project is now ._project"},
+		{"project", `._gp | .project`, property, 17, "_gp is gone: connectors add each field to the item itself, so ._gp.<name> is now ._<name>"},
+		{"title", `._gp.project + (._gp | keys | join(","))`, title, 14, "._gp.project is now ._project; _gp is gone"},
+	} {
+		issues := checkSourceReads(mustParse(t, withSourceExpression(test.field, test.expression)))
+		if len(issues) != 1 || issues[0].Severity != SeverityError || issues[0].Path != test.path || issues[0].Line != test.line ||
+			!strings.HasPrefix(issues[0].Message, test.want) {
+			t.Errorf("%s: issues = %+v, want %s at line %d: %s", test.expression, issues, test.path, test.line, test.want)
+		}
+	}
+	// Reads of _gp further into the item, and _gp in strings, are fine.
+	for _, expression := range []string{
+		`._project`, `.labels["_gp"]["x"]`, `.x._gp.y`, `.x | .labels.["_gp"]`, `.name | test("_gp")`, `"\(.id) _gp"`, `"._gp.project"`,
+		`._gpx.project`, `.id # ._gp.project`,
+	} {
+		if issues := checkSourceReads(mustParse(t, withSourceExpression("project", expression))); len(issues) != 0 {
+			t.Errorf("%s: issues = %+v", expression, issues)
+		}
+	}
+}
+
+// withSourceExpression is pipelineYAML with one of its source's expressions
+// replaced.
+func withSourceExpression(field, expression string) string {
+	quoted := "'" + expression + "'"
+	if strings.Contains(expression, "#") {
+		quoted = "|-\n            " + expression
+	}
+	switch field {
+	case "identifier":
+		return strings.Replace(pipelineYAML, "identifier: .id | tostring\n", "identifier: "+quoted+"\n", 1)
+	case "title":
+		return strings.Replace(pipelineYAML, "title: .ref\n", "title: "+quoted+"\n", 1)
+	}
+
+	return strings.Replace(pipelineYAML, "project: ._project\n", "project: "+quoted+"\n", 1)
 }
 
 func TestDiffSources(t *testing.T) {

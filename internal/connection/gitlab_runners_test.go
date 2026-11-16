@@ -30,7 +30,7 @@ func TestGitLabPullReadsRunners(t *testing.T) {
 	if bad := nonJSON(runner); bad != "" {
 		t.Errorf("runner 1 carries %s, which jq can't read", bad)
 	}
-	got, _ := json.Marshal(runner[parentKey])
+	got, _ := json.Marshal(extras(runner, gitlabRunnerNames...))
 	if runner["version"] != "18.6.0" || !reflect.DeepEqual(runner["tag_list"], []any{"docker"}) || runner["maximum_timeout"] != float64(3600) ||
 		valueAt(runner, "created_by", "username") != "ada" || valueAt(runner, "created_by", "avatar_url") != nil ||
 		string(got) != `{"groups":[],"lastJobAt":"`+gitlabT3+`","projects":[],"title":"runner 1","url":null}` {
@@ -44,7 +44,7 @@ func TestGitLabPullReadsRunners(t *testing.T) {
 func TestGitLabRunnerFallsBack(t *testing.T) {
 	f := newGitLabFixture(t)
 	_, config := gitlabSpec(t, gitlabProjectYAML("acme/api"), f.url())
-	want := `{"_gp":{"groups":[],"lastJobAt":"` + gitlabT3 + `","projects":[],"title":"runner 1","url":null},` +
+	want := `{"_groups":[],"_lastJobAt":"` + gitlabT3 + `","_projects":[],"_title":"runner 1","_url":null,` +
 		`"architecture":"amd64","description":"runner 1","id":1,"is_shared":true,"online":true,"platform":"linux",` +
 		`"runner_type":"instance_type","status":"online","version":"18.5.0"}`
 	for name, refuse := range map[string]func(){
@@ -111,8 +111,8 @@ func TestGitLabRunnerObject(t *testing.T) {
 		{"unread", nil, `{"groups":[],"lastJobAt":"` + gitlabT3 + `","projects":[],"title":"Group runner 7","url":null}`},
 	} {
 		runner := gitlabRunnerObject(test.detail, seen)
-		if got, _ := json.Marshal(runner[parentKey]); string(got) != test.want {
-			t.Errorf("%s: _gp = %s\nwant %s", test.name, got, test.want)
+		if got, _ := json.Marshal(extras(runner, gitlabRunnerNames...)); string(got) != test.want {
+			t.Errorf("%s: added %s\nwant %s", test.name, got, test.want)
 		}
 		if _, ok := runner["groups"]; ok {
 			t.Errorf("%s: runner = %v, want its groups only by path", test.name, runner)

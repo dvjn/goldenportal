@@ -25,21 +25,7 @@ spec:
 // does. Each list comes a page at a time.
 func authentikFixture(t *testing.T) *httptest.Server {
 	t.Helper()
-	pages := map[string][]any{
-		"/api/v3/core/users/": {
-			map[string]any{"pk": 1, "username": "ada", "name": "Ada", "type": "internal", "attributes": map[string]any{}, "groups": []any{"g3"}},
-			map[string]any{"pk": 7, "username": "ak-outpost", "type": "internal_service_account", "groups": []any{}},
-		},
-		"/api/v3/core/groups/": {
-			map[string]any{"pk": "g1", "name": "engineering", "parents": []any{}, "users": []any{}},
-			map[string]any{
-				"pk": "g2", "name": "payments", "parents": []any{"g1"}, "users": []any{},
-				"attributes": map[string]any{"goldenportal": map[string]any{"team": true}},
-			},
-			map[string]any{"pk": "g3", "name": "payments-lead", "parents": []any{"g2"}, "users": []any{1}},
-			map[string]any{"pk": "g4", "name": "legacy", "parent": "g1", "users": []any{}},
-		},
-	}
+	pages := authentikFixturePages()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer ak-token" {
 			w.WriteHeader(http.StatusForbidden)
@@ -72,6 +58,24 @@ func authentikFixture(t *testing.T) *httptest.Server {
 	t.Setenv("GP_SECRET_AUTHENTIK", "ak-token")
 
 	return server
+}
+
+func authentikFixturePages() map[string][]any {
+	return map[string][]any{
+		"/api/v3/core/users/": {
+			map[string]any{"pk": 1, "username": "ada", "name": "Ada", "type": "internal", "attributes": map[string]any{}, "groups": []any{"g3"}},
+			map[string]any{"pk": 7, "username": "ak-outpost", "type": "internal_service_account", "groups": []any{}},
+		},
+		"/api/v3/core/groups/": {
+			map[string]any{"pk": "g1", "name": "engineering", "parents": []any{}, "users": []any{}},
+			map[string]any{
+				"pk": "g2", "name": "payments", "parents": []any{"g1"}, "users": []any{},
+				"attributes": map[string]any{"goldenportal": map[string]any{"team": true}},
+			},
+			map[string]any{"pk": "g3", "name": "payments-lead", "parents": []any{"g2"}, "users": []any{1}},
+			map[string]any{"pk": "g4", "name": "legacy", "parent": "g1", "users": []any{}},
+		},
+	}
 }
 
 func authentikConfig(t *testing.T, url string) *AuthentikConfig {
@@ -113,16 +117,27 @@ func TestAuthentikPull(t *testing.T) {
 	if len(items[authentikUsers]) != 2 || len(items[authentikGroups]) != 4 {
 		t.Fatalf("read %d users and %d groups, want every page of each", len(items[authentikUsers]), len(items[authentikGroups]))
 	}
+	objects, served := map[string][]map[string]any{}, map[string]bool{}
+	for resource, page := range items {
+		for _, item := range page {
+			objects[resource] = append(objects[resource], item.Object.(map[string]any))
+		}
+	}
+	jsonKeys(served, authentikFixturePages())
+	checkAdded(t, map[string][]string{
+		authentikUsers:  {"groups", "directGroups"},
+		authentikGroups: {"members", "directMembers", "ancestors"},
+	}, objects, served)
 	got, _ := json.Marshal(items)
 	for _, want := range []string{
 		// A user's groups by name: those it's in through a child group too,
 		// and those it was added to.
-		`"_gp":{"directGroups":["payments-lead"],"groups":["engineering","payments","payments-lead"]}`,
+		`"_directGroups":["payments-lead"],"_groups":["engineering","payments","payments-lead"]`,
 		// A group's members the same two ways, and its ancestors by name,
 		// whether it names its parents or its one parent.
-		`"_gp":{"ancestors":["engineering"],"directMembers":[],"members":["ada"]},"attributes":{"goldenportal":{"team":true}}`,
-		`"_gp":{"ancestors":["engineering","payments"],"directMembers":["ada"],"members":["ada"]}`,
-		`"_gp":{"ancestors":["engineering"],"directMembers":[],"members":[]},"name":"legacy"`,
+		`"_ancestors":["engineering"],"_directMembers":[],"_members":["ada"],"attributes":{"goldenportal":{"team":true}}`,
+		`"_ancestors":["engineering","payments"],"_directMembers":["ada"],"_members":["ada"]`,
+		`"_ancestors":["engineering"],"_directMembers":[],"_members":[],"name":"legacy"`,
 	} {
 		if !strings.Contains(string(got), want) {
 			t.Errorf("items = %s\nwant %s", got, want)

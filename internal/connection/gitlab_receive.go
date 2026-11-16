@@ -190,8 +190,8 @@ func gitlabEventRefs(payload, project map[string]any) []gitlabRef {
 		if id == "" {
 			return nil
 		}
-		// A deployment read on its own has its approvals, which go under _gp
-		// as a sync puts them.
+		// A deployment read on its own has its approvals, which it carries
+		// as a sync adds them.
 		refs := []gitlabRef{{resource: gitlabDeployments, scope: scope, fetch: func(ctx context.Context, client *gitlabClient) (map[string]any, error) {
 			d, err := gitlabFetch(base+"deployments/"+id)(ctx, client)
 			if err != nil {
