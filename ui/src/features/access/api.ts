@@ -14,13 +14,19 @@ export type Grant = {
   grantedAt: string;
 };
 
-export type DirectoryUser = { id: string; displayName: string; email: string };
-export type DirectoryGroup = { id: string; name: string; memberCount: number };
+// SubjectMatch is a person, with their email, or a group, with its member
+// count, that a search found to grant a role to.
+export type SubjectMatch = {
+  type: SubjectType;
+  id: string;
+  name: string;
+  email?: string;
+  memberCount?: number;
+};
 
 export const accessKeys = {
   grants: ["access"] as const,
-  users: ["users"] as const,
-  groups: ["groups"] as const,
+  subjects: ["subjects"] as const,
 };
 
 export async function listGrants(): Promise<Grant[]> {
@@ -35,10 +41,12 @@ export async function revokeGrant(type: SubjectType, id: string): Promise<void> 
   await api.delete(`settings/access/${type}/${id}`);
 }
 
-export async function listUsers(): Promise<DirectoryUser[]> {
-  return (await api.get("settings/access/users").json<ApiDataResponse<DirectoryUser[]>>()).data;
-}
-
-export async function listGroups(): Promise<DirectoryGroup[]> {
-  return (await api.get("settings/access/groups").json<ApiDataResponse<DirectoryGroup[]>>()).data;
+// searchSubjects finds the few people and groups closest to q by name or
+// email, leaving out the signed-in admin.
+export async function searchSubjects(q: string): Promise<SubjectMatch[]> {
+  return (
+    await api
+      .get("settings/access/subjects", { searchParams: { q } })
+      .json<ApiDataResponse<SubjectMatch[]>>()
+  ).data;
 }

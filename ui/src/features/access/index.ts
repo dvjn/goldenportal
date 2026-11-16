@@ -1,13 +1,11 @@
 export {
   accessKeys,
-  type DirectoryGroup,
-  type DirectoryUser,
   type Grant,
   grantRole,
   listGrants,
-  listGroups,
-  listUsers,
   revokeGrant,
+  type SubjectMatch,
   type SubjectType,
+  searchSubjects,
 } from "./api";
-export { grantsQueryOptions, groupsQueryOptions, useGrants, usersQueryOptions } from "./queries";
+export { grantsQueryOptions, subjectsQueryOptions, useGrants } from "./queries";

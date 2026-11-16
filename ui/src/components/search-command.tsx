@@ -18,6 +18,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { scorecardView } from "@/features/scorecards";
 import { type SearchKind, type SearchResult, searchQueryOptions } from "@/features/search";
+import { useDebounced } from "@/hooks/use-debounced";
 import { modKey, useShortcut } from "@/hooks/use-shortcut";
 
 // searchDelay waits for a pause in typing before asking the server.
@@ -98,11 +99,7 @@ const kinds: Record<SearchKind, { label: string; open: (r: SearchResult) => Navi
 function SearchResults({ onDone }: Readonly<{ onDone: () => void }>) {
   const navigate = useNavigate();
   const [text, setText] = useState("");
-  const [query, setQuery] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => setQuery(text.trim()), searchDelay);
-    return () => clearTimeout(timer);
-  }, [text]);
+  const query = useDebounced(text.trim(), searchDelay);
 
   const { data, isFetching } = useQuery({
     ...searchQueryOptions(query),

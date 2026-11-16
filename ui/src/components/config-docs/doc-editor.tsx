@@ -1,18 +1,10 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { CircleCheck, CircleX, Loader2, TriangleAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import type { ConfigDocs, Issue } from "@/features/config-docs";
-
-function useDebounced<T>(value: T, delay: number) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-  return debounced;
-}
+import { useDebounced } from "@/hooks/use-debounced";
 
 // useLiveValidation checks the source on the server shortly after typing stops.
 export function useLiveValidation<S>(docs: ConfigDocs<S>, source: string) {

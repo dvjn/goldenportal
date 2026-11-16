@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Plus, User, Users } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { RoleSelect, roleLabels } from "@/components/role-select";
 import { Button } from "@/components/ui/button";
@@ -26,11 +26,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   accessKeys,
   grantRole,
-  groupsQueryOptions,
+  type SubjectMatch,
   type SubjectType,
-  usersQueryOptions,
+  subjectsQueryOptions,
 } from "@/features/access";
-import { type Role, useMe } from "@/features/auth";
+import type { Role } from "@/features/auth";
+import { useDebounced } from "@/hooks/use-debounced";
 import { formatCount } from "@/lib/format";
 
 type Subject = { type: SubjectType; id: string; name: string };
@@ -111,22 +112,37 @@ export function GrantAccessDialog() {
   );
 }
 
+// searchDelay waits for a pause in typing before asking the server.
+const searchDelay = 200;
+
 function SubjectPicker({
   value,
   onChange,
 }: Readonly<{ value?: Subject; onChange: (subject: Subject) => void }>) {
   const [open, setOpen] = useState(false);
-  const me = useMe();
-  const users = useQuery(usersQueryOptions).data ?? [];
-  const groups = useQuery(groupsQueryOptions).data ?? [];
+  const [text, setText] = useState("");
+  const query = useDebounced(text.trim(), searchDelay);
+  const found = useQuery({ ...subjectsQueryOptions(query), enabled: query !== "" });
+  // Matches for earlier text stay hidden until the search catches up with the input.
+  const current = query === text.trim();
+  const matches = current ? (found.data ?? []) : [];
+  // New matches highlight the closest, so Enter picks it.
+  const [selected, setSelected] = useState("");
+  const best = matches[0] ? itemValue(matches[0]) : "";
+  useEffect(() => setSelected(best), [best]);
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) setText("");
+  }
 
   function choose(subject: Subject) {
     onChange(subject);
-    setOpen(false);
+    handleOpenChange(false);
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           id="grant-subject"
@@ -140,46 +156,57 @@ function SubjectPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search people and groups" />
+        {/* The server matches and ranks people and groups together, so the list shows them as given. */}
+        <Command
+          label="Search people and groups"
+          shouldFilter={false}
+          value={selected}
+          onValueChange={setSelected}
+        >
+          <CommandInput
+            value={text}
+            onValueChange={setText}
+            placeholder="Search people and groups"
+          />
           <CommandList>
-            <CommandEmpty>Nobody matches. People appear after they first sign in.</CommandEmpty>
-            <CommandGroup heading="Groups">
-              {groups.map((group) => (
-                <CommandItem
-                  key={group.id}
-                  value={`group ${group.name}`}
-                  onSelect={() => choose({ type: "group", id: group.id, name: group.name })}
-                >
-                  <Users />
-                  <span className="flex-1">{group.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatCount(group.memberCount)}{" "}
-                    {group.memberCount === 1 ? "member" : "members"}
-                  </span>
-                  {value?.id === group.id && <Check />}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandGroup heading="People">
-              {users
-                .filter((user) => user.id !== me.id)
-                .map((user) => (
+            {text.trim() !== "" && (
+              <CommandEmpty>
+                {!current || found.isFetching
+                  ? "Searching…"
+                  : (found.error?.message ??
+                    "Nobody matches. People appear after they first sign in.")}
+              </CommandEmpty>
+            )}
+            {matches.length > 0 && (
+              // One unheaded group gives the list the stock padding.
+              <CommandGroup>
+                {matches.map((match) => (
                   <CommandItem
-                    key={user.id}
-                    value={`user ${user.displayName} ${user.email}`}
-                    onSelect={() => choose({ type: "user", id: user.id, name: user.displayName })}
+                    key={itemValue(match)}
+                    value={itemValue(match)}
+                    onSelect={() => choose({ type: match.type, id: match.id, name: match.name })}
                   >
-                    <User />
-                    <span className="flex-1">{user.displayName}</span>
-                    <span className="text-xs text-muted-foreground">{user.email}</span>
-                    {value?.id === user.id && <Check />}
+                    {match.type === "group" ? <Users /> : <User />}
+                    <span className="flex-1">{match.name}</span>
+                    <span className="text-xs text-muted-foreground">{detail(match)}</span>
+                    {value?.id === match.id && <Check />}
                   </CommandItem>
                 ))}
-            </CommandGroup>
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>
     </Popover>
   );
+}
+
+function itemValue(match: SubjectMatch) {
+  return `${match.type}:${match.id}`;
+}
+
+function detail(match: SubjectMatch) {
+  if (match.type === "user") return match.email;
+  const members = match.memberCount ?? 0;
+  return `${formatCount(members)} ${members === 1 ? "member" : "members"}`;
 }
