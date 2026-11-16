@@ -62,7 +62,7 @@ jobs:
     # The tests make their own databases on this server.
     services:
       postgres:
-        image: docker.io/library/postgres:18.7-bookworm
+        image: docker.io/library/postgres:18.7-bookworm@sha256:ece55f7868da684e400f82f1030a050718adbdd65c23aa500c486f6e2950dc0f
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
