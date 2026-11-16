@@ -1241,6 +1241,8 @@ func TestGitLabPullSetsUpWebhooksAfterRunningOutOfTime(t *testing.T) {
 	var once sync.Once
 	f.answer("/projects/1/merge_requests", func(w http.ResponseWriter) {
 		once.Do(cancel)
+		// A next page leaves the read unfinished even when this answer beats the cancel.
+		w.Header().Set("Link", `<`+f.url()+`/api/v4/projects/1/merge_requests?page=2>; rel="next"`)
 		_, _ = w.Write([]byte(`[]`))
 	})
 	failed, err := config.Pull(ctx, nil, PullRequest{Resources: []string{gitlabMergeRequests}, IngestURL: gitlabIngestURL, WebhookSecret: "s"},
