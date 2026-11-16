@@ -7,6 +7,8 @@ export function auditQueryOptions(filters: AuditFilters) {
     queryFn: () => listAuditEvents(filters),
     // Keep showing the current page while the next one loads.
     placeholderData: keepPreviousData,
+    // Every change writes an entry, so the log is read afresh each visit.
+    staleTime: 0,
   });
 }
 

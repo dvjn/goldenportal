@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/keyset"
 )
 
 var ErrNotFound = errors.New("entity not found")
@@ -144,12 +146,13 @@ type Query struct {
 	Search string
 	Filter *Filter
 	// Sort is a path, or -path for descending.
-	Sort     string
-	Page     int
+	Sort string
+	// Cursor is a page's link to the page to read, empty for the first.
+	Cursor   string
 	PageSize int
 }
 
-type Page = httpx.Page[*Entity]
+type Page = keyset.Page[*Entity]
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
@@ -256,8 +259,13 @@ func (q Query) where(c *compiler) (string, error) {
 	return where, nil
 }
 
-// List returns a page of entities. Filter and sort problems come back as a
-// FilterError, since they're the caller's to fix.
+// CatalogList names the list of a blueprint's entities, which cursors
+// say they page.
+const CatalogList = "entities"
+
+// List returns a page of entities. Filter, sort and cursor problems come
+// back as a FilterError, since they're the caller's to fix. Only the first
+// page counts the entities.
 func (s Store) List(ctx context.Context, q Query) (Page, error) {
 	c := q.schema().compiler(false)
 	where, err := q.where(c)
@@ -265,35 +273,102 @@ func (s Store) List(ctx context.Context, q Query) (Page, error) {
 		return Page{}, err
 	}
 	matchArgs := slices.Clone(c.args)
-	order, err := c.orderBy(q.Sort)
+	order, seekable, err := c.sortOrder(q.Sort)
+	if err != nil {
+		return Page{}, FilterError{err}
+	}
+	filter, err := json.Marshal(q.Filter)
+	if err != nil {
+		return Page{}, err
+	}
+	list := keyset.List{Name: CatalogList, Scope: []string{q.Blueprint.Identifier, q.Search, string(filter), q.Sort}}
+	request, err := keyset.NewRequest(order, list, q.Cursor, q.PageSize)
 	if err != nil {
 		return Page{}, FilterError{err}
 	}
 
-	offset := (q.Page - 1) * q.PageSize
-	rows, err := s.db.QueryContext(ctx, `SELECT `+entityColumns(quoteLiteral(q.Blueprint.Identifier))+c.from()+`
-		WHERE `+where+`
-		ORDER BY `+order+`
-		LIMIT `+c.arg(q.PageSize)+` OFFSET `+c.arg(offset), c.args...)
+	page, err := keyset.Fetch(request, func(p keyset.Plan) ([]keyset.Row[*Entity], error) {
+		return s.listPlan(ctx, c.fork(), q.Blueprint, where, p, seekable)
+	})
 	if err != nil {
 		return Page{}, err
 	}
-	defer rows.Close()
-
-	page := Page{Items: []*Entity{}}
-	for rows.Next() {
-		e, err := scanEntity(rows.Scan)
-		if err != nil {
-			return Page{}, err
-		}
-		page.Items = append(page.Items, e)
-	}
-	if err := rows.Err(); err != nil {
-		return Page{}, err
-	}
-	page.Total, err = s.total(ctx, where, matchArgs, offset, len(page.Items), q.PageSize)
+	err = page.Count(request, func() (int, error) { return s.count(ctx, where, matchArgs) })
 
 	return page, err
+}
+
+// listPlan reads a plan's rows of the entities matching where. From a
+// cursor, each of its ranges is read apart, in order, so an index on the
+// order seeks to each. Without one, every matching row is read once, its
+// sort values worked out once each, and the rows after the cursor sorted.
+func (s Store) listPlan(ctx context.Context, c *compiler, spec blueprint.Spec, where string, p keyset.Plan, seekable bool) ([]keyset.Row[*Entity], error) {
+	columns := entityColumns(quoteLiteral(spec.Identifier))
+	if !p.FromRow() {
+		rows, err := s.db.QueryContext(ctx, `SELECT `+columns+", "+strings.Join(p.Order.Keys(), ", ")+c.from()+`
+		WHERE `+where+`
+		ORDER BY `+p.Order.SQL()+`
+		LIMIT `+c.arg(p.Limit), c.args...)
+		if err != nil {
+			return nil, err
+		}
+		return scanRows(rows, len(p.Order))
+	}
+
+	selected, outer := make([]string, len(p.Order)), make([]string, len(p.Order))
+	for i, col := range p.Order {
+		k := "k" + strconv.Itoa(i)
+		selected[i], outer[i] = "("+col.SQL+")::"+string(col.Type)+" AS "+k, "p."+k
+	}
+	matching := func(part int, condition string) string {
+		return "SELECT e.id, " + strings.Join(selected, ", ") + ", " + strconv.Itoa(part) + " AS part" + c.from() + `
+		WHERE ` + where + " AND " + condition
+	}
+	limit := c.arg(p.Limit)
+	fromSubquery := p.WithSQL(outer)
+	var page string
+	if seekable {
+		ranges := p.Ranges(c.arg)
+		parts := make([]string, len(ranges))
+		for i, condition := range ranges {
+			parts[i] = "(" + matching(i, condition) + `
+		ORDER BY ` + p.Order.SQL() + `
+		LIMIT ` + limit + ")"
+		}
+		page = strings.Join(parts, "\n\tUNION ALL ")
+	} else {
+		// OFFSET 0 keeps the subquery apart, so its values aren't worked out again.
+		page = `SELECT * FROM (` + matching(0, "true") + ` OFFSET 0) p
+		WHERE ` + keyset.Predicate(fromSubquery.Ranges(c.arg)) + `
+		ORDER BY ` + fromSubquery.Order.SQL() + `
+		LIMIT ` + limit
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+", "+strings.Join(fromSubquery.Order.Keys(), ", ")+` FROM (
+		`+page+`
+	) p JOIN entities e ON e.id = p.id
+	ORDER BY p.part, `+fromSubquery.Order.SQL()+`
+	LIMIT `+limit, c.args...)
+	if err != nil {
+		return nil, err
+	}
+
+	return scanRows(rows, len(p.Order))
+}
+
+// scanRows reads entities, each followed by its keys.
+func scanRows(rows *sql.Rows, keys int) ([]keyset.Row[*Entity], error) {
+	defer rows.Close()
+
+	out := []keyset.Row[*Entity]{}
+	for rows.Next() {
+		row, err := keyset.ReadRow(rows.Scan, keys, scanEntity)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+
+	return out, rows.Err()
 }
 
 // total is how many entities match where, for a page of size from offset

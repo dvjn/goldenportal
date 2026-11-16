@@ -1,19 +1,23 @@
 import { cn } from "cn";
 import { TierBadge, tierColors } from "@/components/scorecards/tier-badge";
+import { Toggle } from "@/components/ui/toggle";
 import type { Summary, Tier } from "@/features/scorecards";
 
 // TierDistribution is one bar split by how many entities reached each tier,
 // best tier first, with a legend of counts. With onPick, each legend entry
-// picks its tier, "" for none.
+// toggles its tier, "" for none, in or out of those picked, pressed while
+// picked lists it.
 export function TierDistribution({
   tiers,
   counts,
   legend = true,
+  picked = [],
   onPick,
 }: Readonly<{
   tiers: Tier[];
   counts: Summary["tiers"];
   legend?: boolean;
+  picked?: string[];
   onPick?: (tier: string) => void;
 }>) {
   const ordered = [...counts].reverse();
@@ -38,29 +42,25 @@ export function TierDistribution({
             ))}
       </div>
       {legend && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {ordered.map((tier) => {
-            const entry = (
-              <>
+        <div className={cn("flex flex-wrap gap-y-1", onPick ? "-ml-2.5 gap-x-3" : "gap-x-4")}>
+          {ordered.map((tier) => (
+            // The count stands beside the toggle, so the toggle reads as its tier.
+            <span key={tier.name || "none"} className="flex items-center gap-1.5 text-sm">
+              {onPick ? (
+                <Toggle
+                  size="sm"
+                  className="text-sm"
+                  pressed={picked.includes(tier.name)}
+                  onPressedChange={() => onPick(tier.name)}
+                >
+                  <TierBadge tiers={tiers} name={tier.name} />
+                </Toggle>
+              ) : (
                 <TierBadge tiers={tiers} name={tier.name} />
-                <span className="text-muted-foreground tabular-nums">{tier.count}</span>
-              </>
-            );
-            return onPick ? (
-              <button
-                key={tier.name || "none"}
-                type="button"
-                className="flex items-center gap-1.5 text-sm hover:underline"
-                onClick={() => onPick(tier.name)}
-              >
-                {entry}
-              </button>
-            ) : (
-              <span key={tier.name || "none"} className="flex items-center gap-1.5 text-sm">
-                {entry}
-              </span>
-            );
-          })}
+              )}
+              <span className="text-muted-foreground tabular-nums">{tier.count}</span>
+            </span>
+          ))}
         </div>
       )}
     </div>

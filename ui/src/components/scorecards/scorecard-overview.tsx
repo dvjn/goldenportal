@@ -9,12 +9,8 @@ import { Detail } from "@/components/detail-list";
 import { AboutCard, CriteriaCard } from "@/components/scorecards/scorecard-cards";
 import { Button } from "@/components/ui/button";
 import { blueprints } from "@/features/blueprints";
-import {
-  evaluateScorecard,
-  type ScorecardSpec,
-  scorecards,
-  useSummary,
-} from "@/features/scorecards";
+import { invalidateResults } from "@/features/refresh";
+import { evaluateScorecard, type ScorecardSpec, useSummary } from "@/features/scorecards";
 
 // ScorecardOverview shows a scorecard's definition to those who build it:
 // what it grades and through which property, and its criteria. How
@@ -65,8 +61,7 @@ function EvaluateButton({ identifier }: Readonly<{ identifier: string }>) {
   const evaluate = useMutation({
     mutationFn: () => evaluateScorecard(identifier),
     onSuccess: async ({ entities }) => {
-      // Results and the summary both change, so refresh everything about the scorecard.
-      await queryClient.invalidateQueries({ queryKey: scorecards.keys.detail(identifier) });
+      await invalidateResults(queryClient, identifier);
       toast.success(`Evaluated ${entities} ${entities === 1 ? "entity" : "entities"}`);
     },
     onError: (error) => toast.error(error.message),

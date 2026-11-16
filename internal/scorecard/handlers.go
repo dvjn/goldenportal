@@ -13,6 +13,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/keyset"
 )
 
 // Register serves scorecards and evaluates every one of them at start and
@@ -129,11 +130,12 @@ func scopeOf(ctx *gofr.Context, spec Spec, raw string) (Scope, error) {
 // Search and narrowed by Filter, the catalog's filter on the scorecard's
 // blueprint as JSON, which reaches tiers and checks through its scorecard
 // property. Sort is one of ResultSorts, or that with a leading - for
-// descending; empty is worst tier first. A zero Page or Size means the
-// first page or the smallest size.
+// descending; empty is worst tier first. Cursor is a page's next,
+// previous or last, empty for the first page, the only one that counts
+// the results. A zero Size means the smallest.
 type ResultsRequest struct {
-	Search, Filter, Sort string
-	Page, Size           int
+	Search, Filter, Sort, Cursor string
+	Size                         int
 }
 
 // ResultSorts are the fields results sort by. Tiers sort up the scorecard's
@@ -141,9 +143,9 @@ type ResultsRequest struct {
 var ResultSorts = []string{"tier", "score", "passed", "failed", "skipped"}
 
 func listResults(ctx *gofr.Context) (any, error) {
-	req := ResultsRequest{Search: ctx.Param("q"), Filter: ctx.Param("filter"), Sort: ctx.Param("sort")}
+	req := ResultsRequest{Search: ctx.Param("q"), Filter: ctx.Param("filter"), Sort: ctx.Param("sort"), Cursor: ctx.Param("cursor")}
 	var err error
-	if req.Page, req.Size, err = httpx.Paging(ctx.Param); err != nil {
+	if req.Size, err = httpx.Size(ctx.Param); err != nil {
 		return nil, err
 	}
 
@@ -168,13 +170,18 @@ func Results(ctx *gofr.Context, name string, req ResultsRequest) (ResultPage, er
 		return ResultPage{}, err
 	}
 
-	return results(ctx, ctx.SQL, id, spec, q)
+	page, err := results(ctx, ctx.SQL, id, spec, q)
+	if errors.Is(err, keyset.ErrCursor) {
+		return ResultPage{}, httpx.BadRequest(err.Error())
+	}
+
+	return page, err
 }
 
 func (req ResultsRequest) query() (ResultQuery, error) {
-	q := ResultQuery{Search: req.Search, Sort: req.Sort}
+	q := ResultQuery{Search: req.Search, Sort: req.Sort, Cursor: req.Cursor}
 	var err error
-	if q.Page, q.PageSize, err = httpx.CheckPaging(req.Page, req.Size); err != nil {
+	if q.PageSize, err = httpx.CheckSize(req.Size); err != nil {
 		return ResultQuery{}, err
 	}
 	if field := strings.TrimPrefix(req.Sort, "-"); req.Sort != "" && !slices.Contains(ResultSorts, field) {

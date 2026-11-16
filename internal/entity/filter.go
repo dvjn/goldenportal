@@ -13,6 +13,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/filter"
+	"github.com/dvjn/goldenportal/internal/keyset"
 )
 
 // Filter is the catalog's filter language; see filter.Filter.
@@ -115,6 +116,14 @@ func (c *compiler) from() string {
 	}
 
 	return from
+}
+
+// fork is a copy of c that adds arguments of its own.
+func (c *compiler) fork() *compiler {
+	fork := *c
+	fork.args, fork.joins = slices.Clone(c.args), slices.Clone(c.joins)
+
+	return &fork
 }
 
 func (c *compiler) arg(value any) string {
@@ -540,34 +549,42 @@ func textOf(fld field) string {
 	return "(" + fld.value + " #>> '{}')"
 }
 
-// orderBy sorts by a path, ascending unless it starts with "-". Empty
+// orderBy is SQL ordering by sortOrder's columns.
+func (c *compiler) orderBy(sort string) (string, error) {
+	order, _, err := c.sortOrder(sort)
+	return order.SQL(), err
+}
+
+// sortOrder sorts by a path, ascending unless it starts with "-". Empty
 // values sort lowest, first going up and last coming down, so one index
 // serves both. Ties fall back to the title, then the identifier, so pages
 // are stable. Tiers sort up their scorecard's ladder, lowest first, by the
-// rank stored with each result; not evaluated sorts below no tier.
-func (c *compiler) orderBy(sort string) (string, error) {
+// rank stored with each result; not evaluated sorts below no tier. Seekable
+// says an index can hold the order, so a page can seek to its cursor.
+func (c *compiler) sortOrder(sort string) (order keyset.Order, seekable bool, err error) {
+	ties := keyset.Order{{SQL: "e.title", Type: keyset.Text}, {SQL: "e.identifier", Type: keyset.Text}}
 	if sort == "" {
-		return "e.title, e.identifier", nil
+		return ties, true, nil
 	}
-	direction := "ASC NULLS FIRST"
-	if path, ok := strings.CutPrefix(sort, "-"); ok {
-		sort, direction = path, "DESC NULLS LAST"
-	}
-	fld, err := c.field(sort)
+	path, desc := strings.CutPrefix(sort, "-")
+	fld, err := c.field(path)
 	if err != nil {
-		return "", err
+		return nil, false, err
 	}
 	if fld.many || fld.kind == "object" {
-		return "", fmt.Errorf("%s holds a list or an object, which can't be sorted", sort)
+		return nil, false, fmt.Errorf("%s holds a list or an object, which can't be sorted", path)
 	}
 	fld = c.joined(fld)
-	value := fld.sortKey()
+	key := keyset.Column{SQL: fld.sortKey(), Type: fld.sortType(), Desc: desc, Nullable: true}
 	// The rank is the ladder's as last evaluated, until a publish's evaluation re-ranks.
 	if fld.kind == kindTier {
-		value = fld.rank
+		key.SQL = fld.rank
 	}
+	_, indexable := indexKey(c.spec, fld, key.SQL, UseSort)
+	direct := !strings.Contains(key.SQL, "SELECT")
+	seekable = direct && (indexable || fld.timestamp != "" || fld.builtIn == "title" || fld.builtIn == "identifier")
 
-	return value + " " + direction + ", e.title, e.identifier", nil
+	return append(keyset.Order{key}, ties...), seekable, nil
 }
 
 // quoteLiteral quotes a property name for SQL. Names are validated as

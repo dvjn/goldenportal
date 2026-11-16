@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { writeUiState } from "@/hooks/use-ui-state";
-import { pageSize, paginationToSearch } from "./table";
+import { pageSize, paginationToSearch, validateTableSearch } from "./table";
 
 describe("page size", () => {
   it("is the URL's, or else the size last picked", () => {
@@ -21,5 +21,16 @@ describe("page size", () => {
     });
     // A shared link's size stays while paging.
     expect(paginationToSearch({ pageIndex: 1, pageSize: 20 })).toEqual({ page: 2, size: 20 });
+  });
+});
+
+describe("table search", () => {
+  it("keeps a cursor, dropping an empty one", () => {
+    expect(validateTableSearch({ cursor: "abc", sort: "-title" })).toMatchObject({
+      cursor: "abc",
+      sort: "-title",
+    });
+    expect(validateTableSearch({ cursor: "" }).cursor).toBeUndefined();
+    expect(validateTableSearch({ cursor: 3 }).cursor).toBeUndefined();
   });
 });

@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/filter"
+	"github.com/dvjn/goldenportal/internal/keyset"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
 
@@ -201,6 +202,9 @@ func (r reader) read(spec blueprint.Spec, alias, path string, hops int) (field, 
 	fld.value, fld.nullable, fld.result = related(fld.value), true, nil
 	if fld.rank != "" {
 		fld.rank = related(fld.rank)
+	}
+	if fld.timestamp != "" {
+		fld.timestamp = related(fld.timestamp)
 	}
 	if fld.owner != "" {
 		fld.owner = name + "." + fld.owner
@@ -423,6 +427,20 @@ func (f field) time() string {
 	}
 
 	return "gp_time(" + textOf(f) + ")"
+}
+
+// sortType is the SQL type sortKey compares as.
+func (f field) sortType() keyset.Type {
+	switch {
+	case f.kind == kindDate:
+		return keyset.Time
+	case f.kind == kindTier, f.kind == "number", f.kind == "integer":
+		return keyset.Number
+	case f.column:
+		return keyset.Text
+	}
+
+	return keyset.JSON
 }
 
 // sortKey is the field's value as sorts compare it.

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { ArrowRight, CircleAlert, Loader2, RefreshCw } from "lucide-react";
+import { ArrowRight, CircleAlert, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { CardTitleBar } from "@/components/card-sections";
 import { EmptyCard } from "@/components/empty-state";
@@ -24,7 +24,7 @@ import {
   type WidgetSource,
   widgetsQueryOptions,
 } from "@/features/widgets";
-import { describeError } from "@/lib/api";
+import { describeError, isBadRequest } from "@/lib/api";
 import { ActionsWidget } from "./actions-widget";
 import { GroupWidget } from "./group-widget";
 import { MatrixWidget } from "./matrix-widget";
@@ -65,20 +65,39 @@ function loads(widget: Widget, source: WidgetSource) {
 // as the tallest in its row, so a row's cards line up. Source is the document they're written in. Their data loads
 // in one request, again whenever the context changes, and each widget
 // shows its own share, or why it couldn't load. When the request itself
-// fails, every widget would say the same, so the grid says it once.
+// fails, every widget would say the same, so the grid says it once. One
+// the server turns down, as a link's input that no longer applies is, is
+// put right with onReset, which sets the inputs back.
 export function WidgetGrid({
   widgets,
   source,
   context,
+  onReset,
 }: Readonly<{
   widgets: Widget[];
   source: WidgetSource;
   context: WidgetContext;
+  onReset?: () => void;
 }>) {
   const results = useQuery({
     ...widgetsQueryOptions(source, context),
     enabled: widgets.some((widget) => loads(widget, source)),
   });
+  if (results.error && !results.data && isBadRequest(results.error) && onReset) {
+    // The server names what it turned down, which isn't for every viewer.
+    return (
+      <EmptyCard
+        icon={<CircleAlert />}
+        title="Can't show these widgets"
+        description="An input in the link no longer applies."
+      >
+        <Button variant="outline" onClick={onReset}>
+          <RotateCcw />
+          Reset Inputs
+        </Button>
+      </EmptyCard>
+    );
+  }
   if (results.error && !results.data) {
     const { title, detail } = describeError(results.error);
     return (

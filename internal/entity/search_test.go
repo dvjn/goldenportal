@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -42,40 +43,65 @@ func TestTextPattern(t *testing.T) {
 	}
 }
 
-func TestListSearchesWithTrigramsAndCountsApart(t *testing.T) {
+func TestListSearchesWithTrigramsAndCountsOnlyTheFirstPage(t *testing.T) {
 	store, mock := mockStore(t)
 	spec := service(t)
 	spec.ID = serviceID
 	where := `WHERE e.blueprint_id = '` + serviceID + `' AND (lower(e.title) LIKE lower($1) OR lower(e.identifier) LIKE lower($1))`
-	columns := []string{"id", "b", "i", "t", "p", "r", "c", "conn", "ca", "ua"}
+	columns := []string{"id", "b", "i", "t", "p", "r", "c", "conn", "ca", "ua", "k0", "k1"}
 	t0 := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	row := func(rows *sqlmock.Rows, identifier string) *sqlmock.Rows {
-		return rows.AddRow("id-"+identifier, "service", identifier, identifier, []byte(`{}`), []byte(`{}`), []byte(`{}`), "gitlab", t0, t0)
+		return rows.AddRow("id-"+identifier, "service", identifier, identifier, []byte(`{}`), []byte(`{}`), []byte(`{}`), "gitlab", t0, t0,
+			`"`+identifier+`"`, `"`+identifier+`"`)
 	}
-	mock.ExpectQuery(`^SELECT e.id, 'service', .* FROM entities e\s+`+regexp.QuoteMeta(where)+`\s+ORDER BY e.title, e.identifier\s+LIMIT \$2 OFFSET \$3$`).
-		WithArgs("%led%", 2, 0).
-		WillReturnRows(row(row(sqlmock.NewRows(columns), "ledger"), "ledgers"))
+	mock.ExpectQuery(`^SELECT e.id, 'service', .* FROM entities e\s+`+regexp.QuoteMeta(where)+`\s+ORDER BY e.title, e.identifier\s+LIMIT \$2$`).
+		WithArgs("%led%", 3).
+		WillReturnRows(row(row(row(sqlmock.NewRows(columns), "ledger"), "ledgers"), "ledgery"))
 	mock.ExpectQuery(`^SELECT count\(\*\) FROM entities e ` + regexp.QuoteMeta(where) + `$`).
 		WithArgs("%led%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(7))
 
-	page, err := store.List(t.Context(), Query{Blueprint: spec, Search: "led", Page: 1, PageSize: 2})
+	page, err := store.List(t.Context(), Query{Blueprint: spec, Search: "led", PageSize: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Items) != 2 || page.Total != 7 {
-		t.Errorf("page = %d items of %d", len(page.Items), page.Total)
+	if len(page.Items) != 2 || page.Total == nil || *page.Total != 7 || page.Next == "" || page.Last == "" || page.Previous != "" {
+		t.Errorf("page = %+v", page)
 	}
 
-	// A page with room to spare is the last, so it needs no count.
-	mock.ExpectQuery(`^SELECT e.id, 'service', .*LIMIT \$2 OFFSET \$3$`).
-		WithArgs("le%", 2, 2).
-		WillReturnRows(row(sqlmock.NewRows(columns), "ledger"))
-	page, err = store.List(t.Context(), Query{Blueprint: spec, Search: "le", Page: 2, PageSize: 2})
+	// The next page seeks past the last row by title and identifier, and
+	// leaves the total to the first.
+	mock.ExpectQuery(regexp.QuoteMeta(where+` AND ((e.title, e.identifier) > ($3::text, $4::text))`)+`\s+ORDER BY e.title, e.identifier\s+LIMIT \$2\)`).
+		WithArgs("%led%", 3, "ledgers", "ledgers").
+		WillReturnRows(row(sqlmock.NewRows(columns), "ledgery"))
+	page, err = store.List(t.Context(), Query{Blueprint: spec, Search: "led", PageSize: 2, Cursor: page.Next})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 3 {
-		t.Errorf("total = %d, want 3", page.Total)
+	if len(page.Items) != 1 || page.Total != nil || page.Next != "" || page.Previous == "" {
+		t.Errorf("next page = %+v", page)
+	}
+
+	// A first page with room to spare holds them all, so it needs no count.
+	mock.ExpectQuery(`^SELECT e.id, 'service', .*LIMIT \$2$`).
+		WithArgs("le%", 3).
+		WillReturnRows(row(sqlmock.NewRows(columns), "ledger"))
+	page, err = store.List(t.Context(), Query{Blueprint: spec, Search: "le", PageSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total == nil || *page.Total != 1 {
+		t.Errorf("total = %v, want 1", page.Total)
+	}
+
+	// A cursor this list didn't give is the caller's to fix.
+	for _, cursor := range []string{"nope", page.Next + "x", "eyJkIjoiYWZ0ZXIiLCJzIjoidGl0bGUifQ"} {
+		var filterErr FilterError
+		if _, err := store.List(t.Context(), Query{Blueprint: spec, PageSize: 2, Cursor: cursor}); !errors.As(err, &filterErr) {
+			t.Errorf("cursor %q: err = %v, want a FilterError", cursor, err)
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Error(err)
 	}
 }

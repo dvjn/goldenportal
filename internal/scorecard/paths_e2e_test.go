@@ -71,7 +71,7 @@ func TestReservedPathsReadResults(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		page, err := store.List(ctx, entity.Query{Blueprint: spec, Blueprints: specs, Ladders: ladders, Filter: f, Sort: sort, Page: 1, PageSize: 20})
+		page, err := store.List(ctx, entity.Query{Blueprint: spec, Blueprints: specs, Ladders: ladders, Filter: f, Sort: sort, PageSize: 20})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,8 +79,22 @@ func TestReservedPathsReadResults(t *testing.T) {
 		for _, e := range page.Items {
 			got = append(got, e.Identifier)
 		}
-		if page.Total != len(got) {
-			t.Errorf("total %d of %d listed", page.Total, len(got))
+		if page.Total == nil || *page.Total != len(got) {
+			t.Errorf("total %v of %d listed", page.Total, len(got))
+		}
+		// Read a page at a time, either way, the list is the same.
+		for _, size := range []int{1, 3} {
+			walked(t, got, func(cursor string) ([]string, *int, string, string, string) {
+				page, err := store.List(ctx, entity.Query{Blueprint: spec, Blueprints: specs, Ladders: ladders, Filter: f, Sort: sort, PageSize: size, Cursor: cursor})
+				if err != nil {
+					t.Fatal(err)
+				}
+				items := []string{}
+				for _, e := range page.Items {
+					items = append(items, e.Identifier)
+				}
+				return items, page.Total, page.Next, page.Previous, page.Last
+			})
 		}
 		return got
 	}

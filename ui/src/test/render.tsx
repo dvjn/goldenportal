@@ -3,12 +3,13 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { type RenderOptions, render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
+import { queryDefaults } from "@/lib/query-defaults";
 import { createAppRouter } from "@/router";
 
 export function createTestQueryClient() {
   return new QueryClient({
     defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
+      queries: { ...queryDefaults.queries, gcTime: Infinity },
       mutations: { retry: false },
     },
   });

@@ -71,6 +71,12 @@ function useDashboard(view: HomeDashboard, picked: Picked, draft?: boolean) {
   return { values, source, context, links };
 }
 
+// resetInputs sets every input back to its default, while any is away from it.
+function resetInputs(view: HomeDashboard, picked: Picked, onPick: (patch: Picked) => void) {
+  if (!view.inputs.some((input) => picked[input.identifier] !== undefined)) return undefined;
+  return () => onPick(Object.fromEntries(view.inputs.map((f) => [f.identifier, undefined])));
+}
+
 // DashboardInputBar is a dashboard's inputs, with Reset while any is away
 // from its default. Compact, it fits the page bar, as the page's tabs do.
 export function DashboardInputBar({
@@ -82,7 +88,7 @@ export function DashboardInputBar({
 }: DashboardProps & { compact?: boolean }) {
   const { values, links } = useDashboard(view, picked, draft);
   if (view.inputs.length === 0) return null;
-  const changed = view.inputs.some((input) => picked[input.identifier] !== undefined);
+  const reset = resetInputs(view, picked, onPick);
   return (
     <DashboardInputs
       inputs={view.inputs}
@@ -91,11 +97,7 @@ export function DashboardInputBar({
       links={links}
       compact={compact}
       onChange={(input, next) => onPick({ [input.identifier]: toPicked(view, input, next) })}
-      onReset={
-        changed
-          ? () => onPick(Object.fromEntries(view.inputs.map((f) => [f.identifier, undefined])))
-          : undefined
-      }
+      onReset={reset}
     />
   );
 }
@@ -111,7 +113,12 @@ export function DashboardView({
   return (
     <>
       {withInputs && <DashboardInputBar {...props} />}
-      <WidgetGrid widgets={props.view.widgets} source={source} context={context} />
+      <WidgetGrid
+        widgets={props.view.widgets}
+        source={source}
+        context={context}
+        onReset={resetInputs(props.view, props.picked, props.onPick)}
+      />
     </>
   );
 }

@@ -16,6 +16,7 @@ import {
   tableFeatures,
 } from "@tanstack/react-table";
 import { readUiState, useUiState } from "@/hooks/use-ui-state";
+import type { CursorPage } from "@/lib/api";
 
 // The features every data table has: sorting, a search box and pages, all client-side.
 export const dataTableFeatures = tableFeatures({
@@ -65,14 +66,18 @@ export function usePageSize(search: TableSearch): number {
   return pageSize(search);
 }
 
-// TableSearch is a table's state in the URL: ?q=…&sort=-name&page=2&size=50.
-// A picked page size is saved instead, so size is only in a link shared.
+// TableSearch is a table's state in the URL: ?q=…&sort=-name&page=2&size=50,
+// or cursor in place of page for a list read by cursor. A picked page size
+// is saved instead, so size is only in a link shared.
 export type TableSearch = {
   q?: string;
   sort?: string;
   page?: number;
+  cursor?: string;
   size?: number;
 };
+
+export type CursorLinks = Pick<CursorPage<unknown>, "next" | "previous" | "last">;
 
 // validateTableSearch reads table state from a route's search params, dropping anything invalid.
 export function validateTableSearch(search: Record<string, unknown>): TableSearch {
@@ -82,6 +87,7 @@ export function validateTableSearch(search: Record<string, unknown>): TableSearc
     q: typeof search.q === "string" && search.q !== "" ? search.q : undefined,
     sort: typeof search.sort === "string" && search.sort !== "" ? search.sort : undefined,
     page: Number.isInteger(page) && page > 1 ? page : undefined,
+    cursor: typeof search.cursor === "string" && search.cursor !== "" ? search.cursor : undefined,
     size: (pageSizes as readonly number[]).includes(size) ? size : undefined,
   };
 }

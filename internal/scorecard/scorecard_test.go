@@ -14,6 +14,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/keyset"
 )
 
 const readinessYAML = `
@@ -159,22 +160,43 @@ func TestResultsNarrowByFilter(t *testing.T) {
 	spec := Spec{Blueprint: "service", Tiers: []Tier{{Name: "bronze"}, {Name: "silver"}}}
 	// The filter's values follow the query's own, before the rest.
 	hasOwner := func(status string) string { return `{"hasOwner":{"status":"` + status + `"}}` }
-	mock.ExpectQuery(regexp.QuoteMeta(`(sr.criteria @> $3::jsonb OR sr.criteria @> $4::jsonb)`)+`.*`+regexp.QuoteMeta(`ORDER BY r.tier_rank ASC`)).
-		WithArgs("sc", "%led%", hasOwner("failed"), hasOwner("skipped"), "service", 1, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "c"}).
-			AddRow("service", "ledger", "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, []byte(`{}`)))
+	columns := []string{"b", "e", "t", "changed", "at", "tier", "score", "p", "f", "s", "c", "k0", "k1", "k2", "k3"}
+	result := func(rows *sqlmock.Rows, identifier string) *sqlmock.Rows {
+		return rows.AddRow("service", identifier, "Ledger", time.Time{}, time.Time{}, "silver", 80, 4, 1, 0, []byte(`{}`),
+			"2", "80", `"Ledger"`, `"`+identifier+`"`)
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(`(sr.criteria @> $3::jsonb OR sr.criteria @> $4::jsonb)`)+`.*`+regexp.QuoteMeta(`ORDER BY r.tier_rank, r.score ASC NULLS FIRST, e.title, e.identifier`)).
+		WithArgs("sc", "%led%", hasOwner("failed"), hasOwner("skipped"), "service", 2).
+		WillReturnRows(result(result(sqlmock.NewRows(columns), "ledger"), "ledgers"))
 	mock.ExpectQuery(`^SELECT count\(\*\)\s+FROM scorecard_results r\s+JOIN entities e ON e.id = r.entity_id\s+WHERE r.scorecard_id = \$1\s+`+
 		regexp.QuoteMeta(`AND ($2 = '' OR lower(e.title) LIKE lower($2) OR lower(e.identifier) LIKE lower($2))`)+`.*sr.criteria @>`).
 		WithArgs("sc", "%led%", hasOwner("failed"), hasOwner("skipped")).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
 
-	scope := Scope{Blueprints: map[string]blueprint.Spec{"service": graded}, Blueprint: graded, Filter: f}
-	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Search: "led", Page: 1, PageSize: 1})
+	scope := Scope{Schema: entity.Schema{Blueprints: map[string]blueprint.Spec{"service": graded}, Blueprint: graded}, Filter: f}
+	page, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Search: "led", PageSize: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 3 || page.Items[0].Identifier != "ledger" {
+	if page.Total == nil || *page.Total != 3 || len(page.Items) != 1 || page.Items[0].Identifier != "ledger" || page.Next == "" || page.Previous != "" {
 		t.Errorf("page = %+v", page)
+	}
+
+	// The next page reads after the last row's values, and doesn't count.
+	mock.ExpectQuery(regexp.QuoteMeta(`AND ((r.tier_rank = $5::numeric AND r.score = $6::numeric AND (e.title, e.identifier) > ($7::text, $8::text)) OR `+
+		`(r.tier_rank = $5::numeric AND r.score > $6::numeric) OR (r.tier_rank > $5::numeric))`)).
+		WithArgs("sc", "%led%", hasOwner("failed"), hasOwner("skipped"), "2", "80", "Ledger", "ledger", "service", 2).
+		WillReturnRows(result(sqlmock.NewRows(columns), "ledgers"))
+	next, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Search: "led", PageSize: 1, Cursor: page.Next})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Total != nil || len(next.Items) != 1 || next.Items[0].Identifier != "ledgers" || next.Next != "" || next.Previous == "" {
+		t.Errorf("next page = %+v", next)
+	}
+	// A cursor pages only the results it came from.
+	if _, err := results(t.Context(), db, "sc", spec, ResultQuery{Scope: scope, Search: "le", PageSize: 1, Cursor: page.Next}); !errors.Is(err, keyset.ErrCursor) {
+		t.Errorf("another search: err = %v, want ErrCursor", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Error(err)
@@ -186,7 +208,7 @@ func TestResultsRequestChecksSortAndPaging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q.Search != "led" || q.Sort != "-tier" || q.Page != 1 || q.PageSize != 10 {
+	if q.Search != "led" || q.Sort != "-tier" || q.Cursor != "" || q.PageSize != 10 {
 		t.Errorf("query = %+v", q)
 	}
 	for _, sort := range []string{"", "tier", "score", "-score", "passed", "-failed", "skipped"} {
@@ -218,14 +240,14 @@ func TestResultsRequestChecksSortAndPaging(t *testing.T) {
 
 func TestResultOrder(t *testing.T) {
 	tests := []struct{ sort, want string }{
-		{"", "r.tier_rank ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
+		{"", "r.tier_rank, r.score ASC NULLS FIRST, e.title, e.identifier"},
 		{"-tier", "r.tier_rank DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
-		{"score", "r.score ASC NULLS FIRST, r.tier_rank ASC, e.title, e.identifier"},
+		{"score", "r.score ASC NULLS FIRST, r.tier_rank, e.title, e.identifier"},
 		{"-failed", "r.failed DESC, r.tier_rank DESC, r.score DESC NULLS LAST, e.title, e.identifier"},
-		{"skipped", "r.skipped ASC, r.tier_rank ASC, r.score ASC NULLS FIRST, e.title, e.identifier"},
+		{"skipped", "r.skipped, r.tier_rank, r.score ASC NULLS FIRST, e.title, e.identifier"},
 	}
 	for _, test := range tests {
-		if got := resultOrder(test.sort); got != test.want {
+		if got := resultOrder(test.sort).SQL(); got != test.want {
 			t.Errorf("resultOrder(%q) = %q, want %q", test.sort, got, test.want)
 		}
 	}

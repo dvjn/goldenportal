@@ -148,6 +148,19 @@ export function DataTableFilterBox({
   );
 }
 
+// DataTableChips shows a table's filter chips away from its box, for what
+// else on the page the filters narrow.
+export function DataTableChips({ chips }: Readonly<{ chips: DataTableChip[] }>) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
+      {chips.map((chip, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: two filters may read alike.
+        <FilterChip key={index} chip={chip} onRemove={chip.onRemove} />
+      ))}
+    </div>
+  );
+}
+
 function FilterChip({ chip, onRemove }: Readonly<{ chip: DataTableChip; onRemove: () => void }>) {
   const { field } = chip;
   if (!field) return <Chip chip={chip} summary={chip.summary} onRemove={onRemove} />;

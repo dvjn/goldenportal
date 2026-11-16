@@ -107,7 +107,7 @@ type (
 	}
 	catalogArgs struct {
 		Blueprint string `json:"blueprint"`
-		Tab       string `json:"tab,omitempty" jsonschema:"The tab to open, from tabs: one of the blueprint's own, entities, or scorecard-<identifier> for a scorecard's results. Omitted, the page's first tab, or entities when searching, filtering, sorting or paging"`
+		Tab       string `json:"tab,omitempty" jsonschema:"The tab to open, from tabs: one of the blueprint's own, entities, or scorecard-<identifier> for a scorecard's results. Omitted, the tab a cursor's page is on, else the page's first tab, or entities when searching, filtering or sorting"`
 		tableArgs
 	}
 	scorecardArgs struct {

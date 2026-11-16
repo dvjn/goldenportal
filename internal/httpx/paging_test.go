@@ -78,3 +78,16 @@ func TestPageTotal(t *testing.T) {
 		}
 	}
 }
+
+func TestSize(t *testing.T) {
+	for value, want := range map[string]int{"": 10, "20": 20, "100": 100} {
+		if got, err := Size(func(string) string { return value }); err != nil || got != want {
+			t.Errorf("Size(%q) = %d, %v", value, got, err)
+		}
+	}
+	for _, value := range []string{"0", "15", "big", "-10"} {
+		if _, err := Size(func(string) string { return value }); err == nil {
+			t.Errorf("Size(%q) took it", value)
+		}
+	}
+}

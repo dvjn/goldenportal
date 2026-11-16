@@ -58,7 +58,11 @@ func (f fakeServices) Catalog(ctx *gofr.Context) ([]entity.CatalogEntry, error) 
 
 func (f fakeServices) Entities(ctx *gofr.Context, blueprint string, req entity.ListRequest) (entity.Page, error) {
 	f.record(ctx, "Entities", blueprint, req)
-	return entity.Page{Items: []*entity.Entity{{Identifier: "payments/" + req.Search}, {Identifier: "billing"}}}, nil
+	page := entity.Page{Items: []*entity.Entity{{Identifier: "payments/" + req.Search}, {Identifier: "billing"}}}
+	if req.Cursor != "" {
+		page.Previous = "before-" + req.Cursor
+	}
+	return page, nil
 }
 
 func (f fakeServices) Entity(ctx *gofr.Context, blueprint, identifier string) (entity.Detail, error) {
@@ -199,7 +203,8 @@ func (f fakeServices) Runs(ctx *gofr.Context, req action.RunsRequest) (action.Ru
 
 func (f fakeServices) ScorecardResults(ctx *gofr.Context, name string, req scorecard.ResultsRequest) (scorecard.ResultPage, error) {
 	f.record(ctx, "ScorecardResults", name, req)
-	return scorecard.ResultPage{Items: []scorecard.EntityResult{{Identifier: "payments", Title: "Payments"}}, Total: 1}, nil
+	total := 1
+	return scorecard.ResultPage{Items: []scorecard.EntityResult{{Identifier: "payments", Title: "Payments"}}, Total: &total}, nil
 }
 
 func (f fakeServices) CheckConnection(*gofr.Context, string) (connection.CheckResult, error) {

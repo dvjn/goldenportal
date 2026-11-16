@@ -265,6 +265,62 @@ describe("catalog", () => {
     ).toBeInTheDocument();
   });
 
+  it("loads the page's entities, scorecards and dashboards once", async () => {
+    const calls: Record<string, number> = {};
+    const counted = (key: string, data: unknown) => () => {
+      calls[key] = (calls[key] ?? 0) + 1;
+      return ok(data)();
+    };
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": counted("blueprint", service),
+      "GET catalog/service": counted("entities", page),
+      "GET scorecards": counted("scorecards", []),
+      "GET home": counted("home", []),
+      "GET catalog/service/facets": ok([]),
+    });
+    renderRoute("/catalog/service");
+    await screen.findByRole("link", { name: /Ledger/ });
+    // Anything fetched twice would be by now.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls).toEqual({ blueprint: 1, entities: 1, scorecards: 1, home: 1 });
+  });
+
+  it("sorts a column ascending, then descending, then not at all", async () => {
+    const user = userEvent.setup();
+    // Sorted ascending, the first rows have no owner, as empty values sort lowest.
+    const unowned = {
+      ...ledger,
+      identifier: "unowned",
+      title: "Unowned",
+      properties: { tier: "critical" },
+      related: {},
+    };
+    const requests = stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": (request) =>
+        ok({
+          items: [new URL(request.url).searchParams.get("sort") === "owner" ? unowned : ledger],
+          total: 1,
+        })(),
+      "GET catalog/service/facets": ok([]),
+    });
+    const { router } = renderRoute("/catalog/service");
+    await screen.findByRole("link", { name: /Ledger/ });
+    const sort = () => new URL(requests["GET catalog/service"].url).searchParams.get("sort");
+    const header = () =>
+      within(screen.getByRole("columnheader", { name: /^Owner(?! Slack)/ })).getByRole("button");
+
+    await user.click(header());
+    await screen.findByRole("link", { name: /Unowned/ });
+    expect(sort()).toBe("owner");
+    await user.click(header());
+    await vi.waitFor(() => expect(sort()).toBe("-owner"));
+    await user.click(header());
+    await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty("sort"));
+  });
+
   it("offers no columns to choose while a blueprint has no entities", async () => {
     stubApi({
       ...signedInMember,
@@ -319,6 +375,86 @@ describe("catalog", () => {
     expect(within(trail).getByRole("button", { name: "Toggle Sidebar" })).toBeInTheDocument();
   });
 
+  it("pages entities by cursor, keeping the first page's total", async () => {
+    const user = userEvent.setup();
+    const named = (identifier: string) => ({ ...ledger, identifier, title: identifier });
+    // Each page answers the cursor it was read by; only the first counts.
+    const pages: Record<string, EntityPage> = {
+      "": { items: [named("Alpha")], total: 3, next: "after-alpha", last: "last" },
+      "after-alpha": {
+        items: [named("Bravo")],
+        previous: "before-bravo",
+        next: "after-bravo",
+        last: "last",
+      },
+      last: { items: [named("Charlie")], previous: "before-charlie" },
+      "before-charlie": {
+        items: [named("Bravo")],
+        previous: "before-bravo",
+        next: "after-bravo",
+        last: "last",
+      },
+    };
+    const cursors: string[] = [];
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": (request) => {
+        const cursor = new URL(request.url).searchParams.get("cursor") ?? "";
+        cursors.push(cursor);
+        return ok(pages[cursor])();
+      },
+      "GET catalog/service/facets": ok([]),
+    });
+    const { router } = renderRoute("/catalog/service");
+    await screen.findByRole("link", { name: /Alpha/ });
+    expect(screen.getByText("Showing 1 to 1 of 3")).toBeVisible();
+    expect(screen.queryByText(/^Page /)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "First page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("link", { name: /Bravo/ });
+    expect(screen.getByText("Showing 1 of 3")).toBeVisible();
+    expect(router.state.location.search).toMatchObject({ cursor: "after-alpha" });
+
+    await user.click(screen.getByRole("button", { name: "Last page" }));
+    await screen.findByRole("link", { name: /Charlie/ });
+    expect(screen.getByText("Showing 3 to 3 of 3")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Last page" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Previous page" }));
+    await screen.findByRole("link", { name: /Bravo/ });
+    await user.click(screen.getByRole("button", { name: "First page" }));
+    await screen.findByRole("link", { name: /Alpha/ });
+    expect([...new Set(cursors)]).toEqual(["", "after-alpha", "last", "before-charlie"]);
+
+    // Sorting starts from the first page again.
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("link", { name: /Bravo/ });
+    await user.click(screen.getByRole("button", { name: "Title" }));
+    await vi.waitFor(() => expect(cursors.at(-1)).toBe(""));
+    expect(router.state.location.search).toMatchObject({ sort: "title" });
+    expect(router.state.location.search).not.toHaveProperty("cursor");
+  });
+
+  it("goes back to the first page when the server turns a cursor down", async () => {
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": (request) =>
+        new URL(request.url).searchParams.has("cursor")
+          ? fail(400, "the cursor isn't one this list gave; start from the first page")()
+          : ok(page)(),
+      "GET catalog/service/facets": ok([]),
+    });
+    const { router } = renderRoute("/catalog/service?cursor=stale");
+
+    expect(await screen.findByRole("link", { name: /Ledger/ })).toBeVisible();
+    expect(router.state.location.search).not.toHaveProperty("cursor");
+  });
+
   it("shows a failed page of entities in the table and tries again", async () => {
     const user = userEvent.setup();
     let calls = 0;
@@ -331,9 +467,32 @@ describe("catalog", () => {
     });
     renderRoute("/catalog/service");
 
-    expect(await screen.findByText("the filter names an unknown property")).toBeVisible();
+    // Turned down, the table says so without the server's words.
+    expect(await screen.findByText("Can't list entities this way")).toBeVisible();
+    expect(screen.queryByText("the filter names an unknown property")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("link", { name: /Ledger/ })).toBeVisible();
+  });
+
+  it("keeps the page when a link's sort no longer applies, and resets it", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...signedInMember,
+      "GET blueprints/service": ok(service),
+      "GET catalog/service": (request) =>
+        new URL(request.url).searchParams.has("sort")
+          ? fail(400, 'service has no property "bogus"')()
+          : ok(page)(),
+      "GET catalog/service/facets": ok([]),
+    });
+    const { router } = renderRoute("/catalog/service?sort=bogus");
+
+    expect(await screen.findByText("Can't list entities this way")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Service" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Clear Filters" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reset Sort" }));
+    expect(await screen.findByRole("link", { name: /Ledger/ })).toBeVisible();
+    expect(router.state.location.search).not.toHaveProperty("sort");
   });
 
   it("filters a blueprint's entities on the server", async () => {

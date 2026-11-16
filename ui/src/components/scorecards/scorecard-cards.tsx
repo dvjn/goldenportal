@@ -73,17 +73,20 @@ type CriteriaResults = {
 
 // CriteriaCard lists a scorecard's criteria tier by tier, each with its
 // check and fix, and with results, its pass rate and how many entities
-// pass, fail and skip it.
+// pass, fail and skip it. notice says why results that were asked for
+// aren't there.
 export function CriteriaCard({
   spec,
   results,
-}: Readonly<{ spec: ScorecardSpec; results?: CriteriaResults }>) {
+  notice,
+}: Readonly<{ spec: ScorecardSpec; results?: CriteriaResults; notice?: string }>) {
   const counts = new Map(results?.summary?.criteria.map((c) => [c.identifier, c]));
 
   return (
     <Card className="gap-0 pb-0">
       <CardTitleBar title="Criteria" />
       <CardContent className="grid px-0">
+        {notice && <p className="px-(--card-spacing) text-sm text-muted-foreground">{notice}</p>}
         {spec.tiers.map((tier) => (
           <CardSection key={tier.name} heading={<TierBadge tiers={spec.tiers} name={tier.name} />}>
             <ul className="grid">

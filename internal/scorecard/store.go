@@ -13,7 +13,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/blueprint"
 	"github.com/dvjn/goldenportal/internal/configdoc"
 	"github.com/dvjn/goldenportal/internal/entity"
-	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/keyset"
 )
 
 // Name is the configdoc kind scorecards are stored as.
@@ -177,12 +177,20 @@ type ResultQuery struct {
 	Scope
 	Search string
 	// Sort is one of ResultSorts, or -field for descending.
-	Sort     string
-	Page     int
+	Sort string
+	// Cursor is a page's link to the page to read, empty for the first.
+	Cursor   string
 	PageSize int
 }
 
-type ResultPage = httpx.Page[EntityResult]
+type ResultPage = keyset.Page[EntityResult]
+
+// ResultsList names the list of a scorecard's results, which cursors say
+// they page.
+func ResultsList(scorecard string) string { return ResultsListPrefix + scorecard }
+
+// ResultsListPrefix starts the name of each scorecard's ResultsList.
+const ResultsListPrefix = "results:"
 
 func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec, q ResultQuery) (ResultPage, error) {
 	search := ""
@@ -197,67 +205,81 @@ func results(ctx context.Context, db configdoc.DB, scorecardID string, spec Spec
 		WHERE r.scorecard_id = $1
 			AND ($2 = '' OR lower(e.title) LIKE lower($2) OR lower(e.identifier) LIKE lower($2))
 			AND ` + where
-	matchArgs := slices.Clone(args)
-	graded := "$" + strconv.Itoa(len(args)+1)
-	limit := "$" + strconv.Itoa(len(args)+2)
-	offset := "$" + strconv.Itoa(len(args)+3)
-	skip := (q.Page - 1) * q.PageSize
-	args = append(args, spec.Blueprint, q.PageSize, skip)
-
-	rows, err := db.QueryContext(ctx, `
-		SELECT `+graded+`::text, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
-			r.passed, r.failed, r.skipped, r.criteria`+resultFrom+`
-		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id`+matching+`
-		ORDER BY `+resultOrder(q.Sort)+`
-		LIMIT `+limit+` OFFSET `+offset, args...)
+	filter, err := json.Marshal(q.Filter)
 	if err != nil {
 		return ResultPage{}, err
 	}
-	defer rows.Close()
-
-	page := ResultPage{Items: []EntityResult{}}
-	for rows.Next() {
-		r, err := scanResult(rows.Scan)
-		if err != nil {
-			return ResultPage{}, err
-		}
-		page.Items = append(page.Items, r)
-	}
-	if err := rows.Err(); err != nil {
+	list := keyset.List{Name: ResultsList(spec.Identifier), Scope: []string{q.Search, string(filter), q.Sort}}
+	request, err := keyset.NewRequest(resultOrder(q.Sort), list, q.Cursor, q.PageSize)
+	if err != nil {
 		return ResultPage{}, err
 	}
-	var known bool
-	if page.Total, known = httpx.PageTotal(skip, len(page.Items), q.PageSize); !known {
-		err = db.QueryRowContext(ctx, `SELECT count(*)`+resultFrom+matching,
-			matchArgs...).Scan(&page.Total)
+
+	page, err := keyset.Fetch(request, func(p keyset.Plan) ([]keyset.Row[EntityResult], error) {
+		return readResults(ctx, db, spec, matching, slices.Clone(args), p)
+	})
+	if err != nil {
+		return ResultPage{}, err
 	}
+	err = page.Count(request, func() (total int, err error) {
+		err = db.QueryRowContext(ctx, `SELECT count(*)`+resultFrom+matching, args...).Scan(&total)
+		return total, err
+	})
 
 	return page, err
 }
 
-// resultOrder is the ORDER BY for a ResultQuery's Sort, tiers going by
-// their stored place up the ladder. Results without a score count as the
-// lowest. Ties go by tier the same way, then by title and identifier so
-// pages are stable.
-func resultOrder(sort string) string {
-	field, desc := strings.CutPrefix(sort, "-")
-	direction, nulls := "ASC", "NULLS FIRST"
-	if desc {
-		direction, nulls = "DESC", "NULLS LAST"
+// readResults reads a plan's rows of the results matching, with args its
+// values. No index holds their order, so its ranges are read together.
+func readResults(ctx context.Context, db configdoc.DB, spec Spec, matching string, args []any, p keyset.Plan) ([]keyset.Row[EntityResult], error) {
+	arg := func(value any) string {
+		args = append(args, value)
+		return "$" + strconv.Itoa(len(args))
 	}
-	tier := "r.tier_rank " + direction
-	score := "r.score " + direction + " " + nulls
-	var by []string
-	switch field {
-	case "score":
-		by = []string{score, tier}
-	case "passed", "failed", "skipped":
-		by = []string{"r." + field + " " + direction, tier, score}
-	default:
-		by = []string{tier, score}
+	after := keyset.Predicate(p.Ranges(arg))
+	rows, err := db.QueryContext(ctx, `
+		SELECT `+arg(spec.Blueprint)+`::text, e.identifier, e.title, r.changed_at, `+evaluatedAt+`, r.tier, r.score,
+			r.passed, r.failed, r.skipped, r.criteria, `+strings.Join(p.Order.Keys(), ", ")+resultFrom+`
+		LEFT JOIN scorecard_evaluations v ON v.scorecard_id = r.scorecard_id`+matching+`
+			AND `+after+`
+		ORDER BY `+p.Order.SQL()+`
+		LIMIT `+arg(p.Limit), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []keyset.Row[EntityResult]{}
+	for rows.Next() {
+		row, err := keyset.ReadRow(rows.Scan, len(p.Order), scanResult)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, row)
 	}
 
-	return strings.Join(append(by, "e.title", "e.identifier"), ", ")
+	return out, rows.Err()
+}
+
+// resultOrder is the order of a ResultQuery's Sort, tiers going by their
+// stored place up the ladder. Results without a score count as the
+// lowest. Ties go by tier the same way, then by title and identifier so
+// pages are stable.
+func resultOrder(sort string) keyset.Order {
+	field, desc := strings.CutPrefix(sort, "-")
+	tier := keyset.Column{SQL: "r.tier_rank", Type: keyset.Number, Desc: desc}
+	score := keyset.Column{SQL: "r.score", Type: keyset.Number, Desc: desc, Nullable: true}
+	var by keyset.Order
+	switch field {
+	case "score":
+		by = keyset.Order{score, tier}
+	case "passed", "failed", "skipped":
+		by = keyset.Order{{SQL: "r." + field, Type: keyset.Number, Desc: desc}, tier, score}
+	default:
+		by = keyset.Order{tier, score}
+	}
+
+	return append(by, keyset.Column{SQL: "e.title", Type: keyset.Text}, keyset.Column{SQL: "e.identifier", Type: keyset.Text})
 }
 
 func scanResult(scan func(...any) error) (EntityResult, error) {

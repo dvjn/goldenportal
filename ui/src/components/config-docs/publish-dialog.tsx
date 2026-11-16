@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import type { ConfigDocs } from "@/features/config-docs";
+import { invalidatePublished } from "@/features/refresh";
 
 const sectionLabels: Record<string, string> = {
   blueprint: "Blueprint",
@@ -66,7 +67,7 @@ function PublishReview<S>({
   const publish = useMutation({
     mutationFn: () => docs.publish(identifier, acknowledged),
     onSuccess: async ({ version }) => {
-      await queryClient.invalidateQueries({ queryKey: docs.keys.all });
+      await invalidatePublished(queryClient);
       toast.success(`Published ${identifier} version ${version}`);
       onDone();
     },

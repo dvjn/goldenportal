@@ -210,7 +210,7 @@ func (f *fixture) plan(spec blueprint.Spec, sort string) string {
 	f.t.Helper()
 	recorder := &statements{DB: f.db}
 	if _, err := entity.NewStore(recorder).List(f.t.Context(), entity.Query{
-		Blueprint: spec, Blueprints: map[string]blueprint.Spec{spec.Identifier: spec}, Sort: sort, Page: 1, PageSize: 25,
+		Blueprint: spec, Blueprints: map[string]blueprint.Spec{spec.Identifier: spec}, Sort: sort, PageSize: 25,
 	}); err != nil {
 		f.t.Fatal(err)
 	}

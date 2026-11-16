@@ -1,4 +1,4 @@
-export { DataTable } from "./data-table";
+export { ClearFiltersButton, DataTable } from "./data-table";
 export { DataTableColumnHeader } from "./data-table-column-header";
 export {
   type DateRange,
@@ -12,7 +12,11 @@ export {
   type DataTableOption,
   OptionMark,
 } from "./data-table-faceted-filter";
-export { type DataTableChip, DataTableFilterBox } from "./data-table-filter-box";
+export {
+  type DataTableChip,
+  DataTableChips,
+  DataTableFilterBox,
+} from "./data-table-filter-box";
 export {
   type DataTableFilterChange,
   DataTableFilterEditor,
@@ -34,3 +38,4 @@ export {
   usePageSize,
   validateTableSearch,
 } from "./table";
+export { useCursorPage } from "./use-cursor-page";

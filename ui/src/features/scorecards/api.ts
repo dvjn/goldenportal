@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import type { Property } from "@/features/blueprints";
 import type { Filter } from "@/features/catalog";
 import { type ConfigDoc, configDocs, type DocSummary } from "@/features/config-docs";
-import { type ApiDataResponse, api, type Page } from "@/lib/api";
+import { type ApiDataResponse, api, type CursorPage } from "@/lib/api";
 
 export type Criterion = {
   identifier: string;
@@ -124,13 +124,13 @@ export type Summary = {
   }[];
 };
 
-export type ResultPage = Page<EntityResult>;
+export type ResultPage = CursorPage<EntityResult>;
 
 export type ResultQuery = {
   filter?: Filter;
   q?: string;
   sort?: string;
-  page?: number;
+  cursor?: string;
   size?: number;
 };
 
@@ -143,8 +143,9 @@ export const scorecardKeys = {
     [...scorecards.keys.detail(identifier), "summary", filter ?? null] as const,
   results: (identifier: string, query: ResultQuery) =>
     [...scorecards.keys.detail(identifier), "results", query] as const,
+  entities: ["entity-scorecards"] as const,
   entity: (blueprint: string, identifier: string) =>
-    ["entity-scorecards", blueprint, identifier] as const,
+    [...scorecardKeys.entities, blueprint, identifier] as const,
 };
 
 export async function getSummary(identifier: string, filter?: Filter): Promise<Summary> {

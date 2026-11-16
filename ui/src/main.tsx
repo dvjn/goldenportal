@@ -8,13 +8,12 @@ import { configQueryOptions } from "./features/app-config";
 import { authKeys } from "./features/auth";
 import { isUnauthorized } from "./lib/api";
 import { reloadOnStaleChunks } from "./lib/new-build";
+import { queryDefaults } from "./lib/query-defaults";
 import { mutationTracing, startTracing } from "./lib/tracing";
 import { createAppRouter } from "./router";
 
 const queryClient = new QueryClient({
-  // The API client already retries what can pass (network errors, 5xx and
-  // 429); retrying here again would multiply those and delay every error.
-  defaultOptions: { queries: { retry: false } },
+  defaultOptions: queryDefaults,
   queryCache: new QueryCache({
     // A request that fails because the session ended sends the user back to sign in.
     // The route guard handles the "me" query itself.

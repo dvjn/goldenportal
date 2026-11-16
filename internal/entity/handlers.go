@@ -88,17 +88,18 @@ func Catalog(ctx *gofr.Context) ([]CatalogEntry, error) {
 }
 
 // ListRequest asks for a page of a blueprint's entities: searched by
-// Search, filtered by Filter (see Filter) and sorted by Sort, a path. A
-// zero Page or Size means the first page or the smallest size.
+// Search, filtered by Filter (see Filter) and sorted by Sort, a path.
+// Cursor is a page's next, previous or last, empty for the first page, the
+// only one that counts the entities. A zero Size means the smallest.
 type ListRequest struct {
-	Search, Filter, Sort string
-	Page, Size           int
+	Search, Filter, Sort, Cursor string
+	Size                         int
 }
 
 func list(ctx *gofr.Context) (any, error) {
-	req := ListRequest{Search: ctx.Param("q"), Filter: ctx.Param("filter"), Sort: ctx.Param("sort")}
+	req := ListRequest{Search: ctx.Param("q"), Filter: ctx.Param("filter"), Sort: ctx.Param("sort"), Cursor: ctx.Param("cursor")}
 	var err error
-	if req.Page, req.Size, err = httpx.Paging(ctx.Param); err != nil {
+	if req.Size, err = httpx.Size(ctx.Param); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +114,11 @@ func List(ctx *gofr.Context, blueprintID string, req ListRequest) (page Page, er
 	}
 	end := telemetry.Within(ctx, name, telemetry.Blueprint.String(blueprintID))
 	defer func() {
-		trace.SpanFromContext(ctx).SetAttributes(telemetry.Items.Int(len(page.Items)), attribute.Int("gp.total", page.Total))
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(telemetry.Items.Int(len(page.Items)), attribute.Bool("gp.cursor", req.Cursor != ""))
+		if page.Total != nil {
+			span.SetAttributes(attribute.Int("gp.total", *page.Total))
+		}
 		end(err)
 	}()
 	if _, err := auth.Require(ctx, auth.RoleMember); err != nil {
@@ -124,8 +129,8 @@ func List(ctx *gofr.Context, blueprintID string, req ListRequest) (page Page, er
 		return Page{}, err
 	}
 
-	q := Query{Blueprint: spec, Blueprints: specs, Search: req.Search, Sort: req.Sort}
-	if q.Page, q.PageSize, err = httpx.CheckPaging(req.Page, req.Size); err != nil {
+	q := Query{Blueprint: spec, Blueprints: specs, Search: req.Search, Sort: req.Sort, Cursor: req.Cursor}
+	if q.PageSize, err = httpx.CheckSize(req.Size); err != nil {
 		return Page{}, err
 	}
 	if q.Filter, err = ParseFilter(req.Filter); err != nil {

@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Columns3, FileCode, LayoutGrid, RotateCcw, Rows3 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -15,6 +15,7 @@ import {
   dataTableColumns,
   pageSize,
   type TableSearch,
+  useCursorPage,
   usePageSize,
   validateTableSearch,
 } from "@/components/data-table";
@@ -62,8 +63,10 @@ type CatalogSearch = TableSearch & {
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : undefined);
 
 function validateCatalogSearch(search: Record<string, unknown>): CatalogSearch {
+  // Both tables page by cursor.
+  const { page: _page, ...table } = validateTableSearch(search);
   return {
-    ...validateTableSearch(search),
+    ...table,
     view: text(search.view),
     filter: validFilter(search.filter),
     cols: text(search.cols),
@@ -102,7 +105,7 @@ const isScorecardView = (view?: string) => view?.startsWith(scorecardView("")) ?
 // open, so the entities, which the tab still counts, are left unsearched.
 function entitySearch({ view, ...search }: CatalogSearch): CatalogSearch {
   if (!isScorecardView(view)) return search;
-  const { q: _q, sort: _s, page: _p, ...rest } = search;
+  const { q: _q, sort: _s, cursor: _c, ...rest } = search;
   return rest;
 }
 
@@ -112,7 +115,7 @@ function queryFrom(blueprint: string, search: CatalogSearch, size: number): Enti
     q: search.q,
     filter: search.filter && { and: search.filter },
     sort: search.sort,
-    page: search.page,
+    cursor: search.cursor,
     size,
   };
 }
@@ -120,14 +123,16 @@ function queryFrom(blueprint: string, search: CatalogSearch, size: number): Enti
 export const Route = createFileRoute("/_app/catalog/$blueprint/")({
   validateSearch: validateCatalogSearch,
   loaderDeps: ({ search }) => entitySearch(search),
-  loader: ({ context, params, deps }) =>
-    Promise.all([
+  loader: ({ context, params, deps }) => {
+    const query = queryFrom(params.blueprint, deps, pageSize(deps));
+    return Promise.all([
       context.queryClient.ensureQueryData(blueprints.queries.detail(params.blueprint)),
       context.queryClient.ensureQueryData(scorecards.queries.list),
-      context.queryClient.ensureQueryData(
-        entitiesQueryOptions(queryFrom(params.blueprint, deps, pageSize(deps))),
-      ),
-    ]),
+      // A filter, sort or cursor the server turns down shows in the table, not in place of the page.
+      context.queryClient.prefetchQuery(entitiesQueryOptions({ ...query, cursor: undefined })),
+      context.queryClient.prefetchQuery(entitiesQueryOptions(query)),
+    ]);
+  },
   component: BlueprintCatalogPage,
   errorComponent: (props) => (
     <PageError {...props} back={<Link to="/catalog">Back to Catalog</Link>} />
@@ -141,6 +146,11 @@ function sortable(property: Property) {
     !property.lookup && !property.many && property.type !== "array" && property.type !== "object"
   );
 }
+
+// Numbers sort largest first; text, dates and tiers, from the bottom of
+// their ladder, ascending.
+const largestFirst = (property: Property) =>
+  !property.scorecard && (property.type === "number" || property.type === "integer");
 
 // builtInColumns are the fields every entity has that can be columns,
 // besides the title column, which shows the title and identifier.
@@ -174,10 +184,11 @@ function BlueprintCatalogPage() {
   usePageTitle(spec?.title ?? doc.title);
   const builder = hasRole(useMe().role, "builder");
   const entities = entitySearch(search);
-  const page = useQuery({
-    ...entitiesQueryOptions(queryFrom(blueprint, entities, usePageSize(entities))),
-    placeholderData: keepPreviousData,
-  });
+  const query = queryFrom(blueprint, entities, usePageSize(entities));
+  const { page, first, total, pending } = useCursorPage(
+    (cursor) => entitiesQueryOptions({ ...query, cursor }),
+    query.cursor,
+  );
   // Only published scorecards have results to show.
   const { data: scorecardList } = useSuspenseQuery(scorecards.queries.list);
   const graded = publishedGradedBy(scorecardList, blueprint);
@@ -185,7 +196,7 @@ function BlueprintCatalogPage() {
   const setSearch = (patch: Partial<CatalogSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
   const filters = useCatalogFilters(blueprint, spec, conditions, (next) =>
-    setSearch({ filter: next.length > 0 ? next : undefined, page: undefined }),
+    setSearch({ filter: next.length > 0 ? next : undefined, cursor: undefined }),
   );
   const rowActions = useRowActions(
     blueprint,
@@ -253,9 +264,7 @@ function BlueprintCatalogPage() {
         column.accessor((entity) => entity.properties[property.identifier], {
           id: property.identifier,
           enableSorting: sortable(property),
-          // A result is an object, which would sort descending first; tiers
-          // start, like text, at the bottom of their ladder.
-          sortDescFirst: property.scorecard ? false : undefined,
+          sortDescFirst: largestFirst(property),
           header: ({ column }) => <DataTableColumnHeader column={column} title={property.title} />,
           cell: ({ row }) => (
             <PropertyValue
@@ -327,9 +336,10 @@ function BlueprintCatalogPage() {
       getRowId={(entity) => entity.identifier}
       search={search}
       searchLabel={`Search ${spec.title.toLowerCase()}`}
-      rowCount={page.data?.total ?? 0}
+      rowCount={total}
+      cursor={page.data ?? {}}
       loading={page.isPlaceholderData}
-      pending={page.isPending}
+      pending={pending}
       error={page.error}
       onRetry={() => void page.refetch()}
       filters={filters.filters}
@@ -337,7 +347,7 @@ function BlueprintCatalogPage() {
       actions={
         // With no entities there are no columns to choose; a search or filter
         // that matches none keeps the menu, so the toolbar doesn't shift.
-        (page.isPending || (page.data?.total ?? 0) > 0 || Boolean(search.q || search.filter)) && (
+        (page.isPending || total > 0 || Boolean(search.q || search.filter)) && (
           <ColumnsMenu
             spec={spec}
             shown={shown}
@@ -379,7 +389,7 @@ function BlueprintCatalogPage() {
                   view: next,
                   q: undefined,
                   sort: undefined,
-                  page: undefined,
+                  cursor: undefined,
                 }
               : { ...prev, view: next },
           replace: true,
@@ -397,8 +407,8 @@ function BlueprintCatalogPage() {
           <PageTab value="entities">
             <Rows3 />
             Entities
-            {page.data && (
-              <span className="text-xs text-muted-foreground tabular-nums">{page.data.total}</span>
+            {first.data && (
+              <span className="text-xs text-muted-foreground tabular-nums">{total}</span>
             )}
           </PageTab>
           {graded.map((s) => (

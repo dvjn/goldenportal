@@ -32,5 +32,7 @@ export async function search(q: string): Promise<SearchResult[]> {
     .data;
 }
 
+export const searchKeys = { all: ["search"] as const };
+
 export const searchQueryOptions = (q: string) =>
-  queryOptions({ queryKey: ["search", q] as const, queryFn: () => search(q) });
+  queryOptions({ queryKey: [...searchKeys.all, q] as const, queryFn: () => search(q) });

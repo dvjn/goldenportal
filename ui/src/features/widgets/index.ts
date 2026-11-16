@@ -25,5 +25,6 @@ export {
   type WidgetResult,
   type WidgetSource,
   type WidgetType,
+  widgetKeys,
   widgetsQueryOptions,
 } from "./api";

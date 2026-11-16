@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"slices"
+	"strings"
 
 	"gofr.dev/pkg/gofr"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/dvjn/goldenportal/internal/dashboard"
 	"github.com/dvjn/goldenportal/internal/entity"
 	"github.com/dvjn/goldenportal/internal/httpx"
+	"github.com/dvjn/goldenportal/internal/keyset"
 	"github.com/dvjn/goldenportal/internal/scorecard"
 	"github.com/dvjn/goldenportal/internal/widget"
 )
@@ -309,11 +311,26 @@ type tableArgs struct {
 	Search string `json:"search,omitempty" jsonschema:"Text in an entity's title or identifier, ignoring case: anywhere from three characters, at the start before that"`
 	Filter string `json:"filter,omitempty" jsonschema:"Shared filter tree encoded as JSON, on the blueprint's properties. _scorecards.<scorecard> reaches the result on any scorecard grading the blueprint, as a property of type scorecard naming it does: alone it is the tier (empty for evaluated with no tier; entities not evaluated match no tier filter; only not and ne reach them), .score, .passed, .failed, .skipped and .failing what they say, .checks.<id> a check's status (passed, failed or skipped)"`
 	Sort   string `json:"sort,omitempty" jsonschema:"A path, such as a property, title, createdAt, updatedAt or _scorecards.<scorecard> for its tier, with a leading - for descending, empty values first ascending and last descending (not evaluated below no tier); on a scorecard's results: tier, score, passed, failed or skipped, worst tier first when omitted"`
-	Page   int    `json:"page,omitempty"`
+	Cursor string `json:"cursor,omitempty" jsonschema:"A page's next, previous or last, to read that page of the same table, with the same search, filter and sort, and any size; omit for the first page, the only one that has the total"`
 	Size   int    `json:"size,omitempty" jsonschema:"Page size: 10, 20, 50 or 100; omit for the default"`
 }
 
-func (a tableArgs) set() bool { return a.Search != "" || a.Filter != "" || a.Sort != "" || a.Page > 0 }
+func (a tableArgs) set() bool {
+	return a.Search != "" || a.Filter != "" || a.Sort != "" || a.Cursor != ""
+}
+
+// cursorTab is the tab whose table a cursor pages, or "" when it isn't one.
+func cursorTab(cursor string) string {
+	list := keyset.ListOf(cursor)
+	if list == entity.CatalogList {
+		return tabEntities
+	}
+	if id, ok := strings.CutPrefix(list, scorecard.ResultsListPrefix); ok {
+		return scorecardTab + id
+	}
+
+	return ""
+}
 
 func readCatalog(b bridge, ctx *gofr.Context, identifier, tab string, table tableArgs) (catalogPage, error) {
 	spec, err := b.services.Blueprint(ctx, identifier)
@@ -344,6 +361,8 @@ func readCatalog(b bridge, ctx *gofr.Context, identifier, tab string, table tabl
 
 	switch {
 	case tab != "":
+	case cursorTab(table.Cursor) != "":
+		tab = cursorTab(table.Cursor)
 	case len(own) > 0 && !table.set():
 		tab = own[0].ID
 	default:
@@ -367,7 +386,7 @@ func readCatalog(b bridge, ctx *gofr.Context, identifier, tab string, table tabl
 		page.Widgets = widgetViews(widgetsOf[tab], data, can)
 	case tabEntities:
 		entities, err := b.services.Entities(ctx, identifier, entity.ListRequest{
-			Search: table.Search, Filter: table.Filter, Sort: table.Sort, Page: table.Page, Size: table.Size,
+			Search: table.Search, Filter: table.Filter, Sort: table.Sort, Cursor: table.Cursor, Size: table.Size,
 		})
 		if err != nil {
 			return catalogPage{}, err
@@ -423,7 +442,7 @@ func readScorecard(b bridge, ctx *gofr.Context, identifier string, table tableAr
 		return scorecardPage{}, err
 	}
 	results, err := b.services.ScorecardResults(ctx, identifier, scorecard.ResultsRequest{
-		Search: table.Search, Filter: table.Filter, Sort: table.Sort, Page: table.Page, Size: table.Size,
+		Search: table.Search, Filter: table.Filter, Sort: table.Sort, Cursor: table.Cursor, Size: table.Size,
 	})
 	if err != nil {
 		return scorecardPage{}, err

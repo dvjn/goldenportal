@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { type ApiDataResponse, api, type Page } from "@/lib/api";
+import { type ApiDataResponse, api, type CursorPage } from "@/lib/api";
 
 export type CatalogEntry = {
   identifier: string;
@@ -38,7 +38,7 @@ export type Incoming = {
 // hiddenTabs are the page's tabs whose when the entity doesn't meet.
 export type EntityDetail = Entity & { incoming: Incoming[]; hiddenTabs?: string[] };
 
-export type EntityPage = Page<Entity>;
+export type EntityPage = CursorPage<Entity>;
 
 // Filter is the server's filter tree: and, or and not over property conditions.
 export type Filter =
@@ -52,7 +52,7 @@ export type EntityQuery = {
   q?: string;
   filter?: Filter;
   sort?: string;
-  page?: number;
+  cursor?: string;
   size?: number;
 };
 
@@ -76,7 +76,7 @@ export async function listEntities(query: EntityQuery): Promise<EntityPage> {
   if (query.q) searchParams.set("q", query.q);
   if (query.filter) searchParams.set("filter", JSON.stringify(query.filter));
   if (query.sort) searchParams.set("sort", query.sort);
-  if (query.page) searchParams.set("page", String(query.page));
+  if (query.cursor) searchParams.set("cursor", query.cursor);
   if (query.size) searchParams.set("size", String(query.size));
   return (
     await api

@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { writeUiState } from "@/hooks/use-ui-state";
+import { isBadRequest } from "@/lib/api";
 import {
   type DataTableChip,
   DataTableFilterBox,
@@ -29,6 +30,7 @@ import type {
 } from "./data-table-filter-picker";
 import { DataTablePagination } from "./data-table-pagination";
 import {
+  type CursorLinks,
   type DataTableColumn,
   dataTableFeatures,
   paginationFromSearch,
@@ -76,6 +78,9 @@ type DataTableProps<TData extends RowData> = {
   // rowCount turns on server mode: data is already the current page, searched,
   // filtered and sorted by the server, and rowCount is how many rows match.
   rowCount?: number;
+  // cursor pages a server table by the cursors its page gives, in the URL's
+  // cursor, rather than by page number.
+  cursor?: CursorLinks;
   // loading dims the rows while a new page is on its way.
   loading?: boolean;
   // pending shows placeholder rows until the first page arrives, so the table
@@ -87,6 +92,15 @@ type DataTableProps<TData extends RowData> = {
 };
 
 const pendingRows = 5;
+
+// ClearFiltersButton removes a table's filters, wherever they're shown.
+export function ClearFiltersButton({ onClick }: Readonly<{ onClick: () => void }>) {
+  return (
+    <Button variant="link" className="h-auto p-0" onClick={onClick}>
+      Clear Filters
+    </Button>
+  );
+}
 
 const searchDelay = 250;
 
@@ -105,6 +119,7 @@ export function DataTable<TData extends RowData>({
   noun,
   empty,
   rowCount,
+  cursor,
   loading = false,
   pending = false,
   error,
@@ -130,7 +145,7 @@ export function DataTable<TData extends RowData>({
     state: { sorting, pagination, globalFilter: search.q ?? "" },
     onSortingChange: (updater) => {
       const next = typeof updater === "function" ? updater(sorting) : updater;
-      setSearch({ sort: sortToSearch(next), page: undefined });
+      setSearch({ sort: sortToSearch(next), page: undefined, cursor: undefined });
     },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(pagination) : updater;
@@ -139,6 +154,10 @@ export function DataTable<TData extends RowData>({
       setSearch(paginationToSearch(next));
     },
     autoResetPageIndex: false,
+    // The table would pick a column's first direction from the rows shown,
+    // which a server's sort changes, so a click could clear it instead of
+    // reversing it. Server tables start ascending unless a column says.
+    sortDescFirst: server ? false : undefined,
     manualPagination: server,
     manualSorting: server,
     manualFiltering: server,
@@ -149,7 +168,7 @@ export function DataTable<TData extends RowData>({
   useEffect(() => {
     if (query === (search.q ?? "")) return;
     const timer = setTimeout(
-      () => setSearch({ q: query || undefined, page: undefined }),
+      () => setSearch({ q: query || undefined, page: undefined, cursor: undefined }),
       searchDelay,
     );
     return () => clearTimeout(timer);
@@ -170,7 +189,7 @@ export function DataTable<TData extends RowData>({
   // A page past the end, after rows went away or a bookmark aged, goes back to the last one.
   const lastPage = Math.max(Math.ceil(total / pagination.pageSize), 1);
   const settled = !pending && !error;
-  const pastEnd = settled && !loading && pagination.pageIndex + 1 > lastPage;
+  const pastEnd = !cursor && settled && !loading && pagination.pageIndex + 1 > lastPage;
   useEffect(() => {
     if (pastEnd) setSearch({ page: lastPage > 1 ? lastPage : undefined });
   });
@@ -239,6 +258,41 @@ export function DataTable<TData extends RowData>({
                 ))}
               </TableRow>
             ))
+          ) : error && isBadRequest(error) ? (
+            // The server names what it turned down, such as every check a
+            // scorecard has, which isn't for every viewer.
+            <TableRow>
+              <TableCell colSpan={columns.length}>
+                <EmptyState
+                  compact
+                  title={`Can't list ${noun} this way`}
+                  description="Something in the link no longer applies."
+                >
+                  <div className="flex justify-center gap-4">
+                    {filtered && <ClearFiltersButton onClick={clearAll} />}
+                    {search.sort && (
+                      <Button
+                        variant="link"
+                        className="h-auto p-0"
+                        onClick={() => setSearch({ sort: undefined, cursor: undefined })}
+                      >
+                        Reset Sort
+                      </Button>
+                    )}
+                    {search.q && !filtered && (
+                      <Button variant="link" className="h-auto p-0" onClick={clearAll}>
+                        Clear Search
+                      </Button>
+                    )}
+                    {!filtered && !search.sort && !search.q && onRetry && (
+                      <Button variant="link" className="h-auto p-0" onClick={onRetry}>
+                        Try again
+                      </Button>
+                    )}
+                  </div>
+                </EmptyState>
+              </TableCell>
+            </TableRow>
           ) : error ? (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
@@ -258,9 +312,13 @@ export function DataTable<TData extends RowData>({
                   title={`No ${noun} match`}
                   description={search.q ? `Nothing found for "${search.q}".` : undefined}
                 >
-                  <Button variant="link" className="h-auto p-0" onClick={clearAll}>
-                    {filtered ? "Clear the filters" : "Clear the search"}
-                  </Button>
+                  {filtered ? (
+                    <ClearFiltersButton onClick={clearAll} />
+                  ) : (
+                    <Button variant="link" className="h-auto p-0" onClick={clearAll}>
+                      Clear Search
+                    </Button>
+                  )}
                 </EmptyState>
               </TableCell>
             </TableRow>
@@ -279,7 +337,13 @@ export function DataTable<TData extends RowData>({
       </Table>
       {settled && (
         <div className="border-t px-(--card-spacing) py-3">
-          <DataTablePagination table={table} pagination={pagination} total={total} />
+          <DataTablePagination
+            table={table}
+            pagination={pagination}
+            total={total}
+            cursor={cursor}
+            onCursor={(next) => setSearch({ cursor: next })}
+          />
         </div>
       )}
     </Card>

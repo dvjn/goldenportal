@@ -58,7 +58,7 @@ func shapesFixture(t *testing.T) (*storeFixture, map[string]blueprint.Spec) {
 
 func (f *storeFixture) list(specs map[string]blueprint.Spec, q Query) []string {
 	f.t.Helper()
-	q.Blueprint, q.Blueprints, q.Page, q.PageSize = specs["service"], specs, 1, 10
+	q.Blueprint, q.Blueprints, q.PageSize = specs["service"], specs, 10
 	page, err := f.store.List(f.t.Context(), q)
 	if err != nil {
 		f.t.Fatal(err)
@@ -67,8 +67,8 @@ func (f *storeFixture) list(specs map[string]blueprint.Spec, q Query) []string {
 	for i, e := range page.Items {
 		identifiers[i] = e.Identifier
 	}
-	if page.Total != len(identifiers) {
-		f.t.Errorf("total = %d for %v", page.Total, identifiers)
+	if page.Total == nil || *page.Total != len(identifiers) {
+		f.t.Errorf("total = %v for %v", page.Total, identifiers)
 	}
 
 	return identifiers
@@ -235,5 +235,27 @@ func TestWidgetReadsRunInTheDatabase(t *testing.T) {
 	}
 	if total != 6 || strings.Join(got, " ") != "alpha=true true bravo=false true delta=false true" {
 		t.Errorf("rows = %v, total %d", got, total)
+	}
+}
+
+// TestRelatedRetentionDate checks a related entity's date that its
+// blueprint's retention keeps rows by reads through the relation, in sorts
+// and filters, as any other related date does.
+func TestRelatedRetentionDate(t *testing.T) {
+	f, specs := shapesFixture(t)
+	for sort, want := range map[string]string{
+		"parent.seenAt":  "alpha,bravo,delta,foxtrot,charlie,echo",
+		"-parent.seenAt": "echo,alpha,bravo,delta,foxtrot,charlie",
+	} {
+		if got := strings.Join(f.list(specs, Query{Sort: sort}), ","); got != want {
+			t.Errorf("sort %q = %s, want %s", sort, got, want)
+		}
+	}
+	filter, err := ParseFilter(`{"property": "parent.seenAt", "op": "gte", "value": "2026-10-01T00:00:00Z"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(f.list(specs, Query{Filter: filter}), ","); got != "echo" {
+		t.Errorf("filtered = %s, want echo", got)
 	}
 }

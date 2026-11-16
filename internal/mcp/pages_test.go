@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -93,6 +94,22 @@ func TestCatalogOpensATab(t *testing.T) {
 	}
 	if fake.last.name != "RowActions" || !slices.Equal(fake.last.args[1].([]string), []string{"payments/pay", "billing"}) {
 		t.Errorf("row actions asked %+v", *fake.last)
+	}
+
+	// Paging on opens the entities too, with the cursor the service read
+	// the page by.
+	c = page[catalogPage](t, output(t, call(t, session, "get_catalog", map[string]any{"blueprint": "service", "cursor": "abc"})))
+	if c.Tab != "entities" || c.Entities == nil || c.Entities.Previous != "before-abc" {
+		t.Errorf("paged entities = %+v", c)
+	}
+	// A cursor from a scorecard's results opens its tab.
+	results := base64.RawURLEncoding.EncodeToString([]byte(`{"d":"last","l":"` + scorecard.ResultsList("ready") + `","h":"x"}`))
+	c = page[catalogPage](t, output(t, call(t, session, "get_catalog", map[string]any{"blueprint": "service", "cursor": results})))
+	if c.Tab != "scorecard-ready" || c.Scorecard == nil {
+		t.Errorf("paged results = %+v", c)
+	}
+	if req := fake.last.args[1].(scorecard.ResultsRequest); req.Cursor != results {
+		t.Errorf("results listed %+v", req)
 	}
 
 	c = page[catalogPage](t, output(t, call(t, session, "get_catalog", map[string]any{"blueprint": "service", "tab": "scorecard-ready", "sort": "-tier"})))

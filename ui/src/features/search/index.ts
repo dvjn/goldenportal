@@ -1,1 +1,1 @@
-export { type SearchKind, type SearchResult, search, searchQueryOptions } from "./api";
+export { type SearchKind, type SearchResult, search, searchKeys, searchQueryOptions } from "./api";

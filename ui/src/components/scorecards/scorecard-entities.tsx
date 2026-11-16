@@ -1,4 +1,3 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CatalogFilters } from "@/components/catalog/catalog-filters";
 import { EntityLink } from "@/components/catalog/entity-link";
 import { ListValue } from "@/components/catalog/list-value";
@@ -8,6 +7,7 @@ import {
   DataTableColumnHeader,
   dataTableColumns,
   type TableSearch,
+  useCursorPage,
   usePageSize,
 } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
@@ -20,6 +20,7 @@ const column = dataTableColumns<EntityResult>();
 
 const count = (title: string, id: "passed" | "failed" | "skipped") =>
   column.accessor(id, {
+    sortDescFirst: true,
     header: ({ column }) => <DataTableColumnHeader column={column} title={title} />,
     cell: ({ getValue }) => <span className="tabular-nums">{getValue()}</span>,
   });
@@ -38,16 +39,11 @@ export function ScorecardEntities({
   where?: Filter;
   catalogFilters: CatalogFilters;
 }>) {
-  const page = useQuery({
-    ...resultsQueryOptions(spec.identifier, {
-      filter: where,
-      q: search.q,
-      sort: search.sort,
-      page: search.page,
-      size: usePageSize(search),
-    }),
-    placeholderData: keepPreviousData,
-  });
+  const query = { filter: where, q: search.q, sort: search.sort, size: usePageSize(search) };
+  const { page, total, pending } = useCursorPage(
+    (cursor) => resultsQueryOptions(spec.identifier, { ...query, cursor }),
+    search.cursor,
+  );
   const titles = new Map(
     spec.tiers.flatMap((tier) => tier.criteria.map((c) => [c.identifier, c.title])),
   );
@@ -69,10 +65,13 @@ export function ScorecardEntities({
       ),
     }),
     column.accessor("tier", {
+      // Unsorted, the worst tier comes first, so a click starts from the best.
+      sortDescFirst: true,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Tier" />,
       cell: ({ getValue }) => <TierBadge tiers={spec.tiers} name={getValue()} />,
     }),
     column.accessor("score", {
+      sortDescFirst: true,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Score" />,
       cell: ({ getValue }) => {
         const score = getValue();
@@ -123,9 +122,10 @@ export function ScorecardEntities({
       getRowId={(r) => `${r.blueprint}/${r.identifier}`}
       search={search}
       searchLabel="Search entities"
-      rowCount={page.data?.total ?? 0}
+      rowCount={total}
+      cursor={page.data ?? {}}
       loading={page.isPlaceholderData}
-      pending={page.isPending}
+      pending={pending}
       error={page.error}
       onRetry={() => void page.refetch()}
       filters={catalogFilters.filters}

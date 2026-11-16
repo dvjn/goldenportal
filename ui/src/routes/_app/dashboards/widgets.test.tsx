@@ -5,8 +5,8 @@ import type { Blueprint, BlueprintSpec } from "@/features/blueprints";
 import type { EntityDetail, Filter } from "@/features/catalog";
 import type { Dashboard, HomeDashboard } from "@/features/dashboards";
 import { formatAbsolute, formatLocalDate } from "@/lib/format";
-import { acmeConfig, ada, ok, stubApi } from "@/test/api";
-import { renderRoute } from "@/test/render";
+import { acmeConfig, ada, fail, ok, stubApi } from "@/test/api";
+import { createTestQueryClient, renderRoute } from "@/test/render";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api")>();
@@ -1242,12 +1242,11 @@ describe("dashboards and page tabs", () => {
       '"property":"owner","op":"in","values":["payments"]',
     );
 
+    // Reset goes back to the defaults, whose data is still fresh.
     await user.click(screen.getByRole("button", { name: "Reset" }));
-    await vi.waitFor(() => {
-      expect(router.state.location.search).toEqual({});
-      url = new URL(requests["GET dashboards/teams/data"].url);
-      expect(url.searchParams.getAll("input.tier")).toEqual(["critical"]);
-    });
+    await vi.waitFor(() => expect(router.state.location.search).toEqual({}));
+    const reset = await stat(/Services$/, "3");
+    expect(decodeURIComponent(reset.getAttribute("href") ?? "")).not.toContain("owner");
   });
 
   // mine starts its team input at what its default query finds for the viewer.
@@ -1291,6 +1290,70 @@ describe("dashboards and page tabs", () => {
     }),
     "GET dashboards/mine/data": countLike,
   };
+
+  it("refreshes widgets and the catalog once a dashboard is published", async () => {
+    const user = userEvent.setup();
+    const draft: Dashboard = {
+      identifier: "mine",
+      title: "Mine",
+      published: null,
+      draft: {
+        source: "kind: Dashboard",
+        spec: mine,
+        issues: [],
+        updatedAt: "2026-10-24T10:00:00Z",
+        updatedBy: "ada@example.com",
+      },
+      createdAt: "2026-10-24T10:00:00Z",
+    };
+    stubApi({
+      ...mineStubs,
+      "GET me": ok({ ...ada, role: "builder" }),
+      "GET dashboards/mine": ok(draft),
+      "GET dashboards/mine/versions": ok([]),
+      "GET dashboards/mine/draft/impact": ok({
+        firstVersion: true,
+        changes: [],
+        breaking: false,
+        affected: 0,
+        issues: [],
+      }),
+      "POST dashboards/mine/draft/publish": ok({ version: 1 }),
+    });
+    const queryClient = createTestQueryClient();
+    const cached = [
+      ["widgets", { dashboard: "mine" }, {}],
+      ["catalog", "entities", { blueprint: "service" }],
+    ];
+    for (const key of cached) queryClient.setQueryData(key, {});
+    renderRoute("/dashboards/mine?tab=definition", queryClient);
+
+    await user.click(await screen.findByRole("button", { name: "Publish" }));
+    await user.click(await screen.findByRole("button", { name: "Publish Version" }));
+    expect(await screen.findByText("Published mine version 1")).toBeInTheDocument();
+    for (const key of cached) {
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+    }
+  });
+
+  it("sets inputs back when a link's input no longer applies, without the server's words", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      ...mineStubs,
+      "GET home": ok([mine]),
+      "GET dashboards/mine/data": (request) =>
+        new URL(request.url).searchParams.get("input.team") === "gone"
+          ? fail(400, "team gone isn't one of the teams: payments")()
+          : countLike(request),
+    });
+    const { router } = renderRoute("/?team=gone");
+
+    expect(await screen.findByText("Can't show these widgets")).toBeInTheDocument();
+    expect(screen.queryByText(/isn't one of the teams/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reset Inputs" }));
+    await vi.waitFor(() => expect(router.state.location.search).toEqual({}));
+    await stat(/Services$/, "3");
+  });
 
   it("starts an input at what its default query found", async () => {
     const requests = stubApi({
@@ -1439,11 +1502,7 @@ describe("dashboards and page tabs", () => {
     expect(decodeURIComponent(all.getAttribute("href") ?? "")).not.toContain("owner");
 
     await user.click(screen.getByRole("button", { name: "Reset" }));
-    await vi.waitFor(() => {
-      expect(router.state.location.search).toEqual({});
-      url = new URL(requests["GET dashboards/mine/data"].url);
-      expect(url.searchParams.has("input.team")).toBe(false);
-    });
+    await vi.waitFor(() => expect(router.state.location.search).toEqual({}));
     await screen.findByText(/Nothing matched you for Team/);
   });
 });

@@ -7,6 +7,17 @@ export type ApiDataResponse<T> = { data: T };
 // Page is one page of a list, and how many items match across every page.
 export type Page<T> = { items: T[]; total: number };
 
+// CursorPage is one page of a list read by cursor. Only the first page has
+// the total; next, previous and last are the cursors that read the pages
+// beside it and the last page, where there are any.
+export type CursorPage<T> = {
+  items: T[];
+  total?: number;
+  next?: string;
+  previous?: string;
+  last?: string;
+};
+
 // Problems are what's wrong with each field of a request the server turned
 // down, by field; "" holds those that aren't about one field.
 export type Problems = Record<string, string[]>;
@@ -62,6 +73,12 @@ export function apiProblems(error: unknown): Problems | undefined {
   if (!(error instanceof HTTPError)) return undefined;
   const body = error.data as ApiErrorBody | string | undefined;
   return typeof body === "object" ? body.error?.problems : undefined;
+}
+
+// isBadRequest says the server turned a request down as asked, as it does a
+// filter, sort or cursor on what isn't there.
+export function isBadRequest(error: unknown) {
+  return error instanceof HTTPError && error.response.status === 400;
 }
 
 export function isUnauthorized(error: unknown) {

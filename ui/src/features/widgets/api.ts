@@ -256,8 +256,14 @@ export async function loadWidgets(source: WidgetSource, context: WidgetContext):
   return (await api.get(dataPath(source), { searchParams }).json<ApiDataResponse<PageData>>()).data;
 }
 
+export const widgetKeys = {
+  all: ["widgets"] as const,
+  data: (source: WidgetSource, context: WidgetContext) =>
+    [...widgetKeys.all, source, context] as const,
+};
+
 export const widgetsQueryOptions = (source: WidgetSource, context: WidgetContext) =>
   queryOptions({
-    queryKey: ["widgets", source, context] as const,
+    queryKey: widgetKeys.data(source, context),
     queryFn: () => loadWidgets(source, context),
   });

@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { catalogKeys, type Filter } from "@/features/catalog";
-import { scorecards, summaryQueryOptions } from "./api";
+import type { Filter } from "@/features/catalog";
+import { invalidateResults } from "@/features/refresh";
+import { summaryQueryOptions } from "./api";
 
 // useSummary reads a scorecard's summary, which polls while the results
 // catch up with a publish, and refreshes the results shown beside it once
@@ -17,8 +18,7 @@ export function useSummary(
   const wasEvaluating = useRef(evaluating);
   useEffect(() => {
     if (wasEvaluating.current && !evaluating) {
-      void queryClient.invalidateQueries({ queryKey: scorecards.keys.detail(identifier) });
-      void queryClient.invalidateQueries({ queryKey: catalogKeys.index });
+      void invalidateResults(queryClient, identifier);
     }
     wasEvaluating.current = evaluating;
   }, [evaluating, identifier, queryClient]);

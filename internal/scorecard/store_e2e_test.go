@@ -120,7 +120,7 @@ func TestResultsSortAndFilter(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.sort+" "+test.filter, func(t *testing.T) {
-			page, err := results(ctx, db, scorecardID, spec, ResultQuery{Scope: scope(t, test.filter), Sort: test.sort, Page: 1, PageSize: 10})
+			page, err := results(ctx, db, scorecardID, spec, ResultQuery{Scope: scope(t, test.filter), Sort: test.sort, PageSize: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -128,8 +128,21 @@ func TestResultsSortAndFilter(t *testing.T) {
 			for _, r := range page.Items {
 				got = append(got, r.Identifier)
 			}
-			if !slices.Equal(got, test.want) || page.Total != len(test.want) {
-				t.Errorf("got %v of %d, want %v", got, page.Total, test.want)
+			if !slices.Equal(got, test.want) || page.Total == nil || *page.Total != len(test.want) {
+				t.Errorf("got %v of %v, want %v", got, page.Total, test.want)
+			}
+			for _, size := range []int{1, 2} {
+				walked(t, test.want, func(cursor string) ([]string, *int, string, string, string) {
+					page, err := results(ctx, db, scorecardID, spec, ResultQuery{Scope: scope(t, test.filter), Sort: test.sort, PageSize: size, Cursor: cursor})
+					if err != nil {
+						t.Fatal(err)
+					}
+					got := []string{}
+					for _, r := range page.Items {
+						got = append(got, r.Identifier)
+					}
+					return got, page.Total, page.Next, page.Previous, page.Last
+				})
 			}
 		})
 	}

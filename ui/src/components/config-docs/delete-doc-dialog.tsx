@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { ConfigDocs } from "@/features/config-docs";
+import { invalidatePublished } from "@/features/refresh";
 
 type DeleteDocDialogProps<S> = {
   docs: ConfigDocs<S>;
@@ -41,7 +42,7 @@ export function DeleteDocDialog<S>({
     mutationFn: () => docs.remove(identifier),
     onSuccess: async () => {
       queryClient.removeQueries({ queryKey: docs.keys.detail(identifier) });
-      await queryClient.invalidateQueries({ queryKey: docs.keys.all });
+      await invalidatePublished(queryClient);
       toast.success(`Deleted ${identifier}`);
       await onDeleted();
     },
