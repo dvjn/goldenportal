@@ -12,3 +12,4 @@ For people who configure Golden Portal in YAML, through the build section's edit
 - [Actions](actions.md): self-service runs on one entity.
 - [Workflows](workflows.md): self-service runs across many entities.
 - [Case Studies](case-studies/README.md): one portal at three stages, from its first catalog to business units and compliance.
+- [Case Study](case-study/README.md): one portal on GitLab, authentik and SonarQube, what developers and leads do with it, and how it's built.

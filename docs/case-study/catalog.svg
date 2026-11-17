@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" width="960" height="470" role="img" aria-label="The catalog: repositories from GitLab belong to teams from authentik and link to their SonarQube code quality; pipelines, deployments and merge requests from GitLab link to their repository, and jobs to their pipeline.">
+  <style>
+    .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1.5; }
+    .chip { fill: #ffffff; stroke: #8c959f; stroke-width: 1; }
+    .key { fill: #ddf4ff; stroke: #0969da; stroke-width: 1; }
+    .line { stroke: #57606a; stroke-width: 1.5; fill: none; }
+    .head { fill: #57606a; }
+    .title { fill: #1f2328; font: 600 16px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .text { fill: #1f2328; font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .label { fill: #57606a; font: italic 12px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #161b22; stroke: #30363d; }
+      .chip { fill: #0d1117; stroke: #6e7681; }
+      .key { fill: #0c2d4a; stroke: #4493f8; }
+      .line { stroke: #8b949e; }
+      .head { fill: #8b949e; }
+      .title, .text { fill: #e6edf3; }
+      .label { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="box" x="10" y="20" width="940" height="440" rx="10"/>
+  <text class="title" x="480" y="48" text-anchor="middle">Catalog</text>
+  <text class="label" x="480" y="68" text-anchor="middle">each blueprint, the connection that fills it, and its relations</text>
+  <rect class="key" x="380" y="90" width="200" height="56" rx="6"/>
+  <text class="text" x="480" y="114.5" text-anchor="middle">Team</text>
+  <text class="label" x="480" y="130.5" text-anchor="middle">from authentik</text>
+  <rect class="key" x="80" y="190" width="200" height="56" rx="6"/>
+  <text class="text" x="180" y="214.5" text-anchor="middle">Code Quality</text>
+  <text class="label" x="180" y="230.5" text-anchor="middle">from sonarqube</text>
+  <rect class="key" x="380" y="190" width="200" height="56" rx="6"/>
+  <text class="text" x="480" y="214.5" text-anchor="middle">Repository</text>
+  <text class="label" x="480" y="230.5" text-anchor="middle">from gitlab</text>
+  <rect class="key" x="680" y="190" width="200" height="56" rx="6"/>
+  <text class="text" x="780" y="214.5" text-anchor="middle">Merge Request</text>
+  <text class="label" x="780" y="230.5" text-anchor="middle">from gitlab</text>
+  <rect class="key" x="380" y="290" width="200" height="56" rx="6"/>
+  <text class="text" x="480" y="314.5" text-anchor="middle">Pipeline</text>
+  <text class="label" x="480" y="330.5" text-anchor="middle">from gitlab</text>
+  <rect class="key" x="680" y="290" width="200" height="56" rx="6"/>
+  <text class="text" x="780" y="314.5" text-anchor="middle">Deployment</text>
+  <text class="label" x="780" y="330.5" text-anchor="middle">from gitlab</text>
+  <rect class="key" x="380" y="390" width="200" height="56" rx="6"/>
+  <text class="text" x="480" y="414.5" text-anchor="middle">Job</text>
+  <text class="label" x="480" y="430.5" text-anchor="middle">from gitlab</text>
+  <path class="line" d="M480,190 L480,148" marker-end="url(#arrow)"/>
+  <text class="label" x="488" y="173" text-anchor="start">owner</text>
+  <path class="line" d="M380,218 L282,218" marker-end="url(#arrow)"/>
+  <text class="label" x="331" y="211" text-anchor="middle">quality</text>
+  <path class="line" d="M680,218 L582,218" marker-end="url(#arrow)"/>
+  <text class="label" x="631" y="211" text-anchor="middle">repository</text>
+  <path class="line" d="M480,290 L480,248" marker-end="url(#arrow)"/>
+  <text class="label" x="488" y="273" text-anchor="start">repository</text>
+  <path class="line" d="M680,290 L580,248" marker-end="url(#arrow)"/>
+  <text class="label" x="604" y="292" text-anchor="start">repository</text>
+  <path class="line" d="M480,390 L480,348" marker-end="url(#arrow)"/>
+  <text class="label" x="488" y="373" text-anchor="start">pipeline</text>
+  <text class="label" x="180" y="320" text-anchor="middle">coverage and quality gate</text>
+  <text class="label" x="180" y="336" text-anchor="middle">read back as lookups</text>
+</svg>

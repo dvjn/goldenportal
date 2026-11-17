@@ -37,6 +37,7 @@ docker run -p 8000:8000 \
 - [Setup](docs/setup.md): from a first connection to a dashboard and a scorecard.
 - [Builder Docs](docs/README.md): syncing, blueprints, connectors, scorecards, dashboards, actions and workflows.
 - [Case Studies](docs/case-studies/README.md): one portal at three stages.
+- [Case Study](docs/case-study/README.md): one portal on GitLab, authentik and SonarQube.
 
 ## Development
 
