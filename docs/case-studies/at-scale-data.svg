@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 712" width="960" height="712" role="img" aria-label="The org directory, authentik, the API gateway, PagerDuty and Jira are pulled; the registry and ops connections take pushes and action writes; the AWS inventory pipeline pushes accounts, resources and databases as one complete push; GitLab, SonarQube and the clusters come in as in Growing.">
+  <style>
+    .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1.5; }
+    .chip { fill: #ffffff; stroke: #8c959f; stroke-width: 1; }
+    .key { fill: #ddf4ff; stroke: #0969da; stroke-width: 1; }
+    .line { stroke: #57606a; stroke-width: 1.5; fill: none; }
+    .head { fill: #57606a; }
+    .title { fill: #1f2328; font: 600 16px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .text { fill: #1f2328; font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .label { fill: #57606a; font: italic 12px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #161b22; stroke: #30363d; }
+      .chip { fill: #0d1117; stroke: #6e7681; }
+      .key { fill: #0c2d4a; stroke: #4493f8; }
+      .line { stroke: #8b949e; }
+      .head { fill: #8b949e; }
+      .title, .text { fill: #e6edf3; }
+      .label { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="box" x="10" y="20" width="260" height="692" rx="10"/>
+  <text class="title" x="140" y="48" text-anchor="middle">Systems</text>
+  <text class="label" x="140" y="68" text-anchor="middle">where the data lives</text>
+  <rect class="box" x="340" y="20" width="250" height="692" rx="10"/>
+  <text class="title" x="465" y="48" text-anchor="middle">Connections</text>
+  <text class="label" x="465" y="68" text-anchor="middle">connector + how it syncs</text>
+  <rect class="box" x="660" y="20" width="290" height="692" rx="10"/>
+  <text class="title" x="805" y="48" text-anchor="middle">Blueprints</text>
+  <text class="label" x="805" y="68" text-anchor="middle">what the data becomes</text>
+  <rect class="chip" x="25" y="76" width="230" height="56" rx="6"/>
+  <text class="text" x="140" y="108.5" text-anchor="middle">Org directory API</text>
+  <rect class="key" x="355" y="76" width="220" height="56" rx="6"/>
+  <text class="text" x="465" y="100.5" text-anchor="middle">org (http)</text>
+  <text class="label" x="465" y="116.5" text-anchor="middle">pull every 6h, next</text>
+  <rect class="key" x="675" y="76" width="260" height="56" rx="6"/>
+  <text class="text" x="805" y="108.5" text-anchor="middle">Business Unit, Domain</text>
+  <path class="line" d="M255,104 L353,104" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="97" text-anchor="middle">pull</text>
+  <path class="line" d="M575,104 L673,104" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="144" width="230" height="56" rx="6"/>
+  <text class="text" x="140" y="168.5" text-anchor="middle">authentik</text>
+  <text class="label" x="140" y="184.5" text-anchor="middle">people and groups</text>
+  <rect class="key" x="355" y="144" width="220" height="56" rx="6"/>
+  <text class="text" x="465" y="168.5" text-anchor="middle">authentik</text>
+  <text class="label" x="465" y="184.5" text-anchor="middle">pull, hourly</text>
+  <rect class="key" x="675" y="144" width="260" height="56" rx="6"/>
+  <text class="text" x="805" y="176.5" text-anchor="middle">Team</text>
+  <path class="line" d="M255,172 L353,172" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="165" text-anchor="middle">pull</text>
+  <path class="line" d="M575,172 L673,172" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="212" width="230" height="56" rx="6"/>
+  <text class="text" x="140" y="244.5" text-anchor="middle">API gateway</text>
+  <rect class="key" x="355" y="212" width="220" height="56" rx="6"/>
+  <text class="text" x="465" y="236.5" text-anchor="middle">gateway (http)</text>
+  <text class="label" x="465" y="252.5" text-anchor="middle">pull, hourly</text>
+  <rect class="key" x="675" y="212" width="260" height="56" rx="6"/>
+  <text class="text" x="805" y="244.5" text-anchor="middle">API</text>
+  <path class="line" d="M255,240 L353,240" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="233" text-anchor="middle">pull</text>
+  <path class="line" d="M575,240 L673,240" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="280" width="230" height="68" rx="6"/>
+  <text class="text" x="140" y="310.5" text-anchor="middle">PagerDuty</text>
+  <text class="label" x="140" y="326.5" text-anchor="middle">incidents and on-call</text>
+  <rect class="key" x="355" y="280" width="220" height="68" rx="6"/>
+  <text class="text" x="465" y="302.5" text-anchor="middle">pagerduty (http)</text>
+  <text class="label" x="465" y="318.5" text-anchor="middle">pull every 5m,</text>
+  <text class="label" x="465" y="334.5" text-anchor="middle">next for paging</text>
+  <rect class="key" x="675" y="280" width="260" height="68" rx="6"/>
+  <text class="text" x="805" y="310.5" text-anchor="middle">Incident</text>
+  <text class="label" x="805" y="326.5" text-anchor="middle">upsert, kept 365d</text>
+  <path class="line" d="M255,314 L353,314" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="307" text-anchor="middle">pull</text>
+  <path class="line" d="M575,314 L673,314" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="360" width="230" height="68" rx="6"/>
+  <text class="text" x="140" y="390.5" text-anchor="middle">AWS inventory</text>
+  <text class="label" x="140" y="406.5" text-anchor="middle">scheduled pipeline, aws CLI</text>
+  <rect class="key" x="355" y="360" width="220" height="68" rx="6"/>
+  <text class="text" x="465" y="382.5" text-anchor="middle">aws (http)</text>
+  <text class="label" x="465" y="398.5" text-anchor="middle">push hourly,</text>
+  <text class="label" x="465" y="414.5" text-anchor="middle">?mode=complete</text>
+  <rect class="key" x="675" y="360" width="260" height="68" rx="6"/>
+  <text class="text" x="805" y="390.5" text-anchor="middle">AWS Account, AWS Resource,</text>
+  <text class="label" x="805" y="406.5" text-anchor="middle">Database</text>
+  <path class="line" d="M255,394 L353,394" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="387" text-anchor="middle">push</text>
+  <path class="line" d="M575,394 L673,394" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="440" width="230" height="68" rx="6"/>
+  <text class="text" x="140" y="470.5" text-anchor="middle">Portal actions</text>
+  <text class="label" x="140" y="486.5" text-anchor="middle">import, then entity steps</text>
+  <rect class="key" x="355" y="440" width="220" height="68" rx="6"/>
+  <text class="text" x="465" y="462.5" text-anchor="middle">registry, ops (http)</text>
+  <text class="label" x="465" y="478.5" text-anchor="middle">push, and entity</text>
+  <text class="label" x="465" y="494.5" text-anchor="middle">steps</text>
+  <rect class="key" x="675" y="440" width="260" height="68" rx="6"/>
+  <text class="text" x="805" y="470.5" text-anchor="middle">System, Service,</text>
+  <text class="label" x="805" y="486.5" text-anchor="middle">Postmortem, Change</text>
+  <path class="line" d="M255,474 L353,474" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="467" text-anchor="middle">push</text>
+  <path class="line" d="M575,474 L673,474" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="520" width="230" height="68" rx="6"/>
+  <text class="text" x="140" y="550.5" text-anchor="middle">Jira</text>
+  <text class="label" x="140" y="566.5" text-anchor="middle">issues, epics, sprints</text>
+  <rect class="key" x="355" y="520" width="220" height="68" rx="6"/>
+  <text class="text" x="465" y="542.5" text-anchor="middle">jira (http)</text>
+  <text class="label" x="465" y="558.5" text-anchor="middle">pull every 10m, JQL,</text>
+  <text class="label" x="465" y="574.5" text-anchor="middle">next for paging</text>
+  <rect class="key" x="675" y="520" width="260" height="68" rx="6"/>
+  <text class="text" x="805" y="550.5" text-anchor="middle">Issue</text>
+  <text class="label" x="805" y="566.5" text-anchor="middle">upsert, done ones kept 90d</text>
+  <path class="line" d="M255,554 L353,554" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="547" text-anchor="middle">pull</text>
+  <path class="line" d="M575,554 L673,554" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="600" width="230" height="68" rx="6"/>
+  <text class="text" x="140" y="630.5" text-anchor="middle">GitLab, SonarQube,</text>
+  <text class="label" x="140" y="646.5" text-anchor="middle">clusters</text>
+  <rect class="chip" x="355" y="600" width="220" height="68" rx="6"/>
+  <text class="text" x="465" y="630.5" text-anchor="middle">as in Growing,</text>
+  <text class="label" x="465" y="646.5" text-anchor="middle">plus merge requests</text>
+  <rect class="chip" x="675" y="600" width="260" height="68" rx="6"/>
+  <text class="text" x="805" y="630.5" text-anchor="middle">Repository, Merge Request,</text>
+  <text class="label" x="805" y="646.5" text-anchor="middle">Workload, ...</text>
+  <path class="line" d="M255,634 L353,634" marker-end="url(#arrow)"/>
+  <path class="line" d="M575,634 L673,634" marker-end="url(#arrow)"/>
+</svg>

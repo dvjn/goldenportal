@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 350" width="960" height="350" role="img" aria-label="The Request a Production Change action: inputs, a check that the service has no open incident, an approval from the change approvers, an entity step that records the change with who approved it, and an output linking to it.">
+  <style>
+    .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1.5; }
+    .chip { fill: #ffffff; stroke: #8c959f; stroke-width: 1; }
+    .key { fill: #ddf4ff; stroke: #0969da; stroke-width: 1; }
+    .line { stroke: #57606a; stroke-width: 1.5; fill: none; }
+    .head { fill: #57606a; }
+    .title { fill: #1f2328; font: 600 16px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .text { fill: #1f2328; font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .label { fill: #57606a; font: italic 12px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #161b22; stroke: #30363d; }
+      .chip { fill: #0d1117; stroke: #6e7681; }
+      .key { fill: #0c2d4a; stroke: #4493f8; }
+      .line { stroke: #8b949e; }
+      .head { fill: #8b949e; }
+      .title, .text { fill: #e6edf3; }
+      .label { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="box" x="10" y="20" width="940" height="160" rx="10"/>
+  <text class="title" x="480" y="48" text-anchor="middle">Request a Production Change</text>
+  <text class="label" x="480" y="68" text-anchor="middle">an action on a service</text>
+  <rect class="chip" x="30" y="80" width="150" height="72" rx="6"/>
+  <text class="text" x="105" y="104.5" text-anchor="middle">Inputs</text>
+  <text class="label" x="105" y="120.5" text-anchor="middle">summary, window,</text>
+  <text class="label" x="105" y="136.5" text-anchor="middle">risk, plan</text>
+  <rect class="key" x="218" y="80" width="150" height="72" rx="6"/>
+  <text class="text" x="293" y="104.5" text-anchor="middle">check</text>
+  <text class="label" x="293" y="120.5" text-anchor="middle">no open incident</text>
+  <text class="label" x="293" y="136.5" text-anchor="middle">on this service</text>
+  <rect class="key" x="405" y="80" width="150" height="72" rx="6"/>
+  <text class="text" x="480" y="104.5" text-anchor="middle">approval</text>
+  <text class="label" x="480" y="120.5" text-anchor="middle">change approvers</text>
+  <text class="label" x="480" y="136.5" text-anchor="middle">review the plan</text>
+  <rect class="key" x="592" y="80" width="150" height="72" rx="6"/>
+  <text class="text" x="667" y="104.5" text-anchor="middle">entity</text>
+  <text class="label" x="667" y="120.5" text-anchor="middle">record the change</text>
+  <text class="label" x="667" y="136.5" text-anchor="middle">as ops</text>
+  <rect class="key" x="780" y="80" width="150" height="72" rx="6"/>
+  <text class="text" x="855" y="104.5" text-anchor="middle">output</text>
+  <text class="label" x="855" y="120.5" text-anchor="middle">link to the</text>
+  <text class="label" x="855" y="136.5" text-anchor="middle">change</text>
+  <path class="line" d="M180,116 L216,116" marker-end="url(#arrow)"/>
+  <path class="line" d="M368,116 L403,116" marker-end="url(#arrow)"/>
+  <path class="line" d="M555,116 L590,116" marker-end="url(#arrow)"/>
+  <path class="line" d="M742,116 L778,116" marker-end="url(#arrow)"/>
+  <rect class="box" x="10" y="210" width="940" height="130" rx="10"/>
+  <text class="title" x="480" y="238" text-anchor="middle">Catalog</text>
+  <rect class="chip" x="40" y="254" width="240" height="64" rx="6"/>
+  <text class="text" x="160" y="274.5" text-anchor="middle">Incident</text>
+  <text class="label" x="160" y="290.5" text-anchor="middle">status not resolved,</text>
+  <text class="label" x="160" y="306.5" text-anchor="middle">service is this one</text>
+  <rect class="key" x="560" y="254" width="240" height="64" rx="6"/>
+  <text class="text" x="680" y="274.5" text-anchor="middle">Change</text>
+  <text class="label" x="680" y="290.5" text-anchor="middle">service, window, risk,</text>
+  <text class="label" x="680" y="306.5" text-anchor="middle">requestedBy, approvedBy</text>
+  <path class="line" d="M160,252 L160,200 L293,200 L293,154" marker-end="url(#arrow)"/>
+  <text class="label" x="168" y="236" text-anchor="start">counted</text>
+  <path class="line" d="M667,152 L667,252" marker-end="url(#arrow)"/>
+  <text class="label" x="675" y="198" text-anchor="start">writes</text>
+</svg>

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" width="960" height="500" role="img" aria-label="GitLab, authentik and SonarQube are pulled on schedules; an inventory CronJob pushes all three clusters to the kubernetes connection as one complete push; the registry takes a one-off import and then writes from actions.">
+  <style>
+    .box { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1.5; }
+    .chip { fill: #ffffff; stroke: #8c959f; stroke-width: 1; }
+    .key { fill: #ddf4ff; stroke: #0969da; stroke-width: 1; }
+    .line { stroke: #57606a; stroke-width: 1.5; fill: none; }
+    .head { fill: #57606a; }
+    .title { fill: #1f2328; font: 600 16px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .text { fill: #1f2328; font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .label { fill: #57606a; font: italic 12px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #161b22; stroke: #30363d; }
+      .chip { fill: #0d1117; stroke: #6e7681; }
+      .key { fill: #0c2d4a; stroke: #4493f8; }
+      .line { stroke: #8b949e; }
+      .head { fill: #8b949e; }
+      .title, .text { fill: #e6edf3; }
+      .label { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="box" x="10" y="20" width="260" height="480" rx="10"/>
+  <text class="title" x="140" y="48" text-anchor="middle">Systems</text>
+  <text class="label" x="140" y="68" text-anchor="middle">where the data lives</text>
+  <rect class="box" x="340" y="20" width="250" height="480" rx="10"/>
+  <text class="title" x="465" y="48" text-anchor="middle">Connections</text>
+  <text class="label" x="465" y="68" text-anchor="middle">connector + how it syncs</text>
+  <rect class="box" x="660" y="20" width="290" height="480" rx="10"/>
+  <text class="title" x="805" y="48" text-anchor="middle">Blueprints</text>
+  <text class="label" x="805" y="68" text-anchor="middle">what the data becomes</text>
+  <rect class="chip" x="25" y="76" width="230" height="68" rx="6"/>
+  <text class="text" x="140" y="106.5" text-anchor="middle">GitLab</text>
+  <text class="label" x="140" y="122.5" text-anchor="middle">code, CI, deployments</text>
+  <rect class="key" x="355" y="76" width="220" height="68" rx="6"/>
+  <text class="text" x="465" y="106.5" text-anchor="middle">gitlab</text>
+  <text class="label" x="465" y="122.5" text-anchor="middle">pull, every 15m</text>
+  <rect class="key" x="675" y="76" width="260" height="68" rx="6"/>
+  <text class="text" x="805" y="106.5" text-anchor="middle">Repository, Pipeline,</text>
+  <text class="label" x="805" y="122.5" text-anchor="middle">Job, Deployment</text>
+  <path class="line" d="M255,110 L353,110" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="103" text-anchor="middle">pull</text>
+  <path class="line" d="M575,110 L673,110" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="156" width="230" height="56" rx="6"/>
+  <text class="text" x="140" y="180.5" text-anchor="middle">authentik</text>
+  <text class="label" x="140" y="196.5" text-anchor="middle">people and groups</text>
+  <rect class="key" x="355" y="156" width="220" height="56" rx="6"/>
+  <text class="text" x="465" y="180.5" text-anchor="middle">authentik</text>
+  <text class="label" x="465" y="196.5" text-anchor="middle">pull, hourly</text>
+  <rect class="key" x="675" y="156" width="260" height="56" rx="6"/>
+  <text class="text" x="805" y="188.5" text-anchor="middle">Team</text>
+  <path class="line" d="M255,184 L353,184" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="177" text-anchor="middle">pull</text>
+  <path class="line" d="M575,184 L673,184" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="224" width="230" height="56" rx="6"/>
+  <text class="text" x="140" y="248.5" text-anchor="middle">SonarQube</text>
+  <text class="label" x="140" y="264.5" text-anchor="middle">code quality</text>
+  <rect class="key" x="355" y="224" width="220" height="56" rx="6"/>
+  <text class="text" x="465" y="248.5" text-anchor="middle">sonarqube</text>
+  <text class="label" x="465" y="264.5" text-anchor="middle">pull, hourly</text>
+  <rect class="key" x="675" y="224" width="260" height="56" rx="6"/>
+  <text class="text" x="805" y="256.5" text-anchor="middle">Code Quality</text>
+  <path class="line" d="M255,252 L353,252" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="245" text-anchor="middle">pull</text>
+  <path class="line" d="M575,252 L673,252" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="292" width="230" height="84" rx="6"/>
+  <text class="text" x="140" y="322.5" text-anchor="middle">Kubernetes</text>
+  <text class="label" x="140" y="338.5" text-anchor="middle">dev, staging, production</text>
+  <text class="label" x="140" y="354.5" text-anchor="middle">inventory CronJob</text>
+  <rect class="key" x="355" y="292" width="220" height="84" rx="6"/>
+  <text class="text" x="465" y="322.5" text-anchor="middle">kubernetes (http)</text>
+  <text class="label" x="465" y="338.5" text-anchor="middle">push every 10m,</text>
+  <text class="label" x="465" y="354.5" text-anchor="middle">?mode=complete</text>
+  <rect class="key" x="675" y="292" width="260" height="84" rx="6"/>
+  <text class="text" x="805" y="338.5" text-anchor="middle">Cluster, Workload</text>
+  <path class="line" d="M255,334 L353,334" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="327" text-anchor="middle">push</text>
+  <path class="line" d="M575,334 L673,334" marker-end="url(#arrow)"/>
+  <rect class="chip" x="25" y="388" width="230" height="68" rx="6"/>
+  <text class="text" x="140" y="418.5" text-anchor="middle">Service registry</text>
+  <text class="label" x="140" y="434.5" text-anchor="middle">one-off import, then actions</text>
+  <rect class="key" x="355" y="388" width="220" height="68" rx="6"/>
+  <text class="text" x="465" y="410.5" text-anchor="middle">registry (http)</text>
+  <text class="label" x="465" y="426.5" text-anchor="middle">push, and entity</text>
+  <text class="label" x="465" y="442.5" text-anchor="middle">steps in actions</text>
+  <rect class="key" x="675" y="388" width="260" height="68" rx="6"/>
+  <text class="text" x="805" y="426.5" text-anchor="middle">Domain, Service</text>
+  <path class="line" d="M255,422 L353,422" marker-end="url(#arrow)"/>
+  <text class="label" x="304" y="415" text-anchor="middle">push</text>
+  <path class="line" d="M575,422 L673,422" marker-end="url(#arrow)"/>
+</svg>
